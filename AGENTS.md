@@ -21,3 +21,11 @@ Treat these documents as the repository's project source of truth.
 - Run relevant build and type-check commands after making changes.
 - Update `docs/PROGRESS.md` after completing a significant feature.
 - Update `docs/DECISIONS.md` only after the user confirms an implementation decision.
+
+## Code and file organisation
+
+- Add a file, directory, dependency, or abstraction only when it has a clear current purpose.
+- Keep small, page-specific code together; extract components only when they are reused or when doing so materially improves readability.
+- Place code in the narrowest relevant app or package and keep package boundaries explicit.
+- Do not commit generated build output, local databases, logs, caches, or environment files.
+- Remove obsolete code and files when replacing them, while preserving unrelated user work.

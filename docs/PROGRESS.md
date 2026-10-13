@@ -11,10 +11,12 @@
 - Express API foundation and health endpoint created
 - Shared, SSI, and smart-contract package foundations created
 - Formatting, environment examples, and initial documentation configured
+- Initial responsive TraceChain sign-in page implemented
+- Frontend route structure created for all stakeholder workspaces
 
 ## Current work
 
-- Phase 1 monorepo foundation completed and validated
+- Preparing the MetaMask authentication milestone
 
 ## Next
 
