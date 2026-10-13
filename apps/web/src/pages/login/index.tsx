@@ -117,7 +117,7 @@ function Brand() {
   return (
     <div className="brand" aria-label="TraceChain">
       <span className="brand-mark">
-        <Icon name="shield" size={22} />
+        <img alt="" src="/tracechain-mark.svg" />
       </span>
       <span>
         <strong>TraceChain</strong>

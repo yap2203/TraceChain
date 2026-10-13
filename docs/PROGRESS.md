@@ -16,6 +16,7 @@
 - Demo controls replaced with a real MetaMask connection and Sepolia network check
 - Landing page refined with icon-based process visuals and accessible motion
 - Scroll-triggered left and right content reveals added to the landing page
+- TraceChain brand mark applied to the website header, footer, and browser icon
 - Frontend route structure created for all stakeholder workspaces
 
 ## Current work

@@ -200,10 +200,13 @@ select {
   width: 44px;
   height: 44px;
   place-items: center;
-  border-radius: 13px;
-  color: #02111a;
-  background: #10d8ef;
-  box-shadow: 0 10px 26px rgb(16 216 239 / 13%);
+}
+
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .brand strong,
