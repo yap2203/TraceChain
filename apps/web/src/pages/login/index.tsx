@@ -1,19 +1,53 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-const companies = [
-  { name: 'ABC Ingredients Sdn. Bhd.', role: 'Supplier', icon: 'layers' },
-  { name: 'CocoaCraft Manufacturing Sdn. Bhd.', role: 'Manufacturer', icon: 'factory' },
-  { name: 'Swift Distribution Sdn. Bhd.', role: 'Distributor', icon: 'truck' },
-  { name: 'FreshMart Retail Sdn. Bhd.', role: 'Retailer', icon: 'store' },
-] as const;
+const SEPOLIA_CHAIN_ID = '0xaa36a7';
 
-const benefits = [
-  'Verified company identities via SSI credentials',
-  'Tamper-evident product records on blockchain',
-  'Privacy-preserving selective disclosure',
-] as const;
+const learningTabs = {
+  process: {
+    label: 'How it works',
+    title: 'Three steps to trusted traceability',
+    items: [
+      ['01', 'Verify', 'Confirm the organisation and its role credential.'],
+      ['02', 'Trace', 'Link ingredients, products and custody events.'],
+      ['03', 'Receive', 'Confirm transfers with the intended wallet.'],
+    ],
+  },
+  roles: {
+    label: 'Roles',
+    title: 'One network for every participant',
+    items: [
+      ['01', 'System Admin', 'Approves companies.'],
+      ['02', 'Supplier', 'Issues ingredient evidence.'],
+      ['03', 'Manufacturer', 'Creates product batches.'],
+      ['04', 'Distributor', 'Manages custody transfers.'],
+      ['05', 'Retailer', 'Confirms receipt and traces products.'],
+    ],
+  },
+  security: {
+    label: 'Security',
+    title: 'Trust without exposing sensitive data',
+    items: [
+      ['01', 'Your keys', 'Remain inside your wallet.'],
+      ['02', 'Your credentials', 'Stay off-chain.'],
+      ['03', 'Your access', 'Requires cryptographic verification.'],
+    ],
+  },
+} as const;
 
-type IconName = (typeof companies)[number]['icon'] | 'shield' | 'wallet' | 'check';
+type LearningTab = keyof typeof learningTabs;
+type IconName = 'shield' | 'wallet' | 'check' | 'leaf' | 'factory' | 'truck' | 'store' | 'blocks';
+type WalletStatus = 'idle' | 'connecting' | 'connected' | 'error';
+
+interface EthereumProvider {
+  request(args: { method: string; params?: unknown[] }): Promise<unknown>;
+}
+
+declare global {
+  interface Window {
+    ethereum?: EthereumProvider;
+  }
+}
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -23,10 +57,17 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
         <path d="m9.6 12 1.6 1.6 3.6-3.8" />
       </>
     ),
-    layers: (
+    wallet: (
       <>
-        <path d="m12 3-8 4 8 4 8-4-8-4Z" />
-        <path d="m4 11 8 4 8-4M4 15l8 4 8-4" />
+        <path d="M4 6.5h14.5A1.5 1.5 0 0 1 20 8v10a2 2 0 0 1-2 2H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h12" />
+        <path d="M16 11h5v5h-5a2.5 2.5 0 0 1 0-5Z" />
+      </>
+    ),
+    check: <path d="m5 12 4 4L19 6" />,
+    leaf: (
+      <>
+        <path d="M20 4C12 4 6 8 5 15c4 1 8 0 11-3 2-2 3-5 4-8Z" />
+        <path d="M4 20c2-5 6-8 12-10" />
       </>
     ),
     factory: (
@@ -45,16 +86,15 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     store: (
       <>
         <path d="M4 10v11h16V10M3 10l2-6h14l2 6" />
-        <path d="M3 10c0 1.3 1 2.3 2.3 2.3S7.7 11.3 7.7 10c0 1.3 1 2.3 2.3 2.3s2.3-1 2.3-2.3c0 1.3 1 2.3 2.3 2.3s2.3-1 2.3-2.3c0 1.3 1 2.3 2.3 2.3S21 11.3 21 10M9 21v-5h6v5" />
+        <path d="M3 10c0 1.3 1 2.3 2.3 2.3S7.7 11.3 7.7 10c0 1.3 1 2.3 2.3 2.3s2.3-1 2.3-2.3c0 1.3 1 2.3 2.3 2.3s2.3-1 2.3-2.3c0 1.3 1 2.3 2.3 2.3S21 11.3 21 10" />
       </>
     ),
-    wallet: (
+    blocks: (
       <>
-        <path d="M4 6.5h14.5A1.5 1.5 0 0 1 20 8v10a2 2 0 0 1-2 2H5a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h12" />
-        <path d="M16 11h5v5h-5a2.5 2.5 0 0 1 0-5Z" />
+        <path d="m8 3-5 3 5 3 5-3-5-3ZM16 9l-5 3 5 3 5-3-5-3Z" />
+        <path d="M3 6v6l5 3 3-1.8M13 6v4.8M11 12v6l5 3 5-3v-6" />
       </>
     ),
-    check: <path d="m5 12 4 4L19 6" />,
   };
 
   return (
@@ -77,7 +117,7 @@ function Brand() {
   return (
     <div className="brand" aria-label="TraceChain">
       <span className="brand-mark">
-        <Icon name="shield" size={23} />
+        <Icon name="shield" size={22} />
       </span>
       <span>
         <strong>TraceChain</strong>
@@ -87,118 +127,368 @@ function Brand() {
   );
 }
 
+function shortenAddress(address: string) {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
 function LoginPage() {
+  const [activeTab, setActiveTab] = useState<LearningTab>('process');
+  const [showWalletHelp, setShowWalletHelp] = useState(false);
+  const [walletStatus, setWalletStatus] = useState<WalletStatus>('idle');
+  const [walletAddress, setWalletAddress] = useState('');
+  const [walletMessage, setWalletMessage] = useState('Ready to connect');
+  const activeLearningTab = learningTabs[activeTab];
+
+  useEffect(() => {
+    const revealSections = document.querySelectorAll<HTMLElement>('[data-reveal-section]');
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (prefersReducedMotion || !('IntersectionObserver' in window)) {
+      revealSections.forEach((section) => section.classList.add('is-visible'));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+
+          entry.target.classList.add('is-visible');
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: '0px 0px -10% 0px', threshold: 0.14 },
+    );
+
+    revealSections.forEach((section) => observer.observe(section));
+
+    return () => observer.disconnect();
+  }, []);
+
+  async function connectWallet() {
+    const provider = window.ethereum;
+
+    if (!provider) {
+      setWalletStatus('error');
+      setWalletMessage('MetaMask was not detected');
+      return;
+    }
+
+    try {
+      setWalletStatus('connecting');
+      setWalletMessage('Waiting for MetaMask');
+
+      const accounts = (await provider.request({ method: 'eth_requestAccounts' })) as string[];
+      const chainId = (await provider.request({ method: 'eth_chainId' })) as string;
+
+      if (chainId !== SEPOLIA_CHAIN_ID) {
+        await provider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: SEPOLIA_CHAIN_ID }],
+        });
+      }
+
+      const address = accounts[0];
+      if (!address) throw new Error('No wallet account was returned.');
+
+      setWalletAddress(address);
+      setWalletStatus('connected');
+      setWalletMessage('Connected on Sepolia');
+    } catch {
+      setWalletStatus('error');
+      setWalletMessage('Connection was not completed');
+    }
+  }
+
   return (
-    <main className="sign-in-page">
-      <section className="introduction" aria-labelledby="page-title">
-        <div className="introduction-content">
+    <div className="landing-page" id="top">
+      <header className="site-header">
+        <a className="header-brand" href="#top" aria-label="TraceChain home">
           <Brand />
+        </a>
+        <nav aria-label="Landing page navigation">
+          <a href="#overview">Overview</a>
+          <a href="#understand">How it works</a>
+          <a href="#security">Security</a>
+        </nav>
+        <a className="header-action" href="#sign-in">
+          Connect wallet
+        </a>
+      </header>
 
-          <div className="hero-copy">
-            <h1 id="page-title">
-              Verify every organisation.
-              <span>Trace every product.</span>
-            </h1>
-            <p>
-              Use your organisation wallet and verified company credential to access the product
-              traceability network.
-            </p>
-          </div>
-
-          <div className="company-list" aria-label="Verified supply chain participants">
-            {companies.map((company) => (
-              <article className="company" key={company.name}>
-                <span className="company-icon">
-                  <Icon name={company.icon} />
-                </span>
-                <span className="company-details">
-                  <strong>{company.name}</strong>
-                  <small>{company.role}</small>
-                </span>
-                <span className="verified">
-                  <i />
-                  Verified
-                </span>
-              </article>
-            ))}
-          </div>
-
-          <ul className="benefit-list">
-            {benefits.map((benefit) => (
-              <li key={benefit}>
-                <span className="benefit-icon">
-                  <Icon name="shield" size={14} />
-                </span>
-                {benefit}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section className="authentication" aria-labelledby="sign-in-title">
-        <div className="authentication-content">
-          <div className="sign-in-card">
-            <h2 id="sign-in-title">Sign in to TraceChain</h2>
-            <p className="sign-in-intro">
-              Connect your organisation&apos;s MetaMask wallet to continue. TraceChain does not use
-              email and password authentication.
-            </p>
-
-            <dl className="network-panel">
-              <div>
-                <dt>Required network</dt>
-                <dd className="network-name">Sepolia</dd>
+      <main>
+        <section className="sign-in-page" id="overview">
+          <section className="introduction" aria-labelledby="page-title">
+            <div className="introduction-content">
+              <p className="hero-kicker">
+                <span /> Sepolia network
+              </p>
+              <div className="hero-copy">
+                <h1 id="page-title">
+                  Trusted identities.
+                  <span>Traceable products.</span>
+                </h1>
+                <p>
+                  Secure supply-chain access through verified credentials and wallet signatures.
+                </p>
               </div>
-              <div>
-                <dt>Wallet status</dt>
-                <dd>Not connected</dd>
-              </div>
-              <div>
-                <dt>Network status</dt>
-                <dd>Waiting for connection</dd>
-              </div>
-            </dl>
 
-            <label className="demo-label" htmlFor="demo-company">
-              Demo mode — simulate wallet
-            </label>
-            <select className="company-select" defaultValue="supplier" id="demo-company">
-              <option value="supplier">ABC Ingredients — Supplier</option>
-              <option value="manufacturer">CocoaCraft Manufacturing — Manufacturer</option>
-              <option value="distributor">Swift Distribution — Distributor</option>
-              <option value="retailer">FreshMart Retail — Retailer</option>
-            </select>
+              <div className="hero-actions">
+                <a className="primary-link" href="#sign-in">
+                  Connect your wallet
+                </a>
+                <a className="secondary-link" href="#understand">
+                  See how it works <span aria-hidden="true">↓</span>
+                </a>
+              </div>
 
-            <div className="wallet-row">
-              <span className="wallet-mark">
-                <Icon name="wallet" />
-              </span>
-              <span>
-                <strong>MetaMask</strong>
-                <small>Browser wallet extension</small>
-              </span>
+              <div className="network-visual" aria-label="TraceChain supply chain flow">
+                <div className="network-line" aria-hidden="true" />
+                <div className="network-node">
+                  <span>
+                    <Icon name="leaf" size={20} />
+                  </span>
+                  <strong>Ingredient</strong>
+                </div>
+                <div className="network-node">
+                  <span>
+                    <Icon name="factory" size={20} />
+                  </span>
+                  <strong>Production</strong>
+                </div>
+                <div className="network-node">
+                  <span>
+                    <Icon name="truck" size={20} />
+                  </span>
+                  <strong>Distribution</strong>
+                </div>
+                <div className="network-node">
+                  <span>
+                    <Icon name="store" size={20} />
+                  </span>
+                  <strong>Retail</strong>
+                </div>
+              </div>
+
+              <ul className="capability-list" aria-label="TraceChain capabilities">
+                <li>
+                  <Icon name="check" size={14} />
+                  Verified roles
+                </li>
+                <li>
+                  <Icon name="check" size={14} />
+                  Private credentials
+                </li>
+                <li>
+                  <Icon name="check" size={14} />
+                  Auditable custody
+                </li>
+              </ul>
             </div>
+          </section>
 
-            <button className="connect-button" type="button">
-              Connect MetaMask
-            </button>
-            <Link className="register-button" to="/register-company">
-              Register a New Company
-            </Link>
+          <section className="authentication" id="sign-in" aria-labelledby="sign-in-title">
+            <div className="authentication-content">
+              <div className="sign-in-card">
+                <div className="card-heading">
+                  <span className="live-indicator">
+                    <i />
+                    Sepolia
+                  </span>
+                  <span>Secure access</span>
+                </div>
+
+                <h2 id="sign-in-title">Connect to TraceChain</h2>
+                <p className="sign-in-intro">Use your organisation&apos;s MetaMask wallet.</p>
+
+                <dl className="network-panel">
+                  <div>
+                    <dt>Wallet</dt>
+                    <dd className={walletStatus === 'error' ? 'status-error' : ''}>
+                      {walletAddress ? shortenAddress(walletAddress) : walletMessage}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Network</dt>
+                    <dd className="network-name">Sepolia</dd>
+                  </div>
+                  <div>
+                    <dt>Credential</dt>
+                    <dd>
+                      {walletStatus === 'connected'
+                        ? 'Ready to verify'
+                        : 'Checked after connection'}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="wallet-row">
+                  <span className="wallet-mark">
+                    <Icon name="wallet" />
+                  </span>
+                  <span>
+                    <strong>MetaMask</strong>
+                    <small>Your keys stay in your wallet</small>
+                  </span>
+                </div>
+
+                <button
+                  className="connect-button"
+                  disabled={walletStatus === 'connecting'}
+                  onClick={connectWallet}
+                  type="button"
+                >
+                  {walletStatus === 'connecting'
+                    ? 'Connecting…'
+                    : walletStatus === 'connected'
+                      ? 'Wallet connected'
+                      : 'Connect MetaMask'}
+                </button>
+                <Link className="register-button" to="/register-company">
+                  Register a company
+                </Link>
+              </div>
+
+              <div className="security-note">
+                <Icon name="shield" size={16} />
+                <p>Never share your private key or recovery phrase.</p>
+              </div>
+
+              <button
+                aria-expanded={showWalletHelp}
+                className="wallet-help"
+                onClick={() => setShowWalletHelp((isVisible) => !isVisible)}
+                type="button"
+              >
+                Why connect a wallet?
+              </button>
+              {showWalletHelp && (
+                <p className="wallet-help-panel">
+                  Your wallet proves address control. Your role is verified separately from your
+                  Company Role Credential.
+                </p>
+              )}
+            </div>
+          </section>
+        </section>
+
+        <section
+          className="understand-section"
+          data-reveal-section
+          id="understand"
+          aria-labelledby="understand-title"
+        >
+          <div className="section-heading" data-reveal-direction="left">
+            <p>Explore TraceChain</p>
+            <h2 id="understand-title">Built for trusted handovers.</h2>
           </div>
 
-          <aside className="security-note">
-            <Icon name="shield" size={16} />
-            <p>TraceChain never requests your private key, MetaMask password or recovery phrase.</p>
-          </aside>
+          <div
+            className="learning-tabs"
+            data-reveal-direction="right"
+            role="tablist"
+            aria-label="Learn about TraceChain"
+          >
+            {(Object.keys(learningTabs) as LearningTab[]).map((tab) => (
+              <button
+                aria-controls="learning-panel"
+                aria-selected={activeTab === tab}
+                className={activeTab === tab ? 'active' : ''}
+                id={`learning-tab-${tab}`}
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                role="tab"
+                type="button"
+              >
+                {learningTabs[tab].label}
+              </button>
+            ))}
+          </div>
 
-          <button className="wallet-help" type="button">
-            Why do I need to connect a wallet?
-          </button>
-        </div>
-      </section>
-    </main>
+          <div className="learning-panel-reveal" data-reveal-direction="left">
+            <div
+              aria-labelledby={`learning-tab-${activeTab}`}
+              className="learning-panel"
+              id="learning-panel"
+              key={activeTab}
+              role="tabpanel"
+            >
+              <div className="learning-summary">
+                <p>{activeLearningTab.label}</p>
+                <h3>{activeLearningTab.title}</h3>
+              </div>
+              <div className="learning-grid">
+                {activeLearningTab.items.map(([number, title, text]) => (
+                  <article key={title}>
+                    <span>{number}</span>
+                    <h4>{title}</h4>
+                    <p>{text}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="security-section"
+          data-reveal-section
+          id="security"
+          aria-labelledby="security-title"
+        >
+          <div className="security-heading" data-reveal-direction="right">
+            <p>Privacy by architecture</p>
+            <h2 id="security-title">Proof where it matters. Privacy where it belongs.</h2>
+          </div>
+
+          <div className="security-features" data-reveal-direction="left">
+            <article>
+              <span>
+                <Icon name="wallet" size={22} />
+              </span>
+              <div>
+                <h3>Wallet controlled</h3>
+                <p>Your private keys remain in MetaMask.</p>
+              </div>
+            </article>
+            <article>
+              <span>
+                <Icon name="shield" size={22} />
+              </span>
+              <div>
+                <h3>Credentials private</h3>
+                <p>Sensitive identity data stays off-chain.</p>
+              </div>
+            </article>
+            <article>
+              <span>
+                <Icon name="blocks" size={22} />
+              </span>
+              <div>
+                <h3>Records auditable</h3>
+                <p>Hashes and custody events remain verifiable.</p>
+              </div>
+            </article>
+          </div>
+
+          <div className="security-footer" data-reveal-direction="right">
+            <span>
+              <Icon name="check" size={14} /> No private keys stored
+            </span>
+            <span>
+              <Icon name="check" size={14} /> Credentials verified before access
+            </span>
+            <a href="#sign-in">Connect securely →</a>
+          </div>
+        </section>
+      </main>
+
+      <footer className="site-footer">
+        <Brand />
+        <p>Verifiable supply-chain traceability.</p>
+        <a href="#top">Back to top ↑</a>
+      </footer>
+    </div>
   );
 }
 

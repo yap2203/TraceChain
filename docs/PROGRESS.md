@@ -12,6 +12,10 @@
 - Shared, SSI, and smart-contract package foundations created
 - Formatting, environment examples, and initial documentation configured
 - Initial responsive TraceChain sign-in page implemented
+- Sign-in page expanded with persistent navigation and interactive project explanations
+- Demo controls replaced with a real MetaMask connection and Sepolia network check
+- Landing page refined with icon-based process visuals and accessible motion
+- Scroll-triggered left and right content reveals added to the landing page
 - Frontend route structure created for all stakeholder workspaces
 
 ## Current work

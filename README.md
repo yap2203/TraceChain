@@ -23,6 +23,40 @@ docs/
 scripts/        Repository automation scripts
 ```
 
+## Frontend routes
+
+Frontend pages follow the URL hierarchy under `apps/web/src/pages`:
+
+```text
+/
+├── /login
+├── /register-company
+├── /admin
+│   ├── /applications
+│   ├── /credentials
+│   └── /stakeholders
+├── /supplier
+│   ├── /ingredients
+│   ├── /credentials
+│   └── /evidence-requests
+├── /manufacturer
+│   ├── /ingredient-evidence
+│   ├── /product-batches
+│   └── /transfers
+├── /distributor
+│   ├── /incoming-shipments
+│   ├── /inventory
+│   └── /transfers
+└── /retailer
+    ├── /incoming-products
+    ├── /traceability
+    └── /reports
+```
+
+The root URL redirects to `/login`. Stakeholder pages currently provide route foundations for later feature implementation.
+
+The `/login` route provides the public TraceChain landing and wallet connection experience. It includes persistent navigation, a responsive MetaMask connection panel, an icon-based supply-chain overview, expandable wallet guidance, accessible scroll-triggered motion, and concise interactive explanations of the workflow, stakeholder roles, and security model. Wallet connection verifies the selected address and Sepolia network only; credential verification remains a separate authentication milestone.
+
 ## Prerequisites
 
 - Node.js 22 or later
