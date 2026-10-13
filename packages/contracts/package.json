@@ -1,0 +1,6 @@
+{
+  "name": "@tracechain/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TraceChain Solidity smart contracts and tests"
+}

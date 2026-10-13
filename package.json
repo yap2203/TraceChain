@@ -1,0 +1,28 @@
+{
+  "name": "tracechain",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Blockchain-based supply chain traceability system with SSI credential verification",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently --names web,api --prefix-colors cyan,green \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm run dev --workspace @tracechain/web",
+    "dev:api": "npm run dev --workspace @tracechain/api",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "prettier": "^3.9.10",
+    "typescript": "^7.0.2"
+  }
+}
