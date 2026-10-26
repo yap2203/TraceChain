@@ -1,22 +1,8 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 
-import AdminApplicationsPage from './pages/admin/applications';
-import AdminCredentialsPage from './pages/admin/credentials';
-import AdminStakeholdersPage from './pages/admin/stakeholders';
-import DistributorIncomingShipmentsPage from './pages/distributor/incoming-shipments';
-import DistributorInventoryPage from './pages/distributor/inventory';
-import DistributorTransfersPage from './pages/distributor/transfers';
-import LoginPage from './pages/login';
-import ManufacturerIngredientEvidencePage from './pages/manufacturer/ingredient-evidence';
-import ManufacturerProductBatchesPage from './pages/manufacturer/product-batches';
-import ManufacturerTransfersPage from './pages/manufacturer/transfers';
-import RegisterCompanyPage from './pages/register-company';
-import RetailerIncomingProductsPage from './pages/retailer/incoming-products';
-import RetailerReportsPage from './pages/retailer/reports';
-import RetailerTraceabilityPage from './pages/retailer/traceability';
-import SupplierCredentialsPage from './pages/supplier/credentials';
-import SupplierEvidenceRequestsPage from './pages/supplier/evidence-requests';
-import SupplierIngredientsPage from './pages/supplier/ingredients';
+import LoginPage from './features/auth/LoginPage';
+import { RegisterCompanyPage } from './features/registration/RegisterCompanyPage';
+import { WorkspacePage } from './features/workspaces/WorkspacePage';
 
 function App() {
   return (
@@ -26,14 +12,32 @@ function App() {
       <Route path="/register-company" element={<RegisterCompanyPage />} />
 
       <Route path="/admin" element={<Navigate replace to="/admin/applications" />} />
-      <Route path="/admin/applications" element={<AdminApplicationsPage />} />
-      <Route path="/admin/credentials" element={<AdminCredentialsPage />} />
-      <Route path="/admin/stakeholders" element={<AdminStakeholdersPage />} />
+      <Route
+        path="/admin/applications"
+        element={<WorkspacePage page="applications" workspace="admin" />}
+      />
+      <Route
+        path="/admin/credentials"
+        element={<WorkspacePage page="credentials" workspace="admin" />}
+      />
+      <Route
+        path="/admin/stakeholders"
+        element={<WorkspacePage page="stakeholders" workspace="admin" />}
+      />
 
       <Route path="/supplier" element={<Navigate replace to="/supplier/ingredients" />} />
-      <Route path="/supplier/ingredients" element={<SupplierIngredientsPage />} />
-      <Route path="/supplier/credentials" element={<SupplierCredentialsPage />} />
-      <Route path="/supplier/evidence-requests" element={<SupplierEvidenceRequestsPage />} />
+      <Route
+        path="/supplier/ingredients"
+        element={<WorkspacePage page="ingredients" workspace="supplier" />}
+      />
+      <Route
+        path="/supplier/credentials"
+        element={<WorkspacePage page="credentials" workspace="supplier" />}
+      />
+      <Route
+        path="/supplier/evidence-requests"
+        element={<WorkspacePage page="evidence-requests" workspace="supplier" />}
+      />
 
       <Route
         path="/manufacturer"
@@ -41,10 +45,16 @@ function App() {
       />
       <Route
         path="/manufacturer/ingredient-evidence"
-        element={<ManufacturerIngredientEvidencePage />}
+        element={<WorkspacePage page="ingredient-evidence" workspace="manufacturer" />}
       />
-      <Route path="/manufacturer/product-batches" element={<ManufacturerProductBatchesPage />} />
-      <Route path="/manufacturer/transfers" element={<ManufacturerTransfersPage />} />
+      <Route
+        path="/manufacturer/product-batches"
+        element={<WorkspacePage page="product-batches" workspace="manufacturer" />}
+      />
+      <Route
+        path="/manufacturer/transfers"
+        element={<WorkspacePage page="transfers" workspace="manufacturer" />}
+      />
 
       <Route
         path="/distributor"
@@ -52,15 +62,30 @@ function App() {
       />
       <Route
         path="/distributor/incoming-shipments"
-        element={<DistributorIncomingShipmentsPage />}
+        element={<WorkspacePage page="incoming-shipments" workspace="distributor" />}
       />
-      <Route path="/distributor/inventory" element={<DistributorInventoryPage />} />
-      <Route path="/distributor/transfers" element={<DistributorTransfersPage />} />
+      <Route
+        path="/distributor/inventory"
+        element={<WorkspacePage page="inventory" workspace="distributor" />}
+      />
+      <Route
+        path="/distributor/transfers"
+        element={<WorkspacePage page="transfers" workspace="distributor" />}
+      />
 
       <Route path="/retailer" element={<Navigate replace to="/retailer/incoming-products" />} />
-      <Route path="/retailer/incoming-products" element={<RetailerIncomingProductsPage />} />
-      <Route path="/retailer/traceability" element={<RetailerTraceabilityPage />} />
-      <Route path="/retailer/reports" element={<RetailerReportsPage />} />
+      <Route
+        path="/retailer/incoming-products"
+        element={<WorkspacePage page="incoming-products" workspace="retailer" />}
+      />
+      <Route
+        path="/retailer/traceability"
+        element={<WorkspacePage page="traceability" workspace="retailer" />}
+      />
+      <Route
+        path="/retailer/reports"
+        element={<WorkspacePage page="reports" workspace="retailer" />}
+      />
 
       <Route path="*" element={<Navigate replace to="/login" />} />
     </Routes>

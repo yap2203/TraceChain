@@ -8,6 +8,8 @@
 - Use Solidity for smart contracts.
 - Use npm workspaces.
 - Use the folder structure `apps/*` and `packages/*`.
+- Use React Router for frontend route composition.
+- Organise frontend implementation by feature with shared UI and layout components.
 
 ## Unconfirmed decisions
 

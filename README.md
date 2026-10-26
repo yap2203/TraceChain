@@ -2,7 +2,7 @@
 
 TraceChain is a Blockchain-Based Supply Chain Traceability System with Self-Sovereign Identity credential verification. The project is being developed as a TypeScript npm monorepo for a final-year project.
 
-The planned system combines a React web application, an Express API, Veramo-based SSI services, MetaMask, Ethereum Sepolia, QR codes, and Solidity smart contracts. Phase 1 provides only the project foundation; application workflows, credentials, and contracts are not implemented yet.
+The planned system combines a React web application, an Express API, Veramo-based SSI services, MetaMask, Ethereum Sepolia, QR codes, and Solidity smart contracts. Phase 1 established the monorepo foundation, and Phase 2 provides the responsive frontend application shell. Live application workflows, credentials, blockchain integration, and contracts are not implemented yet.
 
 ## Repository structure
 
@@ -25,7 +25,7 @@ scripts/        Repository automation scripts
 
 ## Frontend routes
 
-Frontend pages follow the URL hierarchy under `apps/web/src/pages`:
+Frontend routes follow this React Router hierarchy:
 
 ```text
 /
@@ -53,9 +53,11 @@ Frontend pages follow the URL hierarchy under `apps/web/src/pages`:
     └── /reports
 ```
 
-The root URL redirects to `/login`. Stakeholder pages currently provide route foundations for later feature implementation.
+The root URL redirects to `/login`. Feature code is organised under `apps/web/src/features`, while reusable brand, layout, icon, and UI components live under `apps/web/src/components`.
 
-The `/login` route provides the public TraceChain landing and wallet connection experience. It includes persistent navigation, a responsive MetaMask connection panel, an icon-based supply-chain overview, expandable wallet guidance, accessible scroll-triggered motion, and concise interactive explanations of the workflow, stakeholder roles, and security model. Wallet connection verifies the selected address and Sepolia network only; credential verification remains a separate authentication milestone.
+The `/login` route provides the public TraceChain landing and future wallet connection experience. It includes persistent navigation, a responsive connection panel, an icon-based supply-chain overview, expandable wallet guidance, accessible scroll-triggered motion, and concise interactive explanations. Wallet and credential controls are presentation-only placeholders in Phase 2.
+
+Authenticated stakeholder routes share a responsive application layout with role-specific navigation, a fixed header, wallet-status placeholder, reusable content cards, readiness tables, and action modals. Company registration is also a presentation-only form and does not submit or store data.
 
 ## Prerequisites
 
