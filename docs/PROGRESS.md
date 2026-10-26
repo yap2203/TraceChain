@@ -21,11 +21,16 @@
 - Responsive frontend application shell created for all stakeholder workspaces
 - Reusable frontend UI components and design tokens created
 - Company registration form shell created with no live submission
+- ERC-4361 Sign-In with Ethereum authentication implemented
+- Five-minute single-use nonce and server-side session repositories implemented
+- MetaMask connection, Sepolia confirmation, signing, session restoration, and logout implemented
+- Stakeholder routes locked behind a Company Role Credential requirement
+- Authentication security and session lifecycle tests added
 
 ## Current work
 
-- Phase 2 frontend application shell completed
+- Phase 3 secure wallet authentication completed
 
 ## Next
 
-- Build the MetaMask authentication milestone
+- Design Company Role Credential verification and credential-based RBAC

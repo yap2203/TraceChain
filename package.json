@@ -12,6 +12,7 @@
     "dev:web": "npm run dev --workspace @tracechain/web",
     "dev:api": "npm run dev --workspace @tracechain/api",
     "build": "npm run build --workspaces --if-present",
+    "test:auth": "npm run test:auth --workspace @tracechain/api",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

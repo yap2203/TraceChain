@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Brand } from '../../components/brand/Brand';
+import { shortenAddress, useWalletAuthentication } from './useWalletAuthentication';
 
 const learningTabs = {
   process: {
@@ -105,7 +106,23 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 function LoginPage() {
   const [activeTab, setActiveTab] = useState<LearningTab>('process');
   const [showWalletHelp, setShowWalletHelp] = useState(false);
+  const { connect, logout, state: walletState, switchToSepolia } = useWalletAuthentication();
   const activeLearningTab = learningTabs[activeTab];
+  const isWalletBusy = ['connecting', 'restoring', 'signing', 'verifying'].includes(
+    walletState.phase,
+  );
+  const connectButtonLabel = {
+    authenticated: 'Wallet verified',
+    connecting: 'Connecting…',
+    error: 'Try again',
+    idle: 'Connect MetaMask',
+    rejected: 'Try again',
+    restoring: 'Restoring session…',
+    signing: 'Waiting for signature…',
+    switch_required: 'Switch to Sepolia',
+    unavailable: 'MetaMask not detected',
+    verifying: 'Verifying signature…',
+  }[walletState.phase];
 
   useEffect(() => {
     const revealSections = document.querySelectorAll<HTMLElement>('[data-reveal-section]');
@@ -237,15 +254,37 @@ function LoginPage() {
                 <dl className="network-panel">
                   <div>
                     <dt>Wallet</dt>
-                    <dd>Not connected</dd>
+                    <dd
+                      className={
+                        walletState.phase === 'error' ||
+                        walletState.phase === 'rejected' ||
+                        walletState.phase === 'unavailable'
+                          ? 'status-error'
+                          : walletState.phase === 'authenticated'
+                            ? 'status-success'
+                            : ''
+                      }
+                    >
+                      {walletState.address ? shortenAddress(walletState.address) : 'Not connected'}
+                    </dd>
                   </div>
                   <div>
                     <dt>Network</dt>
-                    <dd className="network-name">Sepolia</dd>
+                    <dd
+                      className={
+                        walletState.phase === 'switch_required' ? 'status-error' : 'network-name'
+                      }
+                    >
+                      {walletState.phase === 'switch_required' ? 'Switch required' : 'Sepolia'}
+                    </dd>
                   </div>
                   <div>
                     <dt>Credential</dt>
-                    <dd>Checked after connection</dd>
+                    <dd>
+                      {walletState.phase === 'authenticated'
+                        ? 'Verification required'
+                        : 'Not verified'}
+                    </dd>
                   </div>
                 </dl>
 
@@ -259,9 +298,30 @@ function LoginPage() {
                   </span>
                 </div>
 
-                <button className="connect-button" disabled type="button">
-                  Connect MetaMask
-                </button>
+                {walletState.phase === 'authenticated' ? (
+                  <button className="logout-button" onClick={() => void logout()} type="button">
+                    Log out {walletState.address ? shortenAddress(walletState.address) : ''}
+                  </button>
+                ) : (
+                  <button
+                    className={`connect-button${isWalletBusy ? ' is-busy' : ''}`}
+                    disabled={isWalletBusy || walletState.phase === 'unavailable'}
+                    onClick={
+                      walletState.phase === 'switch_required'
+                        ? () => void switchToSepolia()
+                        : () => void connect()
+                    }
+                    type="button"
+                  >
+                    {connectButtonLabel}
+                  </button>
+                )}
+                <p
+                  className={`wallet-auth-message wallet-auth-message--${walletState.phase}`}
+                  role={walletState.phase === 'error' ? 'alert' : 'status'}
+                >
+                  {walletState.message}
+                </p>
                 <Link className="register-button" to="/register-company">
                   Register a company
                 </Link>

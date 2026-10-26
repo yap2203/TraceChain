@@ -710,6 +710,60 @@
     var(--color-background);
 }
 
+.credential-gate {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: var(--space-6);
+  background:
+    radial-gradient(circle at 50% 15%, rgb(8 214 237 / 8%), transparent 32%),
+    var(--color-background);
+}
+
+.credential-gate > section {
+  width: min(100%, 620px);
+  padding: clamp(2rem, 6vw, 4rem);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-large);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.credential-gate .brand {
+  margin-bottom: 2.5rem;
+}
+
+.credential-gate > section > p {
+  margin: 1.5rem 0 0.65rem;
+  color: var(--color-primary);
+  font-size: 0.67rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.credential-gate h1 {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  letter-spacing: -0.05em;
+  line-height: 1.08;
+}
+
+.credential-gate > section > span {
+  display: block;
+  margin-top: 1rem;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.credential-gate > section > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.8rem;
+}
+
 .public-form-header {
   display: flex;
   min-height: 76px;

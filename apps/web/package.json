@@ -10,9 +10,12 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
+    "buffer": "^6.0.3",
+    "ethers": "^6.17.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "siwe": "^3.0.0"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

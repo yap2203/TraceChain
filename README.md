@@ -2,7 +2,7 @@
 
 TraceChain is a Blockchain-Based Supply Chain Traceability System with Self-Sovereign Identity credential verification. The project is being developed as a TypeScript npm monorepo for a final-year project.
 
-The planned system combines a React web application, an Express API, Veramo-based SSI services, MetaMask, Ethereum Sepolia, QR codes, and Solidity smart contracts. Phase 1 established the monorepo foundation, and Phase 2 provides the responsive frontend application shell. Live application workflows, credentials, blockchain integration, and contracts are not implemented yet.
+The planned system combines a React web application, an Express API, Veramo-based SSI services, MetaMask, Ethereum Sepolia, QR codes, and Solidity smart contracts. Phase 1 established the monorepo foundation, Phase 2 added the responsive frontend shell, and Phase 3 implements wallet ownership authentication through Sign-In with Ethereum (ERC-4361). Credential verification, role authorisation, traceability workflows, and smart contracts are not implemented yet.
 
 ## Repository structure
 
@@ -55,9 +55,11 @@ Frontend routes follow this React Router hierarchy:
 
 The root URL redirects to `/login`. Feature code is organised under `apps/web/src/features`, while reusable brand, layout, icon, and UI components live under `apps/web/src/components`.
 
-The `/login` route provides the public TraceChain landing and future wallet connection experience. It includes persistent navigation, a responsive connection panel, an icon-based supply-chain overview, expandable wallet guidance, accessible scroll-triggered motion, and concise interactive explanations. Wallet and credential controls are presentation-only placeholders in Phase 2.
+The `/login` route provides the public TraceChain landing and MetaMask authentication experience. Wallet access is requested only after a user action. The application checks for Sepolia, requests a five-minute nonce, creates an ERC-4361 message, requests a MetaMask signature, and sends the message and signature to the API for verification. Existing server sessions are restored through an HttpOnly cookie without automatically requesting wallet access or a signature.
 
-Authenticated stakeholder routes share a responsive application layout with role-specific navigation, a fixed header, wallet-status placeholder, reusable content cards, readiness tables, and action modals. Company registration is also a presentation-only form and does not submit or store data.
+Wallet authentication proves wallet ownership only. It does not verify a Company Role Credential or assign a stakeholder role. System Admin, Supplier, Manufacturer, Distributor, and Retailer routes remain behind a credential-required gate until credential-based RBAC is implemented. Authenticated users can still continue to company registration.
+
+The API uses repository interfaces for nonce and session storage. The included in-memory implementations are development-only: they are process-local, are cleared whenever the API restarts, and must be replaced with durable shared storage before production deployment.
 
 ## Prerequisites
 
@@ -99,12 +101,26 @@ npm run dev:api
 
 The default frontend URL is `http://localhost:5173`. The API defaults to `http://localhost:3000`, with its health endpoint at `GET /api/health`.
 
+Phase 3 authentication settings are configured in `apps/api/.env`:
+
+```text
+SIWE_DOMAIN=localhost:5173
+SIWE_URI=http://localhost:5173
+SIWE_CHAIN_ID=11155111
+AUTH_COOKIE_NAME=tracechain_session
+AUTH_SESSION_TTL_SECONDS=28800
+```
+
+`SIWE_DOMAIN` and `SIWE_URI` must exactly match the origin used to open the frontend. The frontend API origin is configured through `VITE_API_BASE_URL` in `apps/web/.env`.
+
 ## Validation
 
 ```bash
 npm run build
 npm run typecheck
 npm run format:check
+npm run test:auth
+npm audit
 ```
 
 See [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) for confirmed scope and architecture, [docs/DECISIONS.md](docs/DECISIONS.md) for decisions, and [docs/PROGRESS.md](docs/PROGRESS.md) for current progress.

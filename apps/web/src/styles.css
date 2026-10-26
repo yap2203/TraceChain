@@ -516,6 +516,10 @@ select {
   color: #ff9c9c;
 }
 
+.network-panel .status-success {
+  color: #70efbd;
+}
+
 .wallet-row {
   display: flex;
   align-items: center;
@@ -551,6 +555,7 @@ select {
 }
 
 .connect-button,
+.logout-button,
 .register-button {
   display: grid;
   width: 100%;
@@ -578,11 +583,47 @@ select {
 }
 
 .connect-button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.7;
 }
 
+.connect-button.is-busy {
+  cursor: progress;
+}
+
+.logout-button {
+  border: 1px solid #31516f;
+  color: #b9cee3;
+  background: #0e192a;
+  font-weight: 750;
+}
+
+.logout-button:hover {
+  border-color: #52799e;
+  background: #122238;
+}
+
+.wallet-auth-message {
+  min-height: 1.1rem;
+  margin: 0.65rem 0 0;
+  color: #71869e;
+  font-size: 0.67rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.wallet-auth-message--authenticated {
+  color: #70efbd;
+}
+
+.wallet-auth-message--error,
+.wallet-auth-message--rejected,
+.wallet-auth-message--unavailable {
+  color: #ff9c9c;
+}
+
 .connect-button:active,
+.logout-button:active,
 .register-button:active {
   transform: translateY(1px);
 }
