@@ -29,9 +29,15 @@
 
 ## Current work
 
+- Added centered loading spinners for page loading and wallet/session checks, shared table pagination with selectable page sizes, and responsive pagination controls and dialog sizing.
+- Verified all 29 workspace pages at 320px, 390px, 768px, and 1440px, including pagination sizes and navigation. Browser checks also passed for centered animated loading, filter resets, permission tables, mobile dialogs, and login/registration layouts. Build and type checks pass.
+
+- Enabled temporary account-free access to all five stakeholder workspaces on local Vite development hosts. Sample interactions work without mounting wallet authentication or requesting a session; production and non-local hosts retain the credential gate.
+- Validated local access with 58 desktop/mobile page checks, no workspace authentication requests, and working detail, form, dialog, and receipt navigation; workspace builds and type checks pass.
+
 - Moved all approved Figma page modules into the main workspace feature, preserving separate role, workflow, receipt, report, and shared UI folders.
 - Removed the development preview entry route and role switcher. Page and detail navigation now uses canonical system URLs.
-- Composed the detailed page dispatcher behind the wallet and company-role access gate. The current API provides no verified company role, so business pages remain unmounted and their controls disabled pending backend integration.
+- Composed the detailed page dispatcher behind the wallet and company-role access gate for production. The current API provides no verified company role, so production business pages remain unmounted and their controls disabled pending backend integration.
 - Retained existing login and registration UI, responsive workspace navigation, icons, and scoped themes.
 - Design fixtures and simulation handlers remain in the protected page templates as reference material; replacing them with authenticated services is still required before enabling business workflows.
 - Validated workspace builds and type checks, all 13 authentication tests, and browser checks for role routes, direct-link denial, logout, responsive layouts, and removal of the preview entry point. Full-repository formatting still reports existing issues outside the changed files.

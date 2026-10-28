@@ -1,3 +1,4 @@
+import { LoadingIndicator } from './components/ui/LoadingIndicator';
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
@@ -18,7 +19,7 @@ function App() {
           key={role}
           path={`/${role}/*`}
           element={
-            <Suspense fallback={<p role="status">Loading workspace…</p>}>
+            <Suspense fallback={<LoadingIndicator fullScreen label="Loading workspace…" />}>
               <WorkspaceApp key={role} role={role} />
             </Suspense>
           }

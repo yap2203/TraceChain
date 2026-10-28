@@ -25,7 +25,8 @@ export function Modal({
         style={{
           background: T.surface,
           borderRadius: 14,
-          width,
+          width: '100%',
+          maxWidth: '100%',
           maxHeight: '90vh',
           overflow: 'auto',
           boxShadow: '0 20px 60px rgba(0,0,0,0.15)',

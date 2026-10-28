@@ -20,16 +20,7 @@ export function TxModal({
       <Card style={{ textAlign: 'center' }} padding="20px">
         {state === 'pending' && (
           <>
-            <div
-              style={{
-                fontSize: 40,
-                marginBottom: 16,
-                animation: 'workspace-spin 1.5s linear infinite',
-                display: 'inline-block',
-              }}
-            >
-              ⟳
-            </div>
+            <LoadingIndicator label="Simulating transaction" />
             <div style={{ fontWeight: 700, fontSize: 16, color: T.navy, marginBottom: 8 }}>
               {title}
             </div>
@@ -101,3 +92,4 @@ export function TxModal({
     </Modal>
   );
 }
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';

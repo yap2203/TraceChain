@@ -152,6 +152,7 @@ function LoginPage() {
 
   return (
     <div className="landing-page" id="top">
+      {isWalletBusy && <LoadingIndicator fullScreen label={connectButtonLabel} />}
       <header className="site-header">
         <a className="header-brand" href="#top" aria-label="TraceChain home">
           <Brand />
@@ -471,3 +472,4 @@ function LoginPage() {
 }
 
 export default LoginPage;
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';

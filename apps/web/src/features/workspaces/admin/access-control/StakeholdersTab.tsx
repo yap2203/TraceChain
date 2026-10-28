@@ -1,3 +1,4 @@
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { useState } from 'react';
 import { T, MONO, UI, Badge, Btn, Card, Alert, TxModal } from '../../shared/ui';
 import { type Role, type Stakeholder } from './types';
@@ -131,7 +132,7 @@ export function StakeholdersTab({
         </div>
 
         <div style={{ overflowX: 'auto' }}>
-          <div style={{ overflowX: 'auto' }}>
+          <PaginatedTable>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: T.surface2 }}>
@@ -223,7 +224,7 @@ export function StakeholdersTab({
                 ))}
               </tbody>
             </table>
-          </div>
+          </PaginatedTable>
         </div>
       </Card>
 

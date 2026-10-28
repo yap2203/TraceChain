@@ -1,3 +1,4 @@
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { FlaskConical } from 'lucide-react';
 import { T, MONO, Btn, Card, Badge, EmptyState } from '../../shared/ui';
 import { type EvidenceRequest } from './types';
@@ -27,7 +28,7 @@ export function RequestsTable({
           />
         ) : (
           <Card padding="0px">
-            <div style={{ overflowX: 'auto' }}>
+            <PaginatedTable>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: T.surface2 }}>
@@ -182,7 +183,7 @@ export function RequestsTable({
                   })}
                 </tbody>
               </table>
-            </div>
+            </PaginatedTable>
           </Card>
         ))}
     </>

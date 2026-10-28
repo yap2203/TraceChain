@@ -40,6 +40,12 @@ export function AdminOverview({ onNav }: { onNav: (tab: string) => void }) {
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
+      {/* Expiry alert */}
+      <Alert
+        type="warning"
+        message="1 credential is expiring within 30 days: CRED-SUP-2026-001 (ABC Ingredients Sdn. Bhd.) — expires 2027-05-01. Consider initiating renewal."
+      />
+
       {/* KPI row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
         <StatCard
@@ -184,13 +190,8 @@ export function AdminOverview({ onNav }: { onNav: (tab: string) => void }) {
         </div>
       </Card>
 
-      {/* Expiry alert */}
-      <Alert
-        type="warning"
-        message="1 credential is expiring within 30 days: CRED-SUP-2026-001 (ABC Ingredients Sdn. Bhd.) — expires 2027-05-01. Consider initiating renewal."
-      />
 
-      {/* Quick actions */}
+      {/* Quick actions
       <div style={{ display: 'flex', gap: 10 }}>
         <Btn onClick={() => onNav('applications')}>Review Applications</Btn>
         <Btn onClick={() => onNav('credentials')} variant="secondary">
@@ -199,7 +200,7 @@ export function AdminOverview({ onNav }: { onNav: (tab: string) => void }) {
         <Btn onClick={() => onNav('audit')} variant="outline">
           Generate Audit Report
         </Btn>
-      </div>
+      </div> */}
     </div>
   );
 }

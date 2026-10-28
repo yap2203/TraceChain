@@ -1,9 +1,10 @@
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { type ReactNode } from 'react';
 import { T, UI, MONO } from './tokens';
 
 export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
   return (
-    <div style={{ overflowX: 'auto' }}>
+    <PaginatedTable>
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: T.surface2 }}>
@@ -29,7 +30,7 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
         </thead>
         <tbody>{children}</tbody>
       </table>
-    </div>
+    </PaginatedTable>
   );
 }
 

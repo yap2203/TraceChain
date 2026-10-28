@@ -1,3 +1,4 @@
+import { PaginatedTable } from './PaginatedTable';
 import type { ReactNode } from 'react';
 
 import { EmptyState } from './EmptyState';
@@ -30,7 +31,7 @@ export function Table<T>({
   }
 
   return (
-    <div className="table-scroll">
+    <PaginatedTable>
       <table className="ui-table">
         <caption className="sr-only">{caption}</caption>
         <thead>
@@ -52,6 +53,6 @@ export function Table<T>({
           ))}
         </tbody>
       </table>
-    </div>
+    </PaginatedTable>
   );
 }

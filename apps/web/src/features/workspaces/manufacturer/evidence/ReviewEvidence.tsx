@@ -1,3 +1,4 @@
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { useState } from 'react';
 import {
   T,
@@ -91,7 +92,7 @@ export function ReviewEvidence({
               </div>
             )}
 
-            <div style={{ overflowX: 'auto' }}>
+            <PaginatedTable>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: T.surface2 }}>
@@ -155,7 +156,7 @@ export function ReviewEvidence({
                   })}
                 </tbody>
               </table>
-            </div>
+            </PaginatedTable>
           </Card>
 
           <Card>

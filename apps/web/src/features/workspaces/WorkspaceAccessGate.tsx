@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { LockKeyhole, LogIn, RefreshCw } from 'lucide-react';
+import { LockKeyhole, LogIn } from 'lucide-react';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import type { useWalletAuthentication } from '../auth/useWalletAuthentication';
 import type { WorkspaceRole } from './workspace-navigation';
 
@@ -19,12 +20,11 @@ export function WorkspaceAccessGate({
   const authenticated = state.phase === 'authenticated';
   const restoring = state.phase === 'restoring';
   const unavailable = state.phase === 'error';
+  if (restoring) return <LoadingIndicator fullScreen label="Checking your session…" />;
   if (authenticated && authorizedRole === role) return children;
   return (
     <section className="workspace-access-panel" aria-live="polite">
-      {restoring ? (
-        <RefreshCw aria-hidden="true" size={30} />
-      ) : authenticated ? (
+      {authenticated ? (
         <LockKeyhole aria-hidden="true" size={30} />
       ) : (
         <LogIn aria-hidden="true" size={30} />

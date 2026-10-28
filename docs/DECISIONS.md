@@ -2,6 +2,8 @@
 
 ## Confirmed decisions
 
+- Temporarily allow all stakeholder workspace pages and sample UI interactions without account validation during local frontend development. Production credential checks and backend authentication remain enforced.
+
 - Use one GitHub repository as an npm monorepo.
 - Work directly on `main`; do not create additional branches unless requested later.
 - Use TypeScript for React, Express, Veramo, and shared code.

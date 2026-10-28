@@ -1,3 +1,4 @@
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { T, Badge, Card } from '../../shared/ui';
 import { type Role, type RoleDefinition } from './types';
 import { ALL_PERMISSIONS, ROLE_COLORS } from './fixtures';
@@ -14,7 +15,7 @@ export function PermissionsTab({ roleDefs }: { roleDefs: RoleDefinition[] }) {
         </div>
       </div>
       <div style={{ overflowX: 'auto' }}>
-        <div style={{ overflowX: 'auto' }}>
+        <PaginatedTable>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: T.surface2 }}>
@@ -101,7 +102,7 @@ export function PermissionsTab({ roleDefs }: { roleDefs: RoleDefinition[] }) {
               })}
             </tbody>
           </table>
-        </div>
+        </PaginatedTable>
       </div>
     </Card>
   );

@@ -1,3 +1,4 @@
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { CheckCircle2, RefreshCw } from 'lucide-react';
 import { T, MONO, Btn, Card, Badge, EmptyState } from '../../shared/ui';
 import { type AcceptedEvidence } from './types';
@@ -24,7 +25,7 @@ export function AcceptedEvidenceTable({
           />
         ) : (
           <Card padding="0px">
-            <div style={{ overflowX: 'auto' }}>
+            <PaginatedTable>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: T.surface2 }}>
@@ -149,7 +150,7 @@ export function AcceptedEvidenceTable({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </PaginatedTable>
           </Card>
         ))}
     </>
