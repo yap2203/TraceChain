@@ -5,14 +5,16 @@ node_modules/
 dist/
 build/
 .vite/
+.vite-temp/
 *.tsbuildinfo
 *.tsbuildinfo.*
 
-# Environment files (examples remain tracked)
+# Environment files (examples must contain public defaults/placeholders only)
 .env
 .env.*
 !.env.example
 !**/.env.example
+.env*~
 
 # Logs and runtime files
 logs/
@@ -31,6 +33,12 @@ coverage/
 # Veramo and local databases
 *.sqlite
 *.sqlite3
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
 *.db
 *.db-journal
 *.db-shm
@@ -50,7 +58,7 @@ ignition/deployments/
 
 # Editor and operating-system files
 .idea/
-.vscode/
+.vscode/*
 !.vscode/extensions.json
 *.swp
 *.swo
@@ -62,3 +70,4 @@ Desktop.ini
 *.tmp
 *.temp
 .tmp/
+tmp/

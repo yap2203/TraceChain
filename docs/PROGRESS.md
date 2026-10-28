@@ -29,7 +29,13 @@
 
 ## Current work
 
-- Phase 3 secure wallet authentication completed
+- Moved all approved Figma page modules into the main workspace feature, preserving separate role, workflow, receipt, report, and shared UI folders.
+- Removed the development preview entry route and role switcher. Page and detail navigation now uses canonical system URLs.
+- Composed the detailed page dispatcher behind the wallet and company-role access gate. The current API provides no verified company role, so business pages remain unmounted and their controls disabled pending backend integration.
+- Retained existing login and registration UI, responsive workspace navigation, icons, and scoped themes.
+- Design fixtures and simulation handlers remain in the protected page templates as reference material; replacing them with authenticated services is still required before enabling business workflows.
+- Validated workspace builds and type checks, all 13 authentication tests, and browser checks for role routes, direct-link denial, logout, responsive layouts, and removal of the preview entry point. Full-repository formatting still reports existing issues outside the changed files.
+- Phase 3 secure wallet authentication completed.
 
 ## Next
 

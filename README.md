@@ -57,7 +57,11 @@ The root URL redirects to `/login`. Feature code is organised under `apps/web/sr
 
 The `/login` route provides the public TraceChain landing and MetaMask authentication experience. Wallet access is requested only after a user action. The application checks for Sepolia, requests a five-minute nonce, creates an ERC-4361 message, requests a MetaMask signature, and sends the message and signature to the API for verification. Existing server sessions are restored through an HttpOnly cookie without automatically requesting wallet access or a signature.
 
-Wallet authentication proves wallet ownership only. It does not verify a Company Role Credential or assign a stakeholder role. System Admin, Supplier, Manufacturer, Distributor, and Retailer routes remain behind a credential-required gate until credential-based RBAC is implemented. Authenticated users can still continue to company registration.
+The approved workspace layout, navigation icons, responsive sidebar, and light/dark themes are now used on the main `/admin`, `/supplier`, `/manufacturer`, `/distributor`, and `/retailer` routes. Each role root redirects to its overview. These pages check the existing wallet session and show sign-in, service-error, or credential-required states inside the workspace layout.
+
+Wallet authentication proves wallet ownership only. It does not verify a Company Role Credential or assign a stakeholder role. The current API always reports `credentialVerified: false`, so business records and unfinished actions remain locked for every role. Changing the URL never grants access. Authenticated users can sign out or continue to company registration. The detailed page components are integrated into the main workspace routes behind this gate. Their fixture-backed content is not mounted or loaded for unverified users. Unconnected workflows are disabled; no role switcher is available.
+
+Additional workspace routes include each role's `/overview`, `/credentials`, and `/reports`; retailer routes also include `/scan` and `/evidence-requests`. Existing URLs listed above are preserved. Short page aliases such as `/supplier/batches` redirect to their system equivalent (`/supplier/ingredients`).
 
 The API uses repository interfaces for nonce and session storage. The included in-memory implementations are development-only: they are process-local, are cleared whenever the API restarts, and must be replaced with durable shared storage before production deployment.
 
@@ -112,6 +116,40 @@ AUTH_SESSION_TTL_SECONDS=28800
 ```
 
 `SIWE_DOMAIN` and `SIWE_URI` must exactly match the origin used to open the frontend. The frontend API origin is configured through `VITE_API_BASE_URL` in `apps/web/.env`.
+
+## Workspace pages
+
+Run `npm run dev:web` and open a normal workspace URL, such as `http://localhost:5173/admin/overview`. The separate preview route and feature folder have been removed. Login and registration retain their existing UI.
+
+All approved page components live in `apps/web/src/features/workspaces/`:
+
+```text
+workspaces/
+  admin/          applications/, credentials/, access-control/
+  supplier/       batches/, evidence/, overview and credential pages
+  manufacturer/   batches/, evidence/, transfers/
+  distributor/    shipments/, transfers/, inventory and credential pages
+  retailer/       receiving/, traceability/, evidence/
+  receipts/       qr-gate/, confirmation/
+  reports/        AuditReportPage.tsx and sections/
+  shared/         ui/ controls and tokens, common presentation components
+```
+
+`WorkspaceApp.tsx` composes the layout, session gate, and lazy-loaded `WorkspaceScreen.tsx` page dispatcher. `WorkspaceAccessGate.tsx` keeps all business pages unmounted until a server-verified company role is available. The current wallet API cannot supply that role. Changing the URL cannot unlock pages. Unfinished workflow controls also sit inside a disabled fieldset; backend, SSI, and smart-contract integration must replace fixture data and simulation handlers before enabling them.
+
+`workspace-navigation.ts` defines navigation and Lucide icons; `workspace-paths.ts` defines canonical routes. Styles in `workspace.css` are scoped to the workspace. Each substantial section stays in its workflow folder, with nearby `types.ts` and existing design `fixtures.ts`. Fixtures are development reference data, not authenticated business records.
+
+All workspace paths begin with `/<role>/`:
+
+| Role         | Pages                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| admin        | `overview`, `applications`, `credentials`, `stakeholders`, `reports`                                   |
+| supplier     | `overview`, `ingredients`, `evidence-requests`, `credentials`, `reports`                               |
+| manufacturer | `overview`, `ingredient-evidence`, `product-batches`, `transfers`, `credentials`, `reports`            |
+| distributor  | `overview`, `incoming-shipments`, `inventory`, `transfers`, `credentials`, `reports`                   |
+| retailer     | `overview`, `incoming-products`, `scan`, `traceability`, `evidence-requests`, `credentials`, `reports` |
+
+Detail and form navigation uses these routes with search parameters where applicable. No backend business workflow or credential verifier is implemented by this frontend integration.
 
 ## Validation
 
