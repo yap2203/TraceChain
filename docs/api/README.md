@@ -1,10 +1,33 @@
-# API Documentation
+# TraceChain API
 
-The API defaults to `http://localhost:3000`. Browser requests are accepted with credentials only from the configured `FRONTEND_URL` origin.
+The Express API defaults to `http://localhost:3000`. It accepts credentialed browser requests only from the configured `FRONTEND_URL` origin. All authentication responses set `Cache-Control: no-store`, and authentication request bodies are limited to 10 KB.
 
-## Wallet authentication
+## Environment
 
-Authentication follows Sign-In with Ethereum (ERC-4361). It proves control of a wallet address only and does not verify credentials, assign roles, or authorise stakeholder routes.
+Copy `apps/api/.env.example` to `apps/api/.env`. Available values are:
+
+| Variable                   | Default example         | Purpose                             |
+| -------------------------- | ----------------------- | ----------------------------------- |
+| `PORT`                     | `3000`                  | HTTP port                           |
+| `FRONTEND_URL`             | `http://localhost:5173` | Exact CORS origin                   |
+| `NODE_ENV`                 | `development`           | Controls production cookie security |
+| `SIWE_DOMAIN`              | `localhost:5173`        | Expected ERC-4361 domain            |
+| `SIWE_URI`                 | `http://localhost:5173` | Expected ERC-4361 URI               |
+| `SIWE_CHAIN_ID`            | `11155111`              | Expected Ethereum Sepolia chain ID  |
+| `AUTH_COOKIE_NAME`         | `tracechain_session`    | Session-cookie name                 |
+| `AUTH_SESSION_TTL_SECONDS` | `28800`                 | Session lifetime in seconds         |
+
+`FRONTEND_URL`, `SIWE_DOMAIN`, and `SIWE_URI` must match the frontend origin used in the browser.
+
+## Endpoints
+
+### `GET /api/health`
+
+Returns API availability:
+
+```json
+{ "status": "ok", "service": "tracechain-api" }
+```
 
 ### `POST /api/auth/nonce`
 
@@ -14,21 +37,21 @@ Accepts a valid Ethereum address:
 { "address": "0x..." }
 ```
 
-Returns a cryptographically random address-bound nonce and its five-minute expiry:
+Returns a cryptographically random, address-bound nonce with a five-minute expiry:
 
 ```json
-{ "nonce": "...", "expiresAt": "2026-10-26T08:05:00.000Z" }
+{ "nonce": "...", "expiresAt": "2026-10-29T08:05:00.000Z" }
 ```
 
 ### `POST /api/auth/verify`
 
-Accepts a complete ERC-4361 message and its wallet signature:
+Accepts a complete ERC-4361 message and wallet signature:
 
 ```json
 { "message": "...", "signature": "0x..." }
 ```
 
-The server validates the signature, domain, URI, address, Sepolia chain ID, nonce, issue time, and expiration before consuming the nonce and creating a session. Success sets an HttpOnly, SameSite=Lax cookie and returns:
+The API verifies the signature, recovered address, domain, URI, Sepolia chain ID, nonce, issue time, and expiration. A successful request consumes the nonce, creates a server-side session, sets an HttpOnly SameSite=Lax cookie, and returns:
 
 ```json
 {
@@ -42,7 +65,7 @@ The server validates the signature, domain, URI, address, Sepolia chain ID, nonc
 
 ### `GET /api/auth/session`
 
-Restores the session represented by the HttpOnly cookie. It returns the authenticated response above or:
+Returns the authenticated response above for a valid cookie, or:
 
 ```json
 { "authenticated": false }
@@ -50,16 +73,12 @@ Restores the session represented by the HttpOnly cookie. It returns the authenti
 
 ### `POST /api/auth/logout`
 
-Deletes the server-side session, clears the session cookie, and returns `204 No Content`.
+Deletes the server-side session, clears the cookie, and returns `204 No Content`.
 
-## Storage limitation
+## Authentication boundary
 
-Nonce and session repositories are defined through interfaces so durable implementations can replace them later. The current in-memory repositories are strictly development-only. They do not persist across API restarts and do not support multiple API processes.
+SIWE proves control of a wallet address only. The API does not verify a Company Role Credential, return a stakeholder role, or authorize business workflows. The frontend must not derive a role from its URL, wallet address, fixture data, or local storage.
 
-## Security notes
+## Storage and production limitations
 
-- Authentication request bodies are limited to 10 KB.
-- Nonces are single-use and expire after five minutes.
-- Sessions are bound to the address recovered from the verified signature.
-- Session cookies use `Secure` in production.
-- Private keys, recovery phrases, credentials, and passwords are never requested or stored.
+Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Production deployment requires durable shared storage, appropriate rate limiting and operational monitoring, HTTPS, and the planned credential-verification service.

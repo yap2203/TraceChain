@@ -1,48 +1,43 @@
 # Project Progress
 
-## Completed
+## Completed foundation
 
-- Chapters 1–4 report prepared
-- GitHub repository created
-- Repository cloned locally
-- Git, Node.js, and npm verified
-- Professional TypeScript npm monorepo foundation created
-- React and Vite frontend foundation created
-- Express API foundation and health endpoint created
-- Shared, SSI, and smart-contract package foundations created
-- Formatting, environment examples, and initial documentation configured
-- Initial responsive TraceChain sign-in page implemented
-- Sign-in page expanded with persistent navigation and interactive project explanations
-- Wallet and Sepolia connection interface retained as a Phase 2 placeholder
-- Landing page refined with icon-based process visuals and accessible motion
-- Scroll-triggered left and right content reveals added to the landing page
-- TraceChain brand mark applied to the website header, footer, and browser icon
-- Frontend route structure created for all stakeholder workspaces
-- Responsive frontend application shell created for all stakeholder workspaces
-- Reusable frontend UI components and design tokens created
-- Company registration form shell created with no live submission
-- ERC-4361 Sign-In with Ethereum authentication implemented
-- Five-minute single-use nonce and server-side session repositories implemented
-- MetaMask connection, Sepolia confirmation, signing, session restoration, and logout implemented
-- Stakeholder routes locked behind a Company Role Credential requirement
-- Authentication security and session lifecycle tests added
+- Created the TypeScript npm monorepo with `apps/*` and `packages/*` workspaces.
+- Added React/Vite frontend, Express API, shared, SSI, and contract package boundaries.
+- Added repository formatting, environment templates, ignore rules, and documentation structure.
+- Implemented the responsive TraceChain landing page, branding, registration shell, and role route hierarchy.
+- Implemented ERC-4361 wallet authentication with MetaMask and Sepolia.
+- Added five-minute address-bound nonces, signature validation, single-use nonce handling, HttpOnly-cookie sessions, restoration, logout, and 13 authentication tests.
+- Added repository interfaces and process-local development implementations for nonces and sessions.
 
-## Current work
+## Current frontend version
 
-- Added centered loading spinners for page loading and wallet/session checks, shared table pagination with selectable page sizes, and responsive pagination controls and dialog sizing.
-- Verified all 29 workspace pages at 320px, 390px, 768px, and 1440px, including pagination sizes and navigation. Browser checks also passed for centered animated loading, filter resets, permission tables, mobile dialogs, and login/registration layouts. Build and type checks pass.
+- Integrated all approved stakeholder screens into the canonical admin, supplier, manufacturer, distributor, and retailer routes.
+- Organized screens by role and workflow, with separate receipt, report, and shared UI folders.
+- Removed the former UI-preview route and role selector.
+- Added responsive workspace navigation, Lucide icons, scoped light/dark themes, centered accessible loading states, and viewport-safe dialogs.
+- Added shared client-side table pagination with 5, 10, 25, 50, and 100-record page-size options.
+- Enabled temporary account-free sample UI access only on local Vite loopback hosts.
+- Kept production workspace access fail-closed because no cryptographically verified company role is available.
+- Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
 
-- Enabled temporary account-free access to all five stakeholder workspaces on local Vite development hosts. Sample interactions work without mounting wallet authentication or requesting a session; production and non-local hosts retain the credential gate.
-- Validated local access with 58 desktop/mobile page checks, no workspace authentication requests, and working detail, form, dialog, and receipt navigation; workspace builds and type checks pass.
+## Current contract and SSI version
 
-- Moved all approved Figma page modules into the main workspace feature, preserving separate role, workflow, receipt, report, and shared UI folders.
-- Removed the development preview entry route and role switcher. Page and detail navigation now uses canonical system URLs.
-- Composed the detailed page dispatcher behind the wallet and company-role access gate for production. The current API provides no verified company role, so production business pages remain unmounted and their controls disabled pending backend integration.
-- Retained existing login and registration UI, responsive workspace navigation, icons, and scoped themes.
-- Design fixtures and simulation handlers remain in the protected page templates as reference material; replacing them with authenticated services is still required before enabling business workflows.
-- Validated workspace builds and type checks, all 13 authentication tests, and browser checks for role routes, direct-link denial, logout, responsive layouts, and removal of the preview entry point. Full-repository formatting still reports existing issues outside the changed files.
-- Phase 3 secure wallet authentication completed.
+- Added a Hardhat 3 workspace using Solidity 0.8.34, ethers, Mocha, Ignition, and Foundry-compatible Solidity tests.
+- Added Counter starter code, tests, deployment module, and simulated OP transaction script to validate the contract toolchain.
+- Confirmed that Hardhat compilation succeeds and all five starter tests pass. Standalone contract TypeScript checking still needs an `EventLog` narrowing fix in `test/Counter.ts`.
+- Preserved `@tracechain/ssi` as an empty package boundary pending confirmed DID, Veramo, credential, key-management, and storage decisions.
 
-## Next
+## Remaining work
 
-- Design Company Role Credential verification and credential-based RBAC
+- Design and implement Company Role Credential verification and credential-based RBAC.
+- Select the database and replace process-local nonce and session storage.
+- Select the DID method, Veramo plugins, credential schemas, and revocation/status approach.
+- Replace frontend fixtures and simulation handlers with authenticated business APIs.
+- Design, implement, test, and deploy TraceChain-specific smart contracts.
+- Define QR payloads and implement real generation, scanning, and intended-receiver validation.
+- Add committed end-to-end browser tests and production deployment configuration.
+
+## Important distinction
+
+The stakeholder interface is implemented as an integrated, responsive frontend. Its sample records, credential cards, QR states, receipt confirmations, reports, and blockchain references are presentation fixtures until the API, SSI, persistence, and TraceChain contract layers are connected.

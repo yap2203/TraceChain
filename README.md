@@ -1,77 +1,52 @@
 # TraceChain
 
-TraceChain is a Blockchain-Based Supply Chain Traceability System with Self-Sovereign Identity credential verification. The project is being developed as a TypeScript npm monorepo for a final-year project.
+TraceChain is a blockchain-based supply-chain traceability system with Self-Sovereign Identity credential verification. It is a TypeScript npm monorepo developed as a final-year project.
 
-The planned system combines a React web application, an Express API, Veramo-based SSI services, MetaMask, Ethereum Sepolia, QR codes, and Solidity smart contracts. Phase 1 established the monorepo foundation, Phase 2 added the responsive frontend shell, and Phase 3 implements wallet ownership authentication through Sign-In with Ethereum (ERC-4361). Credential verification, role authorisation, traceability workflows, and smart contracts are not implemented yet.
+The current version includes a responsive React application, five integrated stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, shared role types, and a Hardhat 3 smart-contract starter. SSI verification, persistent business APIs, TraceChain-specific contracts, and live blockchain workflows are still planned.
+
+## Current implementation status
+
+| Area                                     | Status                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| Public login and company-registration UI | Implemented; registration submission is not connected                   |
+| MetaMask and ERC-4361 authentication     | Implemented for Ethereum Sepolia                                        |
+| Nonce and session storage                | Implemented in process memory for development                           |
+| Stakeholder workspace UI                 | Integrated with sample fixtures and simulated interactions              |
+| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                     |
+| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page         |
+| Company Role Credential verification     | Not implemented                                                         |
+| Credential-based RBAC                    | Production gate is fail-closed; verification service is not implemented |
+| SSI and Veramo services                  | Package boundary only                                                   |
+| Smart contracts                          | Hardhat toolchain and Counter example only                              |
+| Business persistence                     | Not implemented                                                         |
 
 ## Repository structure
 
 ```text
 apps/
-  web/          React, Vite, and TypeScript frontend
-  api/          Express and TypeScript backend
+  web/             React 19, Vite 8, TypeScript, React Router, and ethers
+  api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
-  shared/       Shared types, roles, and constants
-  ssi/          Future Veramo, DID, VC, and VP services
-  contracts/    Future Solidity contracts and tests
+  shared/          Shared company-role definitions
+  ssi/             Future Veramo, DID, VC, and VP services
+  contracts/       Hardhat 3 starter, Solidity example, tests, and deployment module
 docs/
-  architecture/ Architecture documentation
-  api/          API documentation
-  ssi/          SSI documentation
-  smart-contracts/ Smart-contract documentation
-  testing/      Testing documentation
-scripts/        Repository automation scripts
+  architecture/    Component boundaries and trust model
+  api/             HTTP endpoints and environment configuration
+  ssi/             SSI scope and unresolved decisions
+  smart-contracts/ Contract toolchain and planned contract scope
+  testing/         Current checks and future coverage
+scripts/           Reserved for repository-wide automation
 ```
-
-## Frontend routes
-
-Frontend routes follow this React Router hierarchy:
-
-```text
-/
-├── /login
-├── /register-company
-├── /admin
-│   ├── /applications
-│   ├── /credentials
-│   └── /stakeholders
-├── /supplier
-│   ├── /ingredients
-│   ├── /credentials
-│   └── /evidence-requests
-├── /manufacturer
-│   ├── /ingredient-evidence
-│   ├── /product-batches
-│   └── /transfers
-├── /distributor
-│   ├── /incoming-shipments
-│   ├── /inventory
-│   └── /transfers
-└── /retailer
-    ├── /incoming-products
-    ├── /traceability
-    └── /reports
-```
-
-The root URL redirects to `/login`. Feature code is organised under `apps/web/src/features`, while reusable brand, layout, icon, and UI components live under `apps/web/src/components`.
-
-The `/login` route provides the public TraceChain landing and MetaMask authentication experience. Wallet access is requested only after a user action. The application checks for Sepolia, requests a five-minute nonce, creates an ERC-4361 message, requests a MetaMask signature, and sends the message and signature to the API for verification. Existing server sessions are restored through an HttpOnly cookie without automatically requesting wallet access or a signature.
-
-The approved workspace layout, navigation icons, responsive sidebar, and light/dark themes are now used on the main `/admin`, `/supplier`, `/manufacturer`, `/distributor`, and `/retailer` routes. Each role root redirects to its overview. During local Vite development (`localhost`, `127.0.0.1`, or `::1`), all five workspaces open without account checks, with sample data and simulated UI interactions enabled. For example, open `http://localhost:5173/admin/overview`. No wallet, session request, or running API is required for these local workspace pages. Production builds and non-local hosts retain sign-in and credential checks.
-
-Wallet authentication proves wallet ownership only. It does not verify a Company Role Credential or assign a stakeholder role. The current API always reports `credentialVerified: false`, so production business pages remain locked for every role. Changing a production URL never grants access. Authenticated users can sign out or continue to company registration. Local development access does not authenticate an account or grant backend permissions. Sample interactions do not save records or perform real credential verification or blockchain transactions; actions without implementations remain disabled.
-
-Additional workspace routes include each role's `/overview`, `/credentials`, and `/reports`; retailer routes also include `/scan` and `/evidence-requests`. Existing URLs listed above are preserved. Short page aliases such as `/supplier/batches` redirect to their system equivalent (`/supplier/ingredients`).
-
-The API uses repository interfaces for nonce and session storage. The included in-memory implementations are development-only: they are process-local, are cleared whenever the API restarts, and must be replaced with durable shared storage before production deployment.
 
 ## Prerequisites
 
 - Node.js 22 or later
 - npm 10 or later
 - Git
+- MetaMask for the wallet sign-in flow
 
-## Installation
+## Setup
 
 From the repository root:
 
@@ -79,35 +54,49 @@ From the repository root:
 npm install
 ```
 
-Copy the example environment files before local development:
+Copy the tracked environment templates. On Windows PowerShell:
+
+```powershell
+Copy-Item apps/api/.env.example apps/api/.env
+Copy-Item apps/web/.env.example apps/web/.env
+```
+
+On macOS or Linux:
 
 ```bash
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env
 ```
 
-On Windows PowerShell, use `Copy-Item` in place of `cp` if needed. The example files contain placeholders only; never put wallet private keys, seed phrases, or real credentials in the repository.
+The real `.env` files are ignored. Example files must contain safe defaults or placeholders only. Never add private keys, seed phrases, API secrets, real credentials, or personal supporting documents to the repository.
 
 ## Development
 
-Run the frontend and backend together:
+Run the frontend and API together:
 
 ```bash
 npm run dev
 ```
 
-Or run a single workspace:
+Or run them separately:
 
 ```bash
 npm run dev:web
 npm run dev:api
 ```
 
-The default frontend URL is `http://localhost:5173`. The API defaults to `http://localhost:3000`, with its health endpoint at `GET /api/health`.
+- Frontend: `http://localhost:5173`
+- API: `http://localhost:3000`
+- Health check: `GET http://localhost:3000/api/health`
 
-Phase 3 authentication settings are configured in `apps/api/.env`:
+### Environment variables
+
+`apps/api/.env`:
 
 ```text
+PORT=3000
+FRONTEND_URL=http://localhost:5173
+NODE_ENV=development
 SIWE_DOMAIN=localhost:5173
 SIWE_URI=http://localhost:5173
 SIWE_CHAIN_ID=11155111
@@ -115,54 +104,72 @@ AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
 ```
 
-`SIWE_DOMAIN` and `SIWE_URI` must exactly match the origin used to open the frontend. The frontend API origin is configured through `VITE_API_BASE_URL` in `apps/web/.env`.
-
-## Workspace pages
-
-Run `npm run dev:web` and open a normal workspace URL, such as `http://localhost:5173/admin/overview`. The separate preview route and feature folder have been removed. Login and registration retain their existing UI.
-
-All approved page components live in `apps/web/src/features/workspaces/`:
+`apps/web/.env`:
 
 ```text
-workspaces/
-  admin/          applications/, credentials/, access-control/
-  supplier/       batches/, evidence/, overview and credential pages
-  manufacturer/   batches/, evidence/, transfers/
-  distributor/    shipments/, transfers/, inventory and credential pages
-  retailer/       receiving/, traceability/, evidence/
-  receipts/       qr-gate/, confirmation/
-  reports/        AuditReportPage.tsx and sections/
-  shared/         ui/ controls and tokens, common presentation components
+VITE_API_BASE_URL=http://localhost:3000
 ```
 
-`WorkspaceApp.tsx` composes the layout, session gate, and lazy-loaded `WorkspaceScreen.tsx` page dispatcher. Its temporary local-development branch skips the authentication hook and enables sample UI controls for every stakeholder. Outside local development, `WorkspaceAccessGate.tsx` keeps business pages unmounted until a server-verified company role is available, and unfinished workflow controls remain disabled. Backend, SSI, and smart-contract integration must replace fixture data and simulation handlers before enabling live operations.
+The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
 
-`workspace-navigation.ts` defines navigation and Lucide icons; `workspace-paths.ts` defines canonical routes. Styles in `workspace.css` are scoped to the workspace. Each substantial section stays in its workflow folder, with nearby `types.ts` and existing design `fixtures.ts`. Fixtures are development reference data, not authenticated business records.
+## Frontend routes
 
-All workspace paths begin with `/<role>/`:
+The root route redirects to `/login`. Unknown routes also return to the login page.
 
-| Role         | Pages                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------------------------------ |
-| admin        | `overview`, `applications`, `credentials`, `stakeholders`, `reports`                                   |
-| supplier     | `overview`, `ingredients`, `evidence-requests`, `credentials`, `reports`                               |
-| manufacturer | `overview`, `ingredient-evidence`, `product-batches`, `transfers`, `credentials`, `reports`            |
-| distributor  | `overview`, `incoming-shipments`, `inventory`, `transfers`, `credentials`, `reports`                   |
-| retailer     | `overview`, `incoming-products`, `scan`, `traceability`, `evidence-requests`, `credentials`, `reports` |
+| Role         | Canonical pages                                                                                                                                                                 |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public       | `/login`, `/register-company`                                                                                                                                                   |
+| Admin        | `/admin/overview`, `/admin/applications`, `/admin/credentials`, `/admin/stakeholders`, `/admin/reports`                                                                         |
+| Supplier     | `/supplier/overview`, `/supplier/ingredients`, `/supplier/evidence-requests`, `/supplier/credentials`, `/supplier/reports`                                                      |
+| Manufacturer | `/manufacturer/overview`, `/manufacturer/ingredient-evidence`, `/manufacturer/product-batches`, `/manufacturer/transfers`, `/manufacturer/credentials`, `/manufacturer/reports` |
+| Distributor  | `/distributor/overview`, `/distributor/incoming-shipments`, `/distributor/inventory`, `/distributor/transfers`, `/distributor/credentials`, `/distributor/reports`              |
+| Retailer     | `/retailer/overview`, `/retailer/incoming-products`, `/retailer/scan`, `/retailer/traceability`, `/retailer/evidence-requests`, `/retailer/credentials`, `/retailer/reports`    |
 
-Detail and form navigation uses these routes with search parameters where applicable. No backend business workflow or credential verifier is implemented by this frontend integration.
+Each role root redirects to its overview. Internal page identifiers such as `/supplier/batches` are normalized to their canonical system paths while retaining search parameters used by detail screens.
 
-Page loading and wallet/session checks use a centered full-screen spinner with accessible status text. Workspace layouts adapt to mobile, tablet, and desktop widths; wide tables scroll within their own containers and dialogs fit the viewport.
+### Local workspace access
 
-Tables share client-side pagination through `components/ui/PaginatedTable.tsx`. Each table defaults to 10 records and lets users select 5, 10, 25, 50, or 100 records per page, with previous/next controls and a visible record range. Filtering, sorting, or changing page size resets the current page. Pagination operates on the currently supplied records; future backend lists will need server-side pagination for large datasets.
+When the Vite development server runs on `localhost`, `127.0.0.1`, or `::1`, all five stakeholder workspaces open without an account check. This temporary development branch allows review of sample data and simulated UI interactions without running the API.
+
+This behavior requires `import.meta.env.DEV`; production builds and non-local hosts keep the wallet and credential gate. Local access does not create a session, verify a credential, persist a record, sign a real transaction, or grant backend permissions.
+
+## Authentication
+
+The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it connects MetaMask, requires Sepolia, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API.
+
+The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It then creates a process-local session. Authentication proves wallet control only: the current response always contains `credentialVerified: false` and supplies no role.
+
+Production workspace records remain locked until a future service cryptographically verifies a valid Company Role Credential for the requested role. A URL, wallet address, fixture value, or local browser value must never grant access.
+
+## Workspace UI
+
+Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakeholder and workflow. `WorkspaceApp.tsx` owns canonical routing and the access boundary; `WorkspaceScreen.tsx` dispatches detailed pages. Shared workspace presentation components, receipts, reports, and table controls are kept in focused subfolders.
+
+The current detailed pages use fixture data and simulation handlers. A centered accessible spinner covers lazy page loading and wallet/session checks. Shared table pagination defaults to 10 rows and offers 5, 10, 25, 50, or 100 rows per page. Wide tables scroll inside their containers, and navigation, grids, forms, and dialogs adapt to narrow screens.
+
+## Smart-contract starter
+
+`packages/contracts` uses Hardhat 3 and Solidity 0.8.34. From that package:
+
+```bash
+npx hardhat compile
+npx hardhat test
+```
+
+The included Counter contract, tests, Ignition module, and OP script only validate the toolchain. They are not TraceChain business contracts. Sepolia settings use Hardhat configuration variables named `SEPOLIA_RPC_URL` and `SEPOLIA_PRIVATE_KEY`; never commit their real values.
 
 ## Validation
+
+From the repository root:
 
 ```bash
 npm run build
 npm run typecheck
-npm run format:check
 npm run test:auth
+npm run format:check
 npm audit
 ```
 
-See [docs/PROJECT_CONTEXT.md](docs/PROJECT_CONTEXT.md) for confirmed scope and architecture, [docs/DECISIONS.md](docs/DECISIONS.md) for decisions, and [docs/PROGRESS.md](docs/PROGRESS.md) for current progress.
+The authentication suite currently contains 13 tests. Targeted browser checks have covered all 29 stakeholder pages at 320, 390, 768, and 1440 pixel widths, including loading states, canonical navigation, pagination, filters, dialogs, local access, and production denial. The browser scripts are currently local development aids rather than a committed test package.
+
+See [project context](docs/PROJECT_CONTEXT.md), [decisions](docs/DECISIONS.md), and [progress](docs/PROGRESS.md) for the project source of truth.
