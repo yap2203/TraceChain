@@ -19,9 +19,9 @@ npm audit --omit=dev
 
 - `npm run build` builds workspaces that define a build script: API, web, shared, and SSI.
 - `npm run typecheck` checks those TypeScript workspaces.
-- `npm run test:auth` runs the API SIWE and session suite.
+- `npm run test:auth` builds the shared and SSI workspaces, then runs the API SIWE and session suite.
 - `npm run test:ssi` runs the offline Veramo, storage, bootstrap, issuance, and verification suite.
-- `npm run test:ssi-api` runs authenticated Company Role Credential presentation and session tests.
+- `npm run test:ssi-api` builds the shared and SSI workspaces, then runs authenticated Company Role Credential presentation and session tests.
 - `npm run test:workspace-access` checks the shared fail-closed frontend access guard.
 - `npm run format:check` checks the entire repository and can report older formatting differences outside a focused change.
 - `npm audit` reports dependency advisories and may require registry access.

@@ -35,7 +35,7 @@ export function WorkspaceAccessGate({
             ? 'Unable to check your session'
             : authenticated
               ? state.locallyVerified
-                ? 'Blockchain status verification is required.'
+                ? 'Blockchain role and credential-status verification is required.'
                 : 'Company Role Credential verification is required.'
               : 'Sign in to your workspace'}
       </h2>
@@ -46,7 +46,7 @@ export function WorkspaceAccessGate({
             ? 'We could not reach the authentication service. Return to sign-in to try again.'
             : authenticated
               ? state.locallyVerified
-                ? 'Your credential was verified locally. Access stays locked until its blockchain status is checked and authorisation is ready.'
+                ? 'Your Company Role Credential was verified locally. Access remains locked until the wallet role and credential status are verified on-chain.'
                 : 'Your wallet is verified. Workspace records and actions remain locked until your company role can be verified.'
               : 'Connect your wallet and sign in to continue. Access to company records requires a verified Company Role Credential.'}
       </p>

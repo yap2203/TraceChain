@@ -14,10 +14,10 @@ export function CredentialGatePage({ roleLabel }: CredentialGatePageProps) {
         <Brand />
         <StatusBadge tone="warning">Access unavailable</StatusBadge>
         <p>{roleLabel} workspace</p>
-        <h1>Company Role Credential verification is required.</h1>
+        <h1>Blockchain authorization is not available yet.</h1>
         <span>
-          Wallet authentication proves wallet ownership only. Stakeholder access will remain locked
-          until credential-based role verification is implemented.
+          TraceChain can verify a Company Role Credential locally. This workspace remains locked
+          until blockchain role and credential-status verification is implemented.
         </span>
         <div>
           <Link className="primary-link" to="/login#sign-in">
