@@ -11,9 +11,11 @@
     "dev": "concurrently --names web,api --prefix-colors cyan,green \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm run dev --workspace @tracechain/web",
     "dev:api": "npm run dev --workspace @tracechain/api",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run build --workspace @tracechain/api && npm run build --workspace @tracechain/web",
+    "ssi:bootstrap-admin": "npm run ssi:bootstrap-admin --workspace @tracechain/api",
     "test:auth": "npm run test:auth --workspace @tracechain/api",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test:ssi": "npm run build --workspace @tracechain/shared && npm run test:ssi --workspace @tracechain/ssi",
+    "typecheck": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run typecheck --workspace @tracechain/api && npm run typecheck --workspace @tracechain/web && npm run typecheck --workspace @tracechain/shared && npm run typecheck --workspace @tracechain/ssi",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

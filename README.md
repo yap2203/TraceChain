@@ -2,23 +2,23 @@
 
 TraceChain is a blockchain-based supply-chain traceability system with Self-Sovereign Identity credential verification. It is a TypeScript npm monorepo developed as a final-year project.
 
-The current version includes a responsive React application, five integrated stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, shared role types, and a Hardhat 3 smart-contract starter. SSI verification, persistent business APIs, TraceChain-specific contracts, and live blockchain workflows are still planned.
+The current version includes a responsive React application, five integrated stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, a server-side Veramo SSI foundation, shared role types, and a Hardhat 3 smart-contract starter. Persistent business APIs, on-chain credential status, credential-based RBAC, TraceChain-specific contracts, IPFS, and live blockchain workflows are still planned.
 
 ## Current implementation status
 
-| Area                                     | Status                                                                  |
-| ---------------------------------------- | ----------------------------------------------------------------------- |
-| Public login and company-registration UI | Implemented; registration submission is not connected                   |
-| MetaMask and ERC-4361 authentication     | Implemented for Ethereum Sepolia                                        |
-| Nonce and session storage                | Implemented in process memory for development                           |
-| Stakeholder workspace UI                 | Integrated with sample fixtures and simulated interactions              |
-| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                     |
-| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page         |
-| Company Role Credential verification     | Not implemented                                                         |
-| Credential-based RBAC                    | Production gate is fail-closed; verification service is not implemented |
-| SSI and Veramo services                  | Package boundary only                                                   |
-| Smart contracts                          | Hardhat toolchain and Counter example only                              |
-| Business persistence                     | Not implemented                                                         |
+| Area                                     | Status                                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| Public login and company-registration UI | Implemented; registration submission is not connected                                 |
+| MetaMask and ERC-4361 authentication     | Implemented for Ethereum Sepolia                                                      |
+| Nonce and session storage                | Implemented in process memory for development                                         |
+| Stakeholder workspace UI                 | Integrated with sample fixtures and simulated interactions                            |
+| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                   |
+| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                       |
+| Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
+| Credential-based RBAC                    | Remains fail-closed until on-chain status checks are implemented                      |
+| SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
+| Smart contracts                          | Hardhat toolchain and Counter example only                                            |
+| Business persistence                     | Not implemented                                                                       |
 
 ## Repository structure
 
@@ -28,7 +28,7 @@ apps/
   api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
   shared/          Shared company-role definitions
-  ssi/             Future Veramo, DID, VC, and VP services
+  ssi/             Veramo agent, did:ethr, JWT VC/VP, encrypted JSON storage, and verification
   contracts/       Hardhat 3 starter, Solidity example, tests, and deployment module
 docs/
   architecture/    Component boundaries and trust model
@@ -36,7 +36,7 @@ docs/
   ssi/             SSI scope and unresolved decisions
   smart-contracts/ Contract toolchain and planned contract scope
   testing/         Current checks and future coverage
-scripts/           Reserved for repository-wide automation
+scripts/           Repository-wide automation documentation
 ```
 
 ## Prerequisites
@@ -102,6 +102,10 @@ SIWE_URI=http://localhost:5173
 SIWE_CHAIN_ID=11155111
 AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
+SEPOLIA_RPC_URL=https://example.invalid
+VERAMO_KMS_SECRET_KEY=replace-with-a-strong-development-secret
+TRACECHAIN_AUTHORITY_DID_ALIAS=tracechain-authority
+BOOTSTRAP_ADMIN_WALLET=0x0000000000000000000000000000000000000000
 ```
 
 `apps/web/.env`:
@@ -111,6 +115,28 @@ VITE_API_BASE_URL=http://localhost:3000
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
+
+The four SSI variables are validated only when the bootstrap command runs, so the API and SIWE tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
+
+## SSI and System Admin bootstrap
+
+`@tracechain/ssi` configures Veramo 7 with did:ethr on Sepolia, JWT credentials, DID/credential/message metadata in a public JSON store, and SecretBox-encrypted private issuer keys in a separate JSON store. Runtime files are written under `.tracechain/veramo/` and ignored by Git. The beta `@veramo/data-store-json` package is accepted for this FYP prototype, not presented as an automatic production recommendation.
+
+Generate a 32-byte hexadecimal development KMS secret without placing it in source code:
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+Put that value, a real Sepolia RPC URL, the authority alias, and the public Admin wallet address in the ignored `apps/api/.env`, then run:
+
+```bash
+npm run ssi:bootstrap-admin
+```
+
+Do not run the command with `.env.example` placeholders. It creates or reuses the server-managed Product Traceability Authority DID, derives the Admin subject DID from the public wallet address, and issues at most one active bootstrap `SYSTEM_ADMIN` Company Role Credential. CLI output contains safe identifiers and status only. The credential and encrypted issuer key remain off-chain; MetaMask continues to control the Admin wallet key.
+
+The credential verification service returns a deterministic SHA-256 hash for future blockchain registration, but `onChainStatusChecked` and `authorizationReady` remain `false`. Stakeholder dashboards must not be unlocked until the CredentialRegistry and StakeholderRegistry checks exist.
 
 ## Frontend routes
 
@@ -166,10 +192,11 @@ From the repository root:
 npm run build
 npm run typecheck
 npm run test:auth
+npm run test:ssi
 npm run format:check
 npm audit
 ```
 
-The authentication suite currently contains 13 tests. Targeted browser checks have covered all 29 stakeholder pages at 320, 390, 768, and 1440 pixel widths, including loading states, canonical navigation, pagination, filters, dialogs, local access, and production denial. The browser scripts are currently local development aids rather than a committed test package.
+The authentication suite contains 13 tests and the SSI suite contains 15 offline tests. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask. Targeted browser checks have covered all 29 stakeholder pages at 320, 390, 768, and 1440 pixel widths, including loading states, canonical navigation, pagination, filters, dialogs, local access, and production denial. The browser scripts are currently local development aids rather than a committed test package.
 
 See [project context](docs/PROJECT_CONTEXT.md), [decisions](docs/DECISIONS.md), and [progress](docs/PROGRESS.md) for the project source of truth.

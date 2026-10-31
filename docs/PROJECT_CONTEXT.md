@@ -35,7 +35,7 @@
 - SIWE nonce issuance, signature verification, HttpOnly-cookie sessions, restoration, and logout
 - In-memory nonce and session repository interfaces and development implementations
 - Shared `CompanyRole` enum
-- Empty SSI service boundary
+- Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, and Admin bootstrap
 - Hardhat 3 smart-contract starter with a Counter example
 
 The detailed stakeholder screens do not have persisted business services. The local Vite development server intentionally allows account-free UI review on loopback hosts. Production builds remain fail-closed because the API does not yet verify Company Role Credentials or return a role.
@@ -43,7 +43,7 @@ The detailed stakeholder screens do not have persisted business services. The lo
 ## Identity and security rules
 
 - MetaMask proves control of a wallet; it does not issue Company Role Credentials or Ingredient Credentials.
-- Veramo will manage DIDs, credentials, and presentations.
+- Veramo manages the current DID, credential, and presentation foundation.
 - Company Role Credentials determine stakeholder roles only after cryptographic verification.
 - Suppliers issue Ingredient Credentials and control disclosed claims.
 - Invalid, expired, suspended, or revoked credentials must never grant access.
@@ -69,10 +69,10 @@ The detailed stakeholder screens do not have persisted business services. The lo
 
 ## Current limitations
 
-- No credential verification, role authorization service, or live SSI implementation
+- No API credential-presentation flow, on-chain credential-status verification, or role authorization service
 - No durable database or business API endpoints
 - No TraceChain-specific smart contracts or deployment
-- No finalized DID method, Veramo plugin set, QR payload, hosting platform, or production topology
+- No finalized production SSI storage/key-custody design, QR payload, hosting platform, or production topology
 - Sample UI records and transaction states are not persisted or cryptographically verified
 
 ## Important system qualities

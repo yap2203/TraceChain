@@ -31,6 +31,7 @@ coverage/
 *.lcov
 
 # Veramo and local databases
+.tracechain/
 *.sqlite
 *.sqlite3
 *.sqlite-journal

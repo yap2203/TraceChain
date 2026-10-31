@@ -26,13 +26,18 @@
 - Added a Hardhat 3 workspace using Solidity 0.8.34, ethers, Mocha, Ignition, and Foundry-compatible Solidity tests.
 - Added Counter starter code, tests, deployment module, and simulated OP transaction script to validate the contract toolchain.
 - Confirmed that Hardhat compilation succeeds and all five starter tests pass. Standalone contract TypeScript checking still needs an `EventLog` narrowing fix in `test/Counter.ts`.
-- Preserved `@tracechain/ssi` as an empty package boundary pending confirmed DID, Veramo, credential, key-management, and storage decisions.
+- Implemented a Veramo 7 server-side agent with DID, resolver, key-management, JWT VC/VP, verification, and JSON data-store plugins.
+- Added `did:ethr` Sepolia authority creation, separate atomic JSON stores, and SecretBox encryption for private issuer keys.
+- Added typed Company Role Credential issuance and verification with trusted issuer, subject/SIWE wallet binding, shared roles, date, local status, and deterministic SHA-256 checks.
+- Added an idempotent Product Traceability Authority and bootstrap System Admin service plus a safe CLI command.
+- Added 15 offline SSI tests without live RPC, MetaMask, or test ETH.
+- Kept `authorizationReady` and on-chain status checks false until the TraceChain registries exist.
 
 ## Remaining work
 
-- Design and implement Company Role Credential verification and credential-based RBAC.
+- Connect Company Role Credential presentation to the API, then implement on-chain status verification and credential-based RBAC.
 - Select the database and replace process-local nonce and session storage.
-- Select the DID method, Veramo plugins, credential schemas, and revocation/status approach.
+- Implement the on-chain credential revocation/status approach and production-grade SSI key/storage design.
 - Replace frontend fixtures and simulation handlers with authenticated business APIs.
 - Design, implement, test, and deploy TraceChain-specific smart contracts.
 - Define QR payloads and implement real generation, scanning, and intended-receiver validation.

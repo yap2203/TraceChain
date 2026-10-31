@@ -67,6 +67,19 @@ Application checks credential hash and status on-chain
 Smart contract checks msg.sender and assigned role
 ```
 
+## SSI foundation
+
+- Use `did:ethr` on Ethereum Sepolia (chain ID `11155111`).
+- Use JWT as the initial Verifiable Credential and Verifiable Presentation proof format.
+- Use `@veramo/data-store-json` for non-SQL local SSI metadata and issuer credential storage.
+- Store Veramo private key material in a separate JSON tree encrypted at rest with `PrivateKeyStoreJson` and `SecretBox`.
+- Treat `@veramo/data-store-json` as a beta package acceptable for this FYP prototype, not automatically as an industry production recommendation.
+- Use a server-managed Product Traceability Authority issuer DID.
+- Keep stakeholder wallet keys, including the bootstrap Admin wallet key, controlled by MetaMask.
+- Keep the bootstrap Admin Company Role Credential off-chain.
+- Require future on-chain credential-hash and status verification before enabling role-based access control.
+- Defer IPFS integration to a later phase.
+
 ## Target smart-contract boundaries
 
 - `StakeholderRegistry` manages company approval, wallet-to-role mappings, role assignment and removal, credential references, and replacement of lost or compromised company wallets.
@@ -147,15 +160,13 @@ Record CID, integrity hash, and status on Ethereum
 
 ## Unconfirmed decisions
 
-- Exact DID method, such as `did:ethr`, `did:key`, or another method
-- Exact Veramo plugins, credential schemas, proof formats, and credential-status mechanism
 - Whether each company has one wallet or multiple authorized operator wallets
 - Which party encrypts credentials and controls decryption keys
 - How recovery keys are protected independently from user devices
 - Which IPFS nodes or pinning services provide redundancy
 - Which evidence remains on IPFS and which evidence is disclosed only when requested
 - How the System Admin independently re-verifies a company during wallet recovery
-- Exact non-SQL format for optional Veramo metadata
+- Production replacement or hardening strategy for the beta JSON SSI store
 - Immediate session-revocation design if signed stateless tokens replace server-side sessions
 - Smart-contract upgrade policy and final authorization-library choice
 - Hosting and deployment platform
