@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "test": "vitest run",
     "test:access": "vitest run src/features/workspaces/workspace-access.test.ts",
     "typecheck": "tsc -b --pretty false"
   },

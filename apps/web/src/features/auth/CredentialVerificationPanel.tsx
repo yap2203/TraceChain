@@ -1,7 +1,8 @@
-import { useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 import type { CompanyRole } from '@tracechain/shared';
 
+import { credentialFailureHeading } from './login-auth-presentation';
 import type { CredentialVerificationState } from './useWalletAuthentication';
 
 const MAX_CREDENTIAL_FILE_SIZE = 240 * 1024;
@@ -20,17 +21,30 @@ const reasonLabels: Record<string, string> = {
 export function CredentialVerificationPanel({
   credentialId,
   credentialState,
+  credentialVerified,
   onPresent,
   role,
+  walletAddress,
 }: {
   credentialId?: string;
   credentialState: CredentialVerificationState;
+  credentialVerified: boolean;
   onPresent: (credential: Record<string, unknown>) => Promise<void>;
   role?: CompanyRole;
+  walletAddress?: string;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState('');
+  const [showReplacementPicker, setShowReplacementPicker] = useState(false);
   const busy = credentialState.phase === 'reading' || credentialState.phase === 'verifying';
+  const hasError = Boolean(fileError) || credentialState.phase === 'error';
+
+  useEffect(() => {
+    if (credentialVerified && credentialState.phase === 'success') {
+      setFileError('');
+      setShowReplacementPicker(false);
+    }
+  }, [credentialState.phase, credentialVerified]);
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -58,6 +72,102 @@ export function CredentialVerificationPanel({
     }
   };
 
+  const filePicker = (
+    <label className={`credential-file-button${busy ? ' is-disabled' : ''}`}>
+      {busy ? 'Verifying credential…' : 'Choose credential file'}
+      <input
+        ref={input}
+        accept="application/json,.json"
+        disabled={busy}
+        onChange={(event) => void handleFile(event)}
+        type="file"
+      />
+    </label>
+  );
+
+  if (credentialVerified) {
+    return (
+      <section className="credential-verification-panel" aria-labelledby="credential-title">
+        <div className="credential-summary-heading">
+          <div>
+            <span>Company access</span>
+            <h3 id="credential-title">{formatRole(role)} verified locally</h3>
+          </div>
+          <span className="local-verification-badge">Locally verified</span>
+        </div>
+
+        <dl className="verified-identity-summary">
+          <div>
+            <dt>Role</dt>
+            <dd>{formatRole(role)}</dd>
+          </div>
+          <div>
+            <dt>Wallet</dt>
+            <dd>{walletAddress ?? 'Authenticated wallet'}</dd>
+          </div>
+        </dl>
+
+        <ol className="authorization-status" aria-label="Authorization progress">
+          <li className="is-complete">
+            <span aria-hidden="true">✓</span>
+            <p>
+              Wallet connected <strong>Complete</strong>
+            </p>
+          </li>
+          <li className="is-complete">
+            <span aria-hidden="true">✓</span>
+            <p>
+              Role credential verified <strong>Complete</strong>
+            </p>
+          </li>
+          <li className="is-pending">
+            <span aria-hidden="true">3</span>
+            <p>
+              Blockchain authorization <strong>Pending</strong>
+            </p>
+          </li>
+        </ol>
+
+        <p className="authorization-pending-note">
+          Dashboard access remains locked until blockchain role and credential-status verification
+          is implemented.
+        </p>
+
+        <button
+          aria-controls="replacement-credential-picker"
+          aria-expanded={showReplacementPicker}
+          className="replace-credential-button"
+          onClick={() => {
+            setFileError('');
+            setShowReplacementPicker((visible) => !visible);
+          }}
+          type="button"
+        >
+          {showReplacementPicker ? 'Cancel replacement' : 'Replace credential'}
+        </button>
+
+        {showReplacementPicker && (
+          <div className="replacement-credential-picker" id="replacement-credential-picker">
+            <p>Select another JSON credential only if your company credential has changed.</p>
+            {filePicker}
+            {hasError && (
+              <div className="credential-result credential-result--error" role="alert">
+                <strong>{credentialFailureHeading(true)}</strong>
+                <p>
+                  The selected file was rejected. Your existing verified session remains unchanged.
+                </p>
+                <p>{fileError || credentialState.message}</p>
+                <FailureReasons reasons={credentialState.reasons} />
+              </div>
+            )}
+          </div>
+        )}
+
+        {credentialId && <small className="credential-id">Credential: {credentialId}</small>}
+      </section>
+    );
+  }
+
   return (
     <section className="credential-verification-panel" aria-labelledby="credential-title">
       <div>
@@ -65,36 +175,34 @@ export function CredentialVerificationPanel({
         <h3 id="credential-title">Verify role credential</h3>
       </div>
       <p>Select the JSON credential provided by the TraceChain authority.</p>
-      <label className={`credential-file-button${busy ? ' is-disabled' : ''}`}>
-        {busy ? 'Verifying credential…' : 'Choose credential file'}
-        <input
-          ref={input}
-          accept="application/json,.json"
-          disabled={busy}
-          onChange={(event) => void handleFile(event)}
-          type="file"
-        />
-      </label>
-      {(fileError || credentialState.phase === 'error') && (
+      {filePicker}
+      {hasError && (
         <div className="credential-result credential-result--error" role="alert">
-          <strong>Verification unsuccessful</strong>
+          <strong>{credentialFailureHeading(false)}</strong>
           <p>{fileError || credentialState.message}</p>
-          {credentialState.reasons.length > 0 && (
-            <ul>
-              {credentialState.reasons.map((reason) => (
-                <li key={reason}>{reasonLabels[reason] ?? reason}</li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-      {credentialState.phase === 'success' && (
-        <div className="credential-result credential-result--success" role="status">
-          <strong>{role ?? 'Company role'} verified locally</strong>
-          <p>{credentialState.message}</p>
-          {credentialId && <small>Credential: {credentialId}</small>}
+          <FailureReasons reasons={credentialState.reasons} />
         </div>
       )}
     </section>
   );
+}
+
+function FailureReasons({ reasons }: { reasons: readonly string[] }) {
+  if (reasons.length === 0) return null;
+  return (
+    <ul>
+      {reasons.map((reason) => (
+        <li key={reason}>{reasonLabels[reason] ?? reason}</li>
+      ))}
+    </ul>
+  );
+}
+
+function formatRole(role?: CompanyRole) {
+  if (!role) return 'Company role';
+  return role
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
 }

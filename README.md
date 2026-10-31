@@ -169,6 +169,8 @@ The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issu
 
 Successful local credential verification stores only a safe session summary and displays the verified role. Production workspace records remain locked because blockchain status has not been checked and `authorizationReady` remains `false`. A URL, wallet address, fixture value, or local browser value must never grant access.
 
+Login actions follow the current session state. Disconnected users connect through the authentication panel; wallet-authenticated users continue to credential verification; and locally verified users see their role, wallet, three-step authorization status, and an optional credential-replacement action. Local verification never unlocks a workspace before blockchain role and credential-status checks are implemented.
+
 ## Workspace UI
 
 Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakeholder and workflow. `WorkspaceApp.tsx` owns canonical routing and the access boundary; `WorkspaceScreen.tsx` dispatches detailed pages. Shared workspace presentation components, receipts, reports, and table controls are kept in focused subfolders.
@@ -196,12 +198,13 @@ npm run typecheck
 npm run test:auth
 npm run test:ssi
 npm run test:ssi-api
+npm run test:frontend
 npm run test:workspace-access
 npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the workspace access guard contains 3 tests. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the frontend contains 9 authentication-presentation, credential-panel, and workspace-access tests. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

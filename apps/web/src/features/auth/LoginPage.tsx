@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { Brand } from '../../components/brand/Brand';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { CredentialVerificationPanel } from './CredentialVerificationPanel';
+import { getLoginAuthPresentation } from './login-auth-presentation';
 import { shortenAddress, useWalletAuthentication } from './useWalletAuthentication';
 
 const learningTabs = {
@@ -117,6 +118,7 @@ function LoginPage() {
     switchToSepolia,
   } = useWalletAuthentication();
   const activeLearningTab = learningTabs[activeTab];
+  const authPresentation = getLoginAuthPresentation(walletState);
   const isWalletBusy = ['connecting', 'restoring', 'signing', 'verifying'].includes(
     walletState.phase,
   );
@@ -171,9 +173,20 @@ function LoginPage() {
           <a href="#understand">How it works</a>
           <a href="#security">Security</a>
         </nav>
-        <a className="header-action" href="#sign-in">
-          Connect wallet
-        </a>
+        {authPresentation.authenticated && walletState.address ? (
+          <a
+            aria-label={`Authenticated wallet ${shortenAddress(walletState.address)}`}
+            className="header-wallet-status"
+            href="#sign-in"
+          >
+            <i aria-hidden="true" />
+            {shortenAddress(walletState.address)}
+          </a>
+        ) : (
+          <a className="header-action" href="#sign-in">
+            Connect wallet
+          </a>
+        )}
       </header>
 
       <main>
@@ -195,7 +208,7 @@ function LoginPage() {
 
               <div className="hero-actions">
                 <a className="primary-link" href="#sign-in">
-                  Connect your wallet
+                  {authPresentation.heroActionLabel}
                 </a>
                 <a className="secondary-link" href="#understand">
                   See how it works <span aria-hidden="true">↓</span>
@@ -258,8 +271,14 @@ function LoginPage() {
                   <span>Secure access</span>
                 </div>
 
-                <h2 id="sign-in-title">Connect to TraceChain</h2>
-                <p className="sign-in-intro">Use your organisation&apos;s MetaMask wallet.</p>
+                <h2 id="sign-in-title">{authPresentation.authenticationTitle}</h2>
+                <p className="sign-in-intro">
+                  {authPresentation.locallyVerified
+                    ? 'Your wallet and Company Role Credential are verified locally.'
+                    : authPresentation.authenticated
+                      ? 'Verify your Company Role Credential to continue.'
+                      : "Use your organisation's MetaMask wallet."}
+                </p>
 
                 <dl className="network-panel">
                   <div>
@@ -338,8 +357,12 @@ function LoginPage() {
                   <CredentialVerificationPanel
                     credentialId={walletState.credentialId}
                     credentialState={credentialState}
+                    credentialVerified={walletState.credentialVerified}
                     onPresent={presentCredential}
                     role={walletState.role}
+                    walletAddress={
+                      walletState.address ? shortenAddress(walletState.address) : undefined
+                    }
                   />
                 )}
                 <Link className="register-button" to="/register-company">
@@ -476,7 +499,7 @@ function LoginPage() {
             <span>
               <Icon name="check" size={14} /> Credentials verified before access
             </span>
-            <a href="#sign-in">Connect securely →</a>
+            <a href="#sign-in">{authPresentation.securityActionLabel} →</a>
           </div>
         </section>
       </main>

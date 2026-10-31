@@ -17,8 +17,6 @@ import type { CompanyRole } from '@tracechain/shared';
 
 const SEPOLIA_CHAIN_ID = 11155111n;
 const SEPOLIA_CHAIN_HEX = '0xaa36a7';
-const VERIFIED_MESSAGE = 'Wallet verified. Company Role Credential verification is required.';
-
 type ProviderEvent = 'accountsChanged' | 'chainChanged';
 
 interface InjectedProvider extends Eip1193Provider {
@@ -45,7 +43,7 @@ export type WalletAuthPhase =
   | 'unavailable'
   | 'verifying';
 
-interface WalletAuthState {
+export interface WalletAuthState {
   address?: string;
   authorizationReady: boolean;
   credentialId?: string;
