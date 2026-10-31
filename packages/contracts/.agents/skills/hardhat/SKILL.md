@@ -2,7 +2,7 @@
 name: hardhat
 description: Use when working with Hardhat 3 projects — writing or modifying Solidity tests, TypeScript tests, or any code touching hardhat.config.ts, the `hardhat` import, or `network.create()`. Covers test-layer choice, forge-std cheatcodes, the network connection API, `networkHelpers`, and the compile-then-typecheck workflow. For toolbox-specific guidance (clients, contract calls, assertions), also load the matching `hardhat-toolbox-*` skill.
 metadata:
-  package: "hardhat"
+  package: 'hardhat'
 ---
 
 # Hardhat 3
@@ -70,22 +70,22 @@ contract CounterTest is Test {
 
 The `vm` object (from `forge-std/Test.sol`) exposes cheatcodes for EVM state manipulation. Commonly used ones:
 
-| Cheatcode | Effect |
-| --- | --- |
-| `vm.prank(addr)` | Sets `msg.sender` for the next call only |
-| `vm.startPrank(addr)` / `vm.stopPrank()` | Sets `msg.sender` for a range of calls |
-| `vm.deal(addr, amount)` | Sets an account's ETH balance |
-| `vm.warp(timestamp)` | Sets `block.timestamp` |
-| `vm.roll(blockNum)` | Sets `block.number` |
-| `vm.expectRevert(...)` | Asserts the next call reverts |
-| `vm.expectEmit(...)` | Asserts the next call emits a specific event |
+| Cheatcode                                | Effect                                       |
+| ---------------------------------------- | -------------------------------------------- |
+| `vm.prank(addr)`                         | Sets `msg.sender` for the next call only     |
+| `vm.startPrank(addr)` / `vm.stopPrank()` | Sets `msg.sender` for a range of calls       |
+| `vm.deal(addr, amount)`                  | Sets an account's ETH balance                |
+| `vm.warp(timestamp)`                     | Sets `block.timestamp`                       |
+| `vm.roll(blockNum)`                      | Sets `block.number`                          |
+| `vm.expectRevert(...)`                   | Asserts the next call reverts                |
+| `vm.expectEmit(...)`                     | Asserts the next call emits a specific event |
 
 ## TypeScript tests and the network connection
 
 The central object in a TypeScript test is the **network connection**, created by `network.create()`. Toolbox plugins extend it with helper objects (e.g. `viem` or `ethers`, plus `networkHelpers`):
 
 ```ts
-import { network } from "hardhat";
+import { network } from 'hardhat';
 
 const { networkHelpers } = await network.create();
 // Toolbox plugins also expose viem / ethers on this object;

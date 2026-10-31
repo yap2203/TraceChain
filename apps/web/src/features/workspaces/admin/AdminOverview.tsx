@@ -190,7 +190,6 @@ export function AdminOverview({ onNav }: { onNav: (tab: string) => void }) {
         </div>
       </Card>
 
-
       {/* Quick actions
       <div style={{ display: 'flex', gap: 10 }}>
         <Btn onClick={() => onNav('applications')}>Review Applications</Btn>
