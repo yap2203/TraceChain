@@ -7,9 +7,9 @@ TraceChain is an npm monorepo with two applications and three packages. The curr
 | Component        | Location             | Current responsibility                                                                                         |
 | ---------------- | -------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Web application  | `apps/web`           | React 19 UI, public onboarding pages, stakeholder workspaces, responsive tables, and MetaMask/SIWE client flow |
-| API              | `apps/api`           | Express 5 health endpoint, nonce issuance, SIWE verification, cookie sessions, and logout                      |
-| Shared package   | `packages/shared`    | Cross-package company-role enum and future shared contracts                                                    |
-| SSI package      | `packages/ssi`       | Reserved boundary for Veramo, DID, VC, and VP services; no provider or DID method is selected yet              |
+| API              | `apps/api`           | Express 5 health, SIWE sessions, and authenticated Company Role Credential presentation                        |
+| Shared package   | `packages/shared`    | Cross-package company-role enum and role-to-workspace mapping                                                  |
+| SSI package      | `packages/ssi`       | Veramo did:ethr agent, JWT credential issuance and verification, encrypted JSON storage, and Admin bootstrap   |
 | Contract package | `packages/contracts` | Hardhat 3 toolchain and a starter `Counter` contract, tests, script, and Ignition module                       |
 
 ## Current request flow
@@ -20,7 +20,10 @@ TraceChain is an npm monorepo with two applications and three packages. The curr
 4. The frontend requests an address-bound nonce from `POST /api/auth/nonce`.
 5. The wallet signs an ERC-4361 message; the API validates it through `POST /api/auth/verify`.
 6. The API stores the session in process memory and returns an HttpOnly cookie.
-7. The current session proves wallet control only. It never supplies a verified company role, so production stakeholder content remains locked.
+7. The wallet-only session proves wallet control and supplies no role.
+8. An authenticated user may send a Company Role Credential JSON file to `POST /api/ssi/company-role/verify`.
+9. The API verifies the credential against the session wallet and trusted authority, then stores only a safe local-verification summary.
+10. Production stakeholder content remains locked because blockchain status has not been checked and authorization is not ready.
 
 During local Vite development on `localhost`, `127.0.0.1`, or `::1`, stakeholder routes intentionally bypass the session hook so the integrated sample screens can be reviewed. This bypass exists only when `import.meta.env.DEV` is true and does not grant API, SSI, or blockchain permissions.
 
@@ -42,8 +45,8 @@ Wide tables use a shared client-side pagination wrapper and horizontal scrolling
 ## Current limitations
 
 - Nonces and sessions use process-local memory and disappear on API restart.
-- Credential verification and credential-based RBAC are not implemented.
-- No Veramo agent, DID method, or credential repository is configured.
+- On-chain credential status verification and credential-based RBAC are not implemented.
+- The current Veramo JSON store and holder-file export are development foundations, not a production custody design.
 - Stakeholder workflows have no API persistence.
 - The `Counter` contract is only a Hardhat toolchain example; TraceChain contracts and deployments do not exist yet.
 - The exact database, DID method, QR payload, hosting platform, and production deployment topology remain undecided.

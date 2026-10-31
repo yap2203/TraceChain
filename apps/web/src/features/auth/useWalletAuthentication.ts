@@ -7,8 +7,13 @@ import {
   deleteAuthSession,
   getAuthSession,
   requestNonce,
+  type AuthenticatedSession,
+  type CompanyRoleVerificationResponse,
+  type CredentialFailureReason,
+  verifyCompanyRoleCredential,
   verifySiweMessage,
 } from './auth.api';
+import type { CompanyRole } from '@tracechain/shared';
 
 const SEPOLIA_CHAIN_ID = 11155111n;
 const SEPOLIA_CHAIN_HEX = '0xaa36a7';
@@ -42,8 +47,46 @@ export type WalletAuthPhase =
 
 interface WalletAuthState {
   address?: string;
+  authorizationReady: boolean;
+  credentialId?: string;
+  credentialVerified: boolean;
+  locallyVerified: boolean;
   message: string;
+  onChainStatusChecked: boolean;
   phase: WalletAuthPhase;
+  role?: CompanyRole;
+  verifiedAt?: string;
+}
+
+export type CredentialVerificationPhase = 'error' | 'idle' | 'reading' | 'success' | 'verifying';
+
+export interface CredentialVerificationState {
+  expirationStatus?: CompanyRoleVerificationResponse['expirationStatus'];
+  message: string;
+  phase: CredentialVerificationPhase;
+  reasons: CredentialFailureReason[];
+}
+
+const emptyAuthorization = {
+  authorizationReady: false,
+  credentialVerified: false,
+  locallyVerified: false,
+  onChainStatusChecked: false,
+} as const;
+
+function stateFromSession(session: AuthenticatedSession): WalletAuthState {
+  return {
+    address: session.address,
+    authorizationReady: session.authorizationReady,
+    credentialId: session.credentialId,
+    credentialVerified: session.credentialVerified,
+    locallyVerified: session.locallyVerified,
+    message: session.message,
+    onChainStatusChecked: session.onChainStatusChecked,
+    phase: 'authenticated',
+    role: session.role,
+    verifiedAt: session.verifiedAt,
+  };
 }
 
 function getInjectedMetaMask() {
@@ -73,8 +116,14 @@ export function shortenAddress(address: string) {
 
 export function useWalletAuthentication() {
   const [state, setState] = useState<WalletAuthState>({
+    ...emptyAuthorization,
     message: 'Checking for an existing session',
     phase: 'restoring',
+  });
+  const [credentialState, setCredentialState] = useState<CredentialVerificationState>({
+    message: '',
+    phase: 'idle',
+    reasons: [],
   });
   const authenticatedAddress = useRef<string | undefined>(undefined);
   const pendingAddress = useRef<string | undefined>(undefined);
@@ -88,7 +137,12 @@ export function useWalletAuthentication() {
 
     authenticatedAddress.current = undefined;
     pendingAddress.current = undefined;
-    setState({ message, phase: getInjectedMetaMask() ? 'idle' : 'unavailable' });
+    setCredentialState({ message: '', phase: 'idle', reasons: [] });
+    setState({
+      ...emptyAuthorization,
+      message,
+      phase: getInjectedMetaMask() ? 'idle' : 'unavailable',
+    });
   }, []);
 
   useEffect(() => {
@@ -100,18 +154,19 @@ export function useWalletAuthentication() {
 
         if (session.authenticated) {
           authenticatedAddress.current = session.address;
-          setState({ address: session.address, message: session.message, phase: 'authenticated' });
+          setState(stateFromSession(session));
           return;
         }
 
         setState({
+          ...emptyAuthorization,
           message: getInjectedMetaMask() ? 'Ready to connect' : 'MetaMask was not detected',
           phase: getInjectedMetaMask() ? 'idle' : 'unavailable',
         });
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setState({ message: errorMessage(error), phase: 'error' });
+        setState({ ...emptyAuthorization, message: errorMessage(error), phase: 'error' });
       });
 
     return () => {
@@ -177,23 +232,38 @@ export function useWalletAuthentication() {
         version: '1',
       }).prepareMessage();
 
-      setState({ address, message: 'Review the sign-in request in MetaMask', phase: 'signing' });
+      setState({
+        ...emptyAuthorization,
+        address,
+        message: 'Review the sign-in request in MetaMask',
+        phase: 'signing',
+      });
       const signer = await provider.getSigner(address);
       const signature = await signer.signMessage(siweMessage);
 
-      setState({ address, message: 'Verifying the wallet signature', phase: 'verifying' });
+      setState({
+        ...emptyAuthorization,
+        address,
+        message: 'Verifying the wallet signature',
+        phase: 'verifying',
+      });
       const session = await verifySiweMessage(siweMessage, signature);
 
       authenticatedAddress.current = session.address;
       pendingAddress.current = undefined;
-      setState({ address: session.address, message: VERIFIED_MESSAGE, phase: 'authenticated' });
+      setState(stateFromSession(session));
     } catch (error) {
       if (isUserRejection(error)) {
-        setState({ address, message: 'The MetaMask request was rejected.', phase: 'rejected' });
+        setState({
+          ...emptyAuthorization,
+          address,
+          message: 'The MetaMask request was rejected.',
+          phase: 'rejected',
+        });
         return;
       }
 
-      setState({ address, message: errorMessage(error), phase: 'error' });
+      setState({ ...emptyAuthorization, address, message: errorMessage(error), phase: 'error' });
     }
   }, []);
 
@@ -201,12 +271,20 @@ export function useWalletAuthentication() {
     const injectedProvider = getInjectedMetaMask();
 
     if (!injectedProvider) {
-      setState({ message: 'MetaMask was not detected in this browser.', phase: 'unavailable' });
+      setState({
+        ...emptyAuthorization,
+        message: 'MetaMask was not detected in this browser.',
+        phase: 'unavailable',
+      });
       return;
     }
 
     try {
-      setState({ message: 'Waiting for MetaMask account access', phase: 'connecting' });
+      setState({
+        ...emptyAuthorization,
+        message: 'Waiting for MetaMask account access',
+        phase: 'connecting',
+      });
       const provider = new BrowserProvider(injectedProvider);
       const accounts = (await provider.send('eth_requestAccounts', [])) as string[];
       const address = accounts[0] ? getAddress(accounts[0]) : undefined;
@@ -217,6 +295,7 @@ export function useWalletAuthentication() {
       if (network.chainId !== SEPOLIA_CHAIN_ID) {
         pendingAddress.current = address;
         setState({
+          ...emptyAuthorization,
           address,
           message: 'Sepolia is required. Confirm the network switch to continue.',
           phase: 'switch_required',
@@ -227,11 +306,15 @@ export function useWalletAuthentication() {
       await signIn(provider, address);
     } catch (error) {
       if (isUserRejection(error)) {
-        setState({ message: 'The MetaMask connection request was rejected.', phase: 'rejected' });
+        setState({
+          ...emptyAuthorization,
+          message: 'The MetaMask connection request was rejected.',
+          phase: 'rejected',
+        });
         return;
       }
 
-      setState({ message: errorMessage(error), phase: 'error' });
+      setState({ ...emptyAuthorization, message: errorMessage(error), phase: 'error' });
     }
   }, [signIn]);
 
@@ -240,12 +323,17 @@ export function useWalletAuthentication() {
     const address = pendingAddress.current;
 
     if (!injectedProvider || !address) {
-      setState({ message: 'Reconnect MetaMask before switching networks.', phase: 'error' });
+      setState({
+        ...emptyAuthorization,
+        message: 'Reconnect MetaMask before switching networks.',
+        phase: 'error',
+      });
       return;
     }
 
     try {
       setState({
+        ...emptyAuthorization,
         address,
         message: 'Waiting for Sepolia network confirmation',
         phase: 'connecting',
@@ -258,6 +346,7 @@ export function useWalletAuthentication() {
     } catch (error) {
       if (isUserRejection(error)) {
         setState({
+          ...emptyAuthorization,
           address,
           message: 'The Sepolia network switch was rejected.',
           phase: 'rejected',
@@ -265,13 +354,42 @@ export function useWalletAuthentication() {
         return;
       }
 
-      setState({ address, message: errorMessage(error), phase: 'error' });
+      setState({ ...emptyAuthorization, address, message: errorMessage(error), phase: 'error' });
     }
   }, [signIn]);
 
+  const presentCredential = useCallback(async (credential: Record<string, unknown>) => {
+    setCredentialState({ message: 'Verifying credential', phase: 'verifying', reasons: [] });
+    try {
+      const result = await verifyCompanyRoleCredential(credential);
+      if (!result.verified || !result.session) {
+        setCredentialState({
+          expirationStatus: result.expirationStatus,
+          message: 'The credential could not be verified.',
+          phase: 'error',
+          reasons: result.reasons,
+        });
+        return;
+      }
+
+      setState(stateFromSession(result.session));
+      setCredentialState({
+        expirationStatus: result.expirationStatus,
+        message:
+          'Credential verified locally. Blockchain status verification is required before workspace access.',
+        phase: 'success',
+        reasons: [],
+      });
+    } catch (error) {
+      setCredentialState({ message: errorMessage(error), phase: 'error', reasons: [] });
+    }
+  }, []);
+
   return {
     connect,
+    credentialState,
     logout: clearSession,
+    presentCredential,
     state,
     switchToSepolia,
   };

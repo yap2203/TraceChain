@@ -138,6 +138,11 @@ Record CID, integrity hash, and status on Ethereum
 - Recheck on-chain role and revocation state before sensitive operations.
 - Document that in-memory state disappears after an API restart and cannot support multiple API instances without shared transient storage or a different token design.
 - Temporarily allow stakeholder sample pages and simulated UI interactions without account validation only on local Vite development hosts. Production credential checks and backend authorization remain fail-closed.
+- Use the SIWE session wallet as the only wallet input for Company Role Credential verification; never trust a wallet address in the credential-presentation request body.
+- Store only a safe local-verification summary in the development session, never the credential or encoded JWT.
+- Keep `onChainStatusChecked` and `authorizationReady` false after local verification, so no production workspace is unlocked before registry checks exist.
+- Use one shared `CompanyRole`-to-workspace mapping for future authorization decisions.
+- Deliver the bootstrap Admin credential through an explicit development-only export under ignored `.tracechain/holder/` storage, with no silent overwrite of a different credential.
 
 ## Recovery requirements
 

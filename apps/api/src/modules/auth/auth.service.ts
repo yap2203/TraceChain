@@ -8,6 +8,7 @@ import { walletAddressSchema } from './auth.schema.js';
 import type {
   AuthConfiguration,
   AuthenticatedSession,
+  CredentialVerificationSummary,
   NonceRecord,
   SessionRecord,
   SessionResponse,
@@ -15,6 +16,8 @@ import type {
 
 const AUTHENTICATED_MESSAGE =
   'Wallet verified. Company Role Credential verification is required.' as const;
+const LOCALLY_VERIFIED_MESSAGE =
+  'Credential verified locally. Blockchain status verification is required.' as const;
 const CLOCK_SKEW_MS = 60_000;
 
 export class AuthError extends Error {
@@ -171,6 +174,29 @@ export class AuthService {
     return session ? this.toAuthenticatedSession(session) : { authenticated: false };
   }
 
+  async requireSession(sessionId?: string): Promise<SessionRecord> {
+    if (!sessionId) {
+      throw new AuthError('AUTHENTICATION_REQUIRED', 'Wallet authentication is required.', 401);
+    }
+
+    const session = await this.sessionRepository.find(sessionId, this.clock());
+    if (!session) {
+      throw new AuthError('AUTHENTICATION_REQUIRED', 'Wallet authentication is required.', 401);
+    }
+
+    return session;
+  }
+
+  async setCredentialVerification(
+    sessionId: string,
+    summary: CredentialVerificationSummary,
+  ): Promise<AuthenticatedSession> {
+    const session = await this.requireSession(sessionId);
+    const updatedSession: SessionRecord = { ...session, credentialVerification: summary };
+    await this.sessionRepository.save(updatedSession);
+    return this.toAuthenticatedSession(updatedSession);
+  }
+
   async logout(sessionId?: string) {
     if (sessionId) await this.sessionRepository.delete(sessionId);
   }
@@ -180,12 +206,32 @@ export class AuthService {
   }
 
   private toAuthenticatedSession(session: SessionRecord): AuthenticatedSession {
+    const verification = session.credentialVerification;
+    if (verification?.locallyVerified) {
+      return {
+        address: session.address,
+        authenticated: true,
+        authorizationReady: false,
+        credentialId: verification.credentialId,
+        credentialVerified: true,
+        expiresAt: session.expiresAt.toISOString(),
+        locallyVerified: true,
+        message: LOCALLY_VERIFIED_MESSAGE,
+        onChainStatusChecked: false,
+        role: verification.role,
+        verifiedAt: verification.verifiedAt.toISOString(),
+      };
+    }
+
     return {
       address: session.address,
       authenticated: true,
+      authorizationReady: false,
       credentialVerified: false,
       expiresAt: session.expiresAt.toISOString(),
+      locallyVerified: false,
       message: AUTHENTICATED_MESSAGE,
+      onChainStatusChecked: false,
     };
   }
 }

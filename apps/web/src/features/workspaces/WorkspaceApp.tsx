@@ -7,14 +7,14 @@ import { shortenAddress, useWalletAuthentication } from '../auth/useWalletAuthen
 import { WorkspaceLayout } from './WorkspaceLayout';
 import { workspaceNavigation, type WorkspaceRole } from './workspace-navigation';
 import { workspacePage, workspacePath } from './workspace-paths';
+import { isLocalSampleAccess } from './workspace-access';
 
 const WorkspaceScreen = lazy(() =>
   import('./WorkspaceScreen').then((module) => ({ default: module.WorkspaceScreen })),
 );
 
 // Temporary local UI access only. Production builds always use the session gate.
-const localUiAccess =
-  import.meta.env.DEV && ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+const localUiAccess = isLocalSampleAccess(import.meta.env.DEV, window.location.hostname);
 
 export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   return localUiAccess ? <WorkspaceView role={role} /> : <AuthenticatedWorkspace role={role} />;
@@ -34,7 +34,14 @@ function WorkspaceView({
 }) {
   const { '*': route = '' } = useParams();
   const [search] = useSearchParams();
-  const state = authentication?.state ?? { phase: 'idle', message: '' };
+  const state = authentication?.state ?? {
+    authorizationReady: false,
+    credentialVerified: false,
+    locallyVerified: false,
+    message: '',
+    onChainStatusChecked: false,
+    phase: 'idle' as const,
+  };
   const page = workspacePage(role, route || 'overview');
   const exists = workspaceNavigation[role].some(([id]) => id === page);
   const canonicalPath = workspacePath(role, page);
@@ -45,7 +52,9 @@ function WorkspaceView({
     : restoring
       ? 'Checking session'
       : authenticated
-        ? 'Credential required'
+        ? state.locallyVerified
+          ? 'Blockchain verification required'
+          : 'Credential required'
         : 'Sign-in required';
 
   const content = (

@@ -9,6 +9,11 @@
 - Implemented ERC-4361 wallet authentication with MetaMask and Sepolia.
 - Added five-minute address-bound nonces, signature validation, single-use nonce handling, HttpOnly-cookie sessions, restoration, logout, and 13 authentication tests.
 - Added repository interfaces and process-local development implementations for nonces and sessions.
+- Added `POST /api/ssi/company-role/verify`, authenticated credential presentation, safe session restoration, and logout cleanup.
+- Added a JSON credential picker that does not use browser storage and reports verification results without exposing JWT material.
+- Added shared role-to-workspace mapping and fail-closed production workspace guards; local verification still cannot authorize access.
+- Added a development-only Admin holder export command with overwrite protection.
+- Added 8 SSI presentation API tests and 3 workspace access tests.
 
 ## Current frontend version
 
@@ -35,7 +40,7 @@
 
 ## Remaining work
 
-- Connect Company Role Credential presentation to the API, then implement on-chain status verification and credential-based RBAC.
+- Implement on-chain credential status verification and credential-based RBAC.
 - Select the database and replace process-local nonce and session storage.
 - Implement the on-chain credential revocation/status approach and production-grade SSI key/storage design.
 - Replace frontend fixtures and simulation handlers with authenticated business APIs.

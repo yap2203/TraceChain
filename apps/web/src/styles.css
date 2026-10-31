@@ -1228,3 +1228,81 @@ select {
   font-weight: 700;
   text-underline-offset: 3px;
 }
+
+.credential-verification-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #263852);
+  border-radius: 12px;
+  background: rgb(4 12 24 / 55%);
+}
+
+.credential-verification-panel h3,
+.credential-verification-panel p {
+  margin: 0;
+}
+
+.credential-verification-panel > div:first-child span,
+.credential-result small {
+  color: #8fa3ba;
+  font-size: 0.72rem;
+}
+
+.credential-verification-panel > p {
+  color: #8fa3ba;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.credential-file-button {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  border: 1px solid #1aaec2;
+  border-radius: 8px;
+  color: #08d6ed;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.credential-file-button.is-disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.credential-file-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.credential-result {
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-size: 0.78rem;
+}
+
+.credential-result p {
+  margin-top: 0.3rem;
+  line-height: 1.45;
+}
+
+.credential-result ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.credential-result--success {
+  color: #87f6c5;
+  background: rgb(6 78 54 / 42%);
+}
+
+.credential-result--error {
+  color: #ffb4b4;
+  background: rgb(110 24 35 / 40%);
+}

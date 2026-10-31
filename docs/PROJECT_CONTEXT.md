@@ -35,10 +35,11 @@
 - SIWE nonce issuance, signature verification, HttpOnly-cookie sessions, restoration, and logout
 - In-memory nonce and session repository interfaces and development implementations
 - Shared `CompanyRole` enum
-- Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, and Admin bootstrap
+- Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
+- Authenticated Company Role Credential JSON presentation with safe session summaries and fail-closed workspace guards
 - Hardhat 3 smart-contract starter with a Counter example
 
-The detailed stakeholder screens do not have persisted business services. The local Vite development server intentionally allows account-free UI review on loopback hosts. Production builds remain fail-closed because the API does not yet verify Company Role Credentials or return a role.
+The detailed stakeholder screens do not have persisted business services. The local Vite development server intentionally allows account-free UI review on loopback hosts. The API can locally verify Company Role Credentials and return a safe role summary, but production builds remain fail-closed until on-chain status checking makes authorization ready.
 
 ## Identity and security rules
 
@@ -69,7 +70,7 @@ The detailed stakeholder screens do not have persisted business services. The lo
 
 ## Current limitations
 
-- No API credential-presentation flow, on-chain credential-status verification, or role authorization service
+- No on-chain credential-status verification or role authorization service; local credential verification alone never unlocks a workspace
 - No durable database or business API endpoints
 - No TraceChain-specific smart contracts or deployment
 - No finalized production SSI storage/key-custody design, QR payload, hosting platform, or production topology

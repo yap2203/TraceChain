@@ -10,12 +10,24 @@ import {
 } from './modules/auth/auth.repository.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
 import { AuthService } from './modules/auth/auth.service.js';
+import { SsiController } from './modules/ssi/ssi.controller.js';
+import { createSsiRouter } from './modules/ssi/ssi.routes.js';
+import {
+  CompanyRoleSsiService,
+  createDefaultTraceChainAgentProvider,
+  type TraceChainAgentProvider,
+} from './modules/ssi/ssi.service.js';
 
 interface CreateAppOptions {
   authService?: AuthService;
+  ssi?: {
+    agentProvider: TraceChainAgentProvider;
+    authorityDidAlias: string;
+    clock?: () => Date;
+  };
 }
 
-export function createApp({ authService }: CreateAppOptions = {}) {
+export function createApp({ authService, ssi }: CreateAppOptions = {}) {
   const app = express();
   const sessionTtlMs = env.AUTH_SESSION_TTL_SECONDS * 1_000;
   const resolvedAuthService =
@@ -36,6 +48,16 @@ export function createApp({ authService }: CreateAppOptions = {}) {
     cookieSecure: env.NODE_ENV === 'production',
     sessionTtlMs,
   });
+  const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
+  const ssiController = new SsiController(
+    new CompanyRoleSsiService({
+      agentProvider: defaultSsi.agentProvider,
+      authService: resolvedAuthService,
+      authorityDidAlias: defaultSsi.authorityDidAlias,
+      clock: 'clock' in defaultSsi ? defaultSsi.clock : undefined,
+    }),
+    env.AUTH_COOKIE_NAME,
+  );
 
   app.use(
     cors({
@@ -53,6 +75,7 @@ export function createApp({ authService }: CreateAppOptions = {}) {
   });
 
   app.use('/api/auth', express.json({ limit: '10kb' }), createAuthRouter(authController));
+  app.use('/api/ssi', express.json({ limit: '256kb' }), createSsiRouter(ssiController));
 
   app.use(
     (
@@ -63,7 +86,14 @@ export function createApp({ authService }: CreateAppOptions = {}) {
     ) => {
       if (error.type === 'entity.too.large') {
         response.status(413).json({
-          error: { code: 'PAYLOAD_TOO_LARGE', message: 'The authentication request is too large.' },
+          error: { code: 'PAYLOAD_TOO_LARGE', message: 'The request is too large.' },
+        });
+        return;
+      }
+
+      if (error instanceof SyntaxError && 'body' in error) {
+        response.status(400).json({
+          error: { code: 'INVALID_JSON', message: 'The request body must contain valid JSON.' },
         });
         return;
       }

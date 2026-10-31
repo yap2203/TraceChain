@@ -7,6 +7,7 @@ export type {
 } from './bootstrap/admin-bootstrap.service.js';
 export {
   SEPOLIA_CHAIN_ID,
+  SEPOLIA_ETHR_DID_REGISTRY,
   SEPOLIA_NETWORK_NAME,
   validateTraceChainSsiConfig,
 } from './config/ssi-config.js';
@@ -21,6 +22,11 @@ export {
   walletAddressToDid,
 } from './credentials/company-role-credential.service.js';
 export type { IssueCompanyRoleCredentialInput } from './credentials/company-role-credential.service.js';
+export { findStoredCompanyRoleCredential } from './credentials/stored-company-role-credential.service.js';
+export type {
+  FindStoredCompanyRoleCredentialInput,
+  StoredCompanyRoleCredentialMatch,
+} from './credentials/stored-company-role-credential.service.js';
 export { verifyCompanyRoleCredential } from './credentials/verification.service.js';
 export type {
   CompanyRoleCredentialFailureReason,

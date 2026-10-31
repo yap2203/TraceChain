@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 export const SEPOLIA_CHAIN_ID = 11_155_111;
 export const SEPOLIA_NETWORK_NAME = 'sepolia';
+export const SEPOLIA_ETHR_DID_REGISTRY = '0x03d5003bf0e79C5F5223588F347ebA39AfbC3818';
 
 const traceChainSsiConfigSchema = z
   .object({

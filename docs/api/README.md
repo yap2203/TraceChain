@@ -23,7 +23,7 @@ Copy `apps/api/.env.example` to `apps/api/.env`. Available values are:
 
 `FRONTEND_URL`, `SIWE_DOMAIN`, and `SIWE_URI` must match the frontend origin used in the browser.
 
-The SSI variables are optional for normal API startup and SIWE tests. They are validated only by `npm run ssi:bootstrap-admin`; the example KMS value and zero address intentionally fail that validation. Never provide or store the Admin wallet private key.
+The SSI variables are loaded lazily only when an SSI request or SSI command needs the Veramo agent. They are not required by SIWE-only tests. The example KMS value and zero address intentionally fail command validation. Never provide or store the Admin wallet private key.
 
 ## Endpoints
 
@@ -81,9 +81,21 @@ Returns the authenticated response above for a valid cookie, or:
 
 Deletes the server-side session, clears the cookie, and returns `204 No Content`.
 
+### `POST /api/ssi/company-role/verify`
+
+Requires the HttpOnly SIWE session cookie and accepts a JSON credential only:
+
+```json
+{ "credential": { "...": "W3C Company Role Credential" } }
+```
+
+The request is limited to 256 KB and rejects extra fields such as a submitted wallet address. The wallet comes exclusively from the verified SIWE session. The service resolves the configured authority DID by alias and checks the JWT signature, trusted issuer, subject DID, wallet binding, shared role, issuance and expiration dates, and local status.
+
+A successful response contains safe metadata only: `verified`, `credentialId`, `role`, `expirationStatus`, `locallyVerified`, `onChainStatusChecked`, `authorizationReady`, `reasons`, and a safe session summary. It never returns the credential, JWT, credential hash, issuer DID, or subject DID. Local success always leaves `onChainStatusChecked` and `authorizationReady` false.
+
 ## Authentication boundary
 
-SIWE proves control of a wallet address only. The SSI package now contains a server-side Company Role Credential verification service, but it is not exposed as an API endpoint and cannot authorize users until future on-chain status checks are implemented. The API does not return a stakeholder role or authorize business workflows. The frontend must not derive a role from its URL, wallet address, fixture data, or local storage.
+SIWE proves control of a wallet address only. The credential endpoint can return a locally verified role, but it cannot authorize users until future on-chain status checks are implemented. The frontend must not derive a role from its URL, wallet address, fixture data, or local storage.
 
 ## Storage and production limitations
 

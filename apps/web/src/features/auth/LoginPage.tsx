@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { Brand } from '../../components/brand/Brand';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
+import { CredentialVerificationPanel } from './CredentialVerificationPanel';
 import { shortenAddress, useWalletAuthentication } from './useWalletAuthentication';
 
 const learningTabs = {
@@ -106,7 +108,14 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 function LoginPage() {
   const [activeTab, setActiveTab] = useState<LearningTab>('process');
   const [showWalletHelp, setShowWalletHelp] = useState(false);
-  const { connect, logout, state: walletState, switchToSepolia } = useWalletAuthentication();
+  const {
+    connect,
+    credentialState,
+    logout,
+    presentCredential,
+    state: walletState,
+    switchToSepolia,
+  } = useWalletAuthentication();
   const activeLearningTab = learningTabs[activeTab];
   const isWalletBusy = ['connecting', 'restoring', 'signing', 'verifying'].includes(
     walletState.phase,
@@ -282,9 +291,11 @@ function LoginPage() {
                   <div>
                     <dt>Credential</dt>
                     <dd>
-                      {walletState.phase === 'authenticated'
-                        ? 'Verification required'
-                        : 'Not verified'}
+                      {walletState.credentialVerified
+                        ? `${walletState.role ?? 'Role'} · locally verified`
+                        : walletState.phase === 'authenticated'
+                          ? 'Verification required'
+                          : 'Not verified'}
                     </dd>
                   </div>
                 </dl>
@@ -323,6 +334,14 @@ function LoginPage() {
                 >
                   {walletState.message}
                 </p>
+                {walletState.phase === 'authenticated' && (
+                  <CredentialVerificationPanel
+                    credentialId={walletState.credentialId}
+                    credentialState={credentialState}
+                    onPresent={presentCredential}
+                    role={walletState.role}
+                  />
+                )}
                 <Link className="register-button" to="/register-company">
                   Register a company
                 </Link>
@@ -472,4 +491,3 @@ function LoginPage() {
 }
 
 export default LoginPage;
-import { LoadingIndicator } from '../../components/ui/LoadingIndicator';

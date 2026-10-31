@@ -19,8 +19,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { WorkspaceKey } from './workspace-config';
+import type { TraceChainWorkspaceRole } from '@tracechain/shared';
 
-export type WorkspaceRole = WorkspaceKey;
+export type WorkspaceRole = WorkspaceKey & TraceChainWorkspaceRole;
 export const workspaceNavigation = {
   admin: [
     ['overview', 'Overview', LayoutDashboard],

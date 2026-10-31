@@ -6,9 +6,15 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:300
 export interface AuthenticatedSession {
   address: string;
   authenticated: true;
-  credentialVerified: false;
+  authorizationReady: false;
+  credentialId?: string;
+  credentialVerified: boolean;
   expiresAt: string;
-  message: 'Wallet verified. Company Role Credential verification is required.';
+  locallyVerified: boolean;
+  message: string;
+  onChainStatusChecked: false;
+  role?: CompanyRole;
+  verifiedAt?: string;
 }
 
 export interface UnauthenticatedSession {
@@ -39,8 +45,8 @@ export class AuthApiError extends Error {
   }
 }
 
-async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}/api/auth${path}`, {
+async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     credentials: 'include',
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
@@ -60,23 +66,53 @@ async function authRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function requestNonce(address: string) {
-  return authRequest<NonceResponse>('/nonce', {
+  return apiRequest<NonceResponse>('/api/auth/nonce', {
     body: JSON.stringify({ address }),
     method: 'POST',
   });
 }
 
 export function verifySiweMessage(message: string, signature: string) {
-  return authRequest<AuthenticatedSession>('/verify', {
+  return apiRequest<AuthenticatedSession>('/api/auth/verify', {
     body: JSON.stringify({ message, signature }),
     method: 'POST',
   });
 }
 
 export function getAuthSession() {
-  return authRequest<SessionResponse>('/session');
+  return apiRequest<SessionResponse>('/api/auth/session');
 }
 
 export function deleteAuthSession() {
-  return authRequest<void>('/logout', { method: 'POST' });
+  return apiRequest<void>('/api/auth/logout', { method: 'POST' });
+}
+import type { CompanyRole } from '@tracechain/shared';
+
+export type CredentialFailureReason =
+  | 'MALFORMED_CREDENTIAL'
+  | 'INVALID_SIGNATURE'
+  | 'UNTRUSTED_ISSUER'
+  | 'WRONG_WALLET'
+  | 'UNSUPPORTED_ROLE'
+  | 'NOT_YET_VALID'
+  | 'EXPIRED'
+  | 'INACTIVE_STATUS';
+
+export interface CompanyRoleVerificationResponse {
+  authorizationReady: false;
+  credentialId?: string;
+  expirationStatus: 'EXPIRED' | 'NOT_YET_VALID' | 'UNKNOWN' | 'VALID';
+  locallyVerified: boolean;
+  onChainStatusChecked: false;
+  reasons: CredentialFailureReason[];
+  role?: CompanyRole;
+  session?: AuthenticatedSession;
+  verified: boolean;
+}
+
+export function verifyCompanyRoleCredential(credential: Record<string, unknown>) {
+  return apiRequest<CompanyRoleVerificationResponse>('/api/ssi/company-role/verify', {
+    body: JSON.stringify({ credential }),
+    method: 'POST',
+  });
 }

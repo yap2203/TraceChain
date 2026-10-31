@@ -14,6 +14,7 @@ The current version includes a responsive React application, five integrated sta
 | Stakeholder workspace UI                 | Integrated with sample fixtures and simulated interactions                            |
 | Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                   |
 | Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                       |
+| Company Role Credential presentation     | Authenticated JSON upload and safe session summary implemented                        |
 | Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
 | Credential-based RBAC                    | Remains fail-closed until on-chain status checks are implemented                      |
 | SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
@@ -116,7 +117,7 @@ VITE_API_BASE_URL=http://localhost:3000
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
 
-The four SSI variables are validated only when the bootstrap command runs, so the API and SIWE tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
+SSI variables are loaded lazily when an SSI request or command needs the Veramo agent, so API startup and SIWE-only tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping or presenting a credential. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
 
 ## SSI and System Admin bootstrap
 
@@ -132,9 +133,10 @@ Put that value, a real Sepolia RPC URL, the authority alias, and the public Admi
 
 ```bash
 npm run ssi:bootstrap-admin
+npm run ssi:export-admin-credential
 ```
 
-Do not run the command with `.env.example` placeholders. It creates or reuses the server-managed Product Traceability Authority DID, derives the Admin subject DID from the public wallet address, and issues at most one active bootstrap `SYSTEM_ADMIN` Company Role Credential. CLI output contains safe identifiers and status only. The credential and encrypted issuer key remain off-chain; MetaMask continues to control the Admin wallet key.
+Do not run these commands with `.env.example` placeholders. The bootstrap command creates or reuses the server-managed Product Traceability Authority DID, derives the Admin subject DID from the public wallet address, and issues at most one active bootstrap `SYSTEM_ADMIN` Company Role Credential. The export command copies that verified credential to `.tracechain/holder/admin-company-role-credential.json` for development-only holder delivery. It will not silently overwrite a different credential. CLI output contains safe identifiers and status only. The credential and encrypted issuer key remain off-chain; MetaMask continues to control the Admin wallet key.
 
 The credential verification service returns a deterministic SHA-256 hash for future blockchain registration, but `onChainStatusChecked` and `authorizationReady` remain `false`. Stakeholder dashboards must not be unlocked until the CredentialRegistry and StakeholderRegistry checks exist.
 
@@ -163,9 +165,9 @@ This behavior requires `import.meta.env.DEV`; production builds and non-local ho
 
 The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it connects MetaMask, requires Sepolia, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API.
 
-The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It then creates a process-local session. Authentication proves wallet control only: the current response always contains `credentialVerified: false` and supplies no role.
+The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It then creates a process-local session. Authentication proves wallet control only. Once signed in, a user may select a Company Role Credential JSON file; the browser sends it directly to `POST /api/ssi/company-role/verify` without storing it in browser storage.
 
-Production workspace records remain locked until a future service cryptographically verifies a valid Company Role Credential for the requested role. A URL, wallet address, fixture value, or local browser value must never grant access.
+Successful local credential verification stores only a safe session summary and displays the verified role. Production workspace records remain locked because blockchain status has not been checked and `authorizationReady` remains `false`. A URL, wallet address, fixture value, or local browser value must never grant access.
 
 ## Workspace UI
 
@@ -193,10 +195,12 @@ npm run build
 npm run typecheck
 npm run test:auth
 npm run test:ssi
+npm run test:ssi-api
+npm run test:workspace-access
 npm run format:check
-npm audit
+npm audit --omit=dev
 ```
 
-The authentication suite contains 13 tests and the SSI suite contains 15 offline tests. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask. Targeted browser checks have covered all 29 stakeholder pages at 320, 390, 768, and 1440 pixel widths, including loading states, canonical navigation, pagination, filters, dialogs, local access, and production denial. The browser scripts are currently local development aids rather than a committed test package.
+The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the workspace access guard contains 3 tests. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 See [project context](docs/PROJECT_CONTEXT.md), [decisions](docs/DECISIONS.md), and [progress](docs/PROGRESS.md) for the project source of truth.

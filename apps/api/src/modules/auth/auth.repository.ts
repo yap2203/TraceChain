@@ -41,7 +41,7 @@ export class InMemorySessionRepository implements SessionRepository {
   private readonly records = new Map<string, SessionRecord>();
 
   async save(record: SessionRecord) {
-    this.records.set(record.id, { ...record });
+    this.records.set(record.id, copySessionRecord(record));
   }
 
   async find(id: string, now: Date) {
@@ -54,10 +54,22 @@ export class InMemorySessionRepository implements SessionRepository {
       return null;
     }
 
-    return { ...record };
+    return copySessionRecord(record);
   }
 
   async delete(id: string) {
     this.records.delete(id);
   }
+}
+
+function copySessionRecord(record: SessionRecord): SessionRecord {
+  return {
+    ...record,
+    credentialVerification: record.credentialVerification
+      ? {
+          ...record.credentialVerification,
+          verifiedAt: new Date(record.credentialVerification.verifiedAt),
+        }
+      : undefined,
+  };
 }

@@ -2,7 +2,7 @@
 
 TraceChain now has a server-side Veramo SSI foundation in `@tracechain/ssi`. It creates and resolves `did:ethr` identifiers on Ethereum Sepolia, uses JWT proofs for W3C credentials and presentations, persists non-SQL JSON data, encrypts issuer key material, and provides typed Company Role Credential issuance and verification services.
 
-## Planned responsibilities
+## Current responsibilities
 
 - `KeyManager` with local KMS and `PrivateKeyStoreJson` protected by `SecretBox`.
 - `DIDManager` and `EthrDIDProvider` for `did:ethr:sepolia`.
@@ -37,13 +37,15 @@ The public DID/key metadata, messages, credentials, and presentations are stored
 4. Find and reuse an existing active bootstrap credential, or issue one `SYSTEM_ADMIN` credential.
 5. Save the issuer copy and return identifiers/status only.
 
-The command is `npm run ssi:bootstrap-admin`. It requires the local variables documented in the root README and must not be run with placeholders.
+The bootstrap command is `npm run ssi:bootstrap-admin`. After bootstrap, `npm run ssi:export-admin-credential` writes the active, cryptographically verified Admin credential to the ignored `.tracechain/holder/admin-company-role-credential.json` path. This is a development-only delivery bridge, and it refuses to silently replace a different file. Both commands require the local variables documented in the root README and must not be run with placeholders.
+
+The API creates one lazy Veramo agent promise per process only when an SSI request arrives. `POST /api/ssi/company-role/verify` binds verification to the SIWE session wallet and configured authority DID. The complete credential is used only for verification; only its safe summary is retained in the process-local session.
 
 ## Still required
 
 - On-chain `CredentialRegistry` and `StakeholderRegistry` status checks
 - Credential-based RBAC and stakeholder route/API authorization
-- Credential delivery/presentation flow for companies
+- Production credential delivery and holder-wallet design (the current file export is development-only)
 - Production-grade durable key custody and storage review
 - Ingredient Credentials and selective disclosure
 - Presentation request and selective-disclosure format

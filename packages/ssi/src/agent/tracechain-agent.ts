@@ -24,7 +24,11 @@ import { KeyManager } from '@veramo/key-manager';
 import { KeyManagementSystem, SecretBox } from '@veramo/kms-local';
 import { getResolver as getEthrResolver } from 'ethr-did-resolver';
 
-import { validateTraceChainSsiConfig, type TraceChainSsiConfig } from '../config/ssi-config.js';
+import {
+  SEPOLIA_ETHR_DID_REGISTRY,
+  validateTraceChainSsiConfig,
+  type TraceChainSsiConfig,
+} from '../config/ssi-config.js';
 import { createAtomicJsonStore } from '../storage/json-file-store.js';
 
 export const TRACECHAIN_ETHR_PROVIDER = 'did:ethr:sepolia';
@@ -56,6 +60,7 @@ export async function createTraceChainAgent(config: TraceChainSsiConfig): Promis
         {
           chainId: config.chainId,
           name: config.networkName,
+          registry: SEPOLIA_ETHR_DID_REGISTRY,
           rpcUrl: config.rpcUrl,
         },
       ],
@@ -80,6 +85,7 @@ export async function createTraceChainAgent(config: TraceChainSsiConfig): Promis
               {
                 chainId: config.chainId,
                 name: config.networkName,
+                registry: SEPOLIA_ETHR_DID_REGISTRY,
                 rpcUrl: config.rpcUrl,
               },
             ],

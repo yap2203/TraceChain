@@ -4,15 +4,10 @@ import { getAddress } from 'ethers';
 import type { TraceChainAgent } from '../agent/tracechain-agent.js';
 import { createOrGetAuthorityDid } from '../did/authority-did.service.js';
 import {
-  CompanyRoleCredentialStatus,
-  companyRoleCredentialSchema,
-  issuerDidOf,
-} from '../credentials/company-role-credential.js';
-import {
   issueCompanyRoleCredential,
   walletAddressToDid,
 } from '../credentials/company-role-credential.service.js';
-import { verifyCompanyRoleCredential } from '../credentials/verification.service.js';
+import { findStoredCompanyRoleCredential } from '../credentials/stored-company-role-credential.service.js';
 
 export interface BootstrapSystemAdminInput {
   adminWalletAddress: string;
@@ -40,37 +35,19 @@ export async function bootstrapSystemAdmin(
   const subjectDid = walletAddressToDid(walletAddress);
   const authority = await createOrGetAuthorityDid(agent, input.authorityDidAlias);
 
-  const storedCredentials = await agent.dataStoreORMGetVerifiableCredentials({});
-  for (const stored of storedCredentials) {
-    const parsed = companyRoleCredentialSchema.safeParse(stored.verifiableCredential);
-    if (!parsed.success) continue;
-
-    const credential = parsed.data;
-    const isMatchingActiveBootstrap =
-      issuerDidOf(credential) === authority.identifier.did &&
-      credential.credentialSubject.id.toLowerCase() === subjectDid.toLowerCase() &&
-      credential.credentialSubject.companyId === 'TRACECHAIN_AUTHORITY' &&
-      credential.credentialSubject.role === CompanyRole.SYSTEM_ADMIN &&
-      credential.credentialStatus.status === CompanyRoleCredentialStatus.ACTIVE &&
-      new Date(credential.expirationDate).getTime() > now.getTime();
-
-    if (!isMatchingActiveBootstrap) continue;
-
-    const verification = await verifyCompanyRoleCredential(
-      agent,
-      credential,
-      walletAddress,
-      authority.identifier.did,
-      now,
-    );
-    if (!verification.verified || !verification.credentialHash || !verification.credentialId)
-      continue;
-
+  const existing = await findStoredCompanyRoleCredential(agent, {
+    authorityDid: authority.identifier.did,
+    companyId: 'TRACECHAIN_AUTHORITY',
+    now,
+    role: CompanyRole.SYSTEM_ADMIN,
+    walletAddress,
+  });
+  if (existing) {
     return {
       authorityDid: authority.identifier.did,
       authorityDidCreated: authority.created,
-      credentialHash: verification.credentialHash,
-      credentialId: verification.credentialId,
+      credentialHash: existing.credentialHash,
+      credentialId: existing.credential.id,
       credentialIssued: false,
       subjectDid,
       walletAddress,

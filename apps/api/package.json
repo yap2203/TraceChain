@@ -8,8 +8,10 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "ssi:bootstrap-admin": "tsx src/scripts/bootstrap-admin.ts",
+    "ssi:export-admin-credential": "tsx src/scripts/export-admin-credential.ts",
     "start": "node dist/server.js",
     "test:auth": "vitest run src/modules/auth/auth.test.ts",
+    "test:ssi-api": "vitest run src/modules/ssi/ssi.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
