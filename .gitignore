@@ -50,7 +50,7 @@ veramo-data/
 artifacts/
 cache/
 typechain-types/
-ignition/deployments/
+/packages/contracts/ignition/deployments/
 
 # Package-manager caches
 .npm/
