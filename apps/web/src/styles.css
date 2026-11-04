@@ -654,6 +654,143 @@ select {
   color: #ff9c9c;
 }
 
+.mobile-wallet-connection {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+  padding: 0.9rem;
+  border: 1px solid #1c7181;
+  border-radius: 10px;
+  background: rgb(8 76 91 / 20%);
+}
+
+.mobile-wallet-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 7px;
+  color: #05212a;
+  background: #10d8ef;
+}
+
+.mobile-wallet-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.mobile-wallet-connection h3,
+.mobile-wallet-connection p {
+  margin: 0;
+}
+
+.mobile-wallet-connection h3 {
+  color: #b8edff;
+  font-size: 0.82rem;
+}
+
+.mobile-wallet-connection p {
+  margin-top: 0.25rem;
+  color: #80aeca;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.mobile-wallet-connection small {
+  display: block;
+  margin-top: 0.45rem;
+  color: #607c94;
+  font-size: 0.64rem;
+  line-height: 1.4;
+}
+
+.mobile-wallet-connection button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 0.35rem 0;
+  border: 0;
+  color: #9ec8e3;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.mobile-wallet-connection button:hover,
+.mobile-wallet-connection button:focus-visible {
+  color: #e1f6ff;
+}
+
+.wallet-method-tabs {
+  margin-top: 0.9rem;
+  padding: 0.25rem;
+  border: 1px solid #1c354b;
+  border-radius: 10px;
+  background: #081321;
+}
+
+.wallet-method-tabs [role='tablist'] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.25rem;
+}
+
+.wallet-method-tabs button {
+  min-height: 38px;
+  padding: 0.45rem 0.65rem;
+  border: 0;
+  border-radius: 7px;
+  color: #7192aa;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.wallet-method-tabs button[aria-selected='true'] {
+  color: #dff9ff;
+  background: #123044;
+  box-shadow: inset 0 0 0 1px #20566f;
+}
+
+.wallet-method-tabs button:hover:not(:disabled),
+.wallet-method-tabs button:focus-visible {
+  color: #dff9ff;
+}
+
+.wallet-method-tabs button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.wallet-method-panel {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.wallet-method-copy {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0 0.15rem;
+}
+
+.wallet-method-copy strong {
+  color: #beddf0;
+  font-size: 0.75rem;
+}
+
+.wallet-method-copy span {
+  color: #66869d;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
 .connect-button:active,
 .logout-button:active,
 .register-button:active {

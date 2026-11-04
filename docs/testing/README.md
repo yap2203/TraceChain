@@ -23,7 +23,7 @@ npm audit --omit=dev
 - `npm run test:auth` builds the shared and SSI workspaces, then runs the API SIWE and session suite.
 - `npm run test:ssi` runs the offline Veramo, storage, bootstrap, issuance, and verification suite.
 - `npm run test:ssi-api` builds the shared and SSI workspaces, then runs authenticated Company Role Credential presentation and session tests.
-- `npm run test:frontend` runs all frontend authentication-presentation and workspace-access tests.
+- `npm run test:frontend` runs wallet-connection adapter, authentication-hook, login-presentation, credential-panel, and workspace-access tests.
 - `npm run test:workspace-access` checks the shared fail-closed frontend access guard.
 - `npm run format:check` checks the entire repository and can report older formatting differences outside a focused change.
 - `npm audit` reports dependency advisories and may require registry access.
@@ -43,7 +43,7 @@ The API authentication suite covers nonce validation, signature verification, re
 
 The 15-test SSI suite covers agent assembly, did:ethr creation, JSON persistence/restoration, encrypted private-key persistence, idempotent authority DID creation, idempotent Admin bootstrap, typed JWT issuance, valid verification, tampering, issuer trust, SIWE wallet binding, expiration, unsupported roles, malformed credentials, inactive local status, and the fail-closed authorization flag. It uses temporary operating-system directories and a controlled local DID resolver. It never contacts Sepolia, spends ETH, or depends on MetaMask.
 
-The 8-test SSI API suite covers authentication requirements, valid local verification, server-owned wallet binding, wrong-wallet denial, tampering, expiration, malformed and unsupported credentials, untrusted issuers, session isolation, safe restoration, logout, and new-session reset. Six login-presentation and credential-panel tests cover disconnected, wallet-authenticated, locally verified, rejected-replacement wording, the primary picker, and verified progress. Three frontend guard tests confirm that local verification cannot unlock production routes, roles must match the shared mapping, and sample access is limited to loopback development hosts.
+The 8-test SSI API suite covers authentication requirements, valid local verification, server-owned wallet binding, wrong-wallet denial, tampering, expiration, malformed and unsupported credentials, untrusted issuers, session isolation, safe restoration, logout, and new-session reset. The 26-test frontend suite covers lazy MetaMask Connect initialization, accessible extension/mobile tabs, persisted transport-choice reset, explicitly selected mobile provider paths, desktop QR display, QR cancellation, Sepolia switching, rejection and expiry errors, disconnect, SIWE sequencing, session restoration without wallet prompts, account and chain invalidation, state-aware login presentation, credential replacement, and the production workspace guard. Wallet tests mock the client and EIP-1193 provider and never contact a live MetaMask relay or RPC endpoint.
 
 The Hardhat starter contains Counter tests in TypeScript and Solidity; these validate the toolchain rather than TraceChain business rules.
 

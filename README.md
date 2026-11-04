@@ -25,7 +25,7 @@ The current version includes a responsive React application, five integrated sta
 
 ```text
 apps/
-  web/             React 19, Vite 8, TypeScript, React Router, and ethers
+  web/             React 19, Vite 8, React Router, ethers, and MetaMask Connect
   api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
   shared/          Shared company-role definitions
@@ -45,7 +45,7 @@ scripts/           Repository-wide automation documentation
 - Node.js 22 or later
 - npm 10 or later
 - Git
-- MetaMask for the wallet sign-in flow
+- MetaMask browser extension or MetaMask Mobile for the wallet sign-in flow
 
 ## Setup
 
@@ -78,6 +78,8 @@ Run the frontend and API together:
 ```bash
 npm run dev
 ```
+
+The root development command builds the shared and SSI workspaces before starting Vite and the API, so it also works directly after a clean `npm ci`.
 
 Or run them separately:
 
@@ -113,9 +115,12 @@ BOOTSTRAP_ADMIN_WALLET=0x0000000000000000000000000000000000000000
 
 ```text
 VITE_API_BASE_URL=http://localhost:3000
+VITE_SEPOLIA_RPC_URL=https://sepolia.example.invalid
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
+
+Replace the example-invalid `VITE_SEPOLIA_RPC_URL` with a browser-safe Sepolia endpoint. This is public browser configuration, not a place for a private key. If a hosted RPC provider key is embedded in this URL, restrict it to the intended frontend domains and Sepolia methods in the provider dashboard. Never use a privileged or unrestricted secret in a `VITE_` variable.
 
 SSI variables are loaded lazily when an SSI request or command needs the Veramo agent, so API startup and SIWE-only tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping or presenting a credential. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
 
@@ -163,7 +168,9 @@ This behavior requires `import.meta.env.DEV`; production builds and non-local ho
 
 ## Authentication
 
-The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it connects MetaMask, requires Sepolia, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API.
+The login page restores an existing HttpOnly-cookie session without initializing MetaMask Connect or requesting wallet access. The authentication panel provides Browser extension and Mobile QR tabs. The extension tab uses the installed browser wallet, while the mobile tab explicitly selects MetaMask Connect's official QR/deep-link transport even when the extension is installed. Selecting Mobile QR clears only MetaMask Connect's persisted transport-choice marker before the mobile client starts, preventing a previous extension choice from being silently reused. A QR connection only establishes the EIP-1193 wallet provider; TraceChain still requires Sepolia, requests a five-minute nonce, builds an ERC-4361 message, asks the connected wallet to sign it, and sends the signed message to the API.
+
+The desktop QR state explains that approval and signing continue in MetaMask Mobile and provides a cancel action. Rejected, expired, and failed connections return to a retryable state. Logout requests both API-session deletion and wallet-connection disconnection when supported. TraceChain does not place private keys, SIWE messages, signatures, or credential files in browser local storage.
 
 The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It then creates a process-local session. Authentication proves wallet control only. Once signed in, a user may select a Company Role Credential JSON file; the browser sends it directly to `POST /api/ssi/company-role/verify` without storing it in browser storage.
 
@@ -204,7 +211,7 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the frontend contains 9 authentication-presentation, credential-panel, and workspace-access tests. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the frontend contains 26 wallet-adapter, authentication-hook, presentation, credential-panel, and workspace-access tests. Frontend wallet tests use mocked MetaMask clients and EIP-1193 providers; they do not contact a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

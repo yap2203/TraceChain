@@ -7,6 +7,7 @@
 - Added repository formatting, environment templates, ignore rules, and documentation structure.
 - Implemented the responsive TraceChain landing page, branding, registration shell, and role route hierarchy.
 - Implemented ERC-4361 wallet authentication with MetaMask and Sepolia.
+- Added the official MetaMask Connect EVM adapter with accessible Browser extension and Mobile QR tabs, including explicit mobile transport selection when an extension or previous extension session exists.
 - Added five-minute address-bound nonces, signature validation, single-use nonce handling, HttpOnly-cookie sessions, restoration, logout, and 13 authentication tests.
 - Added repository interfaces and process-local development implementations for nonces and sessions.
 - Added `POST /api/ssi/company-role/verify`, authenticated credential presentation, safe session restoration, and logout cleanup.
@@ -23,6 +24,8 @@
 - Added responsive workspace navigation, Lucide icons, scoped light/dark themes, centered accessible loading states, and viewport-safe dialogs.
 - Added shared client-side table pagination with 5, 10, 25, 50, and 100-record page-size options.
 - Made login actions state-aware for disconnected, wallet-authenticated, and locally verified sessions, including a three-step authorization status and safe credential replacement UX.
+- Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, and QR-selection tests; the frontend suite now contains 26 tests and performs no live relay or RPC calls.
 - Enabled temporary account-free sample UI access only on local Vite loopback hosts.
 - Kept production workspace access fail-closed because blockchain role and credential-status verification are not yet implemented, even when a Company Role Credential has been verified locally.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.

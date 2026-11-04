@@ -40,6 +40,7 @@ const learningTabs = {
 } as const;
 
 type LearningTab = keyof typeof learningTabs;
+type WalletConnectionTab = 'extension' | 'mobile';
 type IconName = 'shield' | 'wallet' | 'check' | 'leaf' | 'factory' | 'truck' | 'store' | 'blocks';
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -108,9 +109,12 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 
 function LoginPage() {
   const [activeTab, setActiveTab] = useState<LearningTab>('process');
+  const [walletConnectionTab, setWalletConnectionTab] = useState<WalletConnectionTab>('extension');
   const [showWalletHelp, setShowWalletHelp] = useState(false);
   const {
+    cancelConnection,
     connect,
+    connectMobile,
     credentialState,
     logout,
     presentCredential,
@@ -127,6 +131,7 @@ function LoginPage() {
     connecting: 'Connecting…',
     error: 'Try again',
     idle: 'Connect MetaMask',
+    mobile_connecting: 'Waiting for MetaMask Mobile',
     rejected: 'Try again',
     restoring: 'Restoring session…',
     signing: 'Waiting for signature…',
@@ -329,30 +334,115 @@ function LoginPage() {
                   </span>
                 </div>
 
-                {walletState.phase === 'authenticated' ? (
+                {walletState.phase !== 'authenticated' && (
+                  <div className="wallet-method-tabs">
+                    <div aria-label="Choose wallet connection method" role="tablist">
+                      <button
+                        aria-controls="wallet-method-panel"
+                        aria-selected={walletConnectionTab === 'extension'}
+                        disabled={
+                          isWalletBusy ||
+                          walletState.phase === 'mobile_connecting' ||
+                          walletState.phase === 'switch_required'
+                        }
+                        onClick={() => setWalletConnectionTab('extension')}
+                        role="tab"
+                        type="button"
+                      >
+                        Browser extension
+                      </button>
+                      <button
+                        aria-controls="wallet-method-panel"
+                        aria-selected={walletConnectionTab === 'mobile'}
+                        disabled={
+                          isWalletBusy ||
+                          walletState.phase === 'mobile_connecting' ||
+                          walletState.phase === 'switch_required'
+                        }
+                        onClick={() => setWalletConnectionTab('mobile')}
+                        role="tab"
+                        type="button"
+                      >
+                        Mobile QR
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {walletState.phase === 'mobile_connecting' ? (
+                  <div
+                    className={`mobile-wallet-connection mobile-wallet-connection--${walletState.mobileConnectionMode ?? 'qr'}`}
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <span className="mobile-wallet-icon" aria-hidden="true">
+                      <Icon name="wallet" />
+                    </span>
+                    <div>
+                      <h3>
+                        {walletState.mobileConnectionMode === 'qr'
+                          ? 'Scan with MetaMask Mobile'
+                          : 'Continue in MetaMask Mobile'}
+                      </h3>
+                      <p>{walletState.message}</p>
+                      <small>
+                        A wallet connection is not a TraceChain login until the SIWE signature is
+                        verified.
+                      </small>
+                    </div>
+                    <button onClick={() => void cancelConnection()} type="button">
+                      Cancel connection
+                    </button>
+                  </div>
+                ) : walletState.phase === 'authenticated' ? (
                   <button className="logout-button" onClick={() => void logout()} type="button">
                     Log out {walletState.address ? shortenAddress(walletState.address) : ''}
                   </button>
                 ) : (
-                  <button
-                    className={`connect-button${isWalletBusy ? ' is-busy' : ''}`}
-                    disabled={isWalletBusy || walletState.phase === 'unavailable'}
-                    onClick={
-                      walletState.phase === 'switch_required'
-                        ? () => void switchToSepolia()
-                        : () => void connect()
-                    }
-                    type="button"
+                  <div
+                    aria-live="polite"
+                    className="wallet-method-panel"
+                    id="wallet-method-panel"
+                    role="tabpanel"
                   >
-                    {connectButtonLabel}
-                  </button>
+                    <div className="wallet-method-copy">
+                      <strong>
+                        {walletConnectionTab === 'extension'
+                          ? 'Use MetaMask in this browser'
+                          : 'Connect with MetaMask Mobile'}
+                      </strong>
+                      <span>
+                        {walletConnectionTab === 'extension'
+                          ? 'Approve the connection and login signature in the extension.'
+                          : 'Display a QR code, then scan and approve it from your phone.'}
+                      </span>
+                    </div>
+                    <button
+                      className={`connect-button${isWalletBusy ? ' is-busy' : ''}`}
+                      disabled={isWalletBusy || walletState.phase === 'unavailable'}
+                      onClick={
+                        walletState.phase === 'switch_required'
+                          ? () => void switchToSepolia()
+                          : walletConnectionTab === 'mobile'
+                            ? () => void connectMobile()
+                            : () => void connect()
+                      }
+                      type="button"
+                    >
+                      {walletState.phase === 'idle' && walletConnectionTab === 'mobile'
+                        ? 'Display QR code'
+                        : connectButtonLabel}
+                    </button>
+                  </div>
                 )}
-                <p
-                  className={`wallet-auth-message wallet-auth-message--${walletState.phase}`}
-                  role={walletState.phase === 'error' ? 'alert' : 'status'}
-                >
-                  {walletState.message}
-                </p>
+                {walletState.phase !== 'mobile_connecting' && (
+                  <p
+                    className={`wallet-auth-message wallet-auth-message--${walletState.phase}`}
+                    role={walletState.phase === 'error' ? 'alert' : 'status'}
+                  >
+                    {walletState.message}
+                  </p>
+                )}
                 {walletState.phase === 'authenticated' && (
                   <CredentialVerificationPanel
                     credentialId={walletState.credentialId}
