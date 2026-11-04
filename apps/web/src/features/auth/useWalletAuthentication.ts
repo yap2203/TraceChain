@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { CompanyRole } from '@tracechain/shared';
 import { BrowserProvider, getAddress, isAddress } from 'ethers';
 
+import { chainConfig, targetChainId } from '../../config/network';
 import {
   AuthApiError,
   deleteAuthSession,
@@ -16,7 +17,6 @@ import {
 } from './auth.api';
 import {
   metaMaskConnection,
-  SEPOLIA_CHAIN_ID,
   type MobileConnectionMode,
   type TraceChainWalletProvider,
   type WalletConnectionAdapter,
@@ -197,8 +197,10 @@ export function useWalletAuthentication(
 
     const handleChainChanged = (...args: unknown[]) => {
       const chainId = typeof args[0] === 'string' ? chainIdOf(args[0]) : null;
-      if (chainId !== SEPOLIA_CHAIN_ID && authenticatedAddress.current) {
-        void clearSession('Wallet network changed. Return to Sepolia and sign in again.');
+      if (chainId !== targetChainId && authenticatedAddress.current) {
+        void clearSession(
+          `Wallet network changed. Return to ${chainConfig.name} and sign in again.`,
+        );
       }
     };
 
@@ -297,12 +299,12 @@ export function useWalletAuthentication(
         if (!address) throw new Error('MetaMask did not return a wallet account.');
 
         setWalletProvider(connection.provider);
-        if (chainIdOf(connection.chainId) !== SEPOLIA_CHAIN_ID) {
+        if (chainIdOf(connection.chainId) !== targetChainId) {
           pendingConnection.current = { address, provider: connection.provider };
           setState({
             ...emptyAuthorization,
             address,
-            message: 'Sepolia is required. Confirm the network switch to continue.',
+            message: `${chainConfig.name} is required. Confirm the network switch to continue.`,
             phase: 'switch_required',
           });
           return;
@@ -334,7 +336,7 @@ export function useWalletAuthentication(
     setState({ ...emptyAuthorization, message: 'MetaMask connection cancelled', phase: 'idle' });
   }, [walletConnection]);
 
-  const switchToSepolia = useCallback(async () => {
+  const switchToTargetNetwork = useCallback(async () => {
     const connection = pendingConnection.current;
 
     if (!connection) {
@@ -350,36 +352,17 @@ export function useWalletAuthentication(
       setState({
         ...emptyAuthorization,
         address: connection.address,
-        message: 'Waiting for Sepolia network confirmation',
+        message: `Waiting for ${chainConfig.name} network confirmation`,
         phase: 'connecting',
       });
-      await walletConnection.switchToSepolia();
+      await walletConnection.switchToTargetNetwork();
       await signIn(new BrowserProvider(connection.provider), connection.address);
     } catch (error) {
-      const code = error && typeof error === 'object' ? (error as { code?: number }).code : undefined;
-      if (code === 4902) {
-        try {
-          await injectedProvider.request({
-            method: 'wallet_addEthereumChain',
-            params: [{
-              chainId: targetChainHex,
-              chainName: chainConfig.name,
-              nativeCurrency: { decimals: 18, name: chainConfig.currencySymbol, symbol: chainConfig.currencySymbol },
-              rpcUrls: [chainConfig.rpcUrl],
-            }],
-          });
-          await signIn(new BrowserProvider(injectedProvider), address);
-          return;
-        } catch (addError) {
-          setState({ ...emptyAuthorization, address, message: errorMessage(addError), phase: 'error' });
-          return;
-        }
-      }
       if (isUserRejection(error)) {
         setState({
           ...emptyAuthorization,
           address: connection.address,
-          message: 'The Sepolia network switch was rejected.',
+          message: `The ${chainConfig.name} network switch was rejected.`,
           phase: 'rejected',
         });
         return;

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   MetaMaskConnectionAdapter,
-  SEPOLIA_CHAIN_HEX,
+  TARGET_CHAIN_HEX,
   WalletConnectionError,
   type MetaMaskEvmClient,
   type MetaMaskEvmClientFactory,
@@ -15,7 +15,7 @@ function setup({ displayMobileUri = false, mobile = false } = {}) {
   const clearTransportPreference = vi.fn().mockResolvedValue(undefined);
   const provider = { request: vi.fn() } as unknown as TraceChainWalletProvider;
   const client: MetaMaskEvmClient = {
-    connect: vi.fn().mockResolvedValue({ accounts: [ACCOUNT], chainId: SEPOLIA_CHAIN_HEX }),
+    connect: vi.fn().mockResolvedValue({ accounts: [ACCOUNT], chainId: TARGET_CHAIN_HEX }),
     disconnect: vi.fn().mockResolvedValue(undefined),
     getProvider: vi.fn().mockReturnValue(provider),
     switchChain: vi.fn().mockResolvedValue(undefined),
@@ -29,7 +29,6 @@ function setup({ displayMobileUri = false, mobile = false } = {}) {
     iconUrl: 'https://tracechain.example/tracechain-mark.svg',
     isMobile: () => mobile,
     origin: 'https://tracechain.example',
-    rpcUrl: 'https://rpc.example',
   });
 
   return { adapter, clearTransportPreference, client, factory, provider };
@@ -41,16 +40,16 @@ describe('MetaMask Connect adapter', () => {
     expect(factory).not.toHaveBeenCalled();
   });
 
-  it('connects an extension-style provider on Sepolia', async () => {
+  it('connects an extension-style provider on the configured target chain', async () => {
     const { adapter, client, provider } = setup();
     const onMobileConnection = vi.fn();
 
     const connection = await adapter.connect({ onMobileConnection });
 
-    expect(client.connect).toHaveBeenCalledWith({ chainIds: [SEPOLIA_CHAIN_HEX] });
+    expect(client.connect).toHaveBeenCalledWith({ chainIds: [TARGET_CHAIN_HEX] });
     expect(connection).toEqual({
       accounts: [ACCOUNT],
-      chainId: SEPOLIA_CHAIN_HEX,
+      chainId: TARGET_CHAIN_HEX,
       provider,
     });
     expect(onMobileConnection).not.toHaveBeenCalled();
@@ -105,15 +104,15 @@ describe('MetaMask Connect adapter', () => {
     );
   });
 
-  it('switches only to the configured Sepolia network and disconnects cleanly', async () => {
+  it('switches only to the configured target network and disconnects cleanly', async () => {
     const { adapter, client } = setup();
     await adapter.connect();
 
-    await adapter.switchToSepolia();
+    await adapter.switchToTargetNetwork();
     await adapter.disconnect();
 
     expect(client.switchChain).toHaveBeenCalledWith(
-      expect.objectContaining({ chainId: SEPOLIA_CHAIN_HEX }),
+      expect.objectContaining({ chainId: TARGET_CHAIN_HEX }),
     );
     expect(client.disconnect).toHaveBeenCalledOnce();
   });

@@ -4,7 +4,7 @@ import { COMPANY_ROLE_TO_WORKSPACE } from '@tracechain/shared';
 
 import { Brand } from '../../components/brand/Brand';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
-import { chainConfig } from '../../config/chain';
+import { chainConfig } from '../../config/network';
 import { CredentialVerificationPanel } from './CredentialVerificationPanel';
 import { getLoginAuthPresentation } from './login-auth-presentation';
 import { shortenAddress, useWalletAuthentication } from './useWalletAuthentication';
@@ -149,11 +149,18 @@ function LoginPage() {
       !walletState.authorizationReady ||
       !walletState.onChainStatusChecked ||
       !walletState.role
-    ) return;
+    )
+      return;
 
     const workspace = COMPANY_ROLE_TO_WORKSPACE[walletState.role];
     navigate(`/${workspace}/overview`, { replace: true });
-  }, [navigate, walletState.authorizationReady, walletState.onChainStatusChecked, walletState.phase, walletState.role]);
+  }, [
+    navigate,
+    walletState.authorizationReady,
+    walletState.onChainStatusChecked,
+    walletState.phase,
+    walletState.role,
+  ]);
 
   useEffect(() => {
     const revealSections = document.querySelectorAll<HTMLElement>('[data-reveal-section]');
@@ -324,7 +331,9 @@ function LoginPage() {
                         walletState.phase === 'switch_required' ? 'status-error' : 'network-name'
                       }
                     >
-                      {walletState.phase === 'switch_required' ? 'Switch required' : chainConfig.name}
+                      {walletState.phase === 'switch_required'
+                        ? 'Switch required'
+                        : chainConfig.name}
                     </dd>
                   </div>
                   <div>
@@ -437,7 +446,7 @@ function LoginPage() {
                       disabled={isWalletBusy || walletState.phase === 'unavailable'}
                       onClick={
                         walletState.phase === 'switch_required'
-                          ? () => void switchToSepolia()
+                          ? () => void switchToTargetNetwork()
                           : walletConnectionTab === 'mobile'
                             ? () => void connectMobile()
                             : () => void connect()

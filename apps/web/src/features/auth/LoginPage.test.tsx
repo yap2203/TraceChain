@@ -28,7 +28,7 @@ vi.mock('./useWalletAuthentication', () => ({
       onChainStatusChecked: false,
       phase: 'idle',
     },
-    switchToSepolia: vi.fn(),
+    switchToTargetNetwork: vi.fn(),
   }),
 }));
 

@@ -19,16 +19,20 @@ const reasonLabels: Record<string, string> = {
 };
 
 export function CredentialVerificationPanel({
+  authorizationReady = false,
   credentialId,
   credentialState,
   credentialVerified,
+  onChainStatusChecked = false,
   onPresent,
   role,
   walletAddress,
 }: {
+  authorizationReady?: boolean;
   credentialId?: string;
   credentialState: CredentialVerificationState;
   credentialVerified: boolean;
+  onChainStatusChecked?: boolean;
   onPresent: (credential: Record<string, unknown>) => Promise<void>;
   role?: CompanyRole;
   walletAddress?: string;
@@ -38,6 +42,7 @@ export function CredentialVerificationPanel({
   const [showReplacementPicker, setShowReplacementPicker] = useState(false);
   const busy = credentialState.phase === 'reading' || credentialState.phase === 'verifying';
   const hasError = Boolean(fileError) || credentialState.phase === 'error';
+  const blockchainAuthorizationComplete = authorizationReady && onChainStatusChecked;
 
   useEffect(() => {
     if (credentialVerified && credentialState.phase === 'success') {
@@ -120,17 +125,19 @@ export function CredentialVerificationPanel({
               Role credential verified <strong>Complete</strong>
             </p>
           </li>
-          <li className="is-pending">
-            <span aria-hidden="true">3</span>
+          <li className={blockchainAuthorizationComplete ? 'is-complete' : 'is-pending'}>
+            <span aria-hidden="true">{blockchainAuthorizationComplete ? '✓' : '3'}</span>
             <p>
-              Blockchain authorization <strong>Pending</strong>
+              Blockchain authorization{' '}
+              <strong>{blockchainAuthorizationComplete ? 'Complete' : 'Pending'}</strong>
             </p>
           </li>
         </ol>
 
         <p className="authorization-pending-note">
-          Dashboard access remains locked until blockchain role and credential-status verification
-          is implemented.
+          {blockchainAuthorizationComplete
+            ? 'Wallet, role credential, and blockchain authorization checks are complete.'
+            : 'Dashboard access remains locked until blockchain role and credential-status verification is complete.'}
         </p>
 
         <button

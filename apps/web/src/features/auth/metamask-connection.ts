@@ -1,8 +1,10 @@
 import type { Eip1193Provider } from 'ethers';
 import type { createEVMClient } from '@metamask/connect-evm';
 
-export const SEPOLIA_CHAIN_ID = 11_155_111n;
-export const SEPOLIA_CHAIN_HEX = '0xaa36a7' as const;
+import { chainConfig, targetChainHex, targetChainId } from '../../config/network';
+
+export const TARGET_CHAIN_ID = targetChainId;
+export const TARGET_CHAIN_HEX = targetChainHex;
 
 export type WalletProviderEvent = 'accountsChanged' | 'chainChanged';
 export type MobileConnectionMode = 'deeplink' | 'qr';
@@ -29,7 +31,7 @@ export interface WalletConnectionAdapter {
     preference?: WalletConnectionPreference,
   ): Promise<WalletConnectionResult>;
   disconnect(): Promise<void>;
-  switchToSepolia(): Promise<void>;
+  switchToTargetNetwork(): Promise<void>;
 }
 
 type EvmClientOptions = Parameters<typeof createEVMClient>[0];
@@ -63,7 +65,6 @@ interface BrowserContext {
   iconUrl: string;
   isMobile: () => boolean;
   origin: string;
-  rpcUrl: string;
 }
 
 const defaultClientFactory: MetaMaskEvmClientFactory = async (options) => {
@@ -99,7 +100,7 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
       }
       const client = await this.getClient(preference);
       this.activeClient = client;
-      const connection = await client.connect({ chainIds: [SEPOLIA_CHAIN_HEX] });
+      const connection = await client.connect({ chainIds: [TARGET_CHAIN_HEX] });
       return {
         accounts: connection.accounts,
         chainId: connection.chainId,
@@ -124,19 +125,21 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
     );
   }
 
-  async switchToSepolia() {
+  async switchToTargetNetwork() {
     const client = this.activeClient;
     if (!client) throw new Error('Connect MetaMask before switching networks.');
-    const browser = this.getBrowser();
     await client.switchChain({
       chainConfiguration: {
-        blockExplorerUrls: ['https://sepolia.etherscan.io'],
-        chainId: SEPOLIA_CHAIN_HEX,
-        chainName: 'Ethereum Sepolia',
-        nativeCurrency: { decimals: 18, name: 'Sepolia Ether', symbol: 'ETH' },
-        rpcUrls: [browser.rpcUrl],
+        chainId: TARGET_CHAIN_HEX,
+        chainName: chainConfig.name,
+        nativeCurrency: {
+          decimals: 18,
+          name: chainConfig.currencySymbol,
+          symbol: chainConfig.currencySymbol,
+        },
+        rpcUrls: [chainConfig.rpcUrl],
       },
-      chainId: SEPOLIA_CHAIN_HEX,
+      chainId: TARGET_CHAIN_HEX,
     });
   }
 
@@ -146,7 +149,7 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
       const browser = this.getBrowser();
       clientPromise = this.clientFactory({
         analytics: { enabled: false },
-        api: { supportedNetworks: { [SEPOLIA_CHAIN_HEX]: browser.rpcUrl } },
+        api: { supportedNetworks: { [TARGET_CHAIN_HEX]: chainConfig.rpcUrl } },
         dapp: {
           iconUrl: browser.iconUrl,
           name: 'TraceChain',
@@ -233,7 +236,6 @@ function browserContext(): BrowserContext {
     iconUrl: new URL('/tracechain-mark.svg', origin).toString(),
     isMobile: () => /Android|iPhone|iPad|iPod/i.test(window.navigator.userAgent),
     origin,
-    rpcUrl: import.meta.env.VITE_SEPOLIA_RPC_URL || 'https://rpc.sepolia.org',
   };
 }
 

@@ -5,7 +5,7 @@ import { getAddress } from 'ethers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  SEPOLIA_CHAIN_HEX,
+  TARGET_CHAIN_HEX,
   WalletConnectionError,
   type TraceChainWalletProvider,
   type WalletConnectionAdapter,
@@ -84,12 +84,12 @@ class MockProvider implements TraceChainWalletProvider {
   }
 }
 
-function setupAdapter(chainId: string = SEPOLIA_CHAIN_HEX) {
+function setupAdapter(chainId: string = TARGET_CHAIN_HEX) {
   const provider = new MockProvider();
   const adapter: WalletConnectionAdapter = {
     connect: vi.fn().mockResolvedValue({ accounts: [ACCOUNT], chainId, provider }),
     disconnect: vi.fn().mockResolvedValue(undefined),
-    switchToSepolia: vi.fn().mockResolvedValue(undefined),
+    switchToTargetNetwork: vi.fn().mockResolvedValue(undefined),
   };
   return { adapter, provider };
 }
@@ -157,7 +157,7 @@ describe('wallet authentication with MetaMask Connect', () => {
     expect(result.current.state.phase).toBe('authenticated');
   });
 
-  it('requires a Sepolia switch before starting SIWE', async () => {
+  it('requires the configured network before starting SIWE', async () => {
     const { adapter } = setupAdapter('0x1');
     const { result } = renderHook(() => useWalletAuthentication(adapter));
     await waitFor(() => expect(result.current.state.phase).toBe('idle'));
@@ -166,8 +166,8 @@ describe('wallet authentication with MetaMask Connect', () => {
     expect(result.current.state.phase).toBe('switch_required');
     expect(authMocks.requestNonce).not.toHaveBeenCalled();
 
-    await act(() => result.current.switchToSepolia());
-    expect(adapter.switchToSepolia).toHaveBeenCalledOnce();
+    await act(() => result.current.switchToTargetNetwork());
+    expect(adapter.switchToTargetNetwork).toHaveBeenCalledOnce();
     expect(result.current.state.phase).toBe('authenticated');
   });
 
@@ -206,7 +206,7 @@ describe('wallet authentication with MetaMask Connect', () => {
     expect(adapter.disconnect).toHaveBeenCalledOnce();
     expect(result.current.state.phase).toBe('idle');
 
-    finishConnection?.({ accounts: [ACCOUNT], chainId: SEPOLIA_CHAIN_HEX, provider });
+    finishConnection?.({ accounts: [ACCOUNT], chainId: TARGET_CHAIN_HEX, provider });
   });
 
   it('handles a rejected SIWE signature separately from wallet connection', async () => {
@@ -236,7 +236,7 @@ describe('wallet authentication with MetaMask Connect', () => {
     expect(result.current.state.message).toContain('account changed');
   });
 
-  it('clears the authenticated session when the network leaves Sepolia', async () => {
+  it('clears the authenticated session when the wallet leaves the target network', async () => {
     const { adapter, provider } = setupAdapter();
     const { result } = renderHook(() => useWalletAuthentication(adapter));
     await waitFor(() => expect(result.current.state.phase).toBe('idle'));
