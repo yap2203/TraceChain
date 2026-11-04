@@ -41,6 +41,15 @@
 | React              | Provide the user interface                                                            |
 | Express API        | Coordinate authentication, Veramo verification, IPFS references, and blockchain reads |
 
+## Blockchain gateway and transaction signing
+
+- Keep blockchain RPC URLs, deployed contract addresses, ABIs, and authoritative reads in the Express API rather than duplicating contract configuration in the frontend.
+- Expose narrowly scoped API operations that validate inputs and prepare unsigned contract transactions.
+- Return only the target chain ID, contract destination, calldata, and value required for a prepared transaction.
+- Require MetaMask to sign and broadcast each user-authorized write so the stakeholder wallet remains Solidity's `msg.sender`.
+- Never send wallet private keys to the API and never use a backend wallet to impersonate stakeholder transactions.
+- Require an authorized SIWE session and matching role for protected reads and privileged transaction preparation.
+
 Hardhat is development tooling. It is not the production blockchain and does not replace persistent storage.
 
 ## Identity and role authorization

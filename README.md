@@ -152,15 +152,11 @@ VITE_CHAIN_ID=31337
 VITE_CHAIN_NAME=TraceChain Local
 VITE_CHAIN_RPC_URL=http://127.0.0.1:8545
 VITE_CHAIN_CURRENCY_SYMBOL=ETH
-VITE_STAKEHOLDER_REGISTRY_ADDRESS=0x...
-VITE_CREDENTIAL_REGISTRY_ADDRESS=0x...
-VITE_EVIDENCE_REGISTRY_ADDRESS=0x...
-VITE_INGREDIENT_REGISTRY_ADDRESS=0x...
-VITE_PRODUCT_REGISTRY_ADDRESS=0x...
-VITE_CUSTODY_TRANSFER_ADDRESS=0x...
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
+
+Contract addresses and ABIs are backend configuration. For writes, the API validates the requested operation and returns an unsigned transaction containing the chain ID, destination, calldata, and value. MetaMask signs and broadcasts that transaction so the authenticated stakeholder remains the contract `msg.sender`; private wallet keys never reach the API.
 
 Replace the example-invalid `VITE_SEPOLIA_RPC_URL` with a browser-safe Sepolia endpoint. This is public browser configuration, not a place for a private key. If a hosted RPC provider key is embedded in this URL, restrict it to the intended frontend domains and Sepolia methods in the provider dashboard. Never use a privileged or unrestricted secret in a `VITE_` variable.
 
@@ -222,7 +218,7 @@ Login actions follow the current session state. Disconnected users connect throu
 
 Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakeholder and workflow. `WorkspaceApp.tsx` owns canonical routing and the access boundary; `WorkspaceScreen.tsx` dispatches detailed pages. Shared workspace presentation components, receipts, reports, and table controls are kept in focused subfolders.
 
-The Admin overview and company-application screens read the configured `StakeholderRegistry` directly and show real loading, empty, and error states. Application rejection is a real administrator transaction. Remaining credential, access-control, supplier, manufacturer, distributor, retailer, receipt, and report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative. A centered accessible spinner covers lazy page loading and wallet/session checks.
+The Admin overview and company-application screens read the configured `StakeholderRegistry` through the authenticated API gateway and show real loading, empty, and error states. Application rejection is prepared by the API and signed by the administrator in MetaMask. Remaining credential, access-control, supplier, manufacturer, distributor, retailer, receipt, and report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative. A centered accessible spinner covers lazy page loading and wallet/session checks.
 
 ## Smart contracts
 
@@ -253,6 +249,7 @@ From the repository root:
 npm run build
 npm run typecheck
 npm run test:auth
+npm run test:blockchain
 npm run test:ssi
 npm run test:ssi-api
 npm run test:contracts

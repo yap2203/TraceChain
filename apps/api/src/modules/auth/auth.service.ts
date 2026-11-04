@@ -18,6 +18,10 @@ const AUTHENTICATED_MESSAGE =
   'Wallet verified. Company Role Credential verification is required.' as const;
 const LOCALLY_VERIFIED_MESSAGE =
   'Credential verified locally. Blockchain status verification is required.' as const;
+const AUTHORIZED_MESSAGE =
+  'Wallet, credential, and blockchain authorization verified.' as const;
+const BLOCKCHAIN_DENIED_MESSAGE =
+  'Credential verified, but the blockchain record does not authorize this wallet.' as const;
 const CLOCK_SKEW_MS = 60_000;
 
 export class AuthError extends Error {
@@ -211,13 +215,17 @@ export class AuthService {
       return {
         address: session.address,
         authenticated: true,
-        authorizationReady: false,
+        authorizationReady: verification.authorizationReady,
         credentialId: verification.credentialId,
         credentialVerified: true,
         expiresAt: session.expiresAt.toISOString(),
         locallyVerified: true,
-        message: LOCALLY_VERIFIED_MESSAGE,
-        onChainStatusChecked: false,
+        message: verification.authorizationReady
+          ? AUTHORIZED_MESSAGE
+          : verification.onChainStatusChecked
+            ? BLOCKCHAIN_DENIED_MESSAGE
+            : LOCALLY_VERIFIED_MESSAGE,
+        onChainStatusChecked: verification.onChainStatusChecked,
         role: verification.role,
         verifiedAt: verification.verifiedAt.toISOString(),
       };

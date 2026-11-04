@@ -25,12 +25,12 @@ export interface SessionRecord {
 }
 
 export interface CredentialVerificationSummary {
-  authorizationReady: false;
+  authorizationReady: boolean;
   credentialHash: string;
   credentialId: string;
   issuerDid: string;
   locallyVerified: true;
-  onChainStatusChecked: false;
+  onChainStatusChecked: boolean;
   role: CompanyRole;
   subjectDid: string;
   verifiedAt: Date;
@@ -39,9 +39,9 @@ export interface CredentialVerificationSummary {
 interface AuthenticatedSessionBase {
   address: string;
   authenticated: true;
-  authorizationReady: false;
+  authorizationReady: boolean;
   expiresAt: string;
-  onChainStatusChecked: false;
+  onChainStatusChecked: boolean;
 }
 
 export interface WalletOnlyAuthenticatedSession extends AuthenticatedSessionBase {
@@ -54,7 +54,10 @@ export interface LocallyVerifiedAuthenticatedSession extends AuthenticatedSessio
   credentialId: string;
   credentialVerified: true;
   locallyVerified: true;
-  message: 'Credential verified locally. Blockchain status verification is required.';
+  message:
+    | 'Credential verified locally. Blockchain status verification is required.'
+    | 'Credential verified, but the blockchain record does not authorize this wallet.'
+    | 'Wallet, credential, and blockchain authorization verified.';
   role: CompanyRole;
   verifiedAt: string;
 }

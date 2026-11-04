@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import { Brand } from '../../components/brand/Brand';
 import { Button, Card, Input, Select, StatusBadge } from '../../components/ui';
 import { chainConfig, targetChainId } from '../../config/chain';
-import { stakeholderRegistry } from '../../config/contracts';
+import { prepareCompanyApplication } from '../blockchain/blockchain.api';
 
 const roleOptions = [
   { label: 'Select a company role', value: '' }, { label: 'Supplier', value: 'SUPPLIER' },
@@ -70,9 +70,17 @@ export function RegisterCompanyPage() {
       const applicationId = id(`tracechain-application:${data.wallet}:${hexlify(randomBytes(16))}`);
       const profileHash = id(JSON.stringify({ ...data, declaration: undefined, documents: Object.entries(documents).map(([kind, file]) => ({ kind, name: file.name, size: file.size, type: file.type })) }));
       const localContentReference = `local://${profileHash}`;
-      const contract = stakeholderRegistry(signer);
-      const pending = await contract.submitApplication(applicationId, profileHash, localContentReference, roleValues[data.requestedRole], ZeroHash);
+      const prepared = await prepareCompanyApplication({
+        applicationId,
+        encryptedProfileCid: localContentReference,
+        previousApplicationId: ZeroHash,
+        profileHash,
+        requestedRole: roleValues[data.requestedRole],
+      });
+      if (BigInt(prepared.chainId) !== targetChainId) throw new Error('The API transaction targets a different chain.');
+      const pending = await signer.sendTransaction({ data: prepared.data, to: prepared.to, value: prepared.value });
       const receipt = await pending.wait();
+      if (!receipt) throw new Error('The transaction was not confirmed.');
       setTransaction({ applicationId, hash: receipt.hash });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'The local blockchain transaction failed.');

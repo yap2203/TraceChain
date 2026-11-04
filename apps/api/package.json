@@ -11,6 +11,7 @@
     "ssi:export-admin-credential": "tsx src/scripts/export-admin-credential.ts",
     "start": "node dist/server.js",
     "test:auth": "vitest run src/modules/auth/auth.test.ts",
+    "test:blockchain": "vitest run src/modules/blockchain/blockchain.test.ts",
     "test:ssi-api": "vitest run src/modules/ssi/ssi.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },

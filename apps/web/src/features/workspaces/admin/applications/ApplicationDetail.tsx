@@ -1,7 +1,8 @@
 import { BrowserProvider, id } from 'ethers';
 import { useState } from 'react';
 
-import { stakeholderRegistry } from '../../../../config/contracts';
+import { targetChainId } from '../../../../config/chain';
+import { prepareApplicationRejection } from '../../../blockchain/blockchain.api';
 import { Alert, Badge, Btn, Card, Modal, T, Textarea } from '../../shared/ui';
 import type { ChainApplication } from './types';
 
@@ -16,7 +17,9 @@ export function AppDetail({ app, onBack, onChanged }: { app: ChainApplication; o
     setBusy(true); setError('');
     try {
       const signer = await new BrowserProvider(window.ethereum).getSigner();
-      const transaction = await stakeholderRegistry(signer).rejectApplication(app.id, id(reason.trim()));
+      const prepared = await prepareApplicationRejection({ applicationId: app.id, reasonHash: id(reason.trim()) });
+      if (BigInt(prepared.chainId) !== targetChainId) throw new Error('The API transaction targets a different chain.');
+      const transaction = await signer.sendTransaction({ data: prepared.data, to: prepared.to, value: prepared.value });
       await transaction.wait();
       await onChanged();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Transaction failed.'); }

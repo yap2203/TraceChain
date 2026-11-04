@@ -27,7 +27,8 @@
 - Added shared client-side table pagination with 5, 10, 25, 50, and 100-record page-size options.
 - Made login actions state-aware for disconnected, wallet-authenticated, and locally verified sessions, including a three-step authorization status and safe credential replacement UX.
 - Removed the temporary account-free localhost bypass; local workspaces now require wallet, credential, and on-chain authorization.
-- Replaced Admin overview and company-application fixtures with direct local StakeholderRegistry reads, real empty/error states, and an on-chain rejection action.
+- Replaced Admin overview and company-application fixtures with authenticated API-gateway StakeholderRegistry reads, real empty/error states, and a MetaMask-signed on-chain rejection action.
+- Centralized contract addresses and ABIs in the API; live frontend writes now request validated unsigned transaction data and retain the stakeholder wallet as `msg.sender` through MetaMask.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Added mocked MetaMask client, EIP-1193 provider, transport-tab, and QR-selection tests; the frontend suite now contains 26 tests and performs no live relay or RPC calls.
 - Enabled temporary account-free sample UI access only on local Vite loopback hosts.
@@ -51,7 +52,6 @@
 
 ## Remaining work
 
-- Implement on-chain credential status verification and credential-based RBAC.
 - Select the database and replace process-local nonce and session storage.
 - Implement the on-chain credential revocation/status approach and production-grade SSI key/storage design.
 - Replace the remaining credential, access-control, supplier, manufacturer, distributor, retailer, receipt, and report fixtures with authenticated chain-backed workflows.

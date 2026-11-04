@@ -7,6 +7,10 @@ import {
 import { loadTraceChainSsiEnvironment } from '../../config/ssi-env.js';
 import type { AuthService } from '../auth/auth.service.js';
 import type { CredentialVerificationSummary } from '../auth/auth.types.js';
+import {
+  BlockchainAuthorizationUnavailableError,
+  type BlockchainAuthorizationService,
+} from '../blockchain/blockchain-authorization.service.js';
 import type {
   CompanyRoleVerificationApiResponse,
   CredentialExpirationStatus,
@@ -28,6 +32,7 @@ export interface CompanyRoleSsiServiceDependencies {
   agentProvider: TraceChainAgentProvider;
   authService: AuthService;
   authorityDidAlias: string | (() => string);
+  blockchainAuthorization?: BlockchainAuthorizationService;
   clock?: () => Date;
 }
 
@@ -89,13 +94,35 @@ export class CompanyRoleSsiService {
       };
     }
 
+    let authorizationReady = false;
+    let onChainStatusChecked = false;
+    if (this.dependencies.blockchainAuthorization) {
+      try {
+        authorizationReady = await this.dependencies.blockchainAuthorization.authorize({
+          credentialHash: result.credentialHash,
+          role: result.role,
+          walletAddress: session.address,
+        });
+        onChainStatusChecked = true;
+      } catch (error) {
+        if (error instanceof BlockchainAuthorizationUnavailableError) {
+          throw new SsiApiError(
+            'BLOCKCHAIN_AUTHORIZATION_UNAVAILABLE',
+            'The blockchain authorization service is unavailable. Check the RPC URL and deployed contract address.',
+            503,
+          );
+        }
+        throw error;
+      }
+    }
+
     const summary: CredentialVerificationSummary = {
-      authorizationReady: false,
+      authorizationReady,
       credentialHash: result.credentialHash,
       credentialId: result.credentialId,
       issuerDid: result.issuerDid,
       locallyVerified: true,
-      onChainStatusChecked: false,
+      onChainStatusChecked,
       role: result.role,
       subjectDid: result.subjectDid,
       verifiedAt,
@@ -106,11 +133,11 @@ export class CompanyRoleSsiService {
     );
 
     return {
-      authorizationReady: false,
+      authorizationReady,
       credentialId: result.credentialId,
       expirationStatus: 'VALID',
       locallyVerified: true,
-      onChainStatusChecked: false,
+      onChainStatusChecked,
       reasons: [],
       role: result.role,
       session: updatedSession,
