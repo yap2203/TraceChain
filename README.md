@@ -26,7 +26,7 @@ The current version includes a responsive React application, five stakeholder wo
 
 ```text
 apps/
-  web/             React 19, Vite 8, TypeScript, React Router, and ethers
+  web/             React 19, Vite 8, React Router, ethers, and MetaMask Connect
   api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
   shared/          Shared company-role definitions
@@ -46,7 +46,7 @@ scripts/           Repository-wide automation documentation
 - Node.js 22 or later
 - npm 10 or later
 - Git
-- MetaMask for the wallet sign-in flow
+- MetaMask browser extension or MetaMask Mobile for the wallet sign-in flow
 
 ## Setup
 
@@ -79,6 +79,8 @@ Run the frontend and API together:
 ```bash
 npm run dev
 ```
+
+The root development command builds the shared and SSI workspaces before starting Vite and the API, so it also works directly after a clean `npm ci`.
 
 Or run them separately:
 
@@ -159,6 +161,8 @@ VITE_CUSTODY_TRANSFER_ADDRESS=0x...
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
+
+Replace the example-invalid `VITE_SEPOLIA_RPC_URL` with a browser-safe Sepolia endpoint. This is public browser configuration, not a place for a private key. If a hosted RPC provider key is embedded in this URL, restrict it to the intended frontend domains and Sepolia methods in the provider dashboard. Never use a privileged or unrestricted secret in a `VITE_` variable.
 
 SSI variables are loaded lazily when an SSI request or command needs the Veramo agent, so API startup and SIWE-only tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping or presenting a credential. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
 
@@ -259,7 +263,7 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the frontend contains 9 authentication-presentation, credential-panel, and workspace-access tests. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the frontend contains 26 wallet-adapter, authentication-hook, presentation, credential-panel, and workspace-access tests. Frontend wallet tests use mocked MetaMask clients and EIP-1193 providers; they do not contact a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

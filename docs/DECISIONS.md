@@ -132,6 +132,7 @@ Record CID, integrity hash, and status on Ethereum
 ## Authentication and transient state
 
 - Use ERC-4361 Sign-In with Ethereum for wallet authentication.
+- Use the official `@metamask/connect-evm` client as the frontend wallet-connection adapter. Present Browser extension and Mobile QR tabs so the user explicitly selects the official transport. Clear only MetaMask Connect's persisted transport-choice marker before a mobile connection so an earlier extension choice cannot override the QR tab, while preserving the existing SIWE proof flow.
 - Access nonce and session storage through repository interfaces.
 - Use development-only, in-memory nonce and session repository implementations for the current demonstration.
 - Keep authentication state short-lived.

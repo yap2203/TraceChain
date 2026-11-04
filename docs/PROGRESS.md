@@ -9,6 +9,7 @@
 - Replaced the registration preview with the complete three-step company onboarding interface, including wallet association, supporting-document validation, review, and declaration.
 - Added environment-driven local-chain configuration, MetaMask network switching for chain 31337, real local company-application transactions, and an API endpoint that checks bytecode at all six configured contract addresses.
 - Implemented ERC-4361 wallet authentication with MetaMask and Sepolia.
+- Added the official MetaMask Connect EVM adapter with accessible Browser extension and Mobile QR tabs, including explicit mobile transport selection when an extension or previous extension session exists.
 - Added five-minute address-bound nonces, signature validation, single-use nonce handling, HttpOnly-cookie sessions, restoration, logout, and 13 authentication tests.
 - Added repository interfaces and process-local development implementations for nonces and sessions.
 - Added `POST /api/ssi/company-role/verify`, authenticated credential presentation, safe session restoration, and logout cleanup.
@@ -27,6 +28,9 @@
 - Made login actions state-aware for disconnected, wallet-authenticated, and locally verified sessions, including a three-step authorization status and safe credential replacement UX.
 - Removed the temporary account-free localhost bypass; local workspaces now require wallet, credential, and on-chain authorization.
 - Replaced Admin overview and company-application fixtures with direct local StakeholderRegistry reads, real empty/error states, and an on-chain rejection action.
+- Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, and QR-selection tests; the frontend suite now contains 26 tests and performs no live relay or RPC calls.
+- Enabled temporary account-free sample UI access only on local Vite loopback hosts.
 - Kept production workspace access fail-closed because blockchain role and credential-status verification are not yet implemented, even when a Company Role Credential has been verified locally.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
 
