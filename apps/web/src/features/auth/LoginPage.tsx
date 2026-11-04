@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { COMPANY_ROLE_TO_WORKSPACE } from '@tracechain/shared';
 
 import { Brand } from '../../components/brand/Brand';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
+import { chainConfig } from '../../config/chain';
 import { CredentialVerificationPanel } from './CredentialVerificationPanel';
 import { getLoginAuthPresentation } from './login-auth-presentation';
 import { shortenAddress, useWalletAuthentication } from './useWalletAuthentication';
@@ -107,6 +109,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 }
 
 function LoginPage() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<LearningTab>('process');
   const [showWalletHelp, setShowWalletHelp] = useState(false);
   const {
@@ -115,7 +118,7 @@ function LoginPage() {
     logout,
     presentCredential,
     state: walletState,
-    switchToSepolia,
+    switchToTargetNetwork,
   } = useWalletAuthentication();
   const activeLearningTab = learningTabs[activeTab];
   const authPresentation = getLoginAuthPresentation(walletState);
@@ -130,10 +133,22 @@ function LoginPage() {
     rejected: 'Try again',
     restoring: 'Restoring session…',
     signing: 'Waiting for signature…',
-    switch_required: 'Switch to Sepolia',
+    switch_required: `Switch to ${chainConfig.name}`,
     unavailable: 'MetaMask not detected',
     verifying: 'Verifying signature…',
   }[walletState.phase];
+
+  useEffect(() => {
+    if (
+      walletState.phase !== 'authenticated' ||
+      !walletState.authorizationReady ||
+      !walletState.onChainStatusChecked ||
+      !walletState.role
+    ) return;
+
+    const workspace = COMPANY_ROLE_TO_WORKSPACE[walletState.role];
+    navigate(`/${workspace}/overview`, { replace: true });
+  }, [navigate, walletState.authorizationReady, walletState.onChainStatusChecked, walletState.phase, walletState.role]);
 
   useEffect(() => {
     const revealSections = document.querySelectorAll<HTMLElement>('[data-reveal-section]');
@@ -194,7 +209,7 @@ function LoginPage() {
           <section className="introduction" aria-labelledby="page-title">
             <div className="introduction-content">
               <p className="hero-kicker">
-                <span /> Sepolia network
+                <span /> {chainConfig.name} network
               </p>
               <div className="hero-copy">
                 <h1 id="page-title">
@@ -266,7 +281,7 @@ function LoginPage() {
                 <div className="card-heading">
                   <span className="live-indicator">
                     <i />
-                    Sepolia
+                    {chainConfig.name}
                   </span>
                   <span>Secure access</span>
                 </div>
@@ -304,7 +319,7 @@ function LoginPage() {
                         walletState.phase === 'switch_required' ? 'status-error' : 'network-name'
                       }
                     >
-                      {walletState.phase === 'switch_required' ? 'Switch required' : 'Sepolia'}
+                      {walletState.phase === 'switch_required' ? 'Switch required' : chainConfig.name}
                     </dd>
                   </div>
                   <div>
@@ -339,7 +354,7 @@ function LoginPage() {
                     disabled={isWalletBusy || walletState.phase === 'unavailable'}
                     onClick={
                       walletState.phase === 'switch_required'
-                        ? () => void switchToSepolia()
+                        ? () => void switchToTargetNetwork()
                         : () => void connect()
                     }
                     type="button"
@@ -355,10 +370,12 @@ function LoginPage() {
                 </p>
                 {walletState.phase === 'authenticated' && (
                   <CredentialVerificationPanel
+                    authorizationReady={walletState.authorizationReady}
                     credentialId={walletState.credentialId}
                     credentialState={credentialState}
                     credentialVerified={walletState.credentialVerified}
                     onPresent={presentCredential}
+                    onChainStatusChecked={walletState.onChainStatusChecked}
                     role={walletState.role}
                     walletAddress={
                       walletState.address ? shortenAddress(walletState.address) : undefined

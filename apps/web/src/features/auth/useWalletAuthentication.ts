@@ -14,9 +14,8 @@ import {
   verifySiweMessage,
 } from './auth.api';
 import type { CompanyRole } from '@tracechain/shared';
+import { chainConfig, targetChainHex, targetChainId } from '../../config/chain';
 
-const SEPOLIA_CHAIN_ID = 11155111n;
-const SEPOLIA_CHAIN_HEX = '0xaa36a7';
 type ProviderEvent = 'accountsChanged' | 'chainChanged';
 
 interface InjectedProvider extends Eip1193Provider {
@@ -198,8 +197,8 @@ export function useWalletAuthentication() {
         chainId = null;
       }
 
-      if (chainId !== SEPOLIA_CHAIN_ID && authenticatedAddress.current) {
-        void clearSession('Wallet network changed. Return to Sepolia and sign in again.');
+      if (chainId !== targetChainId && authenticatedAddress.current) {
+        void clearSession(`Wallet network changed. Return to ${chainConfig.name} and sign in again.`);
       }
     };
 
@@ -220,7 +219,7 @@ export function useWalletAuthentication() {
       ]);
       const siweMessage = new SiweMessage({
         address,
-        chainId: Number(SEPOLIA_CHAIN_ID),
+        chainId: chainConfig.chainId,
         domain: window.location.host,
         expirationTime: challenge.expiresAt,
         issuedAt: new Date().toISOString(),
@@ -290,12 +289,12 @@ export function useWalletAuthentication() {
       if (!address) throw new Error('MetaMask did not return a wallet account.');
 
       const network = await provider.getNetwork();
-      if (network.chainId !== SEPOLIA_CHAIN_ID) {
+      if (network.chainId !== targetChainId) {
         pendingAddress.current = address;
         setState({
           ...emptyAuthorization,
           address,
-          message: 'Sepolia is required. Confirm the network switch to continue.',
+          message: `${chainConfig.name} is required. Confirm the network switch to continue.`,
           phase: 'switch_required',
         });
         return;
@@ -316,7 +315,7 @@ export function useWalletAuthentication() {
     }
   }, [signIn]);
 
-  const switchToSepolia = useCallback(async () => {
+  const switchToTargetNetwork = useCallback(async () => {
     const injectedProvider = getInjectedMetaMask();
     const address = pendingAddress.current;
 
@@ -333,20 +332,39 @@ export function useWalletAuthentication() {
       setState({
         ...emptyAuthorization,
         address,
-        message: 'Waiting for Sepolia network confirmation',
+        message: `Waiting for ${chainConfig.name} network confirmation`,
         phase: 'connecting',
       });
       await injectedProvider.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: SEPOLIA_CHAIN_HEX }],
+        params: [{ chainId: targetChainHex }],
       });
       await signIn(new BrowserProvider(injectedProvider), address);
     } catch (error) {
+      const code = error && typeof error === 'object' ? (error as { code?: number }).code : undefined;
+      if (code === 4902) {
+        try {
+          await injectedProvider.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: targetChainHex,
+              chainName: chainConfig.name,
+              nativeCurrency: { decimals: 18, name: chainConfig.currencySymbol, symbol: chainConfig.currencySymbol },
+              rpcUrls: [chainConfig.rpcUrl],
+            }],
+          });
+          await signIn(new BrowserProvider(injectedProvider), address);
+          return;
+        } catch (addError) {
+          setState({ ...emptyAuthorization, address, message: errorMessage(addError), phase: 'error' });
+          return;
+        }
+      }
       if (isUserRejection(error)) {
         setState({
           ...emptyAuthorization,
           address,
-          message: 'The Sepolia network switch was rejected.',
+          message: `The ${chainConfig.name} network switch was rejected.`,
           phase: 'rejected',
         });
         return;
@@ -389,6 +407,6 @@ export function useWalletAuthentication() {
     logout: clearSession,
     presentCredential,
     state,
-    switchToSepolia,
+    switchToTargetNetwork,
   };
 }

@@ -1,6 +1,7 @@
 import type { WalletAuthPhase } from './useWalletAuthentication';
 
 interface LoginAuthPresentationInput {
+  authorizationReady?: boolean;
   credentialVerified: boolean;
   locallyVerified: boolean;
   phase: WalletAuthPhase;
@@ -17,6 +18,16 @@ export interface LoginAuthPresentation {
 export function getLoginAuthPresentation(state: LoginAuthPresentationInput): LoginAuthPresentation {
   const authenticated = state.phase === 'authenticated';
   const locallyVerified = authenticated && state.credentialVerified && state.locallyVerified;
+
+  if (locallyVerified && state.authorizationReady) {
+    return {
+      authenticated,
+      authenticationTitle: 'Company access verified',
+      heroActionLabel: 'Open workspace',
+      locallyVerified,
+      securityActionLabel: 'Open workspace',
+    };
+  }
 
   if (locallyVerified) {
     return {

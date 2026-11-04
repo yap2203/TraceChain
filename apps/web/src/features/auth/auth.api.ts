@@ -6,13 +6,13 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:300
 export interface AuthenticatedSession {
   address: string;
   authenticated: true;
-  authorizationReady: false;
+  authorizationReady: boolean;
   credentialId?: string;
   credentialVerified: boolean;
   expiresAt: string;
   locallyVerified: boolean;
   message: string;
-  onChainStatusChecked: false;
+  onChainStatusChecked: boolean;
   role?: CompanyRole;
   verifiedAt?: string;
 }
@@ -99,11 +99,11 @@ export type CredentialFailureReason =
   | 'INACTIVE_STATUS';
 
 export interface CompanyRoleVerificationResponse {
-  authorizationReady: false;
+  authorizationReady: boolean;
   credentialId?: string;
   expirationStatus: 'EXPIRED' | 'NOT_YET_VALID' | 'UNKNOWN' | 'VALID';
   locallyVerified: boolean;
-  onChainStatusChecked: false;
+  onChainStatusChecked: boolean;
   reasons: CredentialFailureReason[];
   role?: CompanyRole;
   session?: AuthenticatedSession;
