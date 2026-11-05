@@ -56,21 +56,19 @@ From the repository root:
 npm install
 ```
 
-Copy the tracked environment templates. On Windows PowerShell:
+Copy the shared root environment template. On Windows PowerShell:
 
 ```powershell
-Copy-Item apps/api/.env.example apps/api/.env
-Copy-Item apps/web/.env.example apps/web/.env
+Copy-Item .env.example .env
 ```
 
 On macOS or Linux:
 
 ```bash
-cp apps/api/.env.example apps/api/.env
-cp apps/web/.env.example apps/web/.env
+cp .env.example .env
 ```
 
-The real `.env` files are ignored. Example files must contain safe defaults or placeholders only. Never add private keys, seed phrases, API secrets, real credentials, or personal supporting documents to the repository.
+The real root `.env` file is ignored. The example file must contain safe defaults or placeholders only. Never add private keys, seed phrases, API secrets, real credentials, or personal supporting documents to the repository.
 
 ## Development
 
@@ -108,7 +106,7 @@ In a second terminal, deploy the complete module:
 npx hardhat ignition deploy ignition/modules/TraceChain.ts --network localhost --deployment-id tracechain-local --reset
 ```
 
-Copy the resulting addresses from `ignition/deployments/tracechain-local/deployed_addresses.json` into the ignored `apps/web/.env` and `apps/api/.env`. The tracked examples contain the deterministic addresses produced by the current local deployment. Restart both development servers after changing environment files.
+Copy the resulting backend contract addresses from `ignition/deployments/tracechain-local/deployed_addresses.json` into the ignored root `.env`. The tracked root example contains the deterministic addresses produced by the current local deployment. Restart both development servers after changing environment variables.
 
 MetaMask can add the configured local network automatically. Hardhat account 0 is the deployed System Admin; use a different generated account to test a new company application because an active administrator cannot submit a stakeholder application. Hardhat development private keys are public test keys and must never be funded or reused on a public network.
 
@@ -116,7 +114,7 @@ The registration review screen submits a real `StakeholderRegistry.submitApplica
 
 ### Environment variables
 
-`apps/api/.env`:
+The root `.env` is shared by the API and Vite. Only variables prefixed with `VITE_` are exposed to browser code:
 
 ```text
 PORT=3000
@@ -128,25 +126,13 @@ SIWE_CHAIN_ID=31337
 CHAIN_RPC_URL=http://127.0.0.1:8545
 STAKEHOLDER_REGISTRY_ADDRESS=0x...
 CREDENTIAL_REGISTRY_ADDRESS=0x...
-EVIDENCE_REGISTRY_ADDRESS=0x...
-INGREDIENT_REGISTRY_ADDRESS=0x...
-PRODUCT_REGISTRY_ADDRESS=0x...
-CUSTODY_TRANSFER_ADDRESS=0x...
 AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
 SEPOLIA_RPC_URL=https://example.invalid
-IPFS_PINNING_API_URL=https://example.invalid/pinning/pinFileToIPFS
-IPFS_PINNING_TOKEN=replace-with-a-scoped-pinning-token
-IPFS_GATEWAY_URL=https://ipfs.io/ipfs/
-IPFS_ENCRYPTION_KEY=replace-with-a-32-byte-encryption-key
 VERAMO_KMS_SECRET_KEY=replace-with-a-strong-development-secret
 TRACECHAIN_AUTHORITY_DID_ALIAS=tracechain-authority
 BOOTSTRAP_ADMIN_WALLET=0x0000000000000000000000000000000000000000
-```
 
-`apps/web/.env`:
-
-```text
 VITE_API_BASE_URL=http://localhost:3000
 VITE_CHAIN_ID=31337
 VITE_CHAIN_NAME=TraceChain Local
@@ -158,7 +144,7 @@ The CORS origin, SIWE domain, and SIWE URI must match the address used to open t
 
 Contract addresses and ABIs are backend configuration. For writes, the API validates the requested operation and returns an unsigned transaction containing the chain ID, destination, calldata, and value. MetaMask signs and broadcasts that transaction so the authenticated stakeholder remains the contract `msg.sender`; private wallet keys never reach the API.
 
-Replace the example-invalid `VITE_SEPOLIA_RPC_URL` with a browser-safe Sepolia endpoint. This is public browser configuration, not a place for a private key. If a hosted RPC provider key is embedded in this URL, restrict it to the intended frontend domains and Sepolia methods in the provider dashboard. Never use a privileged or unrestricted secret in a `VITE_` variable.
+For Sepolia, replace `VITE_CHAIN_RPC_URL` with a browser-safe Sepolia endpoint. This is public browser configuration, not a place for a private key. If a hosted RPC provider key is embedded in this URL, restrict it to the intended frontend domains and Sepolia methods in the provider dashboard. Never use a privileged or unrestricted secret in a `VITE_` variable.
 
 SSI variables are loaded lazily when an SSI request or command needs the Veramo agent, so API startup and SIWE-only tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping or presenting a credential. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
 
@@ -172,7 +158,7 @@ Generate a 32-byte hexadecimal development KMS secret without placing it in sour
 node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 ```
 
-Put that value, a real Sepolia RPC URL, the authority alias, and the public Admin wallet address in the ignored `apps/api/.env`, then run:
+Put that value, a real Sepolia RPC URL, the authority alias, and the public Admin wallet address in the ignored root `.env`, then run:
 
 ```bash
 npm run ssi:bootstrap-admin
@@ -218,7 +204,7 @@ Login actions follow the current session state. Disconnected users connect throu
 
 Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakeholder and workflow. `WorkspaceApp.tsx` owns canonical routing and the access boundary; `WorkspaceScreen.tsx` dispatches detailed pages. Shared workspace presentation components, receipts, reports, and table controls are kept in focused subfolders.
 
-The Admin overview and company-application screens read the configured `StakeholderRegistry` through the authenticated API gateway and show real loading, empty, and error states. Application rejection is prepared by the API and signed by the administrator in MetaMask. Remaining credential, access-control, supplier, manufacturer, distributor, retailer, receipt, and report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative. A centered accessible spinner covers lazy page loading and wallet/session checks.
+The Admin overview and company-application screens read the configured `StakeholderRegistry` through the authenticated API gateway and show real loading, empty, and error states. Application rejection is prepared by the API and signed by the administrator in MetaMask. For approval, the authority issues a signed Company Role Credential, the API prepares CredentialRegistry registration and StakeholderRegistry approval transactions, and the administrator signs both with MetaMask. The credential JSON downloads only after both confirmations for secure delivery to the company. Remaining access-control, supplier, manufacturer, distributor, retailer, receipt, and report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative. A centered accessible spinner covers lazy page loading and wallet/session checks.
 
 ## Smart contracts
 

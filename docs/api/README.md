@@ -4,7 +4,7 @@ The Express API defaults to `http://localhost:3000`. It accepts credentialed bro
 
 ## Environment
 
-Copy `apps/api/.env.example` to `apps/api/.env`. Available values are:
+Copy the repository-root `.env.example` to the repository-root `.env`. The API loads this file using a repository-relative absolute path, independent of the terminal working directory. Available API values are:
 
 | Variable                         | Default example          | Purpose                              |
 | -------------------------------- | ------------------------ | ------------------------------------ |
@@ -16,6 +16,7 @@ Copy `apps/api/.env.example` to `apps/api/.env`. Available values are:
 | `SIWE_CHAIN_ID`                  | `11155111`               | Expected Ethereum Sepolia chain ID   |
 | `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads  |
 | `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry        |
+| `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry         |
 | `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                  |
 | `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds          |
 | `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider   |
@@ -94,6 +95,10 @@ Requires the HttpOnly SIWE session cookie and accepts a JSON credential only:
 The request is limited to 256 KB and rejects extra fields such as a submitted wallet address. The wallet comes exclusively from the verified SIWE session. The service resolves the configured authority DID by alias and checks the JWT signature, trusted issuer, subject DID, wallet binding, shared role, issuance and expiration dates, and local status. It then checks the wallet, role, credential hash, stakeholder lifecycle, and effective credential status through the configured `StakeholderRegistry`.
 
 A successful response contains safe metadata only: `verified`, `credentialId`, `role`, `expirationStatus`, `locallyVerified`, `onChainStatusChecked`, `authorizationReady`, `reasons`, and a safe session summary. It never returns the credential, JWT, credential hash, issuer DID, or subject DID. `authorizationReady` becomes true only when both cryptographic and blockchain checks succeed. An unavailable RPC or missing contract returns `BLOCKCHAIN_AUTHORIZATION_UNAVAILABLE` with HTTP 503.
+
+### `POST /api/ssi/company-role/issue`
+
+Requires a blockchain-authorized System Admin session. The request contains a pending application ID plus the independently verified company ID, company name, and credential expiration date. The authority issues and stores the signed credential off-chain, then returns the credential JSON and two unsigned transactions: CredentialRegistry registration followed by StakeholderRegistry approval. The administrator signs both through MetaMask; the credential is never written to Ethereum.
 
 ## Authentication boundary
 

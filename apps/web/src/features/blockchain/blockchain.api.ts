@@ -53,3 +53,38 @@ export function prepareApplicationRejection(input: {
     method: 'POST',
   });
 }
+import { JsonRpcProvider, type JsonRpcSigner } from 'ethers';
+
+import { chainConfig } from '../../config/network';
+
+
+export async function sendPreparedTransaction(
+  signer: JsonRpcSigner,
+  prepared: PreparedTransaction,
+) {
+  const transaction = { data: prepared.data, to: prepared.to, value: prepared.value };
+  try {
+    return await signer.sendTransaction(transaction);
+  } catch (error) {
+    if (prepared.chainId !== 31_337 || !isNonceTooHigh(error)) throw error;
+
+    const address = await signer.getAddress();
+    const nodeProvider = new JsonRpcProvider(chainConfig.rpcUrl, prepared.chainId, {
+      staticNetwork: true,
+    });
+    const nonce = await nodeProvider.getTransactionCount(address, 'pending');
+    return signer.sendTransaction({ ...transaction, nonce });
+  }
+}
+
+function isNonceTooHigh(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const candidate = error as {
+    error?: { message?: string };
+    info?: { error?: { message?: string } };
+    message?: string;
+  };
+  return [candidate.message, candidate.error?.message, candidate.info?.error?.message]
+    .filter((message): message is string => Boolean(message))
+    .some((message) => /nonce too high/i.test(message));
+}

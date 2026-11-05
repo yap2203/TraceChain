@@ -5,6 +5,7 @@
 - Created the TypeScript npm monorepo with `apps/*` and `packages/*` workspaces.
 - Added React/Vite frontend, Express API, shared, SSI, and contract package boundaries.
 - Added repository formatting, environment templates, ignore rules, and documentation structure.
+- Consolidated frontend, API, blockchain, and SSI configuration into one ignored root `.env` with one tracked root template and deterministic loaders for both applications.
 - Implemented the responsive TraceChain landing page, branding, registration shell, and role route hierarchy.
 - Replaced the registration preview with the complete three-step company onboarding interface, including wallet association, supporting-document validation, review, and declaration.
 - Added environment-driven local-chain configuration, MetaMask network switching for chain 31337, real local company-application transactions, and an API endpoint that checks bytecode at all six configured contract addresses.
@@ -29,6 +30,7 @@
 - Removed the temporary account-free localhost bypass; local workspaces now require wallet, credential, and on-chain authorization.
 - Replaced Admin overview and company-application fixtures with authenticated API-gateway StakeholderRegistry reads, real empty/error states, and a MetaMask-signed on-chain rejection action.
 - Centralized contract addresses and ABIs in the API; live frontend writes now request validated unsigned transaction data and retain the stakeholder wallet as `msg.sender` through MetaMask.
+- Completed the company approval path with authority-signed Company Role Credential issuance, backend-prepared credential registration and stakeholder approval transactions, sequential Admin MetaMask confirmation, and credential JSON download for holder delivery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Added mocked MetaMask client, EIP-1193 provider, transport-tab, and QR-selection tests; the frontend suite now contains 26 tests and performs no live relay or RPC calls.
 - Enabled temporary account-free sample UI access only on local Vite loopback hosts.

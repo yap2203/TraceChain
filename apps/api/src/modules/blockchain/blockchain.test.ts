@@ -27,8 +27,11 @@ describe('blockchain gateway API', () => {
   it('prepares a public company-application transaction without exposing configuration', async () => {
     const prepareApplication = vi.fn(() => prepared);
     const app = testApp({
+      getApplicationForIssuance: vi.fn(async () => ({ applicant: prepared.to, requestedRole: 2, status: 1 })),
       listApplications: vi.fn(async () => []),
+      prepareApplicationApproval: vi.fn(() => prepared),
       prepareApplication,
+      prepareCredentialRegistration: vi.fn(() => prepared),
       prepareRejection: vi.fn(() => prepared),
     });
     const input = {
@@ -50,8 +53,11 @@ describe('blockchain gateway API', () => {
 
   it('rejects malformed transaction preparation input', async () => {
     const app = testApp({
+      getApplicationForIssuance: vi.fn(async () => ({ applicant: prepared.to, requestedRole: 2, status: 1 })),
       listApplications: vi.fn(async () => []),
       prepareApplication: vi.fn(() => prepared),
+      prepareApplicationApproval: vi.fn(() => prepared),
+      prepareCredentialRegistration: vi.fn(() => prepared),
       prepareRejection: vi.fn(() => prepared),
     });
     const response = await request(app)
@@ -63,8 +69,11 @@ describe('blockchain gateway API', () => {
 
   it('protects administrator reads and rejection preparation', async () => {
     const app = testApp({
+      getApplicationForIssuance: vi.fn(async () => ({ applicant: prepared.to, requestedRole: 2, status: 1 })),
       listApplications: vi.fn(async () => []),
       prepareApplication: vi.fn(() => prepared),
+      prepareApplicationApproval: vi.fn(() => prepared),
+      prepareCredentialRegistration: vi.fn(() => prepared),
       prepareRejection: vi.fn(() => prepared),
     });
     expect((await request(app).get('/api/blockchain/applications').expect(403)).body.error.code)

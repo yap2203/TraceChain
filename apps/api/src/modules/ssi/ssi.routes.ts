@@ -10,6 +10,7 @@ export function createSsiRouter(controller: SsiController) {
     next();
   });
   router.post('/company-role/verify', controller.verifyCompanyRole);
+  router.post('/company-role/issue', controller.issueCompanyRole);
 
   return router;
 }

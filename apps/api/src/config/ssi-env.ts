@@ -5,6 +5,8 @@ import { SEPOLIA_CHAIN_ID, SEPOLIA_NETWORK_NAME, type TraceChainSsiConfig } from
 import { ZeroAddress, getAddress } from 'ethers';
 import { z } from 'zod';
 
+import './load-env.js';
+
 const ssiEnvironmentSchema = z.object({
   SEPOLIA_RPC_URL: z.string().url(),
   TRACECHAIN_AUTHORITY_DID_ALIAS: z.string().min(1),

@@ -85,18 +85,12 @@ export function createApp({ authService, blockchainGateway, ssi }: CreateAppOpti
           }
         },
       };
-  const ssiController = new SsiController(
-    new CompanyRoleSsiService({
-      agentProvider: defaultSsi.agentProvider,
-      authService: resolvedAuthService,
-      authorityDidAlias: defaultSsi.authorityDidAlias,
-      blockchainAuthorization,
-      clock: 'clock' in defaultSsi ? defaultSsi.clock : undefined,
-    }),
-    env.AUTH_COOKIE_NAME,
-  );
   let resolvedGateway = blockchainGateway;
   const lazyGateway: BlockchainGateway = {
+    getApplicationForIssuance: async (applicationId) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getApplicationForIssuance(applicationId);
+    },
     listApplications: async () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.listApplications();
@@ -109,10 +103,29 @@ export function createApp({ authService, blockchainGateway, ssi }: CreateAppOpti
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.prepareRejection(applicationId, reasonHash);
     },
+    prepareApplicationApproval: (input) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.prepareApplicationApproval(input);
+    },
+    prepareCredentialRegistration: (input) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.prepareCredentialRegistration(input);
+    },
   };
   const blockchainController = new BlockchainController(
     lazyGateway,
     resolvedAuthService,
+    env.AUTH_COOKIE_NAME,
+  );
+  const ssiController = new SsiController(
+    new CompanyRoleSsiService({
+      agentProvider: defaultSsi.agentProvider,
+      authService: resolvedAuthService,
+      authorityDidAlias: defaultSsi.authorityDidAlias,
+      blockchainAuthorization,
+      blockchainGateway: lazyGateway,
+      clock: 'clock' in defaultSsi ? defaultSsi.clock : undefined,
+    }),
     env.AUTH_COOKIE_NAME,
   );
 
@@ -175,6 +188,7 @@ function createDefaultBlockchainGateway() {
     env.SIWE_CHAIN_ID,
     blockchain.CHAIN_RPC_URL,
     blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
+    blockchain.CREDENTIAL_REGISTRY_ADDRESS,
   );
 }
 

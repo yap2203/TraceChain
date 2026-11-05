@@ -1,8 +1,12 @@
 import {
   createTraceChainAgent,
+  issueCompanyRoleCredential,
   verifyCompanyRoleCredential,
+  walletAddressToDid,
   type TraceChainAgent,
 } from '@tracechain/ssi';
+import { CompanyRole } from '@tracechain/shared';
+import { id } from 'ethers';
 
 import { loadTraceChainSsiEnvironment } from '../../config/ssi-env.js';
 import type { AuthService } from '../auth/auth.service.js';
@@ -11,6 +15,7 @@ import {
   BlockchainAuthorizationUnavailableError,
   type BlockchainAuthorizationService,
 } from '../blockchain/blockchain-authorization.service.js';
+import type { BlockchainGateway } from '../blockchain/blockchain-gateway.service.js';
 import type {
   CompanyRoleVerificationApiResponse,
   CredentialExpirationStatus,
@@ -33,6 +38,7 @@ export interface CompanyRoleSsiServiceDependencies {
   authService: AuthService;
   authorityDidAlias: string | (() => string);
   blockchainAuthorization?: BlockchainAuthorizationService;
+  blockchainGateway?: BlockchainGateway;
   clock?: () => Date;
 }
 
@@ -41,6 +47,75 @@ export class CompanyRoleSsiService {
 
   constructor(private readonly dependencies: CompanyRoleSsiServiceDependencies) {
     this.clock = dependencies.clock ?? (() => new Date());
+  }
+
+  async issueCredentialForApplication(
+    sessionId: string | undefined,
+    input: {
+      applicationId: string;
+      companyId: string;
+      companyName: string;
+      expirationDate: Date;
+    },
+  ) {
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    const verification = session.credentialVerification;
+    if (
+      !verification?.authorizationReady ||
+      verification.role !== CompanyRole.SYSTEM_ADMIN
+    ) {
+      throw new SsiApiError(
+        'ADMIN_AUTHORIZATION_REQUIRED',
+        'System Admin authorization is required to issue a Company Role Credential.',
+        403,
+      );
+    }
+    if (!this.dependencies.blockchainGateway) {
+      throw new SsiApiError('BLOCKCHAIN_GATEWAY_UNAVAILABLE', 'The blockchain gateway is unavailable.', 503);
+    }
+
+    const application = await this.dependencies.blockchainGateway.getApplicationForIssuance(
+      input.applicationId,
+    );
+    if (application.status !== 1) {
+      throw new SsiApiError('APPLICATION_NOT_PENDING', 'Only a pending application can be approved.', 409);
+    }
+    const role = roleFromContract(application.requestedRole);
+    const agent = await this.dependencies.agentProvider();
+    const authorityDid = await this.authorityDid(agent);
+    const issued = await issueCompanyRoleCredential(agent, {
+      companyId: input.companyId,
+      companyName: input.companyName,
+      expirationDate: input.expirationDate,
+      issuanceDate: this.clock(),
+      issuerDid: authorityDid,
+      role,
+      subjectDid: walletAddressToDid(application.applicant),
+      walletAddress: application.applicant,
+    });
+    const credentialHash = `0x${issued.credentialHash}`;
+    const credentialId = id(issued.credential.id);
+    const credentialReference = `urn:tracechain:credential:${credentialId}`;
+    const expiresAt = Math.floor(input.expirationDate.getTime() / 1_000);
+
+    return {
+      approvalTransaction: this.dependencies.blockchainGateway.prepareApplicationApproval({
+        applicationId: input.applicationId,
+        credentialHash,
+        credentialReference,
+        expiresAt,
+      }),
+      credential: issued.credential,
+      credentialId,
+      credentialRegistrationTransaction:
+        this.dependencies.blockchainGateway.prepareCredentialRegistration({
+          credentialHash,
+          credentialId,
+          credentialReference,
+          expiresAt,
+          subject: application.applicant,
+        }),
+    };
   }
 
   async verifyCredential(
@@ -54,16 +129,7 @@ export class CompanyRoleSsiService {
         ? this.dependencies.authorityDidAlias()
         : this.dependencies.authorityDidAlias;
 
-    let authorityDid: string;
-    try {
-      authorityDid = (await agent.didManagerGetByAlias({ alias: authorityDidAlias })).did;
-    } catch {
-      throw new SsiApiError(
-        'AUTHORITY_DID_UNAVAILABLE',
-        'The TraceChain authority identity is not configured.',
-        503,
-      );
-    }
+    const authorityDid = await this.authorityDid(agent, authorityDidAlias);
 
     const verifiedAt = this.clock();
     const result = await verifyCompanyRoleCredential(
@@ -144,6 +210,35 @@ export class CompanyRoleSsiService {
       verified: true,
     };
   }
+
+  private async authorityDid(agent: TraceChainAgent, alias?: string) {
+    const authorityDidAlias =
+      alias ??
+      (typeof this.dependencies.authorityDidAlias === 'function'
+        ? this.dependencies.authorityDidAlias()
+        : this.dependencies.authorityDidAlias);
+    try {
+      return (await agent.didManagerGetByAlias({ alias: authorityDidAlias })).did;
+    } catch {
+      throw new SsiApiError(
+        'AUTHORITY_DID_UNAVAILABLE',
+        'The TraceChain authority identity is not configured.',
+        503,
+      );
+    }
+  }
+}
+
+function roleFromContract(role: number) {
+  const roles: Partial<Record<number, CompanyRole>> = {
+    2: CompanyRole.SUPPLIER,
+    3: CompanyRole.MANUFACTURER,
+    4: CompanyRole.DISTRIBUTOR,
+    5: CompanyRole.RETAILER,
+  };
+  const resolved = roles[role];
+  if (!resolved) throw new SsiApiError('UNSUPPORTED_ROLE', 'The requested company role is invalid.', 409);
+  return resolved;
 }
 
 function expirationStatusFrom(reasons: readonly string[]): CredentialExpirationStatus {

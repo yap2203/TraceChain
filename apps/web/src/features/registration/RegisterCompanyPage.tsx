@@ -6,7 +6,7 @@ import { Link } from 'react-router-dom';
 import { Brand } from '../../components/brand/Brand';
 import { Button, Card, Input, Select, StatusBadge } from '../../components/ui';
 import { chainConfig, targetChainId } from '../../config/chain';
-import { prepareCompanyApplication } from '../blockchain/blockchain.api';
+import { prepareCompanyApplication, sendPreparedTransaction } from '../blockchain/blockchain.api';
 
 const roleOptions = [
   { label: 'Select a company role', value: '' }, { label: 'Supplier', value: 'SUPPLIER' },
@@ -78,7 +78,7 @@ export function RegisterCompanyPage() {
         requestedRole: roleValues[data.requestedRole],
       });
       if (BigInt(prepared.chainId) !== targetChainId) throw new Error('The API transaction targets a different chain.');
-      const pending = await signer.sendTransaction({ data: prepared.data, to: prepared.to, value: prepared.value });
+      const pending = await sendPreparedTransaction(signer, prepared);
       const receipt = await pending.wait();
       if (!receipt) throw new Error('The transaction was not confirmed.');
       setTransaction({ applicationId, hash: receipt.hash });

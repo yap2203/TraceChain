@@ -2,7 +2,10 @@ import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
 
 import { AuthError } from '../auth/auth.service.js';
-import { companyRoleVerificationRequestSchema } from './ssi.schema.js';
+import {
+  companyRoleIssuanceRequestSchema,
+  companyRoleVerificationRequestSchema,
+} from './ssi.schema.js';
 import { CompanyRoleSsiService, SsiApiError } from './ssi.service.js';
 
 export class SsiController {
@@ -34,6 +37,29 @@ export class SsiController {
         return;
       }
 
+      next(error);
+    }
+  };
+
+  issueCompanyRole = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const input = companyRoleIssuanceRequestSchema.parse(request.body);
+      const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
+      response.json(await this.service.issueCredentialForApplication(sessionId, input));
+    } catch (error) {
+      if (error instanceof ZodError) {
+        response.status(400).json({
+          error: {
+            code: 'INVALID_REQUEST',
+            message: error.issues[0]?.message ?? 'The credential issuance request is invalid.',
+          },
+        });
+        return;
+      }
+      if (error instanceof AuthError || error instanceof SsiApiError) {
+        response.status(error.status).json({ error: { code: error.code, message: error.message } });
+        return;
+      }
       next(error);
     }
   };

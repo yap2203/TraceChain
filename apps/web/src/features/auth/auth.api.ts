@@ -87,6 +87,7 @@ export function deleteAuthSession() {
   return apiRequest<void>('/api/auth/logout', { method: 'POST' });
 }
 import type { CompanyRole } from '@tracechain/shared';
+import type { PreparedTransaction } from '../blockchain/blockchain.api';
 
 export type CredentialFailureReason =
   | 'MALFORMED_CREDENTIAL'
@@ -113,6 +114,25 @@ export interface CompanyRoleVerificationResponse {
 export function verifyCompanyRoleCredential(credential: Record<string, unknown>) {
   return apiRequest<CompanyRoleVerificationResponse>('/api/ssi/company-role/verify', {
     body: JSON.stringify({ credential }),
+    method: 'POST',
+  });
+}
+
+export interface CompanyRoleIssuanceResponse {
+  approvalTransaction: PreparedTransaction;
+  credential: Record<string, unknown>;
+  credentialId: string;
+  credentialRegistrationTransaction: PreparedTransaction;
+}
+
+export function issueCompanyRoleCredential(input: {
+  applicationId: string;
+  companyId: string;
+  companyName: string;
+  expirationDate: string;
+}) {
+  return apiRequest<CompanyRoleIssuanceResponse>('/api/ssi/company-role/issue', {
+    body: JSON.stringify(input),
     method: 'POST',
   });
 }

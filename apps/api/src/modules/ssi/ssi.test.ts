@@ -158,6 +158,20 @@ describe('Company Role Credential presentation API', () => {
     expect(response.body.error.code).toBe('AUTHENTICATION_REQUIRED');
   });
 
+  it('requires blockchain-authorized System Admin access for credential issuance', async () => {
+    const client = request.agent(app);
+    const wallet = Wallet.createRandom();
+    await authenticate(client, wallet);
+    const response = await client.post('/api/ssi/company-role/issue').send({
+      applicationId: `0x${'11'.repeat(32)}`,
+      companyId: 'COMPANY-TEST',
+      companyName: 'Test Company',
+      expirationDate: new Date('2030-01-01T00:00:00.000Z').toISOString(),
+    });
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('ADMIN_AUTHORIZATION_REQUIRED');
+  });
+
   it('locally verifies a trusted credential but keeps authorization locked', async () => {
     const client = request.agent(app);
     const wallet = Wallet.createRandom();
