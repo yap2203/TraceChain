@@ -14,6 +14,7 @@ import {
   createOrGetAuthorityDid,
   createTraceChainAgent,
   issueCompanyRoleCredential,
+  SEPOLIA_CHAIN_ID,
   type TraceChainAgent,
   type TraceChainSsiConfig,
   verifyCompanyRoleCredential,
@@ -150,10 +151,14 @@ describe('TraceChain SSI foundation', () => {
         .did;
       credential = (
         await issueCompanyRoleCredential(agent, {
+          applicationReference: `0x${'1'.repeat(64)}`,
           companyId: 'COMPANY-001',
           companyName: 'TraceChain Test Company',
+          companyRegistrationNumber: 'COMPANY-001',
           expirationDate: new Date(Date.now() + 86_400_000),
           issuerDid: authorityDid,
+          issuerOperatorChainId: SEPOLIA_CHAIN_ID,
+          issuerOperatorWallet: ADMIN_WALLET,
           role: CompanyRole.SUPPLIER,
           subjectDid: walletAddressToDid(ADMIN_WALLET),
           walletAddress: ADMIN_WALLET,

@@ -5,6 +5,8 @@ import { z } from 'zod';
 export const COMPANY_ROLE_CREDENTIAL_CONTEXT = 'https://www.w3.org/2018/credentials/v1';
 export const COMPANY_ROLE_CREDENTIAL_TYPE = 'CompanyRoleCredential';
 export const TRACECHAIN_CREDENTIAL_STATUS_TYPE = 'TraceChainCredentialStatus';
+export const COMPANY_ROLE_CREDENTIAL_SCHEMA_ID = 'urn:tracechain:schema:company-role:v1';
+export const TRACECHAIN_DEMO_AUTHORITY_NAME = 'TraceChain Demo Authority';
 
 export enum CompanyRoleCredentialStatus {
   ACTIVE = 'ACTIVE',
@@ -30,9 +32,15 @@ export const companyRoleCredentialSchema = z.object({
     status: z.nativeEnum(CompanyRoleCredentialStatus),
     type: z.literal(TRACECHAIN_CREDENTIAL_STATUS_TYPE),
   }),
+  credentialSchema: z.object({
+    id: z.literal(COMPANY_ROLE_CREDENTIAL_SCHEMA_ID),
+    type: z.literal('JsonSchema'),
+  }),
   credentialSubject: z.object({
+    applicationReference: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
     companyId: z.string().min(1),
     companyName: z.string().min(1),
+    companyRegistrationNumber: z.string().min(1),
     id: subjectDidEthrSchema,
     role: z.nativeEnum(CompanyRole),
     walletAddress: z.string().min(1),
@@ -40,7 +48,14 @@ export const companyRoleCredentialSchema = z.object({
   expirationDate: z.string().datetime(),
   id: z.string().min(1),
   issuanceDate: z.string().datetime(),
-  issuer: z.union([issuerDidEthrSchema, z.object({ id: issuerDidEthrSchema })]),
+  issuer: z.union([
+    issuerDidEthrSchema,
+    z.object({
+      blockchainAccountId: z.string().regex(/^eip155:\d+:0x[0-9a-fA-F]{40}$/),
+      id: issuerDidEthrSchema,
+      name: z.literal(TRACECHAIN_DEMO_AUTHORITY_NAME),
+    }),
+  ]),
   proof: z.object({
     jwt: z.string().min(1),
     type: z.literal('JwtProof2020'),

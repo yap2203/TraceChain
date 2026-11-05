@@ -13,7 +13,7 @@
 - Use the SIWE package for ERC-4361 message construction and verification.
 - Use Vitest and Supertest for API authentication tests.
 - Keep Hardhat in `packages/contracts`.
-- Use one ignored repository-root `.env` and one tracked root `.env.example`; Vite exposes only `VITE_` variables while the API loads the same file through a repository-relative absolute path.
+- Use one ignored repository-root `.env` and one tracked root `.env.example`; Vite exposes `VITE_API_BASE_URL` plus explicitly selected public `CHAIN_*` values, while the API loads the same file through a repository-relative absolute path. All other variables remain server-only.
 - Use Hardhat 3 with Solidity 0.8.34, ethers, Mocha, Ignition, and Foundry-compatible Solidity tests for the current contract workspace.
 - Treat the included Counter contract, tests, deployment module, and scripts as toolchain starter code rather than TraceChain business contracts.
 
@@ -43,6 +43,8 @@
 | Express API        | Coordinate authentication, Veramo verification, IPFS references, and blockchain reads |
 
 ## Blockchain gateway and transaction signing
+
+- Store configurable operational permissions by stakeholder role in `StakeholderRegistry`; require System Admin MetaMask transactions for every permission grant or removal, while keeping System Admin authority and structural custody-route constraints non-removable.
 
 - Keep blockchain RPC URLs, deployed contract addresses, ABIs, and authoritative reads in the Express API rather than duplicating contract configuration in the frontend.
 - Expose narrowly scoped API operations that validate inputs and prepare unsigned contract transactions.

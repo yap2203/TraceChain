@@ -12,7 +12,12 @@ const prepared = {
 };
 
 function testApp(gateway: BlockchainGateway) {
+  const metadata = new Map<string, { applicationId: string; companyName: string; companyRegistrationNumber: string; profileHash: string }>();
   return createApp({
+    applicationMetadataRepository: {
+      find: async (applicationId) => metadata.get(applicationId),
+      save: async (record) => { metadata.set(record.applicationId, record); },
+    },
     blockchainGateway: gateway,
     ssi: {
       agentProvider: async () => {
@@ -27,15 +32,21 @@ describe('blockchain gateway API', () => {
   it('prepares a public company-application transaction without exposing configuration', async () => {
     const prepareApplication = vi.fn(() => prepared);
     const app = testApp({
+      getAdministrator: vi.fn(async () => prepared.to),
       getApplicationForIssuance: vi.fn(async () => ({ applicant: prepared.to, requestedRole: 2, status: 1 })),
+      getCredentialState: vi.fn(async () => ({ credentialId: `0x${'0'.repeat(64)}`, status: 0 })),
+      getCredential: vi.fn(async () => ({ credentialHash: `0x${'1'.repeat(64)}`, encryptedCid: 'cid', expiresAt: 2_000_000_000, issuedAt: 1, issuer: prepared.to, status: 1, subject: prepared.to, updatedAt: 1 })),
       listApplications: vi.fn(async () => []),
       prepareApplicationApproval: vi.fn(() => prepared),
       prepareApplication,
       prepareCredentialRegistration: vi.fn(() => prepared),
+      prepareCredentialLifecycle: vi.fn(() => prepared),
       prepareRejection: vi.fn(() => prepared),
     });
     const input = {
       applicationId: `0x${'11'.repeat(32)}`,
+      companyName: 'Test Supplier',
+      companyRegistrationNumber: 'TEST-001',
       encryptedProfileCid: 'urn:tracechain:application:test',
       previousApplicationId: `0x${'00'.repeat(32)}`,
       profileHash: `0x${'22'.repeat(32)}`,
@@ -47,17 +58,27 @@ describe('blockchain gateway API', () => {
       .send(input)
       .expect(200);
 
-    expect(prepareApplication).toHaveBeenCalledWith(input);
+    expect(prepareApplication).toHaveBeenCalledWith({
+      applicationId: input.applicationId,
+      encryptedProfileCid: input.encryptedProfileCid,
+      previousApplicationId: input.previousApplicationId,
+      profileHash: input.profileHash,
+      requestedRole: input.requestedRole,
+    });
     expect(response.body).toEqual(prepared);
   });
 
   it('rejects malformed transaction preparation input', async () => {
     const app = testApp({
+      getAdministrator: vi.fn(async () => prepared.to),
       getApplicationForIssuance: vi.fn(async () => ({ applicant: prepared.to, requestedRole: 2, status: 1 })),
+      getCredentialState: vi.fn(async () => ({ credentialId: `0x${'0'.repeat(64)}`, status: 0 })),
+      getCredential: vi.fn(async () => ({ credentialHash: `0x${'1'.repeat(64)}`, encryptedCid: 'cid', expiresAt: 2_000_000_000, issuedAt: 1, issuer: prepared.to, status: 1, subject: prepared.to, updatedAt: 1 })),
       listApplications: vi.fn(async () => []),
       prepareApplication: vi.fn(() => prepared),
       prepareApplicationApproval: vi.fn(() => prepared),
       prepareCredentialRegistration: vi.fn(() => prepared),
+      prepareCredentialLifecycle: vi.fn(() => prepared),
       prepareRejection: vi.fn(() => prepared),
     });
     const response = await request(app)
@@ -69,11 +90,15 @@ describe('blockchain gateway API', () => {
 
   it('protects administrator reads and rejection preparation', async () => {
     const app = testApp({
+      getAdministrator: vi.fn(async () => prepared.to),
       getApplicationForIssuance: vi.fn(async () => ({ applicant: prepared.to, requestedRole: 2, status: 1 })),
+      getCredentialState: vi.fn(async () => ({ credentialId: `0x${'0'.repeat(64)}`, status: 0 })),
+      getCredential: vi.fn(async () => ({ credentialHash: `0x${'1'.repeat(64)}`, encryptedCid: 'cid', expiresAt: 2_000_000_000, issuedAt: 1, issuer: prepared.to, status: 1, subject: prepared.to, updatedAt: 1 })),
       listApplications: vi.fn(async () => []),
       prepareApplication: vi.fn(() => prepared),
       prepareApplicationApproval: vi.fn(() => prepared),
       prepareCredentialRegistration: vi.fn(() => prepared),
+      prepareCredentialLifecycle: vi.fn(() => prepared),
       prepareRejection: vi.fn(() => prepared),
     });
     expect((await request(app).get('/api/blockchain/applications').expect(403)).body.error.code)

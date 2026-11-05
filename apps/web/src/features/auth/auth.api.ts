@@ -119,16 +119,20 @@ export function verifyCompanyRoleCredential(credential: Record<string, unknown>)
 }
 
 export interface CompanyRoleIssuanceResponse {
-  approvalTransaction: PreparedTransaction;
+  approvalTransaction?: PreparedTransaction;
+  applicationStatus: number;
   credential: Record<string, unknown>;
   credentialId: string;
-  credentialRegistrationTransaction: PreparedTransaction;
+  credentialRegistrationTransaction?: PreparedTransaction;
+  encryptedCredentialCid: string;
+  issuanceState: 'APPLICATION_PENDING' | 'CREDENTIAL_ACTIVE' | 'CREDENTIAL_REGISTRATION_PENDING';
 }
 
 export function issueCompanyRoleCredential(input: {
   applicationId: string;
-  companyId: string;
+  approvedRole: number;
   companyName: string;
+  companyRegistrationNumber: string;
   expirationDate: string;
 }) {
   return apiRequest<CompanyRoleIssuanceResponse>('/api/ssi/company-role/issue', {

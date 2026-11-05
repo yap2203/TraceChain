@@ -181,7 +181,7 @@ contract CredentialRegistry is ICredentialRegistry {
         return
             credentialType == CredentialType.CompanyRole
                 ? stakeholderRegistry.isAuthorized(issuer, 1)
-                : stakeholderRegistry.isAuthorized(issuer, 2);
+                : stakeholderRegistry.hasPermission(issuer, keccak256('ISSUE_INGREDIENT_CREDENTIAL'));
     }
     function _canManage(
         address actor,
@@ -191,6 +191,6 @@ contract CredentialRegistry is ICredentialRegistry {
             stakeholderRegistry.isAuthorized(actor, 1) ||
             (actor == record.issuer &&
                 record.credentialType != CredentialType.CompanyRole &&
-                stakeholderRegistry.isAuthorized(actor, 2));
+                stakeholderRegistry.hasPermission(actor, keccak256('ISSUE_INGREDIENT_CREDENTIAL')));
     }
 }

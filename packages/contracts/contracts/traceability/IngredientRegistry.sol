@@ -66,7 +66,8 @@ contract IngredientRegistry is IIngredientRegistry {
         uint64 producedAt,
         uint64 expiresAt
     ) external {
-        if (!stakeholders.isAuthorized(msg.sender, 2)) revert Unauthorized(msg.sender);
+        if (!stakeholders.hasPermission(msg.sender, keccak256('REGISTER_INGREDIENT')))
+            revert Unauthorized(msg.sender);
         if (
             batchId == bytes32(0) ||
             metadataHash == bytes32(0) ||

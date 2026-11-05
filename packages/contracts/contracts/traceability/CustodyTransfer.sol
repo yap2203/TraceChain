@@ -104,7 +104,11 @@ contract CustodyTransfer {
     ) external {
         uint8 senderRole = stakeholders.roleOf(msg.sender);
         uint8 recipientRole = stakeholders.roleOf(recipient);
-        if (!((senderRole == 3 && recipientRole == 4) || (senderRole == 4 && recipientRole == 5)))
+        if (
+            !stakeholders.hasPermission(msg.sender, keccak256('INITIATE_TRANSFER')) ||
+            !stakeholders.hasPermission(recipient, keccak256('RECEIVE_TRANSFER')) ||
+            !((senderRole == 3 && recipientRole == 4) || (senderRole == 4 && recipientRole == 5))
+        )
             revert Unauthorized(msg.sender);
         if (
             transferId == bytes32(0) ||
@@ -236,7 +240,10 @@ contract CustodyTransfer {
         string calldata receiptCid
     ) external {
         Transfer storage transfer = _transfer(transferId);
-        if (msg.sender != transfer.recipient || stakeholders.roleOf(msg.sender) == 0)
+        if (
+            msg.sender != transfer.recipient ||
+            !stakeholders.hasPermission(msg.sender, keccak256('RECEIVE_TRANSFER'))
+        )
             revert Unauthorized(msg.sender);
         if (
             transfer.status != Status.AwaitingReceipt ||

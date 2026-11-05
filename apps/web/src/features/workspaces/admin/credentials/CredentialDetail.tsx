@@ -1,355 +1,55 @@
+import { BrowserProvider, id } from 'ethers';
 import { useState } from 'react';
-import {
-  T,
-  MONO,
-  Btn,
-  Card,
-  Badge,
-  Alert,
-  Modal,
-  TxModal,
-  Input,
-  Textarea,
-  SelectField,
-  VerifyRow,
-} from '../../shared/ui';
-import { CREDS } from './fixtures';
 
-export function CredDetail({ cred, onBack }: { cred: (typeof CREDS)[0]; onBack: () => void }) {
-  const [showTech, setShowTech] = useState(false);
-  const [showSuspend, setShowSuspend] = useState(false);
-  const [showRevoke, setShowRevoke] = useState(false);
-  const [revokeConfirm, setRevokeConfirm] = useState(false);
-  const [txState, setTx] = useState<'pending' | 'confirmed' | 'failed' | null>(null);
+import { targetChainId } from '../../../../config/chain';
+import { prepareCredentialLifecycle, sendPreparedTransaction, type ChainCredential } from '../../../blockchain/blockchain.api';
+import { Alert, Badge, Btn, Card, Modal, MONO, T, Textarea } from '../../shared/ui';
 
-  const doSuspend = () => {
-    setShowSuspend(false);
-    setTx('pending');
-    setTimeout(() => setTx('confirmed'), 3000);
+export function CredDetail({ cred, onBack, onChanged }: { cred: ChainCredential; onBack: () => void; onChanged: () => Promise<void> }) {
+  const [action, setAction] = useState<'reactivate' | 'revoke' | 'suspend' | null>(null);
+  const [reason, setReason] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const execute = async () => {
+    if (!action || !window.ethereum || (action !== 'reactivate' && !reason.trim())) return;
+    setBusy(true); setError('');
+    try {
+      const prepared = await prepareCredentialLifecycle({ action, credentialId: cred.credentialId, reasonHash: action === 'reactivate' ? undefined : id(reason.trim()) });
+      if (BigInt(prepared.chainId) !== targetChainId) throw new Error('The API transaction targets a different chain.');
+      const signer = await new BrowserProvider(window.ethereum).getSigner();
+      const transaction = await sendPreparedTransaction(signer, prepared);
+      if (!(await transaction.wait())) throw new Error('The transaction was not confirmed.');
+      await onChanged();
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Credential action failed.'); }
+    finally { setBusy(false); }
   };
-  const doRevoke = () => {
-    setShowRevoke(false);
-    setTx('pending');
-    setTimeout(() => setTx('confirmed'), 3000);
-  };
-
-  return (
-    <div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>{cred.company}</h2>
-        <Badge label={cred.status} variant={cred.status as any} />
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: 20 }}>
-        <div style={{ display: 'grid', gap: 16 }}>
-          {/* Credential card */}
-          <div
-            style={{
-              background: T.navyDark,
-              borderRadius: 14,
-              padding: '28px',
-              color: T.text,
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <div
-              style={{
-                position: 'absolute',
-                top: 0,
-                right: 0,
-                width: 200,
-                height: 200,
-                borderRadius: '50%',
-                background: 'rgba(255,255,255,0.03)',
-                transform: 'translate(50%,-50%)',
-              }}
-            />
-            <div
-              style={{
-                fontSize: 10,
-                color: 'rgba(255,255,255,0.5)',
-                letterSpacing: '0.1em',
-                textTransform: 'uppercase',
-                marginBottom: 16,
-              }}
-            >
-              Company Role Credential · TraceChain
-            </div>
-            <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>{cred.company}</div>
-            <div style={{ fontSize: 14, color: T.teal, marginBottom: 20 }}>{cred.role}</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              {[
-                { label: 'Credential ID', value: cred.id },
-                { label: 'Issuer', value: 'Product Traceability Authority' },
-                { label: 'Issue Date', value: cred.issued },
-                { label: 'Expiry Date', value: cred.expiry },
-              ].map((row) => (
-                <div key={row.label}>
-                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginBottom: 3 }}>
-                    {row.label}
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 500 }}>{row.value}</div>
-                </div>
-              ))}
-            </div>
-            <div style={{ marginTop: 16 }}>
-              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)', marginBottom: 4 }}>
-                Subject DID
-              </div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: T.teal }}>{cred.did}</div>
-            </div>
-          </div>
-
-          {/* Verification */}
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
-              Verification Summary
-            </div>
-            <VerifyRow
-              label="Company identity"
-              result="Company identity verified"
-              variant="verified"
-            />
-            <VerifyRow
-              label="Credential issuer"
-              result="Issued by Product Traceability Authority"
-              variant="verified"
-            />
-            <VerifyRow label="Digital signature" result="Valid Signature" variant="valid" />
-            <VerifyRow label="Blockchain hash" result="Hash Matched" variant="matched" />
-            <VerifyRow
-              label="Overall status"
-              result={cred.status === 'active' ? 'Verified' : 'Suspended'}
-              variant={cred.status === 'active' ? 'verified' : 'suspended'}
-            />
-          </Card>
-
-          {/* Status timeline */}
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
-              Status History
-            </div>
-            {[
-              { event: 'Credential Issued', date: cred.issued, done: true },
-              { event: 'Activated', date: cred.issued, done: true },
-              ...(cred.status === 'suspended'
-                ? [{ event: 'Suspended — pending review', date: '2026-07-15', done: true }]
-                : []),
-              {
-                event: cred.expiry <= '2027-08-09' ? 'Expires' : 'Active',
-                date: cred.expiry,
-                done: false,
-              },
-            ].map((item, i, arr) => (
-              <div key={i} style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                  <div
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: '50%',
-                      background: item.done ? T.green : T.border2,
-                      flexShrink: 0,
-                    }}
-                  />
-                  {i < arr.length - 1 && (
-                    <div
-                      style={{
-                        width: 1,
-                        height: 20,
-                        background: item.done ? T.green : T.border,
-                        margin: '2px 0',
-                      }}
-                    />
-                  )}
-                </div>
-                <div>
-                  <div
-                    style={{ fontSize: 12, fontWeight: 500, color: item.done ? T.navy : T.text2 }}
-                  >
-                    {item.event}
-                  </div>
-                  <div style={{ fontSize: 11, color: T.text3 }}>{item.date}</div>
-                </div>
-              </div>
-            ))}
-          </Card>
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
-              Actions
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <Btn onClick={() => setShowTech(!showTech)} variant="outline" full>
-                {showTech ? 'Hide' : 'View'} Technical Details
-              </Btn>
-              <Btn onClick={() => navigator.clipboard.writeText(cred.id)} variant="outline" full>
-                Copy Credential ID
-              </Btn>
-              <Btn
-                onClick={() => setShowSuspend(true)}
-                variant="outline"
-                style={{ color: T.amber, borderColor: T.amber }}
-                full
-              >
-                Suspend Credential
-              </Btn>
-              <Btn onClick={() => setShowRevoke(true)} variant="danger" full>
-                Revoke Credential
-              </Btn>
-              <Btn variant="outline" full>
-                Download Summary
-              </Btn>
-            </div>
-          </Card>
-
-          {showTech && (
-            <Card style={{ background: '#0E2035', color: '#E2F5FF' }}>
-              <div style={{ fontWeight: 700, fontSize: 12, color: T.teal, marginBottom: 12 }}>
-                Technical Details
-              </div>
-              <div
-                style={{
-                  fontFamily: MONO,
-                  fontSize: 10,
-                  lineHeight: 1.8,
-                  color: 'rgba(200,230,255,0.8)',
-                }}
-              >
-                {`{
-  "@context": ["...vc/v1"],
-  "type": ["VerifiableCredential"],
-  "issuer": "did:ethr:0xPTA…",
-  "id": "${cred.id}",
-  "credentialSubject": {
-    "id": "${cred.did}",
-    "role": "${cred.role}"
-  },
-  "proof": {
-    "type": "EcdsaSecp256k1",
-    "jws": "eyJ…"
-  }
-}`}
-              </div>
-            </Card>
-          )}
-        </div>
-      </div>
-
-      {/* Suspend modal */}
-      {showSuspend && (
-        <Modal title="Suspend Credential" onClose={() => setShowSuspend(false)}>
-          <div style={{ display: 'grid', gap: 14 }}>
-            <Alert
-              type="warning"
-              message="Suspension is temporary. The credential can be reactivated once the issue is resolved. The company will be notified."
-            />
-            <SelectField
-              label="Suspension Reason"
-              value=""
-              onChange={() => {}}
-              options={[
-                { value: '', label: 'Select reason…' },
-                { value: 'review', label: 'Annual review required' },
-                { value: 'compliance', label: 'Compliance breach reported' },
-                { value: 'docs', label: 'Documents expired or invalid' },
-              ]}
-            />
-            <Input
-              label="Suspension End Date (optional)"
-              type="date"
-              placeholder=""
-              value=""
-              onChange={() => {}}
-            />
-            <Textarea
-              label="Additional Notes"
-              value=""
-              onChange={() => {}}
-              placeholder="Internal notes…"
-              rows={2}
-            />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <Btn onClick={() => setShowSuspend(false)} variant="outline" style={{ flex: 1 }}>
-                Cancel
-              </Btn>
-              <Btn
-                onClick={doSuspend}
-                style={{ background: T.amber, borderColor: T.amber, flex: 2 }}
-              >
-                Confirm Suspension
-              </Btn>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* Revoke modal */}
-      {showRevoke && (
-        <Modal title="Revoke Credential" onClose={() => setShowRevoke(false)}>
-          <div style={{ display: 'grid', gap: 14 }}>
-            <Alert
-              type="error"
-              message="⚠ IRREVERSIBLE: Revoking a credential permanently removes the company's access. They must reapply. This action is recorded on the blockchain."
-            />
-            <SelectField
-              label="Revocation Reason"
-              value=""
-              onChange={() => {}}
-              options={[
-                { value: '', label: 'Select reason…' },
-                { value: 'fraud', label: 'Fraudulent documents or misrepresentation' },
-                { value: 'breach', label: 'Serious compliance breach' },
-                { value: 'inactive', label: 'Company no longer operating' },
-              ]}
-            />
-            <Textarea
-              label="Administrator Notes"
-              value=""
-              onChange={() => {}}
-              placeholder="Add notes for the audit record…"
-              rows={2}
-            />
-            <label
-              style={{ display: 'flex', gap: 10, cursor: 'pointer', fontSize: 13, color: T.text2 }}
-            >
-              <input
-                type="checkbox"
-                checked={revokeConfirm}
-                onChange={(e) => setRevokeConfirm(e.target.checked)}
-                style={{ accentColor: T.red }}
-              />
-              I confirm this revocation is permanent and I have the authority to take this action.
-            </label>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <Btn onClick={() => setShowRevoke(false)} variant="outline" style={{ flex: 1 }}>
-                Cancel
-              </Btn>
-              <Btn
-                onClick={doRevoke}
-                variant="danger"
-                disabled={!revokeConfirm}
-                style={{ flex: 2 }}
-              >
-                Permanently Revoke
-              </Btn>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      <TxModal
-        state={txState}
-        title="Processing on blockchain…"
-        message="Action confirmed."
-        onClose={() => setTx(null)}
-      />
+  const rows = [
+    ['Company registration', cred.companyRegistrationNumber], ['Role', cred.role], ['Subject wallet', cred.subject],
+    ['Issuer wallet', cred.issuer], ['Credential ID', cred.credentialId], ['Credential hash', cred.credentialHash],
+    ['Encrypted IPFS CID', cred.encryptedCredentialCid], ['Application ID', cred.applicationId],
+    ['Issued', new Date(cred.issuedAt * 1_000).toLocaleString()], ['Expires', new Date(cred.expiresAt * 1_000).toLocaleString()],
+    ['Last on-chain update', new Date(cred.updatedAt * 1_000).toLocaleString()],
+  ];
+  return <div>
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}><Btn variant="ghost" size="sm" onClick={onBack}>Back</Btn><h2 style={{ margin: 0, color: T.navy }}>{cred.companyName}</h2><Badge label={cred.status} variant={cred.status === 'active' ? 'active' : cred.status === 'suspended' ? 'suspended' : 'rejected'} /></div>
+    {error && <Alert type="error" message={error} />}
+    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 18 }}>
+      <Card><div style={{ fontWeight: 700, marginBottom: 12 }}>Authoritative credential record</div>{rows.map(([label, value]) => <div key={label} style={{ display: 'grid', gridTemplateColumns: '170px minmax(0,1fr)', gap: 12, borderBottom: `1px solid ${T.border}`, padding: '10px 0' }}><span style={{ color: T.text2, fontSize: 12 }}>{label}</span><code style={{ fontFamily: MONO, fontSize: 11, overflowWrap: 'anywhere' }}>{value}</code></div>)}</Card>
+      <Card><div style={{ fontWeight: 700, marginBottom: 12 }}>Lifecycle actions</div><div style={{ display: 'grid', gap: 8 }}>
+        {cred.status === 'active' && <Btn variant="outline" style={{ color: T.amber }} onClick={() => setAction('suspend')}>Suspend credential</Btn>}
+        {cred.status === 'suspended' && <Btn onClick={() => setAction('reactivate')}>Reactivate credential</Btn>}
+        {!['revoked', 'expired'].includes(cred.status) && <Btn variant="danger" onClick={() => setAction('revoke')}>Permanently revoke</Btn>}
+        <Btn variant="outline" onClick={() => navigator.clipboard.writeText(cred.credentialId)}>Copy credential ID</Btn>
+        <Btn variant="outline" onClick={() => downloadSummary(cred)}>Download safe summary</Btn>
+      </div><p style={{ color: T.text3, fontSize: 11, marginTop: 14 }}>Every lifecycle change requires the authorized Admin wallet and a MetaMask transaction. The encrypted credential is not exposed here.</p></Card>
     </div>
-  );
+    {action && <Modal title={`${action[0].toUpperCase()}${action.slice(1)} credential`} onClose={() => { setAction(null); setConfirmed(false); setReason(''); }}><div style={{ display: 'grid', gap: 12 }}><Alert type={action === 'revoke' ? 'error' : action === 'suspend' ? 'warning' : 'info'} message={action === 'revoke' ? 'Revocation is permanent. This credential can never be reactivated.' : action === 'suspend' ? 'Suspension immediately blocks credential authorization and can later be reversed by an administrator.' : 'Reactivation restores authorization only while the credential and stakeholder remain otherwise valid.'} />{action !== 'reactivate' && <Textarea label="Reason" value={reason} onChange={setReason} rows={3} placeholder="The reason is hashed before being written on-chain." />}{action === 'revoke' && <label style={{ fontSize: 12 }}><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /> I understand that revocation is permanent.</label>}<div style={{ display: 'flex', gap: 8 }}><Btn variant="outline" onClick={() => setAction(null)}>Cancel</Btn><Btn variant={action === 'revoke' ? 'danger' : 'primary'} disabled={busy || (action !== 'reactivate' && !reason.trim()) || (action === 'revoke' && !confirmed)} onClick={() => void execute()}>{busy ? 'Waiting for confirmation...' : `Confirm ${action}`}</Btn></div></div></Modal>}
+  </div>;
+}
+
+function downloadSummary(credential: ChainCredential) {
+  const { encryptedCredentialCid: _cid, ...safe } = credential;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(safe, null, 2)], { type: 'application/json' }));
+  const link = document.createElement('a'); link.href = url; link.download = `credential-summary-${credential.credentialId.slice(-12)}.json`; link.click(); URL.revokeObjectURL(url);
 }

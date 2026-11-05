@@ -71,7 +71,7 @@ contract EvidenceRegistry {
         string calldata requestCid,
         uint64 dueAt
     ) external {
-        if (!stakeholders.isAuthorized(msg.sender, 3) && !stakeholders.isAuthorized(msg.sender, 5))
+        if (!stakeholders.hasPermission(msg.sender, keccak256('REQUEST_EVIDENCE')))
             revert Unauthorized(msg.sender);
         if (
             !stakeholders.isAuthorized(supplier, 2) ||

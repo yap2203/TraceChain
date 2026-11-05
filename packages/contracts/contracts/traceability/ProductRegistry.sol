@@ -63,7 +63,8 @@ contract ProductRegistry is IProductRegistry {
         bytes32[] calldata ingredientIds,
         uint256[] calldata quantities
     ) external {
-        if (!stakeholders.isAuthorized(msg.sender, 3)) revert Unauthorized(msg.sender);
+        if (!stakeholders.hasPermission(msg.sender, keccak256('REGISTER_PRODUCT')))
+            revert Unauthorized(msg.sender);
         if (
             batchId == bytes32(0) ||
             metadataHash == bytes32(0) ||

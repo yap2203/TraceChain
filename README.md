@@ -110,11 +110,11 @@ Copy the resulting backend contract addresses from `ignition/deployments/tracech
 
 MetaMask can add the configured local network automatically. Hardhat account 0 is the deployed System Admin; use a different generated account to test a new company application because an active administrator cannot submit a stakeholder application. Hardhat development private keys are public test keys and must never be funded or reused on a public network.
 
-The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. During this local-only phase it records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
+The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. The API durably retains the submitted company name and registration number, bound to the application ID and profile hash, so the Admin issuance form is populated automatically. During this local-only phase the contract still records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
 
 ### Environment variables
 
-The root `.env` is shared by the API and Vite. Only variables prefixed with `VITE_` are exposed to browser code:
+The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL` and the public `CHAIN_*` network values; server secrets remain backend-only:
 
 ```text
 PORT=3000
@@ -122,8 +122,10 @@ FRONTEND_URL=http://localhost:5173
 NODE_ENV=development
 SIWE_DOMAIN=localhost:5173
 SIWE_URI=http://localhost:5173
-SIWE_CHAIN_ID=31337
+CHAIN_ID=31337
+CHAIN_NAME=TraceChain Local
 CHAIN_RPC_URL=http://127.0.0.1:8545
+CHAIN_CURRENCY_SYMBOL=ETH
 STAKEHOLDER_REGISTRY_ADDRESS=0x...
 CREDENTIAL_REGISTRY_ADDRESS=0x...
 AUTH_COOKIE_NAME=tracechain_session
@@ -132,19 +134,18 @@ SEPOLIA_RPC_URL=https://example.invalid
 VERAMO_KMS_SECRET_KEY=replace-with-a-strong-development-secret
 TRACECHAIN_AUTHORITY_DID_ALIAS=tracechain-authority
 BOOTSTRAP_ADMIN_WALLET=0x0000000000000000000000000000000000000000
+IPFS_PINNING_API_URL=https://example.invalid/pinning/pinFileToIPFS
+IPFS_PINNING_TOKEN=replace-with-a-scoped-pinning-token
+IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
 
 VITE_API_BASE_URL=http://localhost:3000
-VITE_CHAIN_ID=31337
-VITE_CHAIN_NAME=TraceChain Local
-VITE_CHAIN_RPC_URL=http://127.0.0.1:8545
-VITE_CHAIN_CURRENCY_SYMBOL=ETH
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
 
 Contract addresses and ABIs are backend configuration. For writes, the API validates the requested operation and returns an unsigned transaction containing the chain ID, destination, calldata, and value. MetaMask signs and broadcasts that transaction so the authenticated stakeholder remains the contract `msg.sender`; private wallet keys never reach the API.
 
-For Sepolia, replace `VITE_CHAIN_RPC_URL` with a browser-safe Sepolia endpoint. This is public browser configuration, not a place for a private key. If a hosted RPC provider key is embedded in this URL, restrict it to the intended frontend domains and Sepolia methods in the provider dashboard. Never use a privileged or unrestricted secret in a `VITE_` variable.
+For Sepolia, set `CHAIN_ID=11155111`, `CHAIN_NAME=Sepolia`, and replace `CHAIN_RPC_URL` with a browser-safe Sepolia endpoint. The active chain URL is deliberately public because MetaMask needs it in the browser. Restrict any embedded hosted-provider key to the intended frontend domains and Sepolia methods. Never put a privileged or unrestricted secret in a browser-exposed chain URL.
 
 SSI variables are loaded lazily when an SSI request or command needs the Veramo agent, so API startup and SIWE-only tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping or presenting a credential. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
 
@@ -204,7 +205,9 @@ Login actions follow the current session state. Disconnected users connect throu
 
 Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakeholder and workflow. `WorkspaceApp.tsx` owns canonical routing and the access boundary; `WorkspaceScreen.tsx` dispatches detailed pages. Shared workspace presentation components, receipts, reports, and table controls are kept in focused subfolders.
 
-The Admin overview and company-application screens read the configured `StakeholderRegistry` through the authenticated API gateway and show real loading, empty, and error states. Application rejection is prepared by the API and signed by the administrator in MetaMask. For approval, the authority issues a signed Company Role Credential, the API prepares CredentialRegistry registration and StakeholderRegistry approval transactions, and the administrator signs both with MetaMask. The credential JSON downloads only after both confirmations for secure delivery to the company. Remaining access-control, supplier, manufacturer, distributor, retailer, receipt, and report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative. A centered accessible spinner covers lazy page loading and wallet/session checks.
+The Admin overview, company-application, Company Credential, Access Control, and Registry Audit screens use authenticated blockchain gateway reads. Credential management lists issued Company Role Credentials, displays authoritative `CredentialRegistry` records, and prepares real MetaMask-signed suspend, reactivate, and permanent-revoke transactions. Access Control displays the contract-enforced role and stakeholder lifecycle and prepares real stakeholder suspension, reactivation, and revocation transactions; it does not pretend frontend permission toggles change Solidity authorization. The Admin audit screen produces JSON/CSV/printable current-state snapshots from application, credential, and stakeholder registry data. Authentication checks the credential's current registry status, so suspended, revoked, and expired credentials cannot authorize a workspace. Application rejection is prepared by the API and signed by the administrator in MetaMask. For approval, the backend verifies that the authenticated System Admin is the deployed contract administrator, creates and immediately verifies a signed Company Role Credential from the persistent authority DID, encrypts it with AES-256-GCM, and pins the encrypted envelope to the configured IPFS service. The administrator then signs stakeholder approval followed by credential registration in MetaMask. The same credential hash, subject, expiry, and encrypted CID are used for both registries. Issuance metadata and the encrypted payload are persisted under `.tracechain/issuance/`, so retrying after a rejected or interrupted transaction reuses the credential and prepares only unfinished transactions. Remaining supplier, manufacturer, distributor, retailer, receipt, and non-admin report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative.
+
+Access Control also provides live role counts and a configurable on-chain permission matrix. Every grant or removal is prepared by the API, signed by the System Admin in MetaMask, recorded by `StakeholderRegistry`, and enforced by the affected contracts. System Admin authority and structural custody routes remain fixed safety constraints. This contract upgrade requires a fresh deployment.
 
 ## Smart contracts
 

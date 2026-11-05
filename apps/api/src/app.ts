@@ -1,9 +1,11 @@
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import { fileURLToPath } from 'node:url';
 
 import { env } from './config/env.js';
 import { loadBlockchainEnvironment } from './config/blockchain-env.js';
+import { loadCredentialStorageEnvironment } from './config/credential-storage-env.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import {
   InMemoryNonceRepository,
@@ -17,12 +19,21 @@ import {
   type BlockchainAuthorizationService,
 } from './modules/blockchain/blockchain-authorization.service.js';
 import { BlockchainController } from './modules/blockchain/blockchain.controller.js';
+import { JsonApplicationMetadataRepository, type ApplicationMetadataRepository } from './modules/blockchain/application-metadata.repository.js';
 import {
   BlockchainGatewayService,
   type BlockchainGateway,
 } from './modules/blockchain/blockchain-gateway.service.js';
 import { createBlockchainRouter } from './modules/blockchain/blockchain.routes.js';
 import { SsiController } from './modules/ssi/ssi.controller.js';
+import {
+  IpfsEncryptedCredentialStore,
+  type CredentialContentStore,
+} from './modules/ssi/encrypted-credential.store.js';
+import {
+  JsonCompanyRoleIssuanceRepository,
+  type CompanyRoleIssuanceRepository,
+} from './modules/ssi/issuance.repository.js';
 import { createSsiRouter } from './modules/ssi/ssi.routes.js';
 import {
   CompanyRoleSsiService,
@@ -31,6 +42,7 @@ import {
 } from './modules/ssi/ssi.service.js';
 
 interface CreateAppOptions {
+  applicationMetadataRepository?: ApplicationMetadataRepository;
   authService?: AuthService;
   blockchainGateway?: BlockchainGateway;
   ssi?: {
@@ -40,14 +52,14 @@ interface CreateAppOptions {
   };
 }
 
-export function createApp({ authService, blockchainGateway, ssi }: CreateAppOptions = {}) {
+export function createApp({ applicationMetadataRepository, authService, blockchainGateway, ssi }: CreateAppOptions = {}) {
   const app = express();
   const sessionTtlMs = env.AUTH_SESSION_TTL_SECONDS * 1_000;
   const resolvedAuthService =
     authService ??
     new AuthService({
       configuration: {
-        chainId: env.SIWE_CHAIN_ID,
+        chainId: env.CHAIN_ID,
         domain: env.SIWE_DOMAIN,
         nonceTtlMs: 5 * 60 * 1_000,
         sessionTtlMs,
@@ -73,7 +85,8 @@ export function createApp({ authService, blockchainGateway, ssi }: CreateAppOpti
               blockchainService = new EthersBlockchainAuthorizationService(
                 blockchain.CHAIN_RPC_URL,
                 blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
-                env.SIWE_CHAIN_ID,
+                blockchain.CREDENTIAL_REGISTRY_ADDRESS,
+                env.CHAIN_ID,
               );
             }
             return blockchainService.authorize(input);
@@ -87,9 +100,29 @@ export function createApp({ authService, blockchainGateway, ssi }: CreateAppOpti
       };
   let resolvedGateway = blockchainGateway;
   const lazyGateway: BlockchainGateway = {
+    getAdministrator: async () => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getAdministrator();
+    },
     getApplicationForIssuance: async (applicationId) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.getApplicationForIssuance(applicationId);
+    },
+    getCredentialState: async (credentialHash) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getCredentialState(credentialHash);
+    },
+    getCredential: async (credentialId) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getCredential(credentialId);
+    },
+    getStakeholder: async (account) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getStakeholder(account);
+    },
+    getRolePermission: async (role, permission) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getRolePermission(role, permission);
     },
     listApplications: async () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
@@ -111,12 +144,54 @@ export function createApp({ authService, blockchainGateway, ssi }: CreateAppOpti
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.prepareCredentialRegistration(input);
     },
+    prepareCredentialLifecycle: (input) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.prepareCredentialLifecycle(input);
+    },
+    prepareStakeholderLifecycle: (input) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.prepareStakeholderLifecycle(input);
+    },
+    prepareRolePermission: (input) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.prepareRolePermission(input);
+    },
+  };
+  let issuanceRepository: CompanyRoleIssuanceRepository | undefined;
+  let credentialContentStore: CredentialContentStore | undefined;
+  const lazyIssuanceRepository: CompanyRoleIssuanceRepository = {
+    find: async (applicationId) => {
+      issuanceRepository ??= createIssuanceDependencies().repository;
+      return issuanceRepository.find(applicationId);
+    },
+    list: async () => {
+      issuanceRepository ??= createIssuanceDependencies().repository;
+      return issuanceRepository.list();
+    },
+    save: async (record) => {
+      issuanceRepository ??= createIssuanceDependencies().repository;
+      return issuanceRepository.save(record);
+    },
   };
   const blockchainController = new BlockchainController(
     lazyGateway,
     resolvedAuthService,
     env.AUTH_COOKIE_NAME,
+    applicationMetadataRepository ?? new JsonApplicationMetadataRepository(
+      fileURLToPath(new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url)),
+    ),
+    lazyIssuanceRepository,
   );
+  const lazyCredentialContentStore: CredentialContentStore = {
+    decrypt: async (payload) => {
+      credentialContentStore ??= createIssuanceDependencies().contentStore;
+      return credentialContentStore.decrypt(payload);
+    },
+    encryptAndStore: async (serialized, credentialId) => {
+      credentialContentStore ??= createIssuanceDependencies().contentStore;
+      return credentialContentStore.encryptAndStore(serialized, credentialId);
+    },
+  };
   const ssiController = new SsiController(
     new CompanyRoleSsiService({
       agentProvider: defaultSsi.agentProvider,
@@ -124,7 +199,10 @@ export function createApp({ authService, blockchainGateway, ssi }: CreateAppOpti
       authorityDidAlias: defaultSsi.authorityDidAlias,
       blockchainAuthorization,
       blockchainGateway: lazyGateway,
+      chainId: env.CHAIN_ID,
       clock: 'clock' in defaultSsi ? defaultSsi.clock : undefined,
+      credentialContentStore: lazyCredentialContentStore,
+      issuanceRepository: lazyIssuanceRepository,
     }),
     env.AUTH_COOKIE_NAME,
   );
@@ -185,11 +263,23 @@ export function createApp({ authService, blockchainGateway, ssi }: CreateAppOpti
 function createDefaultBlockchainGateway() {
   const blockchain = loadBlockchainEnvironment();
   return new BlockchainGatewayService(
-    env.SIWE_CHAIN_ID,
+    env.CHAIN_ID,
     blockchain.CHAIN_RPC_URL,
     blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
     blockchain.CREDENTIAL_REGISTRY_ADDRESS,
   );
+}
+
+function createIssuanceDependencies() {
+  const storage = loadCredentialStorageEnvironment();
+  return {
+    contentStore: new IpfsEncryptedCredentialStore(
+      storage.encryptionKey,
+      storage.pinningApiUrl,
+      storage.pinningToken,
+    ),
+    repository: new JsonCompanyRoleIssuanceRepository(storage.workflowStorePath),
+  };
 }
 
 export const app = createApp();

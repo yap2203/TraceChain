@@ -57,11 +57,15 @@ export async function bootstrapSystemAdmin(
   const expirationDate = new Date(now);
   expirationDate.setUTCDate(expirationDate.getUTCDate() + (input.credentialLifetimeDays ?? 365));
   const issued = await issueCompanyRoleCredential(agent, {
+    applicationReference: `0x${'0'.repeat(64)}`,
     companyId: 'TRACECHAIN_AUTHORITY',
     companyName: 'Product Traceability Authority',
+    companyRegistrationNumber: 'TRACECHAIN_AUTHORITY',
     expirationDate,
     issuanceDate: now,
     issuerDid: authority.identifier.did,
+    issuerOperatorChainId: 11_155_111,
+    issuerOperatorWallet: walletAddress,
     role: CompanyRole.SYSTEM_ADMIN,
     subjectDid,
     walletAddress,

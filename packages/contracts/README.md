@@ -119,6 +119,10 @@ Credential statuses are `None=0`, `Active=1`, `Suspended=2`, and `Revoked=3`.
 
 ## End-to-end process
 
+`StakeholderRegistry` stores configurable operational permissions for Supplier, Manufacturer, Distributor, and Retailer roles. Only the System Admin can grant or remove them. Updates emit `RolePermissionChanged` and take effect immediately in credential, evidence, ingredient, product, and custody operations. System Admin authority and valid Manufacturer-to-Distributor-to-Retailer custody routes remain structural constraints.
+
+This permission registry changes contract bytecode, so existing local or Sepolia deployments must be redeployed before the Access Control matrix can read or update permissions.
+
 ### 1. Company application
 
 Actor: an unregistered wallet requesting Supplier, Manufacturer, Distributor, or Retailer.

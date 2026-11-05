@@ -1,5 +1,7 @@
 import {
   createTraceChainAgent,
+  companyRoleCredentialSchema,
+  serializeCompanyRoleCredential,
   issueCompanyRoleCredential,
   verifyCompanyRoleCredential,
   walletAddressToDid,
@@ -7,6 +9,7 @@ import {
 } from '@tracechain/ssi';
 import { CompanyRole } from '@tracechain/shared';
 import { id } from 'ethers';
+import { getAddress } from 'ethers';
 
 import { loadTraceChainSsiEnvironment } from '../../config/ssi-env.js';
 import type { AuthService } from '../auth/auth.service.js';
@@ -16,6 +19,11 @@ import {
   type BlockchainAuthorizationService,
 } from '../blockchain/blockchain-authorization.service.js';
 import type { BlockchainGateway } from '../blockchain/blockchain-gateway.service.js';
+import type { CredentialContentStore } from './encrypted-credential.store.js';
+import type {
+  CompanyRoleIssuanceRecord,
+  CompanyRoleIssuanceRepository,
+} from './issuance.repository.js';
 import type {
   CompanyRoleVerificationApiResponse,
   CredentialExpirationStatus,
@@ -39,7 +47,10 @@ export interface CompanyRoleSsiServiceDependencies {
   authorityDidAlias: string | (() => string);
   blockchainAuthorization?: BlockchainAuthorizationService;
   blockchainGateway?: BlockchainGateway;
+  chainId?: number;
   clock?: () => Date;
+  credentialContentStore?: CredentialContentStore;
+  issuanceRepository?: CompanyRoleIssuanceRepository;
 }
 
 export class CompanyRoleSsiService {
@@ -53,8 +64,9 @@ export class CompanyRoleSsiService {
     sessionId: string | undefined,
     input: {
       applicationId: string;
-      companyId: string;
+      approvedRole: number;
       companyName: string;
+      companyRegistrationNumber: string;
       expirationDate: Date;
     },
   ) {
@@ -70,52 +82,151 @@ export class CompanyRoleSsiService {
         403,
       );
     }
-    if (!this.dependencies.blockchainGateway) {
-      throw new SsiApiError('BLOCKCHAIN_GATEWAY_UNAVAILABLE', 'The blockchain gateway is unavailable.', 503);
+    const gateway = this.dependencies.blockchainGateway;
+    const repository = this.dependencies.issuanceRepository;
+    const contentStore = this.dependencies.credentialContentStore;
+    if (!gateway || !repository || !contentStore || !this.dependencies.chainId) {
+      throw new SsiApiError('ISSUANCE_UNAVAILABLE', 'Credential issuance storage or blockchain configuration is unavailable.', 503);
     }
 
-    const application = await this.dependencies.blockchainGateway.getApplicationForIssuance(
-      input.applicationId,
-    );
-    if (application.status !== 1) {
-      throw new SsiApiError('APPLICATION_NOT_PENDING', 'Only a pending application can be approved.', 409);
+    const administrator = getAddress(await gateway.getAdministrator());
+    if (administrator !== getAddress(session.address)) {
+      throw new SsiApiError('ADMIN_WALLET_MISMATCH', 'The authenticated wallet is not the deployed contract administrator.', 403);
+    }
+    const application = await gateway.getApplicationForIssuance(input.applicationId);
+    if (input.approvedRole !== application.requestedRole) {
+      throw new SsiApiError(
+        'APPROVED_ROLE_MISMATCH',
+        'The approved role must match the role requested in the on-chain application.',
+        409,
+      );
     }
     const role = roleFromContract(application.requestedRole);
     const agent = await this.dependencies.agentProvider();
     const authorityDid = await this.authorityDid(agent);
+    const existing = await repository.find(input.applicationId);
+    if (existing) {
+      if (
+        getAddress(existing.applicantWallet) !== getAddress(application.applicant) ||
+        existing.role !== role ||
+        existing.companyName !== input.companyName ||
+        existing.companyRegistrationNumber !== input.companyRegistrationNumber ||
+        existing.expiresAt !== Math.floor(input.expirationDate.getTime() / 1_000)
+      ) {
+        throw new SsiApiError('ISSUANCE_CONFLICT', 'This application already has a different persisted issuance workflow.', 409);
+      }
+      const credential = companyRoleCredentialSchema.parse(
+        JSON.parse(await contentStore.decrypt(existing.encryptedPayload)),
+      );
+      await this.verifyIssuedCredential(agent, credential, application.applicant, authorityDid, existing.credentialHash);
+      return this.issuanceResponse(existing, credential, application.status, gateway);
+    }
+    if (application.status !== 1) {
+      throw new SsiApiError('APPLICATION_NOT_PENDING', 'Only a pending application can start credential issuance.', 409);
+    }
+
     const issued = await issueCompanyRoleCredential(agent, {
-      companyId: input.companyId,
+      applicationReference: input.applicationId,
+      companyId: `urn:tracechain:company:${input.companyRegistrationNumber}`,
       companyName: input.companyName,
+      companyRegistrationNumber: input.companyRegistrationNumber,
       expirationDate: input.expirationDate,
       issuanceDate: this.clock(),
       issuerDid: authorityDid,
+      issuerOperatorChainId: this.dependencies.chainId,
+      issuerOperatorWallet: administrator,
       role,
       subjectDid: walletAddressToDid(application.applicant),
       walletAddress: application.applicant,
     });
+    await this.verifyIssuedCredential(
+      agent,
+      issued.credential,
+      application.applicant,
+      authorityDid,
+      issued.credentialHash,
+    );
     const credentialHash = `0x${issued.credentialHash}`;
     const credentialId = id(issued.credential.id);
-    const credentialReference = `urn:tracechain:credential:${credentialId}`;
     const expiresAt = Math.floor(input.expirationDate.getTime() / 1_000);
-
-    return {
-      approvalTransaction: this.dependencies.blockchainGateway.prepareApplicationApproval({
-        applicationId: input.applicationId,
-        credentialHash,
-        credentialReference,
-        expiresAt,
-      }),
-      credential: issued.credential,
+    const stored = await contentStore.encryptAndStore(
+      serializeCompanyRoleCredential(issued.credential),
       credentialId,
-      credentialRegistrationTransaction:
-        this.dependencies.blockchainGateway.prepareCredentialRegistration({
-          credentialHash,
-          credentialId,
-          credentialReference,
-          expiresAt,
-          subject: application.applicant,
-        }),
+    );
+    const record: CompanyRoleIssuanceRecord = {
+      applicantWallet: application.applicant,
+      applicationId: input.applicationId,
+      companyName: input.companyName,
+      companyRegistrationNumber: input.companyRegistrationNumber,
+      credentialHash,
+      credentialId,
+      encryptedCredentialCid: stored.cid,
+      encryptedPayload: stored.payload,
+      expiresAt,
+      issuedAt: issued.credential.issuanceDate,
+      role,
     };
+    await repository.save(record);
+    return this.issuanceResponse(record, issued.credential, application.status, gateway);
+  }
+
+  private async issuanceResponse(
+    record: CompanyRoleIssuanceRecord,
+    credential: ReturnType<typeof companyRoleCredentialSchema.parse>,
+    applicationStatus: number,
+    gateway: BlockchainGateway,
+  ) {
+    const credentialState = await gateway.getCredentialState(record.credentialHash);
+    const approvalPending = applicationStatus === 1;
+    const registrationPending = credentialState.status === 0;
+    return {
+      applicationStatus,
+      approvalTransaction: approvalPending
+        ? gateway.prepareApplicationApproval({
+            applicationId: record.applicationId,
+            credentialHash: record.credentialHash,
+            credentialReference: record.encryptedCredentialCid,
+            expiresAt: record.expiresAt,
+          })
+        : undefined,
+      credential,
+      credentialId: record.credentialId,
+      credentialRegistrationTransaction: registrationPending
+        ? gateway.prepareCredentialRegistration({
+            credentialHash: record.credentialHash,
+            credentialId: record.credentialId,
+            credentialReference: record.encryptedCredentialCid,
+            expiresAt: record.expiresAt,
+            subject: record.applicantWallet,
+          })
+        : undefined,
+      encryptedCredentialCid: record.encryptedCredentialCid,
+      issuanceState:
+        applicationStatus === 3 && credentialState.status === 1
+          ? 'CREDENTIAL_ACTIVE'
+          : applicationStatus === 3
+            ? 'CREDENTIAL_REGISTRATION_PENDING'
+            : 'APPLICATION_PENDING',
+    };
+  }
+
+  private async verifyIssuedCredential(
+    agent: TraceChainAgent,
+    credential: unknown,
+    applicantWallet: string,
+    authorityDid: string,
+    expectedHash: string,
+  ) {
+    const result = await verifyCompanyRoleCredential(
+      agent,
+      credential,
+      applicantWallet,
+      authorityDid,
+      this.clock(),
+    );
+    if (!result.verified || result.credentialHash !== expectedHash.replace(/^0x/, '')) {
+      throw new SsiApiError('ISSUED_CREDENTIAL_INVALID', 'The generated credential failed cryptographic verification.', 500);
+    }
   }
 
   async verifyCredential(

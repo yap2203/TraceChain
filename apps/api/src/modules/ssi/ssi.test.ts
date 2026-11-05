@@ -20,6 +20,16 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
 import { InMemoryNonceRepository, InMemorySessionRepository } from '../auth/auth.repository.js';
 import { AuthService } from '../auth/auth.service.js';
+import type { BlockchainGateway } from '../blockchain/blockchain-gateway.service.js';
+import type {
+  CredentialContentStore,
+  EncryptedCredentialPayload,
+} from './encrypted-credential.store.js';
+import type {
+  CompanyRoleIssuanceRecord,
+  CompanyRoleIssuanceRepository,
+} from './issuance.repository.js';
+import { CompanyRoleSsiService } from './ssi.service.js';
 
 const DOMAIN = 'localhost:5173';
 const URI = 'http://localhost:5173';
@@ -138,11 +148,16 @@ describe('Company Role Credential presentation API', () => {
   ) {
     return (
       await issueCompanyRoleCredential(agent, {
+        applicationReference: `0x${'1'.repeat(64)}`,
         companyId: 'COMPANY-API-TEST',
         companyName: 'API Test Company',
+        companyRegistrationNumber: 'COMPANY-API-TEST',
+        approvedRole: 2,
         expirationDate: overrides.expirationDate ?? new Date(NOW.getTime() + 86_400_000),
         issuanceDate: NOW,
         issuerDid: overrides.issuerDid ?? authorityDid,
+        issuerOperatorChainId: CHAIN_ID,
+        issuerOperatorWallet: wallet.address,
         role: overrides.role ?? CompanyRole.SYSTEM_ADMIN,
         subjectDid: walletAddressToDid(wallet.address),
         walletAddress: wallet.address,
@@ -164,12 +179,131 @@ describe('Company Role Credential presentation API', () => {
     await authenticate(client, wallet);
     const response = await client.post('/api/ssi/company-role/issue').send({
       applicationId: `0x${'11'.repeat(32)}`,
-      companyId: 'COMPANY-TEST',
       companyName: 'Test Company',
+      companyRegistrationNumber: 'COMPANY-TEST',
+      approvedRole: 2,
       expirationDate: new Date('2030-01-01T00:00:00.000Z').toISOString(),
     });
     expect(response.status).toBe(403);
     expect(response.body.error.code).toBe('ADMIN_AUTHORIZATION_REQUIRED');
+  });
+
+  it('persists and resumes one verified credential across partial completion and restart', async () => {
+    const administrator = Wallet.createRandom();
+    const applicant = Wallet.createRandom();
+    const applicationId = `0x${'34'.repeat(32)}`;
+    let applicationStatus = 1;
+    let credentialStatus = 0;
+    let encryptedSerialized = '';
+    let pinCount = 0;
+    const records = new Map<string, CompanyRoleIssuanceRecord>();
+    const repository: CompanyRoleIssuanceRepository = {
+      find: async (id) => records.get(id.toLowerCase()),
+      save: async (record) => {
+        records.set(record.applicationId.toLowerCase(), record);
+      },
+    };
+    const payload: EncryptedCredentialPayload = {
+      algorithm: 'aes-256-gcm',
+      authTag: 'tag',
+      ciphertext: 'ciphertext',
+      iv: 'iv',
+      version: 1,
+    };
+    const contentStore: CredentialContentStore = {
+      decrypt: async () => encryptedSerialized,
+      encryptAndStore: async (serialized) => {
+        pinCount += 1;
+        encryptedSerialized = serialized;
+        return { cid: 'bafy-company-role-test', payload };
+      },
+    };
+    const prepared = {
+      chainId: CHAIN_ID,
+      data: '0x1234',
+      to: administrator.address,
+      value: '0x0' as const,
+    };
+    const gateway: BlockchainGateway = {
+      getAdministrator: async () => administrator.address,
+      getApplicationForIssuance: async () => ({
+        applicant: applicant.address,
+        requestedRole: 2,
+        status: applicationStatus,
+      }),
+      getCredentialState: async () => ({
+        credentialId: credentialStatus ? `0x${'56'.repeat(32)}` : `0x${'0'.repeat(64)}`,
+        status: credentialStatus,
+      }),
+      listApplications: async () => [],
+      prepareApplication: () => prepared,
+      prepareApplicationApproval: () => prepared,
+      prepareCredentialRegistration: () => prepared,
+      prepareRejection: () => prepared,
+    };
+    const fakeAuthService = {
+      requireSession: async () => ({
+        address: administrator.address,
+        credentialVerification: {
+          authorizationReady: true,
+          role: CompanyRole.SYSTEM_ADMIN,
+        },
+        id: 'admin-session',
+      }),
+    } as unknown as AuthService;
+    const dependencies = {
+      agentProvider: async () => agent,
+      authService: fakeAuthService,
+      authorityDidAlias: AUTHORITY_ALIAS,
+      blockchainGateway: gateway,
+      chainId: CHAIN_ID,
+      clock: () => new Date(NOW),
+      credentialContentStore: contentStore,
+      issuanceRepository: repository,
+    };
+    const input = {
+      applicationId,
+      companyName: 'Persistent Supplier',
+      companyRegistrationNumber: 'REG-PERSIST-001',
+      approvedRole: 2,
+      expirationDate: new Date('2030-01-01T00:00:00.000Z'),
+    };
+
+    const first = await new CompanyRoleSsiService(dependencies).issueCredentialForApplication(
+      'admin-session',
+      input,
+    );
+    const duplicate = await new CompanyRoleSsiService(dependencies).issueCredentialForApplication(
+      'admin-session',
+      input,
+    );
+    expect(duplicate.credentialId).toBe(first.credentialId);
+    expect(duplicate.encryptedCredentialCid).toBe(first.encryptedCredentialCid);
+    expect(pinCount).toBe(1);
+    expect(first.credential.credentialSubject).toMatchObject({
+      applicationReference: applicationId,
+      companyRegistrationNumber: input.companyRegistrationNumber,
+      role: CompanyRole.SUPPLIER,
+      walletAddress: applicant.address,
+    });
+
+    applicationStatus = 3;
+    const partial = await new CompanyRoleSsiService(dependencies).issueCredentialForApplication(
+      'admin-session',
+      input,
+    );
+    expect(partial.issuanceState).toBe('CREDENTIAL_REGISTRATION_PENDING');
+    expect(partial.approvalTransaction).toBeUndefined();
+    expect(partial.credentialRegistrationTransaction).toBeDefined();
+
+    credentialStatus = 1;
+    const active = await new CompanyRoleSsiService(dependencies).issueCredentialForApplication(
+      'admin-session',
+      input,
+    );
+    expect(active.issuanceState).toBe('CREDENTIAL_ACTIVE');
+    expect(active.approvalTransaction).toBeUndefined();
+    expect(active.credentialRegistrationTransaction).toBeUndefined();
   });
 
   it('locally verifies a trusted credential but keeps authorization locked', async () => {

@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import { CompanyRole } from '@tracechain/shared';
 import { getAddress } from 'ethers';
 
@@ -10,7 +8,7 @@ import {
   issuerDidOf,
   type CompanyRoleCredential,
 } from './company-role-credential.js';
-import { walletAddressToDid } from './company-role-credential.service.js';
+import { hashCompanyRoleCredential, walletAddressToDid } from './company-role-credential.service.js';
 
 export type CompanyRoleCredentialFailureReason =
   | 'MALFORMED_CREDENTIAL'
@@ -33,10 +31,6 @@ export interface CompanyRoleCredentialVerificationResult {
   subjectDid?: string;
   verified: boolean;
   walletAddress?: string;
-}
-
-function hashEncodedCredential(credential: CompanyRoleCredential): string {
-  return createHash('sha256').update(credential.proof.jwt, 'utf8').digest('hex');
 }
 
 export async function verifyCompanyRoleCredential(
@@ -107,7 +101,7 @@ export async function verifyCompanyRoleCredential(
   const verified = uniqueReasons.length === 0;
   return {
     ...baseResult,
-    credentialHash: hashEncodedCredential(credential),
+    credentialHash: hashCompanyRoleCredential(credential),
     credentialId: credential.id,
     issuerDid,
     reasons: uniqueReasons,

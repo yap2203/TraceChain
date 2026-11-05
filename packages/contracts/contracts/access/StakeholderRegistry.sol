@@ -72,6 +72,7 @@ contract StakeholderRegistry is IStakeholderRegistry {
     mapping(bytes32 => Application) private applications;
     bytes32[] private applicationIds;
     mapping(bytes32 => RoleChangeRequest) private roleChangeRequests;
+    mapping(Role => mapping(bytes32 => bool)) private rolePermissions;
     bytes32[] private roleChangeRequestIds;
 
     event ApplicationSubmitted(
@@ -115,6 +116,7 @@ contract StakeholderRegistry is IStakeholderRegistry {
         address indexed newAdministrator
     );
     event CredentialRegistryConfigured(address indexed registry);
+    event RolePermissionChanged(Role indexed role, bytes32 indexed permission, bool allowed);
     event RoleChangeSubmitted(
         bytes32 indexed requestId,
         address indexed stakeholder,
@@ -146,6 +148,7 @@ contract StakeholderRegistry is IStakeholderRegistry {
             uint64(block.timestamp)
         );
         emit StakeholderRegistered(initialAdministrator, Role.SystemAdmin, bytes32(0));
+        _setDefaultPermissions();
     }
 
     modifier onlyAdministrator() {
@@ -492,6 +495,18 @@ contract StakeholderRegistry is IStakeholderRegistry {
     function isAuthorized(address account, uint8 role) external view override returns (bool) {
         return _authorizedRole(account) == role;
     }
+    function hasPermission(address account, bytes32 permission) external view override returns (bool) {
+        uint8 activeRole = _authorizedRole(account);
+        return activeRole == uint8(Role.SystemAdmin) || (activeRole != 0 && rolePermissions[Role(activeRole)][permission]);
+    }
+    function roleHasPermission(Role role, bytes32 permission) external view returns (bool) {
+        return role == Role.SystemAdmin || rolePermissions[role][permission];
+    }
+    function setRolePermission(Role role, bytes32 permission, bool allowed) external onlyAdministrator {
+        if (role < Role.Supplier || role > Role.Retailer || permission == bytes32(0)) revert InvalidInput();
+        rolePermissions[role][permission] = allowed;
+        emit RolePermissionChanged(role, permission, allowed);
+    }
     function credentialHashOf(address account) external view override returns (bytes32) {
         return stakeholders[account].credentialHash;
     }
@@ -595,5 +610,16 @@ contract StakeholderRegistry is IStakeholderRegistry {
             !credentialRegistry.isCredentialValid(credentialId)
         ) return 0;
         return uint8(stakeholder.role);
+    }
+    function _setDefaultPermissions() private {
+        rolePermissions[Role.Supplier][keccak256('REGISTER_INGREDIENT')] = true;
+        rolePermissions[Role.Supplier][keccak256('ISSUE_INGREDIENT_CREDENTIAL')] = true;
+        rolePermissions[Role.Manufacturer][keccak256('REQUEST_EVIDENCE')] = true;
+        rolePermissions[Role.Retailer][keccak256('REQUEST_EVIDENCE')] = true;
+        rolePermissions[Role.Manufacturer][keccak256('REGISTER_PRODUCT')] = true;
+        rolePermissions[Role.Manufacturer][keccak256('INITIATE_TRANSFER')] = true;
+        rolePermissions[Role.Distributor][keccak256('INITIATE_TRANSFER')] = true;
+        rolePermissions[Role.Distributor][keccak256('RECEIVE_TRANSFER')] = true;
+        rolePermissions[Role.Retailer][keccak256('RECEIVE_TRANSFER')] = true;
     }
 }

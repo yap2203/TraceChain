@@ -4,6 +4,7 @@ import { workspacePath } from './workspace-paths';
 import type { WorkspaceRole } from './workspace-navigation';
 import { AdminOverview, Applications, CompanyCredentials } from './admin';
 import AccessControlScreen from './admin/access-control/AccessControlPage';
+import AdminAuditReport from './admin/audit/AdminAuditReport';
 import {
   SupplierOverview,
   RegisterBatch,
@@ -61,7 +62,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     if (tab === 'applications') return <Applications />;
     if (tab === 'credentials') return <CompanyCredentials />;
     if (tab === 'accesscontrol') return <AccessControlScreen />;
-    if (tab === 'audit') return <AuditReport />;
+    if (tab === 'audit') return <AdminAuditReport />;
   }
 
   if (role === 'supplier') {

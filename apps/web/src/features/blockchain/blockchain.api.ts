@@ -31,8 +31,59 @@ export function getApplications<T>() {
   return blockchainRequest<{ applications: T[] }>('/applications');
 }
 
+export interface ChainCredential {
+  applicationId: string;
+  companyName: string;
+  companyRegistrationNumber: string;
+  credentialHash: string;
+  credentialId: string;
+  encryptedCredentialCid: string;
+  expiresAt: number;
+  issuedAt: number;
+  issuer: string;
+  role: string;
+  status: 'active' | 'expired' | 'revoked' | 'suspended' | 'unknown';
+  stakeholderStatus: 'active' | 'revoked' | 'suspended' | 'unknown';
+  subject: string;
+  stakeholderUpdatedAt: number;
+  updatedAt: number;
+}
+
+export function getCompanyCredentials() {
+  return blockchainRequest<{ credentials: ChainCredential[] }>('/credentials');
+}
+
+export function prepareCredentialLifecycle(input: {
+  action: 'reactivate' | 'revoke' | 'suspend';
+  credentialId: string;
+  reasonHash?: string;
+}) {
+  return blockchainRequest<PreparedTransaction>('/transactions/credential-lifecycle', {
+    body: JSON.stringify(input),
+    method: 'POST',
+  });
+}
+
+export function prepareStakeholderLifecycle(input: {
+  account: string;
+  action: 'reactivate' | 'revoke' | 'suspend';
+  reasonHash?: string;
+}) {
+  return blockchainRequest<PreparedTransaction>('/transactions/stakeholder-lifecycle', {
+    body: JSON.stringify(input), method: 'POST',
+  });
+}
+
+export interface RolePermissionRecord { id: string; name: string; roles: Record<string, boolean> }
+export function getRolePermissions() { return blockchainRequest<{ permissions: RolePermissionRecord[] }>('/role-permissions'); }
+export function prepareRolePermission(input: { allowed: boolean; permission: string; role: number }) {
+  return blockchainRequest<PreparedTransaction>('/transactions/role-permission', { body: JSON.stringify(input), method: 'POST' });
+}
+
 export function prepareCompanyApplication(input: {
   applicationId: string;
+  companyName: string;
+  companyRegistrationNumber: string;
   encryptedProfileCid: string;
   previousApplicationId: string;
   profileHash: string;
@@ -73,7 +124,14 @@ export async function sendPreparedTransaction(
       staticNetwork: true,
     });
     const nonce = await nodeProvider.getTransactionCount(address, 'pending');
-    return signer.sendTransaction({ ...transaction, nonce });
+    try {
+      return await signer.sendTransaction({ ...transaction, nonce });
+    } catch (retryError) {
+      if (!isNonceTooHigh(retryError)) throw retryError;
+      throw new Error(
+        `MetaMask is using a stale nonce for the reset local chain. Clear this account's activity/nonces in MetaMask, then retry; the node currently expects nonce ${nonce}.`,
+      );
+    }
   }
 }
 

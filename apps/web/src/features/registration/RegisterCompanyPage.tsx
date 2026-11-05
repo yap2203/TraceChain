@@ -72,6 +72,8 @@ export function RegisterCompanyPage() {
       const localContentReference = `local://${profileHash}`;
       const prepared = await prepareCompanyApplication({
         applicationId,
+        companyName: data.companyName.trim(),
+        companyRegistrationNumber: data.registrationNumber.trim(),
         encryptedProfileCid: localContentReference,
         previousApplicationId: ZeroHash,
         profileHash,

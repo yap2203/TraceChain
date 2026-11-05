@@ -18,7 +18,9 @@ export {
 } from './credentials/company-role-credential.js';
 export type { CompanyRoleCredential } from './credentials/company-role-credential.js';
 export {
+  hashCompanyRoleCredential,
   issueCompanyRoleCredential,
+  serializeCompanyRoleCredential,
   walletAddressToDid,
 } from './credentials/company-role-credential.service.js';
 export type { IssueCompanyRoleCredentialInput } from './credentials/company-role-credential.service.js';

@@ -83,6 +83,19 @@ describe('TraceChain integration', function () {
     expect(await system.stakeholders.roleOf(system.supplier.address)).to.equal(2n);
   });
 
+  it('lets the administrator change operational role permissions on-chain', async function () {
+    const system = await networkHelpers.loadFixture(deployFixture);
+    await onboard(system, system.supplier, 2);
+    const permission = ethers.id('REGISTER_INGREDIENT');
+    expect(await system.stakeholders.roleHasPermission(2, permission)).to.equal(true);
+    await expect(
+      asSigner(system.stakeholders, system.supplier).setRolePermission(2, permission, false),
+    ).to.be.revertedWithCustomError(system.stakeholders, 'Unauthorized');
+    await system.stakeholders.setRolePermission(2, permission, false);
+    expect(await system.stakeholders.roleHasPermission(2, permission)).to.equal(false);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(false);
+  });
+
   it('reserves split inventory and settles receipt quantities exactly once', async function () {
     const system = await networkHelpers.loadFixture(deployFixture);
     await onboard(system, system.supplier, 2);
