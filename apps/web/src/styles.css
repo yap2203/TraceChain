@@ -774,6 +774,53 @@ select {
   margin-top: 0.75rem;
 }
 
+.wallet-connection-progress {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.75rem;
+  border: 1px solid #24506b;
+  border-radius: 9px;
+  background: #0b1d2d;
+}
+
+.wallet-connection-progress > span:not(.loading-indicator),
+.wallet-connection-progress strong,
+.wallet-connection-progress small {
+  display: block;
+}
+
+.wallet-connection-progress strong {
+  color: #c6e8fb;
+  font-size: 0.72rem;
+}
+
+.wallet-connection-progress small {
+  margin-top: 0.15rem;
+  color: #7194ac;
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+
+.wallet-connection-cancel {
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  color: #9ec8e3;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.wallet-connection-cancel:hover,
+.wallet-connection-cancel:focus-visible {
+  color: #e1f6ff;
+}
+
 .wallet-method-copy {
   display: grid;
   gap: 0.2rem;

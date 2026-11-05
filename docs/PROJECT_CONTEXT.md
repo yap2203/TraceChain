@@ -33,8 +33,10 @@
 - Integrated admin, supplier, manufacturer, distributor, and retailer workspace screens
 - Development sample data, simulated interactions, responsive dialogs, accessible loading states, and table pagination
 - SIWE nonce issuance, signature verification, HttpOnly-cookie sessions, restoration, and logout
+- State-safe MetaMask extension reuse and Mobile QR connection with bounded attempts and listener cleanup
 - In-memory nonce and session repository interfaces and development implementations
 - Shared `CompanyRole` enum
+- Versioned custody-transfer QR locator encoding and strict untrusted-payload decoding
 - Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
 - Authenticated Company Role Credential JSON presentation with safe session summaries and fail-closed workspace guards
 - Hardhat 3 smart-contract starter with a Counter example
@@ -73,7 +75,8 @@ The detailed stakeholder screens do not have persisted business services. The lo
 - No on-chain credential-status verification or role authorization service; local credential verification alone never unlocks a workspace
 - No durable database or business API endpoints
 - No TraceChain-specific smart contracts or deployment
-- No finalized production SSI storage/key-custody design, QR payload, hosting platform, or production topology
+- No finalized production SSI storage/key-custody design, QR image/scanner workflow, hosting platform, or production topology
+- No authenticated API resolution or intended-receiver verification for scanned transfer locators
 - Sample UI records and transaction states are not persisted or cryptographically verified
 
 ## Important system qualities

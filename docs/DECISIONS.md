@@ -114,6 +114,15 @@ packages/contracts/contracts/
   interfaces/IStakeholderRegistry.sol
 ```
 
+## Custody-transfer QR locator
+
+- Use the versioned canonical URI `tracechain://transfer/v1?chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}` for custody-transfer QR payloads.
+- Keep the payload limited to the configured chain ID, CustodyTransfer deployment address, and existing bytes32 transfer ID. It is a locator, not trusted transfer data or an authorization token.
+- Never put quantities, product data, credentials, JWTs, company data, private documents, encryption keys, wallet secrets, or receipt data in the QR payload.
+- Treat every decoded field as untrusted until the authenticated API resolves `getTransfer(transferId)` against the configured CustodyTransfer contract.
+- Require the API to verify the configured chain and contract, transfer existence, `AwaitingReceipt` status, and that the authenticated SIWE wallet is the on-chain recipient.
+- Require receipt confirmation through a separate MetaMask-signed transaction. Scanning alone must never change custody.
+
 ## Credential and evidence storage
 
 - Encrypt complete credentials, supporting documents, photographs, and reports before uploading them to IPFS.
@@ -144,7 +153,8 @@ Record CID, integrity hash, and status on Ethereum
 ## Authentication and transient state
 
 - Use ERC-4361 Sign-In with Ethereum for wallet authentication.
-- Use the official `@metamask/connect-evm` client as the frontend wallet-connection adapter. Present Browser extension and Mobile QR tabs so the user explicitly selects the official transport. Clear only MetaMask Connect's persisted transport-choice marker before a mobile connection so an earlier extension choice cannot override the QR tab, while preserving the existing SIWE proof flow.
+- Reuse MetaMask's injected EIP-1193 provider for browser-extension connections, including existing authorized accounts, and use the official `@metamask/connect-evm` client for Mobile QR and extension fallback. Keep one connection attempt active, use bounded timeouts, retry one stale SDK transport once after disconnecting only that transport, and skip duplicate EIP-6963 announcement from SDK clients owned directly by TraceChain.
+- Present Browser extension and Mobile QR tabs so the user explicitly selects the transport. Clear only MetaMask Connect's persisted transport-choice marker before a mobile connection so an earlier extension choice cannot override the QR tab, while preserving the existing SIWE proof flow.
 - Access nonce and session storage through repository interfaces.
 - Use development-only, in-memory nonce and session repository implementations for the current demonstration.
 - Keep authentication state short-lived.
@@ -188,5 +198,4 @@ Record CID, integrity hash, and status on Ethereum
 - Immediate session-revocation design if signed stateless tokens replace server-side sessions
 - Smart-contract upgrade policy and final authorization-library choice
 - Hosting and deployment platform
-- Exact QR-code payload format
 - Whether references to “Veramo 2” mean the historical Veramo 2.0 release, DIDComm v2, or W3C VC Data Model 2.0

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { createElement, StrictMode, type ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { getAddress } from 'ethers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,6 +83,10 @@ class MockProvider implements TraceChainWalletProvider {
   emit(event: 'accountsChanged' | 'chainChanged', value: unknown) {
     this.listeners.get(event)?.forEach((listener) => listener(value));
   }
+
+  listenerCount(event: 'accountsChanged' | 'chainChanged') {
+    return this.listeners.get(event)?.size ?? 0;
+  }
 }
 
 function setupAdapter(chainId: string = TARGET_CHAIN_HEX) {
@@ -146,6 +151,22 @@ describe('wallet authentication with MetaMask Connect', () => {
     expect(result.current.state.phase).toBe('authenticated');
   });
 
+  it('prevents repeated connect clicks from starting duplicate attempts', async () => {
+    const { adapter } = setupAdapter();
+    vi.mocked(adapter.connect).mockReturnValue(new Promise(() => undefined));
+    const { result } = renderHook(() => useWalletAuthentication(adapter));
+    await waitFor(() => expect(result.current.state.phase).toBe('idle'));
+
+    act(() => {
+      void result.current.connect();
+      void result.current.connect();
+    });
+
+    expect(adapter.connect).toHaveBeenCalledOnce();
+    await act(() => result.current.cancelConnection());
+    expect(result.current.state.phase).toBe('idle');
+  });
+
   it('requests the official mobile transport when the QR alternative is selected', async () => {
     const { adapter } = setupAdapter();
     const { result } = renderHook(() => useWalletAuthentication(adapter));
@@ -183,6 +204,23 @@ describe('wallet authentication with MetaMask Connect', () => {
 
     expect(result.current.state.phase).toBe('rejected');
     expect(result.current.state.message).toBe('Connection rejected.');
+  });
+
+  it('always exits connecting state after a connection timeout', async () => {
+    const { adapter } = setupAdapter();
+    vi.mocked(adapter.connect).mockRejectedValueOnce(
+      new WalletConnectionError(
+        'CONNECTION_TIMEOUT',
+        'MetaMask did not respond in time. Cancel or try the connection again.',
+      ),
+    );
+    const { result } = renderHook(() => useWalletAuthentication(adapter));
+    await waitFor(() => expect(result.current.state.phase).toBe('idle'));
+
+    await act(() => result.current.connect());
+
+    expect(result.current.state.phase).toBe('error');
+    expect(result.current.state.message).toContain('try the connection again');
   });
 
   it('shows and cancels a pending desktop QR connection', async () => {
@@ -248,5 +286,30 @@ describe('wallet authentication with MetaMask Connect', () => {
     expect(authMocks.deleteAuthSession).toHaveBeenCalledOnce();
     expect(adapter.disconnect).toHaveBeenCalledOnce();
     expect(result.current.state.message).toContain('network changed');
+  });
+
+  it('does not duplicate provider listeners when mounted in React StrictMode', async () => {
+    const { adapter, provider } = setupAdapter();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(StrictMode, null, children);
+    const { result } = renderHook(() => useWalletAuthentication(adapter), { wrapper });
+    await waitFor(() => expect(result.current.state.phase).toBe('idle'));
+
+    await act(() => result.current.connect());
+
+    expect(provider.listenerCount('accountsChanged')).toBe(1);
+    expect(provider.listenerCount('chainChanged')).toBe(1);
+  });
+
+  it('removes provider listeners when the hook unmounts', async () => {
+    const { adapter, provider } = setupAdapter();
+    const { result, unmount } = renderHook(() => useWalletAuthentication(adapter));
+    await waitFor(() => expect(result.current.state.phase).toBe('idle'));
+    await act(() => result.current.connect());
+
+    unmount();
+
+    expect(provider.listenerCount('accountsChanged')).toBe(0);
+    expect(provider.listenerCount('chainChanged')).toBe(0);
   });
 });

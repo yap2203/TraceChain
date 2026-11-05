@@ -190,7 +190,6 @@ function LoginPage() {
 
   return (
     <div className="landing-page" id="top">
-      {isWalletBusy && <LoadingIndicator fullScreen label={connectButtonLabel} />}
       <header className="site-header">
         <a className="header-brand" href="#top" aria-label="TraceChain home">
           <Brand />
@@ -429,6 +428,24 @@ function LoginPage() {
                     id="wallet-method-panel"
                     role="tabpanel"
                   >
+                    {isWalletBusy && (
+                      <div className="wallet-connection-progress" role="status">
+                        <LoadingIndicator label={connectButtonLabel} size="small" />
+                        <span>
+                          <strong>{connectButtonLabel}</strong>
+                          <small>{walletState.message}</small>
+                        </span>
+                        {walletState.phase === 'connecting' && (
+                          <button
+                            className="wallet-connection-cancel"
+                            onClick={() => void cancelConnection()}
+                            type="button"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    )}
                     <div className="wallet-method-copy">
                       <strong>
                         {walletConnectionTab === 'extension'

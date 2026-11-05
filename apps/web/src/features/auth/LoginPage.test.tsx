@@ -1,33 +1,35 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LoginPage from './LoginPage';
 
 const walletMocks = vi.hoisted(() => ({
+  cancelConnection: vi.fn(),
   connect: vi.fn(),
   connectMobile: vi.fn(),
+  state: {
+    authorizationReady: false,
+    credentialVerified: false,
+    locallyVerified: false,
+    message: 'Ready to connect',
+    onChainStatusChecked: false,
+    phase: 'idle',
+  },
 }));
 
 vi.mock('./useWalletAuthentication', () => ({
   shortenAddress: (address: string) => address,
   useWalletAuthentication: () => ({
-    cancelConnection: vi.fn(),
+    cancelConnection: walletMocks.cancelConnection,
     connect: walletMocks.connect,
     connectMobile: walletMocks.connectMobile,
     credentialState: { message: '', phase: 'idle', reasons: [] },
     logout: vi.fn(),
     presentCredential: vi.fn(),
-    state: {
-      authorizationReady: false,
-      credentialVerified: false,
-      locallyVerified: false,
-      message: 'Ready to connect',
-      onChainStatusChecked: false,
-      phase: 'idle',
-    },
+    state: walletMocks.state,
     switchToTargetNetwork: vi.fn(),
   }),
 }));
@@ -39,6 +41,22 @@ describe('login wallet connection tabs', () => {
       value: () => ({ matches: true }),
     });
   });
+
+  beforeEach(() => {
+    walletMocks.cancelConnection.mockReset();
+    walletMocks.connect.mockReset();
+    walletMocks.connectMobile.mockReset();
+    Object.assign(walletMocks.state, {
+      authorizationReady: false,
+      credentialVerified: false,
+      locallyVerified: false,
+      message: 'Ready to connect',
+      onChainStatusChecked: false,
+      phase: 'idle',
+    });
+  });
+
+  afterEach(() => cleanup());
 
   it('lets an extension user explicitly switch to the mobile QR flow', () => {
     render(
@@ -58,5 +76,24 @@ describe('login wallet connection tabs', () => {
 
     expect(walletMocks.connectMobile).toHaveBeenCalledOnce();
     expect(walletMocks.connect).not.toHaveBeenCalled();
+  });
+
+  it('keeps the authentication card visible with local progress and cancellation', () => {
+    Object.assign(walletMocks.state, {
+      message: 'Opening MetaMask connection options',
+      phase: 'connecting',
+    });
+
+    const { container } = render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Connect to TraceChain' })).toBeTruthy();
+    expect(screen.getAllByText('Opening MetaMask connection options')).not.toHaveLength(0);
+    expect(container.querySelector('.loading-indicator--screen')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(walletMocks.cancelConnection).toHaveBeenCalledOnce();
   });
 });

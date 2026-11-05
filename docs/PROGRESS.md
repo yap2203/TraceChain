@@ -19,6 +19,8 @@
 - Added shared role-to-workspace mapping and fail-closed production workspace guards; local verification still cannot authorize access.
 - Added a development-only Admin holder export command with overwrite protection.
 - Added 8 SSI presentation API tests and 3 workspace access tests.
+- Added the versioned custody-transfer QR locator codec, safe error codes, canonical normalization,
+  and focused shared-package tests. The QR contains only chain, contract, and transfer references.
 
 ## Current frontend version
 
@@ -36,7 +38,8 @@
 - Replaced Admin Access Control fixtures with live stakeholder and credential lifecycle records, MetaMask-signed stakeholder suspend/reactivate/revoke actions, live role counts, and a configurable on-chain role-permission matrix; replaced the Admin audit fixture with exportable registry snapshots.
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
-- Added mocked MetaMask client, EIP-1193 provider, transport-tab, and QR-selection tests; the frontend suite now contains 26 tests and performs no live relay or RPC calls.
+- Reused existing authorized extension providers, serialized connection attempts, added bounded timeouts and one stale-transport retry, and moved connection progress into the visible authentication card.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, and listener-cleanup tests; the frontend suite now contains 36 tests and performs no live relay or RPC calls.
 - Enabled temporary account-free sample UI access only on local Vite loopback hosts.
 - Kept production workspace access fail-closed because blockchain role and credential-status verification are not yet implemented, even when a Company Role Credential has been verified locally.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
@@ -62,7 +65,8 @@
 - Replace prototype filesystem issuance metadata and Veramo JSON key storage with production-managed database and key-management services.
 - Replace the remaining credential, access-control, supplier, manufacturer, distributor, retailer, receipt, and report fixtures with authenticated chain-backed workflows.
 - Complete a clean Hardhat test run and deploy the suite to Sepolia when the deployment wallet is ready.
-- Define QR payloads and implement real generation, scanning, and intended-receiver validation.
+- Implement authenticated API transfer resolution and intended-receiver verification before adding
+  QR image generation, scanner UI, or MetaMask-signed receipt confirmation.
 - Add committed end-to-end browser tests and production deployment configuration.
 
 ## Important distinction

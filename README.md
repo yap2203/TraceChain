@@ -6,21 +6,22 @@ The current version includes a responsive React application, five stakeholder wo
 
 ## Current implementation status
 
-| Area                                     | Status                                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected           |
-| MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target    |
-| Nonce and session storage                | Implemented in process memory for development                                         |
-| Stakeholder workspace UI                 | Admin applications use the local chain; other workflow pages still need migration     |
-| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                   |
-| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                       |
-| Company Role Credential presentation     | Authenticated JSON upload and safe session summary implemented                        |
-| Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
-| Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status      |
-| SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
-| Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
-| Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
-| Business persistence                     | Not implemented                                                                       |
+| Area                                     | Status                                                                                    |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected               |
+| MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target        |
+| Nonce and session storage                | Implemented in process memory for development                                             |
+| Stakeholder workspace UI                 | Admin applications use the local chain; other workflow pages still need migration         |
+| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                       |
+| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                           |
+| Company Role Credential presentation     | Authenticated JSON upload and safe session summary implemented                            |
+| Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented          |
+| Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status          |
+| SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap     |
+| Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                       |
+| Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                      |
+| Custody-transfer QR standard             | Version 1 locator codec and strict validation implemented; scanner/API resolution pending |
+| Business persistence                     | Not implemented                                                                           |
 
 ## Repository structure
 
@@ -29,7 +30,7 @@ apps/
   web/             React 19, Vite 8, React Router, ethers, and MetaMask Connect
   api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
-  shared/          Shared company-role definitions
+  shared/          Shared company-role definitions and custody-transfer QR locator codec
   ssi/             Veramo agent, did:ethr, JWT VC/VP, encrypted JSON storage, and verification
   contracts/       Hardhat 3 starter, Solidity example, tests, and deployment module
 docs/
@@ -193,7 +194,7 @@ Localhost uses the same wallet, credential, on-chain role, and status gate as ot
 
 ## Authentication
 
-The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it connects MetaMask, requires the environment-configured chain, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API. Local development uses chain 31337; the public test deployment uses Sepolia.
+The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it reuses an already-authorized injected MetaMask extension provider when available, or uses MetaMask Connect for Mobile QR and extension fallback. Connection attempts are serialized and time-bounded, and progress plus cancellation remains visible inside the authentication card. It then requires the environment-configured chain, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API. Local development uses chain 31337; the public test deployment uses Sepolia.
 
 The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It then creates a process-local session. Authentication proves wallet control only. Once signed in, a user may select a Company Role Credential JSON file; the browser sends it directly to `POST /api/ssi/company-role/verify` without storing it in browser storage.
 
@@ -230,6 +231,21 @@ Resume the same Ignition deployment after a provider interruption; do not deploy
 
 Private company documents and evidence are encrypted before being sent to a configured pinning provider. Only their CID and integrity hash belong on-chain. `IPFS_ENCRYPTION_KEY` must decode to exactly 32 bytes and must be backed up outside the repository; losing it makes encrypted content unrecoverable.
 
+## Custody-transfer QR locator
+
+TraceChain uses this canonical version 1 reference:
+
+```text
+tracechain://transfer/v1?chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}
+```
+
+The QR payload is only an untrusted locator for an existing on-chain transfer. It never contains
+quantity, product, credential, company, private-document, key, wallet-secret, or receipt data.
+After scanning, the API must call `getTransfer(transferId)` on the configured CustodyTransfer
+deployment and verify the chain, contract, transfer existence, `AwaitingReceipt` status, and that
+the authenticated SIWE wallet is the on-chain recipient. Receipt confirmation remains a separate
+MetaMask-signed transaction; scanning alone never changes custody.
+
 ## Validation
 
 From the repository root:
@@ -242,6 +258,7 @@ npm run test:blockchain
 npm run test:ssi
 npm run test:ssi-api
 npm run test:contracts
+npm run test:qr
 npm run test:content --workspace @tracechain/api
 npm run test:frontend
 npm run test:workspace-access

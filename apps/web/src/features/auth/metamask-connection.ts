@@ -62,10 +62,13 @@ export type MetaMaskEvmClientFactory = (options: EvmClientOptions) => Promise<Me
 
 interface BrowserContext {
   clearTransportPreference: () => Promise<void>;
+  getExtensionProvider: () => TraceChainWalletProvider | undefined;
   iconUrl: string;
   isMobile: () => boolean;
   origin: string;
 }
+
+const DEFAULT_CONNECTION_TIMEOUT_MS = 30_000;
 
 const defaultClientFactory: MetaMaskEvmClientFactory = async (options) => {
   const { createEVMClient: createClient } = await import('@metamask/connect-evm');
@@ -79,11 +82,15 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
     Promise<MetaMaskEvmClient>
   >();
   private activeClient?: MetaMaskEvmClient;
+  private activeProvider?: TraceChainWalletProvider;
   private callbacks: WalletConnectionCallbacks = {};
+  private connectionGeneration = 0;
+  private pendingConnection?: Promise<WalletConnectionResult>;
 
   constructor(
     private readonly clientFactory: MetaMaskEvmClientFactory = defaultClientFactory,
     browser?: BrowserContext,
+    private readonly connectionTimeoutMs = DEFAULT_CONNECTION_TIMEOUT_MS,
   ) {
     this.browser = browser;
   }
@@ -92,31 +99,42 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
     callbacks: WalletConnectionCallbacks = {},
     preference: WalletConnectionPreference = 'automatic',
   ): Promise<WalletConnectionResult> {
-    this.callbacks = callbacks;
+    if (this.pendingConnection) return this.pendingConnection;
 
-    try {
-      if (preference === 'mobile' && !this.clientPromises.has('mobile')) {
-        await this.getBrowser().clearTransportPreference();
-      }
-      const client = await this.getClient(preference);
-      this.activeClient = client;
-      const connection = await client.connect({ chainIds: [TARGET_CHAIN_HEX] });
-      return {
-        accounts: connection.accounts,
-        chainId: connection.chainId,
-        provider: client.getProvider() as TraceChainWalletProvider,
-      };
-    } catch (error) {
-      throw normalizeConnectionError(error);
-    } finally {
-      this.callbacks = {};
+    this.callbacks = callbacks;
+    const generation = this.connectionGeneration;
+    const connection = this.connectOnce(preference, generation)
+      .catch((error: unknown) => {
+        throw normalizeConnectionError(error);
+      })
+      .finally(() => {
+        if (this.pendingConnection === connection) this.pendingConnection = undefined;
+        this.callbacks = {};
+      });
+    this.pendingConnection = connection;
+    return connection;
+  }
+
+  private async connectOnce(
+    preference: WalletConnectionPreference,
+    generation: number,
+  ): Promise<WalletConnectionResult> {
+    if (preference === 'automatic') {
+      const extensionProvider = this.getBrowser().getExtensionProvider();
+      if (extensionProvider) return this.connectExtension(extensionProvider, generation);
     }
+
+    return this.connectClient(preference, generation, true);
   }
 
   async disconnect() {
+    this.connectionGeneration += 1;
     const clients = await Promise.allSettled(this.clientPromises.values());
     this.clientPromises.clear();
     this.activeClient = undefined;
+    this.activeProvider = undefined;
+    this.pendingConnection = undefined;
+    this.callbacks = {};
 
     await Promise.all(
       clients.flatMap((result) =>
@@ -127,20 +145,124 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
 
   async switchToTargetNetwork() {
     const client = this.activeClient;
-    if (!client) throw new Error('Connect MetaMask before switching networks.');
-    await client.switchChain({
-      chainConfiguration: {
+    if (client) {
+      await client.switchChain({
+        chainConfiguration: targetChainConfiguration(),
         chainId: TARGET_CHAIN_HEX,
-        chainName: chainConfig.name,
-        nativeCurrency: {
-          decimals: 18,
-          name: chainConfig.currencySymbol,
-          symbol: chainConfig.currencySymbol,
-        },
-        rpcUrls: [chainConfig.rpcUrl],
-      },
-      chainId: TARGET_CHAIN_HEX,
-    });
+      });
+      return;
+    }
+
+    const provider = this.activeProvider;
+    if (!provider) throw new Error('Connect MetaMask before switching networks.');
+
+    try {
+      await provider.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: TARGET_CHAIN_HEX }],
+      });
+    } catch (error) {
+      if (!isUnknownChainError(error)) throw error;
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [
+          {
+            ...targetChainConfiguration(),
+            chainId: TARGET_CHAIN_HEX,
+          },
+        ],
+      });
+    }
+  }
+
+  private async connectExtension(
+    provider: TraceChainWalletProvider,
+    generation: number,
+  ): Promise<WalletConnectionResult> {
+    const result = await withConnectionTimeout(
+      (async () => {
+        const authorizedAccounts = normalizeAccounts(
+          await provider.request({ method: 'eth_accounts' }),
+        );
+        const accounts =
+          authorizedAccounts.length > 0
+            ? authorizedAccounts
+            : normalizeAccounts(await provider.request({ method: 'eth_requestAccounts' }));
+        const chainId = await provider.request({ method: 'eth_chainId' });
+
+        if (accounts.length === 0 || typeof chainId !== 'string') {
+          throw new Error('MetaMask did not return an account and network.');
+        }
+
+        this.assertCurrentConnection(generation);
+        this.activeClient = undefined;
+        this.activeProvider = provider;
+        return { accounts, chainId, provider };
+      })(),
+      this.connectionTimeoutMs,
+    );
+
+    return result;
+  }
+
+  private async connectClient(
+    preference: WalletConnectionPreference,
+    generation: number,
+    allowStaleRetry: boolean,
+  ): Promise<WalletConnectionResult> {
+    if (preference === 'mobile' && !this.clientPromises.has('mobile')) {
+      await this.getBrowser().clearTransportPreference();
+    }
+
+    const client = await this.getClient(preference);
+    this.activeClient = client;
+    this.activeProvider = undefined;
+
+    try {
+      const connection = await withConnectionTimeout(
+        client.connect({ chainIds: [TARGET_CHAIN_HEX], forceRequest: false }),
+        this.connectionTimeoutMs,
+      );
+      this.assertCurrentConnection(generation);
+      const provider = client.getProvider() as TraceChainWalletProvider;
+      this.activeProvider = provider;
+      return {
+        accounts: connection.accounts,
+        chainId: connection.chainId,
+        provider,
+      };
+    } catch (error) {
+      if (
+        generation !== this.connectionGeneration ||
+        !allowStaleRetry ||
+        !isStaleTransportError(error)
+      ) {
+        throw error;
+      }
+
+      await this.disconnectClient(preference, client);
+      this.assertCurrentConnection(generation);
+      return this.connectClient(preference, generation, false);
+    }
+  }
+
+  private assertCurrentConnection(generation: number) {
+    if (generation !== this.connectionGeneration) {
+      throw new WalletConnectionError('CONNECTION_FAILED', 'MetaMask connection was cancelled.');
+    }
+  }
+
+  private async disconnectClient(
+    preference: WalletConnectionPreference,
+    client: MetaMaskEvmClient,
+  ) {
+    this.clientPromises.delete(preference);
+    if (this.activeClient === client) this.activeClient = undefined;
+    try {
+      await client.disconnect();
+    } catch {
+      // A stale transport may already be closed; removing this client is sufficient.
+    }
   }
 
   private getClient(preference: WalletConnectionPreference) {
@@ -160,6 +282,7 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
             this.callbacks.onMobileConnection?.(browser.isMobile() ? 'deeplink' : 'qr');
           },
         },
+        skipAutoAnnounce: true,
         ui: {
           headless: false,
           preferExtension: preference === 'automatic',
@@ -181,7 +304,7 @@ export class MetaMaskConnectionAdapter implements WalletConnectionAdapter {
 }
 
 export type WalletConnectionErrorCode =
-  'CONNECTION_EXPIRED' | 'CONNECTION_FAILED' | 'CONNECTION_REJECTED';
+  'CONNECTION_EXPIRED' | 'CONNECTION_FAILED' | 'CONNECTION_REJECTED' | 'CONNECTION_TIMEOUT';
 
 export class WalletConnectionError extends Error {
   constructor(
@@ -229,14 +352,86 @@ export function normalizeConnectionError(error: unknown) {
   );
 }
 
+function isStaleTransportError(error: unknown) {
+  const normalized = normalizeConnectionError(error);
+  if (normalized.code === 'CONNECTION_EXPIRED' || normalized.code === 'CONNECTION_TIMEOUT') {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /orphaned data|unknown response id|stale|transport.*closed|session.*closed/i.test(message);
+}
+
+function normalizeAccounts(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((account): account is string => typeof account === 'string');
+}
+
+function targetChainConfiguration() {
+  return {
+    chainName: chainConfig.name,
+    nativeCurrency: {
+      decimals: 18,
+      name: chainConfig.currencySymbol,
+      symbol: chainConfig.currencySymbol,
+    },
+    rpcUrls: [chainConfig.rpcUrl],
+  };
+}
+
+function isUnknownChainError(error: unknown) {
+  const candidate = error as { code?: number; data?: { originalError?: { code?: number } } };
+  return candidate?.code === 4902 || candidate?.data?.originalError?.code === 4902;
+}
+
+function withConnectionTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = globalThis.setTimeout(() => {
+      reject(
+        new WalletConnectionError(
+          'CONNECTION_TIMEOUT',
+          'MetaMask did not respond in time. Cancel or try the connection again.',
+        ),
+      );
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        globalThis.clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        globalThis.clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
 function browserContext(): BrowserContext {
   const origin = window.location.origin;
   return {
     clearTransportPreference: clearPersistedMetaMaskTransportPreference,
+    getExtensionProvider: findMetaMaskExtensionProvider,
     iconUrl: new URL('/tracechain-mark.svg', origin).toString(),
     isMobile: () => /Android|iPhone|iPad|iPod/i.test(window.navigator.userAgent),
     origin,
   };
+}
+
+function findMetaMaskExtensionProvider(): TraceChainWalletProvider | undefined {
+  const injected = window.ethereum as
+    | (TraceChainWalletProvider & {
+        isMetaMask?: boolean;
+        providers?: Array<TraceChainWalletProvider & { isMetaMask?: boolean }>;
+      })
+    | undefined;
+  if (!injected) return undefined;
+
+  return (
+    injected.providers?.find((provider) => provider.isMetaMask) ??
+    (injected.isMetaMask ? injected : undefined)
+  );
 }
 
 async function clearPersistedMetaMaskTransportPreference() {
