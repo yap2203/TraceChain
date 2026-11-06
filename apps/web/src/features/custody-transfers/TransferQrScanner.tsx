@@ -47,17 +47,18 @@ export function TransferQrScanner({
     if (mountedRef.current) setCameraState('idle');
   }, []);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
       mountedRef.current = false;
       stopCameraRef.current?.();
       const stream = videoRef.current?.srcObject;
       if (typeof MediaStream !== 'undefined' && stream instanceof MediaStream) {
         stream.getTracks().forEach((track) => track.stop());
       }
-    },
-    [],
-  );
+    };
+  }, []);
 
   const submitPayload = useCallback(
     async (payload: string) => {

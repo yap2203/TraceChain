@@ -45,7 +45,7 @@
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Reused existing authorized extension providers, serialized connection attempts, added bounded timeouts and one stale-transport retry, and moved connection progress into the visible authentication card.
-- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, and custody-transfer QR tests; the frontend suite now contains 43 tests and performs no live relay or RPC calls.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, and custody-transfer QR tests; the frontend suite now contains 44 tests and performs no live relay or RPC calls.
 - Enabled temporary account-free sample UI access only on local Vite loopback hosts.
 - Kept production workspace access fail-closed because blockchain role and credential-status verification are not yet implemented, even when a Company Role Credential has been verified locally.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
