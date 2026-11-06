@@ -6,22 +6,22 @@ The current version includes a responsive React application, five stakeholder wo
 
 ## Current implementation status
 
-| Area                                     | Status                                                                                    |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected               |
-| MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target        |
-| Nonce and session storage                | Implemented in process memory for development                                             |
-| Stakeholder workspace UI                 | Admin applications use the local chain; other workflow pages still need migration         |
-| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                       |
-| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                           |
-| Company Role Credential presentation     | Authenticated JSON upload and safe session summary implemented                            |
-| Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented          |
-| Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status          |
-| SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap     |
-| Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                       |
-| Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                      |
-| Custody-transfer QR standard             | Version 1 locator codec and strict validation implemented; scanner/API resolution pending |
-| Business persistence                     | Not implemented                                                                           |
+| Area                                     | Status                                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------------------- |
+| Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected           |
+| MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target    |
+| Nonce and session storage                | Implemented in process memory for development                                         |
+| Stakeholder workspace UI                 | Admin applications use the local chain; other workflow pages still need migration     |
+| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                   |
+| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                       |
+| Company Role Credential presentation     | Authenticated JSON upload and safe session summary implemented                        |
+| Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
+| Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status      |
+| SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
+| Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
+| Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
+| Custody-transfer QR workflow             | Canonical generation, camera/image/manual scanning, and API verification implemented  |
+| Business persistence                     | Not implemented                                                                       |
 
 ## Repository structure
 
@@ -115,7 +115,7 @@ The registration review screen submits a real `StakeholderRegistry.submitApplica
 
 ### Environment variables
 
-The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL` and the public `CHAIN_*` network values; server secrets remain backend-only:
+The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL`, the public `CHAIN_*` network values, and `CUSTODY_TRANSFER_ADDRESS`; server secrets remain backend-only:
 
 ```text
 PORT=3000
@@ -129,6 +129,7 @@ CHAIN_RPC_URL=http://127.0.0.1:8545
 CHAIN_CURRENCY_SYMBOL=ETH
 STAKEHOLDER_REGISTRY_ADDRESS=0x...
 CREDENTIAL_REGISTRY_ADDRESS=0x...
+CUSTODY_TRANSFER_ADDRESS=0x...
 AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
 SEPOLIA_RPC_URL=https://example.invalid
@@ -241,10 +242,16 @@ tracechain://transfer/v1?chainId={chainId}&contract={custodyTransferAddress}&tra
 
 The QR payload is only an untrusted locator for an existing on-chain transfer. It never contains
 quantity, product, credential, company, private-document, key, wallet-secret, or receipt data.
-After scanning, the API must call `getTransfer(transferId)` on the configured CustodyTransfer
-deployment and verify the chain, contract, transfer existence, `AwaitingReceipt` status, and that
-the authenticated SIWE wallet is the on-chain recipient. Receipt confirmation remains a separate
-MetaMask-signed transaction; scanning alone never changes custody.
+The frontend generates the QR only from a successful on-chain `bytes32` transfer ID, using the
+configured `CHAIN_ID` and `CUSTODY_TRANSFER_ADDRESS`. It supports live camera scanning, PNG/JPG/WebP
+QR upload, and manual payload paste. Decoded QR fields are never treated as transfer data or shown
+as verified data.
+
+`POST /api/custody-transfers/resolve-qr` requires a fully credential-authorized SIWE session,
+resolves `getTransfer(transferId)` through a read-only gateway, and verifies the configured chain,
+contract deployment, `AwaitingReceipt` status, and intended recipient before returning a minimal
+transfer summary. The frontend displays that summary only after this response succeeds. Scanning
+never prepares or sends a transaction. MetaMask-signed receipt confirmation remains a future phase.
 
 ## Validation
 
@@ -258,6 +265,7 @@ npm run test:blockchain
 npm run test:ssi
 npm run test:ssi-api
 npm run test:contracts
+npm run test:custody-transfers
 npm run test:qr
 npm run test:content --workspace @tracechain/api
 npm run test:frontend
@@ -266,7 +274,7 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the frontend contains 26 wallet-adapter, authentication-hook, presentation, credential-panel, and workspace-access tests. Frontend wallet tests use mocked MetaMask clients and EIP-1193 providers; they do not contact a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 10 tests, and the custody-transfer resolution API contains 11 tests. The frontend suite includes wallet-adapter, authentication-hook, credential, workspace-access, and custody-transfer QR tests. Custody-transfer API tests inject the blockchain reader and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader and API resolver; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

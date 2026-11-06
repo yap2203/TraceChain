@@ -37,6 +37,8 @@
 - In-memory nonce and session repository interfaces and development implementations
 - Shared `CompanyRole` enum
 - Versioned custody-transfer QR locator encoding and strict untrusted-payload decoding
+- Authenticated, credential-authorized custody-transfer resolution with intended-recipient checks
+- Canonical custody-transfer QR rendering, PNG download, camera/image/manual scanning, and API-verified transfer summaries
 - Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
 - Authenticated Company Role Credential JSON presentation with safe session summaries and fail-closed workspace guards
 - Hardhat 3 smart-contract starter with a Counter example
@@ -73,10 +75,10 @@ The detailed stakeholder screens do not have persisted business services. The lo
 ## Current limitations
 
 - No on-chain credential-status verification or role authorization service; local credential verification alone never unlocks a workspace
-- No durable database or business API endpoints
+- No durable database or persisted stakeholder workflow APIs
 - No TraceChain-specific smart contracts or deployment
-- No finalized production SSI storage/key-custody design, QR image/scanner workflow, hosting platform, or production topology
-- No authenticated API resolution or intended-receiver verification for scanned transfer locators
+- No finalized production SSI storage/key-custody design, hosting platform, or production topology
+- No MetaMask-signed receipt confirmation flow; QR scanning remains read-only
 - Sample UI records and transaction states are not persisted or cryptographically verified
 
 ## Important system qualities

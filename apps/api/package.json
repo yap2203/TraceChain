@@ -12,10 +12,12 @@
     "start": "node dist/server.js",
     "test:auth": "vitest run src/modules/auth/auth.test.ts",
     "test:blockchain": "vitest run src/modules/blockchain/blockchain.test.ts",
+    "test:custody-transfers": "vitest run src/modules/custody-transfers/custody-transfer.test.ts",
     "test:ssi-api": "vitest run src/modules/ssi/ssi.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
+    "@tracechain/shared": "^0.1.0",
     "@tracechain/ssi": "^0.1.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",

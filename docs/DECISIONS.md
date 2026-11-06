@@ -121,6 +121,11 @@ packages/contracts/contracts/
 - Never put quantities, product data, credentials, JWTs, company data, private documents, encryption keys, wallet secrets, or receipt data in the QR payload.
 - Treat every decoded field as untrusted until the authenticated API resolves `getTransfer(transferId)` against the configured CustodyTransfer contract.
 - Require the API to verify the configured chain and contract, transfer existence, `AwaitingReceipt` status, and that the authenticated SIWE wallet is the on-chain recipient.
+- Expose resolution through authenticated `POST /api/custody-transfers/resolve-qr`; require a locally verified credential with completed on-chain authorization before returning transfer data.
+- Keep the contract read behind an injectable, read-only gateway and return only the transfer ID, product batch ID, sender, recipient, quantity, dispatch/expected timestamps, and status.
+- Generate QR images through the shared canonical encoder only after a successful on-chain transfer provides a `bytes32` transfer ID; local fixture previews must be explicitly labelled as development-only.
+- Support camera, image-file, and manual-paste inputs, but send the complete payload to the authenticated resolution endpoint and display no decoded transfer fields before that endpoint succeeds.
+- Release camera tracks on completion, failure, close, or unmount and suppress duplicate scan-resolution requests while one is active.
 - Require receipt confirmation through a separate MetaMask-signed transaction. Scanning alone must never change custody.
 
 ## Credential and evidence storage

@@ -6,27 +6,28 @@ The Express API defaults to `http://localhost:3000`. It accepts credentialed bro
 
 Copy the repository-root `.env.example` to the repository-root `.env`. The API loads this file using a repository-relative absolute path, independent of the terminal working directory. Available API values are:
 
-| Variable                         | Default example          | Purpose                              |
-| -------------------------------- | ------------------------ | ------------------------------------ |
-| `PORT`                           | `3000`                   | HTTP port                            |
-| `FRONTEND_URL`                   | `http://localhost:5173`  | Exact CORS origin                    |
-| `NODE_ENV`                       | `development`            | Controls production cookie security  |
-| `SIWE_DOMAIN`                    | `localhost:5173`         | Expected ERC-4361 domain             |
-| `SIWE_URI`                       | `http://localhost:5173`  | Expected ERC-4361 URI                |
-| `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID    |
-| `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name         |
-| `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads  |
-| `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol  |
-| `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry        |
-| `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry         |
-| `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                  |
-| `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds          |
-| `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider   |
-| `VERAMO_KMS_SECRET_KEY`          | Placeholder only         | 32-byte hex SecretBox encryption key |
-| `TRACECHAIN_AUTHORITY_DID_ALIAS` | `tracechain-authority`   | Authority DID lookup alias           |
-| `BOOTSTRAP_ADMIN_WALLET`         | Zero-address placeholder | Public Admin wallet address          |
+| Variable                         | Default example          | Purpose                               |
+| -------------------------------- | ------------------------ | ------------------------------------- |
+| `PORT`                           | `3000`                   | HTTP port                             |
+| `FRONTEND_URL`                   | `http://localhost:5173`  | Exact CORS origin                     |
+| `NODE_ENV`                       | `development`            | Controls production cookie security   |
+| `SIWE_DOMAIN`                    | `localhost:5173`         | Expected ERC-4361 domain              |
+| `SIWE_URI`                       | `http://localhost:5173`  | Expected ERC-4361 URI                 |
+| `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID     |
+| `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name          |
+| `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads   |
+| `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol   |
+| `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry         |
+| `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry          |
+| `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract    |
+| `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                   |
+| `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds           |
+| `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider    |
+| `VERAMO_KMS_SECRET_KEY`          | Placeholder only         | 32-byte hex SecretBox encryption key  |
+| `TRACECHAIN_AUTHORITY_DID_ALIAS` | `tracechain-authority`   | Authority DID lookup alias            |
+| `BOOTSTRAP_ADMIN_WALLET`         | Zero-address placeholder | Public Admin wallet address           |
 | `IPFS_PINNING_API_URL`           | Placeholder URL          | Encrypted credential pinning endpoint |
-| `IPFS_PINNING_TOKEN`             | Placeholder only         | Scoped server-side pinning token     |
+| `IPFS_PINNING_TOKEN`             | Placeholder only         | Scoped server-side pinning token      |
 | `IPFS_ENCRYPTION_KEY`            | Placeholder only         | 32-byte hex credential encryption key |
 
 `FRONTEND_URL`, `SIWE_DOMAIN`, and `SIWE_URI` must match the frontend origin used in the browser.
@@ -104,6 +105,24 @@ A successful response contains safe metadata only: `verified`, `credentialId`, `
 ### `POST /api/ssi/company-role/issue`
 
 Requires a blockchain-authorized System Admin session whose wallet is also the deployed contract administrator. The request contains an application ID, the confirmed on-chain role, independently verified company registration number, company name, and expiration date. The backend issues and cryptographically verifies the VC, encrypts and pins its deterministic serialization, and persists a restart-safe workflow record before returning unsigned transactions. Stakeholder approval is confirmed first, followed by credential registration. A retry reuses the same credential and CID and returns only unfinished transactions. The plaintext credential is returned for holder delivery but is never written to Ethereum.
+
+### `POST /api/custody-transfers/resolve-qr`
+
+Requires a SIWE session whose Company Role Credential is locally verified and currently authorized
+against the blockchain registries. The request contains only the Stage 1 locator:
+
+```json
+{ "qrPayload": "tracechain://transfer/v1?chainId=31337&contract=0x...&transferId=0x..." }
+```
+
+The API verifies the configured chain and `CUSTODY_TRANSFER_ADDRESS`, reads
+`getTransfer(transferId)`, requires status `1` (`AwaitingReceipt`), and requires the SIWE wallet to
+equal the on-chain recipient. A successful response contains only `transferId`, `productBatchId`,
+`sender`, `recipient`, string `quantity`, `dispatchedAt`, `expectedAt`, and numeric `status`.
+
+Resolution is read-only. It does not call `confirmReceipt`, prepare a transaction, or change
+custody. The frontend now supports canonical QR generation plus camera, image-file, and manual-paste
+scanning. Receipt confirmation remains a separate future MetaMask-signed transaction.
 
 ## Authentication boundary
 
