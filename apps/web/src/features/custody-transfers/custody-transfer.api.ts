@@ -1,4 +1,7 @@
-import type { ResolvedCustodyTransfer } from './custody-transfer.types';
+import type {
+  PreparedReceiptConfirmation,
+  ResolvedCustodyTransfer,
+} from './custody-transfer.types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
   /\/$/,
@@ -23,13 +26,33 @@ export class CustodyTransferResolutionError extends Error {
 }
 
 export async function resolveTransferQr(qrPayload: string): Promise<ResolvedCustodyTransfer> {
+  return custodyTransferRequest('/resolve-qr', {
+    body: JSON.stringify({ qrPayload }),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+}
+
+export function prepareReceiptConfirmation(
+  transferId: string,
+): Promise<PreparedReceiptConfirmation> {
+  return custodyTransferRequest('/transactions/confirm-receipt', {
+    body: JSON.stringify({ transferId }),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+}
+
+export function getCustodyTransfer(transferId: string): Promise<ResolvedCustodyTransfer> {
+  return custodyTransferRequest(`/${encodeURIComponent(transferId)}`);
+}
+
+async function custodyTransferRequest<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/api/custody-transfers/resolve-qr`, {
-      body: JSON.stringify({ qrPayload }),
+    response = await fetch(`${API_BASE_URL}/api/custody-transfers${path}`, {
+      ...init,
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      method: 'POST',
     });
   } catch {
     throw new CustodyTransferResolutionError(
@@ -48,7 +71,7 @@ export async function resolveTransferQr(qrPayload: string): Promise<ResolvedCust
     );
   }
 
-  return response.json() as Promise<ResolvedCustodyTransfer>;
+  return response.json() as Promise<T>;
 }
 
 export function transferResolutionMessage(error: unknown) {

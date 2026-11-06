@@ -127,6 +127,8 @@ packages/contracts/contracts/
 - Support camera, image-file, and manual-paste inputs, but send the complete payload to the authenticated resolution endpoint and display no decoded transfer fields before that endpoint succeeds.
 - Release camera tracks on completion, failure, close, or unmount and suppress duplicate scan-resolution requests while one is active.
 - Require receipt confirmation through a separate MetaMask-signed transaction. Scanning alone must never change custody.
+- For local custody testing, seed only already-deployed chain-31337 contracts with unlocked Hardhat accounts; require the recipient Distributor to be independently onboarded and credential-authorized, and never load a private key in the seed command.
+- Revalidate the authorized SIWE recipient and current transfer state before returning unsigned `confirmReceipt` calldata. Keep signing and broadcasting exclusively in the recipient's MetaMask, wait for its receipt, and refresh the authoritative contract record before showing `Received`.
 
 ## Credential and evidence storage
 

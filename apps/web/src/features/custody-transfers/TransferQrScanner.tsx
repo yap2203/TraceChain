@@ -1,9 +1,27 @@
-import { Camera, FileImage, Keyboard, LoaderCircle, RotateCcw, ScanLine, X } from 'lucide-react';
+import {
+  Camera,
+  CheckCircle2,
+  FileImage,
+  Keyboard,
+  LoaderCircle,
+  RotateCcw,
+  ScanLine,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { resolveTransferQr, transferResolutionMessage } from './custody-transfer.api';
-import type { ResolvedCustodyTransfer } from './custody-transfer.types';
+import {
+  getCustodyTransfer,
+  prepareReceiptConfirmation,
+  resolveTransferQr,
+  transferResolutionMessage,
+} from './custody-transfer.api';
+import type {
+  PreparedReceiptConfirmation,
+  ResolvedCustodyTransfer,
+} from './custody-transfer.types';
 import { cameraErrorMessage, type TransferQrReader, ZxingTransferQrReader } from './qr-reader';
+import { receiptConfirmationMessage, submitReceiptConfirmation } from './receipt-confirmation';
 import { ResolvedTransferCard } from './ResolvedTransferCard';
 import './custody-transfer.css';
 
@@ -12,15 +30,24 @@ type ScanMethod = 'camera' | 'upload' | 'manual';
 interface TransferQrScannerProps {
   onClose?: () => void;
   onResolved?: (transfer: ResolvedCustodyTransfer) => void;
+  prepareConfirmation?: (transferId: string) => Promise<PreparedReceiptConfirmation>;
   reader?: TransferQrReader;
+  refreshTransfer?: (transferId: string) => Promise<ResolvedCustodyTransfer>;
   resolvePayload?: (payload: string) => Promise<ResolvedCustodyTransfer>;
+  submitConfirmation?: (
+    transaction: PreparedReceiptConfirmation,
+    transfer: ResolvedCustodyTransfer,
+  ) => Promise<void>;
 }
 
 export function TransferQrScanner({
   onClose,
   onResolved,
+  prepareConfirmation = prepareReceiptConfirmation,
   reader,
+  refreshTransfer = getCustodyTransfer,
   resolvePayload = resolveTransferQr,
+  submitConfirmation = submitReceiptConfirmation,
 }: TransferQrScannerProps) {
   const [method, setMethod] = useState<ScanMethod>('camera');
   const [cameraState, setCameraState] = useState<'idle' | 'starting' | 'active'>('idle');
@@ -28,11 +55,16 @@ export function TransferQrScanner({
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolved, setResolved] = useState<ResolvedCustodyTransfer | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [receiptMined, setReceiptMined] = useState(false);
+  const [confirmationError, setConfirmationError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const stopCameraRef = useRef<(() => void) | null>(null);
   const requestActiveRef = useRef(false);
   const resolvedRef = useRef(false);
+  const confirmationActiveRef = useRef(false);
+  const receiptMinedRef = useRef(false);
   const readerRef = useRef(reader ?? new ZxingTransferQrReader());
   const mountedRef = useRef(true);
 
@@ -149,11 +181,73 @@ export function TransferQrScanner({
     onClose?.();
   };
 
+  const confirmReceipt = async () => {
+    if (
+      !resolved ||
+      resolved.status !== 1 ||
+      confirmationActiveRef.current ||
+      receiptMinedRef.current
+    )
+      return;
+    confirmationActiveRef.current = true;
+    setConfirming(true);
+    setConfirmationError(null);
+    try {
+      const transaction = await prepareConfirmation(resolved.transferId);
+      await submitConfirmation(transaction, resolved);
+      receiptMinedRef.current = true;
+      if (mountedRef.current) setReceiptMined(true);
+      const refreshed = await refreshTransfer(resolved.transferId);
+      if (refreshed.status !== 2) {
+        throw new Error(
+          'The transaction was mined, but the transfer status could not be confirmed.',
+        );
+      }
+      if (mountedRef.current) {
+        setResolved(refreshed);
+        onResolved?.(refreshed);
+      }
+    } catch (confirmationFailure) {
+      if (mountedRef.current) {
+        setConfirmationError(receiptConfirmationMessage(confirmationFailure));
+      }
+    } finally {
+      confirmationActiveRef.current = false;
+      if (mountedRef.current) setConfirming(false);
+    }
+  };
+
+  const refreshReceiptStatus = async () => {
+    if (!resolved || resolved.status !== 1 || confirmationActiveRef.current) return;
+    confirmationActiveRef.current = true;
+    setConfirming(true);
+    setConfirmationError(null);
+    try {
+      const refreshed = await refreshTransfer(resolved.transferId);
+      if (refreshed.status !== 2) {
+        throw new Error('The receipt transaction is mined, but confirmation is not visible yet.');
+      }
+      if (mountedRef.current) {
+        setResolved(refreshed);
+        onResolved?.(refreshed);
+      }
+    } catch (refreshError) {
+      if (mountedRef.current) setConfirmationError(receiptConfirmationMessage(refreshError));
+    } finally {
+      confirmationActiveRef.current = false;
+      if (mountedRef.current) setConfirming(false);
+    }
+  };
+
   const reset = () => {
     resolvedRef.current = false;
     setResolved(null);
     setManualPayload('');
     setError(null);
+    setConfirmationError(null);
+    setConfirming(false);
+    receiptMinedRef.current = false;
+    setReceiptMined(false);
     setMethod('camera');
   };
 
@@ -299,6 +393,51 @@ export function TransferQrScanner({
       ) : (
         <div className="transfer-scanner-result">
           <ResolvedTransferCard transfer={resolved} />
+          {resolved.status === 1 ? (
+            <div className="transfer-confirmation-panel">
+              <div>
+                <strong>Confirm delivery</strong>
+                <p>
+                  {receiptMined
+                    ? 'The transaction was mined. Refresh the verified contract status.'
+                    : 'MetaMask will show the contract transaction before anything is submitted.'}
+                </p>
+              </div>
+              <button
+                className="transfer-qr-button"
+                disabled={confirming}
+                onClick={() => void (receiptMined ? refreshReceiptStatus() : confirmReceipt())}
+                type="button"
+              >
+                {confirming ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="transfer-confirmation-spinner"
+                    size={16}
+                  />
+                ) : (
+                  <CheckCircle2 aria-hidden="true" size={16} />
+                )}
+                {confirming
+                  ? receiptMined
+                    ? 'Refreshing status…'
+                    : 'Confirming receipt…'
+                  : receiptMined
+                    ? 'Refresh status'
+                    : 'Confirm receipt'}
+              </button>
+            </div>
+          ) : (
+            <div className="transfer-confirmation-success" role="status">
+              <CheckCircle2 aria-hidden="true" size={18} />
+              Receipt confirmed on-chain
+            </div>
+          )}
+          {confirmationError && (
+            <div className="transfer-scanner-error" role="alert">
+              {confirmationError}
+            </div>
+          )}
           <div className="transfer-scanner-actions">
             <button className="transfer-qr-secondary" onClick={reset} type="button">
               <RotateCcw aria-hidden="true" size={15} />

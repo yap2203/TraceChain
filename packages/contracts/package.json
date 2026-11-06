@@ -3,10 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "description": "TraceChain Solidity smart contracts and tests",
+  "dependencies": {
+    "@tracechain/shared": "^0.1.0"
+  },
   "scripts": {
     "build": "hardhat build",
     "test": "hardhat test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev:seed-custody-transfer": "tsx scripts/seed-custody-transfer.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.2.1",
@@ -18,9 +22,11 @@
     "@types/node": "^22.20.5",
     "chai": "^6.3.0",
     "ethers": "^6.17.0",
+    "dotenv": "^17.2.3",
     "forge-std": "github:foundry-rs/forge-std#v1.16.2",
     "hardhat": "^3.21.1",
     "mocha": "^12.0.3",
+    "tsx": "^4.21.0",
     "typescript": "~6.0.3"
   },
   "type": "module"

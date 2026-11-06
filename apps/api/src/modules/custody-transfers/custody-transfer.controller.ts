@@ -10,9 +10,35 @@ export class CustodyTransferController {
   ) {}
 
   resolveQr = async (request: Request, response: Response, next: NextFunction) => {
+    await this.respond(request, response, next, () =>
+      this.service.resolveQr(this.session(request), request.body),
+    );
+  };
+
+  getTransfer = async (request: Request, response: Response, next: NextFunction) => {
+    await this.respond(request, response, next, () =>
+      this.service.getTransfer(this.session(request), request.params),
+    );
+  };
+
+  prepareReceiptConfirmation = async (request: Request, response: Response, next: NextFunction) => {
+    await this.respond(request, response, next, () =>
+      this.service.prepareReceiptConfirmation(this.session(request), request.body),
+    );
+  };
+
+  private session(request: Request) {
+    return request.cookies?.[this.sessionCookieName] as string | undefined;
+  }
+
+  private async respond(
+    _request: Request,
+    response: Response,
+    next: NextFunction,
+    operation: () => Promise<unknown>,
+  ) {
     try {
-      const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
-      response.json(await this.service.resolveQr(sessionId, request.body));
+      response.json(await operation());
     } catch (error) {
       if (error instanceof AuthError || error instanceof CustodyTransferApiError) {
         response.status(error.status).json({
@@ -23,5 +49,5 @@ export class CustodyTransferController {
 
       next(error);
     }
-  };
+  }
 }

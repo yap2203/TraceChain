@@ -67,6 +67,20 @@ npx hardhat ignition deploy ignition/modules/TraceChain.ts `
 
 Addresses are written to `ignition/deployments/tracechain-local/deployed_addresses.json`. The local chain is erased when the node stops. Hardhat development keys are public test keys; never fund or reuse them on Sepolia or mainnet.
 
+After copying the deployed addresses into the ignored root `.env`, set
+`DEV_DISTRIBUTOR_WALLET` to an unlocked Hardhat account that has already completed normal
+Distributor onboarding and credential registration. From the repository root, create one real
+pending transfer with:
+
+```powershell
+npm run dev:seed-custody-transfer
+```
+
+The command reuses this deployment, refuses non-31337 networks, creates the minimum Supplier and
+Manufacturer test records with unlocked development accounts, and prints the transfer ID plus its
+canonical QR payload. It does not deploy contracts, handle private keys, or fabricate the
+Distributor's off-chain credential.
+
 ### Tests
 
 ```powershell

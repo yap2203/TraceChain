@@ -1,12 +1,15 @@
 import { CompanyRole, encodeTransferQrPayload } from '@tracechain/shared';
-import { getAddress } from 'ethers';
+import { Interface, getAddress } from 'ethers';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../app.js';
 import { InMemoryNonceRepository, InMemorySessionRepository } from '../auth/auth.repository.js';
 import { AuthService } from '../auth/auth.service.js';
-import type { CustodyTransferGateway } from './custody-transfer.gateway.js';
+import {
+  EthersCustodyTransferGateway,
+  type CustodyTransferGateway,
+} from './custody-transfer.gateway.js';
 import { CustodyTransferService } from './custody-transfer.service.js';
 import type { CustodyTransferRecord } from './custody-transfer.types.js';
 
@@ -35,8 +38,10 @@ const awaitingTransfer: CustodyTransferRecord = {
 
 describe('custody-transfer QR resolution API', () => {
   let app: ReturnType<typeof createApp>;
-  let confirmReceipt: ReturnType<typeof vi.fn>;
   let getTransfer: ReturnType<typeof vi.fn<CustodyTransferGateway['getTransfer']>>;
+  let prepareReceiptConfirmation: ReturnType<
+    typeof vi.fn<CustodyTransferGateway['prepareReceiptConfirmation']>
+  >;
   let sessionRepository: InMemorySessionRepository;
 
   beforeEach(async () => {
@@ -79,10 +84,15 @@ describe('custody-transfer QR resolution API', () => {
     });
 
     getTransfer = vi.fn().mockResolvedValue(awaitingTransfer);
-    confirmReceipt = vi.fn();
-    const gateway: CustodyTransferGateway & { confirmReceipt: typeof confirmReceipt } = {
-      confirmReceipt,
+    prepareReceiptConfirmation = vi.fn().mockReturnValue({
+      chainId: CHAIN_ID,
+      data: '0x1234',
+      to: CUSTODY_TRANSFER_ADDRESS,
+      value: '0x0',
+    });
+    const gateway: CustodyTransferGateway = {
       getTransfer,
+      prepareReceiptConfirmation,
     };
     const service = new CustodyTransferService({
       authService,
@@ -112,6 +122,13 @@ describe('custody-transfer QR resolution API', () => {
       .post('/api/custody-transfers/resolve-qr')
       .set('Cookie', `${COOKIE_NAME}=${sessionId}`)
       .send({ qrPayload: payload });
+  }
+
+  function prepare(sessionId = SESSION_ID) {
+    return request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${sessionId}`)
+      .send({ transferId: TRANSFER_ID });
   }
 
   it('rejects an unauthenticated request before resolving the QR', async () => {
@@ -198,7 +215,7 @@ describe('custody-transfer QR resolution API', () => {
   it('never prepares or sends a receipt-confirmation transaction', async () => {
     await resolve().expect(200);
 
-    expect(confirmReceipt).not.toHaveBeenCalled();
+    expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
   });
 
   it('returns a safe gateway error without exposing RPC details', async () => {
@@ -213,5 +230,85 @@ describe('custody-transfer QR resolution API', () => {
       },
     });
     expect(JSON.stringify(response.body)).not.toContain('secret-provider');
+  });
+
+  it('requires authentication and authorization before preparing confirmation', async () => {
+    await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .send({ transferId: TRANSFER_ID })
+      .expect(401);
+
+    const unauthorized = await prepare(WALLET_ONLY_SESSION_ID).expect(403);
+    expect(unauthorized.body.error.code).toBe('CREDENTIAL_AUTHORIZATION_REQUIRED');
+    expect(getTransfer).not.toHaveBeenCalled();
+    expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
+  });
+
+  it('rechecks status and intended recipient before preparing confirmation', async () => {
+    getTransfer.mockResolvedValueOnce({ ...awaitingTransfer, status: 2 });
+    expect((await prepare().expect(409)).body.error.code).toBe('TRANSFER_NOT_AWAITING_RECEIPT');
+
+    getTransfer.mockResolvedValueOnce({ ...awaitingTransfer, recipient: OTHER_WALLET });
+    expect((await prepare().expect(403)).body.error.code).toBe('INTENDED_RECIPIENT_REQUIRED');
+    expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
+  });
+
+  it('returns an unsigned full-quantity receipt transaction without broadcasting it', async () => {
+    const response = await prepare().expect(200);
+
+    expect(response.body).toEqual({
+      chainId: CHAIN_ID,
+      data: '0x1234',
+      to: CUSTODY_TRANSFER_ADDRESS,
+      value: '0x0',
+    });
+    expect(prepareReceiptConfirmation).toHaveBeenCalledOnce();
+    expect(prepareReceiptConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chainId: CHAIN_ID,
+        contractAddress: CUSTODY_TRANSFER_ADDRESS,
+        quantity: awaitingTransfer.quantity,
+        transferId: TRANSFER_ID,
+      }),
+    );
+  });
+
+  it('encodes confirmReceipt with the transfer quantity and no damage or receipt document', () => {
+    const gateway = new EthersCustodyTransferGateway(
+      CHAIN_ID,
+      'http://127.0.0.1:8545',
+      CUSTODY_TRANSFER_ADDRESS,
+    );
+    const receiptHash = `0x${'55'.repeat(32)}`;
+    const prepared = gateway.prepareReceiptConfirmation({
+      chainId: CHAIN_ID,
+      contractAddress: CUSTODY_TRANSFER_ADDRESS,
+      quantity: awaitingTransfer.quantity,
+      receiptHash,
+      transferId: TRANSFER_ID,
+    });
+    const contractInterface = new Interface([
+      'function confirmReceipt(bytes32,uint256,uint256,uint256,bytes32,string)',
+    ]);
+    const decoded = contractInterface.decodeFunctionData('confirmReceipt', prepared.data);
+
+    expect([...decoded]).toEqual([TRANSFER_ID, 250n, 0n, 0n, receiptHash, '']);
+    expect(prepared).toMatchObject({
+      chainId: CHAIN_ID,
+      to: CUSTODY_TRANSFER_ADDRESS,
+      value: '0x0',
+    });
+  });
+
+  it('refreshes a recipient transfer after it is confirmed', async () => {
+    getTransfer.mockResolvedValueOnce({ ...awaitingTransfer, status: 2 });
+
+    const response = await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}`)
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(200);
+
+    expect(response.body.status).toBe(2);
+    expect(response.body.transferId).toBe(TRANSFER_ID);
   });
 });

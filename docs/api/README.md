@@ -32,6 +32,9 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 
 `FRONTEND_URL`, `SIWE_DOMAIN`, and `SIWE_URI` must match the frontend origin used in the browser.
 
+The root template also contains `DEV_DISTRIBUTOR_WALLET` for the chain-31337 seed command. It is a
+public unlocked Hardhat address consumed by the CLI, not an API runtime secret.
+
 The SSI and blockchain variables are loaded lazily when credential verification needs them. They are not required by SIWE-only tests. The API and frontend both use `CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. The example KMS value and zero addresses intentionally fail credential-verification or command validation. Never provide or store the Admin wallet private key.
 
 ## Endpoints
@@ -121,8 +124,22 @@ equal the on-chain recipient. A successful response contains only `transferId`, 
 `sender`, `recipient`, string `quantity`, `dispatchedAt`, `expectedAt`, and numeric `status`.
 
 Resolution is read-only. It does not call `confirmReceipt`, prepare a transaction, or change
-custody. The frontend now supports canonical QR generation plus camera, image-file, and manual-paste
-scanning. Receipt confirmation remains a separate future MetaMask-signed transaction.
+custody. The frontend supports canonical QR generation plus camera, image-file, and manual-paste
+scanning.
+
+### `POST /api/custody-transfers/transactions/confirm-receipt`
+
+Requires the same fully authorized SIWE session and accepts a `bytes32` transfer ID. The service
+re-reads the transfer and rechecks `AwaitingReceipt` plus the intended-recipient wallet before
+returning unsigned `confirmReceipt` calldata. It never signs or broadcasts a transaction. The
+current local workflow confirms the full transfer quantity with zero damaged/rejected units and no
+receipt CID.
+
+### `GET /api/custody-transfers/:transferId`
+
+Requires the authorized intended-recipient session and returns the same minimal safe transfer
+summary. The frontend uses this endpoint after the MetaMask transaction receipt to confirm that the
+contract now reports status `2` (`Received`).
 
 ## Authentication boundary
 

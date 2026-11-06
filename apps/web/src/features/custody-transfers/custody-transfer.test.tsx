@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CustodyTransferResolutionError } from './custody-transfer.api';
 import type { ResolvedCustodyTransfer } from './custody-transfer.types';
 import type { TransferQrReader } from './qr-reader';
+import { ReceiptConfirmationError } from './receipt-confirmation';
 import { createTransferQrModel, createTransferQrPayload } from './transfer-qr';
 import { TransferQrScanner } from './TransferQrScanner';
 
@@ -210,5 +211,141 @@ describe('custody-transfer QR frontend', () => {
 
     expect(await screen.findByText('Custody transfer found')).toBeTruthy();
     expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it('prepares, submits, waits for, and refreshes a receipt confirmation once', async () => {
+    let finishPreparation:
+      ((value: { chainId: number; data: string; to: string; value: string }) => void) | undefined;
+    const prepared = {
+      chainId: 31_337,
+      data: '0x1234',
+      to: CONTRACT_ADDRESS,
+      value: '0x0',
+    };
+    const prepareConfirmation = vi.fn(
+      () =>
+        new Promise<typeof prepared>((resolve) => {
+          finishPreparation = resolve;
+        }),
+    );
+    const submitConfirmation = vi.fn().mockResolvedValue(undefined);
+    const received = { ...TRANSFER, status: 2 as const };
+    const refreshTransfer = vi.fn().mockResolvedValue(received);
+    render(
+      <TransferQrScanner
+        prepareConfirmation={prepareConfirmation}
+        reader={reader()}
+        refreshTransfer={refreshTransfer}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={submitConfirmation}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    const confirm = await screen.findByRole('button', { name: 'Confirm receipt' });
+
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(prepareConfirmation).toHaveBeenCalledOnce();
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+
+    finishPreparation?.(prepared);
+    expect(await screen.findByText('Receipt confirmed on-chain')).toBeTruthy();
+    expect(screen.getByText('Received')).toBeTruthy();
+    expect(submitConfirmation).toHaveBeenCalledOnce();
+    expect(submitConfirmation).toHaveBeenCalledWith(prepared, TRANSFER);
+    expect(refreshTransfer).toHaveBeenCalledWith(TRANSFER_ID);
+  });
+
+  it('shows a cancelled MetaMask transaction without changing the verified transfer', async () => {
+    const submitConfirmation = vi
+      .fn()
+      .mockRejectedValue(
+        new ReceiptConfirmationError(
+          'REJECTED',
+          'The MetaMask transaction was cancelled. The transfer remains awaiting receipt.',
+        ),
+      );
+    render(
+      <TransferQrScanner
+        prepareConfirmation={vi.fn().mockResolvedValue({
+          chainId: 31_337,
+          data: '0x1234',
+          to: CONTRACT_ADDRESS,
+          value: '0x0',
+        })}
+        reader={reader()}
+        refreshTransfer={vi.fn()}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={submitConfirmation}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm receipt' }));
+
+    expect(
+      await screen.findByText(
+        'The MetaMask transaction was cancelled. The transfer remains awaiting receipt.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('Awaiting Receipt')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirm receipt' })).toBeTruthy();
+  });
+
+  it('does not submit a second transaction when post-receipt refresh fails', async () => {
+    const prepareConfirmation = vi.fn().mockResolvedValue({
+      chainId: 31_337,
+      data: '0x1234',
+      to: CONTRACT_ADDRESS,
+      value: '0x0',
+    });
+    const submitConfirmation = vi.fn().mockResolvedValue(undefined);
+    const refreshTransfer = vi.fn().mockRejectedValue(new Error('RPC unavailable'));
+    render(
+      <TransferQrScanner
+        prepareConfirmation={prepareConfirmation}
+        reader={reader()}
+        refreshTransfer={refreshTransfer}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={submitConfirmation}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm receipt' }));
+
+    const refresh = await screen.findByRole('button', { name: 'Refresh status' });
+    fireEvent.click(refresh);
+    await waitFor(() => expect(refreshTransfer).toHaveBeenCalledTimes(2));
+    expect(prepareConfirmation).toHaveBeenCalledOnce();
+    expect(submitConfirmation).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['WRONG_WALLET', 'The connected MetaMask account is not the intended recipient.'],
+    ['REVERTED', 'The receipt transaction reverted and the transfer was not confirmed.'],
+    ['RPC_ERROR', 'MetaMask or the blockchain RPC could not complete the receipt transaction.'],
+  ] as const)('shows a clear %s confirmation error', async (code, message) => {
+    render(
+      <TransferQrScanner
+        prepareConfirmation={vi.fn().mockResolvedValue({
+          chainId: 31_337,
+          data: '0x1234',
+          to: CONTRACT_ADDRESS,
+          value: '0x0',
+        })}
+        reader={reader()}
+        refreshTransfer={vi.fn()}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={vi.fn().mockRejectedValue(new ReceiptConfirmationError(code, message))}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm receipt' }));
+
+    expect(await screen.findByText(message)).toBeTruthy();
+    expect(screen.getByText('Awaiting Receipt')).toBeTruthy();
   });
 });

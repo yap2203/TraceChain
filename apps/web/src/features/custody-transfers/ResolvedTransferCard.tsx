@@ -11,6 +11,7 @@ function formatTimestamp(timestamp: number) {
 }
 
 export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTransfer }) {
+  const received = transfer.status === 2;
   const fields = [
     { icon: PackageCheck, label: 'Product batch ID', value: transfer.productBatchId },
     { icon: WalletCards, label: 'Sender', value: transfer.sender },
@@ -25,9 +26,13 @@ export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTr
       <div className="resolved-transfer-heading">
         <div>
           <span>API verified</span>
-          <h3 id="resolved-transfer-title">Custody transfer found</h3>
+          <h3 id="resolved-transfer-title">
+            {received ? 'Custody transfer received' : 'Custody transfer found'}
+          </h3>
         </div>
-        <strong>Awaiting Receipt</strong>
+        <strong className={received ? 'resolved-transfer-status-received' : undefined}>
+          {received ? 'Received' : 'Awaiting Receipt'}
+        </strong>
       </div>
       <div className="resolved-transfer-grid">
         {fields.map(({ icon: Icon, label, value }) => (
@@ -42,7 +47,9 @@ export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTr
       </div>
       <p className="resolved-transfer-reference">Transfer ID: {transfer.transferId}</p>
       <p className="resolved-transfer-readonly">
-        This verification is read-only. No receipt transaction has been prepared or sent.
+        {received
+          ? 'The recipient confirmed this custody transfer on-chain.'
+          : 'QR verification was read-only. Confirmation requires a separate MetaMask transaction.'}
       </p>
     </section>
   );

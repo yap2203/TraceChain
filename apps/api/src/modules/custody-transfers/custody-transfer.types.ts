@@ -15,11 +15,18 @@ export interface CustodyTransferSummary {
   quantity: string;
   recipient: string;
   sender: string;
-  status: 1;
+  status: number;
   transferId: string;
 }
 
 export interface CustodyTransferConfiguration {
   chainId: number;
   contractAddress: string;
+}
+
+export interface PreparedCustodyTransferTransaction {
+  chainId: number;
+  data: string;
+  to: string;
+  value: string;
 }

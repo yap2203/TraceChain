@@ -9,5 +9,7 @@ export function createCustodyTransferRouter(controller: CustodyTransferControlle
     next();
   });
   router.post('/resolve-qr', controller.resolveQr);
+  router.get('/:transferId', controller.getTransfer);
+  router.post('/transactions/confirm-receipt', controller.prepareReceiptConfirmation);
   return router;
 }

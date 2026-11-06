@@ -39,11 +39,15 @@
 - Versioned custody-transfer QR locator encoding and strict untrusted-payload decoding
 - Authenticated, credential-authorized custody-transfer resolution with intended-recipient checks
 - Canonical custody-transfer QR rendering, PNG download, camera/image/manual scanning, and API-verified transfer summaries
+- Development-only chain-31337 custody-transfer seeding against existing deployments
+- Recipient-only receipt confirmation through backend-validated unsigned calldata and MetaMask
 - Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
 - Authenticated Company Role Credential JSON presentation with safe session summaries and fail-closed workspace guards
-- Hardhat 3 smart-contract starter with a Counter example
+- Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
 
-The detailed stakeholder screens do not have persisted business services. The local Vite development server intentionally allows account-free UI review on loopback hosts. The API can locally verify Company Role Credentials and return a safe role summary, but production builds remain fail-closed until on-chain status checking makes authorization ready.
+Several non-admin stakeholder screens still use presentation fixtures. Workspace access requires a
+SIWE session, cryptographically verified Company Role Credential, and matching active blockchain
+authorization in every environment; there is no account-free localhost bypass.
 
 ## Identity and security rules
 
@@ -74,11 +78,9 @@ The detailed stakeholder screens do not have persisted business services. The lo
 
 ## Current limitations
 
-- No on-chain credential-status verification or role authorization service; local credential verification alone never unlocks a workspace
 - No durable database or persisted stakeholder workflow APIs
-- No TraceChain-specific smart contracts or deployment
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
-- No MetaMask-signed receipt confirmation flow; QR scanning remains read-only
+- No damaged/rejected quantity reconciliation or encrypted receipt-evidence workflow yet; QR scanning itself remains read-only
 - Sample UI records and transaction states are not persisted or cryptographically verified
 
 ## Important system qualities

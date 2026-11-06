@@ -320,6 +320,15 @@ function createDefaultCustodyTransferService(authService: AuthService) {
       );
       return gateway.getTransfer(transferId);
     },
+    prepareReceiptConfirmation: (input) => {
+      const resolvedConfiguration = configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        resolvedConfiguration.chainId,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        resolvedConfiguration.contractAddress,
+      );
+      return gateway.prepareReceiptConfirmation(input);
+    },
   };
 
   return new CustodyTransferService({

@@ -5,8 +5,15 @@ export interface ResolvedCustodyTransfer {
   quantity: string;
   recipient: string;
   sender: string;
-  status: 1;
+  status: 1 | 2;
   transferId: string;
+}
+
+export interface PreparedReceiptConfirmation {
+  chainId: number;
+  data: string;
+  to: string;
+  value: string;
 }
 
 export interface TransferQrConfiguration {

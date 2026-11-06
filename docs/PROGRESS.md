@@ -26,7 +26,14 @@
   injected-gateway API tests.
 - Added canonical QR rendering and PNG download plus camera, image-file, and manual-paste scanning.
   Distributor and Retailer receipt screens now show transfer data only after authenticated API
-  resolution, release camera resources deterministically, and never initiate receipt transactions.
+  resolution and release camera resources deterministically.
+- Added a chain-31337-only seed command that reuses the configured deployed contracts and unlocked
+  Hardhat accounts to create one real Manufacturer-to-Distributor `AwaitingReceipt` transfer.
+- Added recipient-only receipt confirmation: the API revalidates authorization and returns unsigned
+  calldata, MetaMask submits it, the UI waits for the receipt, and the API refreshes the confirmed
+  contract record. QR scanning remains read-only.
+- Expanded the custody-transfer API suite to 16 injected-gateway tests, including exact
+  `confirmReceipt` calldata encoding without a live RPC.
 
 ## Current frontend version
 
@@ -45,7 +52,7 @@
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Reused existing authorized extension providers, serialized connection attempts, added bounded timeouts and one stale-transport retry, and moved connection progress into the visible authentication card.
-- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, and custody-transfer QR tests; the frontend suite now contains 44 tests and performs no live relay or RPC calls.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, and receipt-confirmation tests; the frontend suite now contains 50 tests and performs no live relay or RPC calls.
 - Enabled temporary account-free sample UI access only on local Vite loopback hosts.
 - Kept production workspace access fail-closed because blockchain role and credential-status verification are not yet implemented, even when a Company Role Credential has been verified locally.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
@@ -71,9 +78,9 @@
 - Replace prototype filesystem issuance metadata and Veramo JSON key storage with production-managed database and key-management services.
 - Replace the remaining credential, access-control, supplier, manufacturer, distributor, retailer, receipt, and report fixtures with authenticated chain-backed workflows.
 - Complete a clean Hardhat test run and deploy the suite to Sepolia when the deployment wallet is ready.
-- Implement receipt confirmation as a separate intended-recipient MetaMask-signed transaction.
+- Add damaged/rejected quantity reconciliation and encrypted receipt evidence to receipt confirmation.
 - Add committed end-to-end browser tests and production deployment configuration.
 
 ## Important distinction
 
-The Admin application list and overview use authoritative local-chain records. Custody-transfer QR resolution now reads the configured contract through the authenticated API. Credential cards, access-control lists, remaining supplier/manufacturer/distributor/retailer workflows, receipt confirmations, and reports remain presentation fixtures until their contract and encrypted-content integrations are completed.
+The Admin application list and overview use authoritative local-chain records. Custody-transfer QR resolution and receipt confirmation now use the configured contract through the authenticated API and recipient MetaMask. Credential cards, access-control lists, remaining supplier/manufacturer/distributor/retailer workflows, receipt reconciliation/evidence, and reports remain presentation fixtures until their contract and encrypted-content integrations are completed.

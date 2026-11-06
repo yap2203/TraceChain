@@ -1,12 +1,18 @@
 import { TransferQrError, decodeTransferQrPayload } from '@tracechain/shared';
-import { getAddress } from 'ethers';
+import { getAddress, id } from 'ethers';
 
 import type { AuthService } from '../auth/auth.service.js';
 import type { CustodyTransferGateway } from './custody-transfer.gateway.js';
-import { resolveTransferQrRequestSchema } from './custody-transfer.schema.js';
+import {
+  prepareReceiptConfirmationRequestSchema,
+  resolveTransferQrRequestSchema,
+  transferIdParameterSchema,
+} from './custody-transfer.schema.js';
 import type {
   CustodyTransferConfiguration,
+  CustodyTransferRecord,
   CustodyTransferSummary,
+  PreparedCustodyTransferTransaction,
 } from './custody-transfer.types.js';
 
 const AWAITING_RECEIPT_STATUS = 1;
@@ -31,19 +37,7 @@ export class CustodyTransferService {
   constructor(private readonly dependencies: CustodyTransferServiceDependencies) {}
 
   async resolveQr(sessionId: string | undefined, body: unknown): Promise<CustodyTransferSummary> {
-    const session = await this.dependencies.authService.requireSession(sessionId);
-    const authorization = session.credentialVerification;
-    if (
-      !authorization?.locallyVerified ||
-      !authorization.onChainStatusChecked ||
-      !authorization.authorizationReady
-    ) {
-      throw new CustodyTransferApiError(
-        'CREDENTIAL_AUTHORIZATION_REQUIRED',
-        'An active Company Role Credential and blockchain authorization are required.',
-        403,
-      );
-    }
+    const session = await this.requireAuthorizedSession(sessionId);
 
     const inputResult = resolveTransferQrRequestSchema.safeParse(body);
     if (!inputResult.success) {
@@ -86,24 +80,7 @@ export class CustodyTransferService {
       );
     }
 
-    let transfer;
-    try {
-      transfer = await this.dependencies.gateway.getTransfer(qr.transferId);
-    } catch {
-      throw new CustodyTransferApiError(
-        'TRANSFER_LOOKUP_UNAVAILABLE',
-        'The custody transfer could not be retrieved.',
-        502,
-      );
-    }
-
-    if (!transfer) {
-      throw new CustodyTransferApiError(
-        'TRANSFER_NOT_FOUND',
-        'The referenced custody transfer does not exist.',
-        404,
-      );
-    }
+    const transfer = await this.lookupTransfer(qr.transferId);
 
     if (transfer.status !== AWAITING_RECEIPT_STATUS) {
       throw new CustodyTransferApiError(
@@ -121,17 +98,119 @@ export class CustodyTransferService {
       );
     }
 
-    return {
-      dispatchedAt: safeTimestamp(transfer.dispatchedAt),
-      expectedAt: safeTimestamp(transfer.expectedAt),
-      productBatchId: transfer.productBatchId,
-      quantity: transfer.quantity.toString(),
-      recipient: getAddress(transfer.recipient),
-      sender: getAddress(transfer.sender),
-      status: AWAITING_RECEIPT_STATUS,
-      transferId: qr.transferId,
-    };
+    return safeSummary(qr.transferId, transfer);
   }
+
+  async getTransfer(
+    sessionId: string | undefined,
+    parameters: unknown,
+  ): Promise<CustodyTransferSummary> {
+    const session = await this.requireAuthorizedSession(sessionId);
+    const inputResult = transferIdParameterSchema.safeParse(parameters);
+    if (!inputResult.success) {
+      throw new CustodyTransferApiError('INVALID_REQUEST', 'The transfer ID is invalid.', 400);
+    }
+
+    const transfer = await this.lookupTransfer(inputResult.data.transferId);
+    this.requireRecipient(session.address, transfer.recipient);
+    return safeSummary(inputResult.data.transferId, transfer);
+  }
+
+  async prepareReceiptConfirmation(
+    sessionId: string | undefined,
+    body: unknown,
+  ): Promise<PreparedCustodyTransferTransaction> {
+    const session = await this.requireAuthorizedSession(sessionId);
+    const inputResult = prepareReceiptConfirmationRequestSchema.safeParse(body);
+    if (!inputResult.success) {
+      throw new CustodyTransferApiError(
+        'INVALID_REQUEST',
+        inputResult.error.issues[0]?.message ?? 'The confirmation request is invalid.',
+        400,
+      );
+    }
+
+    const transferId = inputResult.data.transferId;
+    const transfer = await this.lookupTransfer(transferId);
+    if (transfer.status !== AWAITING_RECEIPT_STATUS) {
+      throw new CustodyTransferApiError(
+        'TRANSFER_NOT_AWAITING_RECEIPT',
+        'The custody transfer is not awaiting receipt.',
+        409,
+      );
+    }
+    this.requireRecipient(session.address, transfer.recipient);
+
+    const configuration = this.dependencies.configuration();
+    return this.dependencies.gateway.prepareReceiptConfirmation({
+      chainId: configuration.chainId,
+      contractAddress: configuration.contractAddress,
+      quantity: transfer.quantity,
+      receiptHash: id(`tracechain:receipt:v1:${transferId}:${getAddress(transfer.recipient)}`),
+      transferId,
+    });
+  }
+
+  private async requireAuthorizedSession(sessionId: string | undefined) {
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    const authorization = session.credentialVerification;
+    if (
+      !authorization?.locallyVerified ||
+      !authorization.onChainStatusChecked ||
+      !authorization.authorizationReady
+    ) {
+      throw new CustodyTransferApiError(
+        'CREDENTIAL_AUTHORIZATION_REQUIRED',
+        'An active Company Role Credential and blockchain authorization are required.',
+        403,
+      );
+    }
+    return session;
+  }
+
+  private async lookupTransfer(transferId: string) {
+    let transfer;
+    try {
+      transfer = await this.dependencies.gateway.getTransfer(transferId);
+    } catch {
+      throw new CustodyTransferApiError(
+        'TRANSFER_LOOKUP_UNAVAILABLE',
+        'The custody transfer could not be retrieved.',
+        502,
+      );
+    }
+    if (!transfer) {
+      throw new CustodyTransferApiError(
+        'TRANSFER_NOT_FOUND',
+        'The referenced custody transfer does not exist.',
+        404,
+      );
+    }
+    return transfer;
+  }
+
+  private requireRecipient(sessionAddress: string, recipient: string) {
+    if (getAddress(sessionAddress) !== getAddress(recipient)) {
+      throw new CustodyTransferApiError(
+        'INTENDED_RECIPIENT_REQUIRED',
+        'Only the intended transfer recipient may access this transfer.',
+        403,
+      );
+    }
+  }
+}
+
+function safeSummary(transferId: string, transfer: CustodyTransferRecord): CustodyTransferSummary {
+  return {
+    dispatchedAt: safeTimestamp(transfer.dispatchedAt),
+    expectedAt: safeTimestamp(transfer.expectedAt),
+    productBatchId: transfer.productBatchId,
+    quantity: transfer.quantity.toString(),
+    recipient: getAddress(transfer.recipient),
+    sender: getAddress(transfer.sender),
+    status: transfer.status,
+    transferId,
+  };
 }
 
 function safeTimestamp(value: bigint) {
