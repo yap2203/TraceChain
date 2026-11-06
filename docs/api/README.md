@@ -19,6 +19,7 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 | `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol   |
 | `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry         |
 | `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry          |
+| `INGREDIENT_REGISTRY_ADDRESS`    | Address placeholder      | Deployed ingredient registry          |
 | `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract    |
 | `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                   |
 | `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds           |
@@ -109,6 +110,22 @@ A successful response contains safe metadata only: `verified`, `credentialId`, `
 
 Requires a blockchain-authorized System Admin session whose wallet is also the deployed contract administrator. The request contains an application ID, the confirmed on-chain role, independently verified company registration number, company name, and expiration date. The backend issues and cryptographically verifies the VC, encrypts and pins its deterministic serialization, and persists a restart-safe workflow record before returning unsigned transactions. Stakeholder approval is confirmed first, followed by credential registration. A retry reuses the same credential and CID and returns only unfinished transactions. The plaintext credential is returned for holder delivery but is never written to Ethereum.
 
+### `POST /api/ingredient-batches/prepare`
+
+Requires an authenticated session with a cryptographically verified Supplier Company Role Credential, active matching on-chain Supplier status, and both `ISSUE_INGREDIENT_CREDENTIAL` and `REGISTER_INGREDIENT` permissions. The wallet and Supplier issuer DID are derived server-side; the client cannot select either.
+
+The request contains the batch reference, ingredient name, category, origin, production/expiry dates, positive integer quantity, unit, allergen information, and certification names. The service issues a typed JWT `IngredientCredential`, verifies its signature and wallet/issuer binding, deterministically hashes the canonical credential, encrypts the complete VC plus private metadata with AES-256-GCM, and pins only the encrypted envelope to IPFS. It then returns one of:
+
+- `CREDENTIAL_REGISTRATION_REQUIRED` with unsigned `CredentialRegistry.registerCredential` calldata;
+- `BATCH_REGISTRATION_REQUIRED` with unsigned `IngredientRegistry.registerBatch` calldata, only after the credential record is re-read and matched;
+- `COMPLETE`, only after the batch record is re-read and matched.
+
+Retries reuse the persisted workflow under `.tracechain/issuance/ingredient-batches.json` and resume from the first incomplete on-chain stage. The API never signs or broadcasts either transaction and never returns the full credential, encryption key, or plaintext private metadata.
+
+### `GET /api/ingredient-batches`
+
+Requires the same Supplier authorization. The API obtains batch IDs from `IngredientBatchRegistered` events, re-reads each batch with `getBatch`, filters by the authenticated Supplier wallet, and merges authorized private metadata from the encrypted local workflow envelope. It does not accept a Supplier wallet query parameter.
+
 ### `POST /api/custody-transfers/resolve-qr`
 
 Requires a SIWE session whose Company Role Credential is locally verified and currently authorized
@@ -160,4 +177,4 @@ Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend
 
 ## Storage and production limitations
 
-Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Production deployment requires durable shared storage, appropriate rate limiting and operational monitoring, HTTPS, and the planned credential-verification service.
+Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Company Role and Ingredient issuance workflow metadata currently uses ignored atomic JSON files, while complete credentials are encrypted before IPFS upload. Production deployment requires durable shared repositories, appropriate rate limiting and operational monitoring, HTTPS, redundant encrypted-content retention, and managed organizational key custody.

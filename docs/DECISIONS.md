@@ -86,11 +86,23 @@ Smart contract checks msg.sender and assigned role
 - Use `@veramo/data-store-json` for non-SQL local SSI metadata and issuer credential storage.
 - Store Veramo private key material in a separate JSON tree encrypted at rest with `PrivateKeyStoreJson` and `SecretBox`.
 - Treat `@veramo/data-store-json` as a beta package acceptable for this FYP prototype, not automatically as an industry production recommendation.
-- Use a server-managed Product Traceability Authority issuer DID.
+- Use a server-managed Product Traceability Authority issuer DID for Company Role Credentials.
+- Use a distinct server-derived issuer DID for each Supplier's Ingredient Credentials; never accept the issuer DID or Supplier wallet as client-controlled issuance input.
 - Keep stakeholder wallet keys, including the bootstrap Admin wallet key, controlled by MetaMask.
 - Keep the bootstrap Admin Company Role Credential off-chain.
-- Require future on-chain credential-hash and status verification before enabling role-based access control.
-- Defer IPFS integration to a later phase.
+- Require current on-chain credential-hash and status verification before enabling role-based access control.
+- For this prototype, keep Supplier issuer keys in the existing encrypted Veramo KMS; production requires organizational stakeholder key custody, rotation, recovery, auditing, and multi-operator controls.
+- Use typed JWT W3C Ingredient Credentials now. Do not claim selective disclosure; a later presentation format requires a separate confirmed design.
+
+## Supplier Ingredient Credential registration
+
+- Require SIWE authentication, a cryptographically and on-chain authorized Supplier Company Role Credential, an active Supplier record, and both ingredient issuance/registration permissions.
+- Bind the Ingredient Credential subject to the authenticated Supplier wallet and derive its Supplier-specific issuer DID on the server.
+- Verify the newly issued VC cryptographically before deterministic canonical SHA-256 hashing or transaction preparation.
+- Encrypt the complete VC and private metadata with AES-256-GCM before IPFS upload. Put only identifiers, hashes, the encrypted CID, status/lifecycle data, and required traceability fields on-chain.
+- Register the Ingredient Credential first, re-read and match it, then register the ingredient batch and re-read and match that record.
+- Prepare unsigned transactions in the API and keep signing/broadcasting in the Supplier's MetaMask. Persist an ignored recovery record so a retry resumes the first unfinished stage.
+- Reconstruct the Supplier batch list from registration events plus authoritative `getBatch` reads, scoped to the authenticated Supplier wallet.
 
 ## Target smart-contract boundaries
 
@@ -167,10 +179,10 @@ Record CID, integrity hash, and status on Ethereum
 - Keep authentication state short-lived.
 - Recheck on-chain role and revocation state before sensitive operations.
 - Document that in-memory state disappears after an API restart and cannot support multiple API instances without shared transient storage or a different token design.
-- Temporarily allow stakeholder sample pages and simulated UI interactions without account validation only on local Vite development hosts. Production credential checks and backend authorization remain fail-closed.
+- Require the same wallet, credential, and blockchain authorization gate on local development hosts; do not add an account-free sample-data bypass.
 - Use the SIWE session wallet as the only wallet input for Company Role Credential verification; never trust a wallet address in the credential-presentation request body.
 - Store only a safe local-verification summary in the development session, never the credential or encoded JWT.
-- Keep `onChainStatusChecked` and `authorizationReady` false after local verification, so no production workspace is unlocked before registry checks exist.
+- Keep `onChainStatusChecked` and `authorizationReady` false after local-only verification; set them true only after the configured registries confirm the credential and stakeholder authorization.
 - Use one shared `CompanyRole`-to-workspace mapping for future authorization decisions.
 - Deliver the bootstrap Admin credential through an explicit development-only export under ignored `.tracechain/holder/` storage, with no silent overwrite of a different credential.
 

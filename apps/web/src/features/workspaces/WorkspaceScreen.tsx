@@ -68,7 +68,13 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
   if (role === 'supplier') {
     if (tab === 'overview') return <SupplierOverview onNav={nav} />;
     if (tab === 'batches') {
-      if (subView === 'batches-new') return <RegisterBatch onBack={() => setSearchParams({})} />;
+      if (subView === 'batches-new')
+        return (
+          <RegisterBatch
+            onBack={() => setSearchParams({})}
+            onCompleted={() => setSearchParams({})}
+          />
+        );
       if (subView === 'batch-detail')
         return <IngredientBatchDetail batchId={activeId} onBack={() => setSearchParams({})} />;
       return (

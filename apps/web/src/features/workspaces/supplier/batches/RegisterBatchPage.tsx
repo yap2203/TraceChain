@@ -1,61 +1,116 @@
-import { useState } from 'react';
-import {
-  T,
-  Btn,
-  Card,
-  Alert,
-  TxModal,
-  StepProgress,
-  Input,
-  SelectField,
-  ClaimRow,
-} from '../../shared/ui';
+import { useRef, useState } from 'react';
 
-export function RegisterBatch({ onBack }: { onBack: () => void }) {
+import { Alert, Btn, Card, Input, SelectField, StepProgress, T } from '../../shared/ui';
+import {
+  prepareIngredientBatch,
+  type IngredientBatchInput,
+  type IngredientBatchWorkflow,
+} from './ingredient-batch.api';
+import { submitIngredientBatchTransaction } from './ingredient-batch-transaction';
+
+type WorkflowStep = 'waiting' | 'active' | 'complete';
+
+interface RegisterBatchProps {
+  onBack: () => void;
+  onCompleted?: () => void;
+  prepareWorkflow?: typeof prepareIngredientBatch;
+  submitTransaction?: typeof submitIngredientBatchTransaction;
+}
+
+export function RegisterBatch({
+  onBack,
+  onCompleted,
+  prepareWorkflow = prepareIngredientBatch,
+  submitTransaction = submitIngredientBatchTransaction,
+}: RegisterBatchProps) {
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
-  const [batchNum, setBatch] = useState('');
-  const [category, setCat] = useState('cocoa');
+  const [batchReference, setBatchReference] = useState('');
+  const [category, setCategory] = useState('cocoa');
   const [origin, setOrigin] = useState('');
-  const [produced, setProd] = useState('');
-  const [expires, setExpires] = useState('');
-  const [qty, setQty] = useState('');
+  const [producedAt, setProducedAt] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [quantity, setQuantity] = useState('');
   const [unit, setUnit] = useState('kg');
   const [allergen, setAllergen] = useState('');
-  const [cert, setCert] = useState('');
-  const [txState, setTx] = useState<'pending' | 'confirmed' | 'failed' | null>(null);
+  const [certifications, setCertifications] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [complete, setComplete] = useState(false);
+  const [credentialStep, setCredentialStep] = useState<WorkflowStep>('waiting');
+  const [batchStep, setBatchStep] = useState<WorkflowStep>('waiting');
+  const activeSubmission = useRef(false);
 
-  type DiscLevel = 'public' | 'restricted' | 'confidential';
-  const [disclosure, setDisclosure] = useState<Record<string, DiscLevel>>({
-    name: 'public',
-    batchNum: 'public',
-    origin: 'public',
-    produced: 'public',
-    expires: 'public',
-    qty: 'restricted',
-    allergen: 'public',
-    cert: 'public',
-    quality: 'confidential',
-    price: 'confidential',
+  const buildInput = (): IngredientBatchInput => ({
+    allergenInformation: allergen.trim(),
+    batchReference: batchReference.trim(),
+    category,
+    certifications: certifications
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
+    expiryDate: expiresAt,
+    ingredientName: name.trim(),
+    origin: origin.trim(),
+    productionDate: producedAt,
+    quantity,
+    unit,
   });
-  const toggleDisc = (key: string) => {
-    const order: DiscLevel[] = ['public', 'restricted', 'confidential'];
-    const cur = disclosure[key];
-    const next = order[(order.indexOf(cur) + 1) % 3];
-    setDisclosure((d) => ({ ...d, [key]: next }));
+
+  const isFormComplete = Boolean(
+    name.trim() &&
+    batchReference.trim() &&
+    origin.trim() &&
+    producedAt &&
+    expiresAt &&
+    /^[1-9]\d*$/.test(quantity),
+  );
+
+  const applyState = (workflow: IngredientBatchWorkflow) => {
+    if (workflow.state === 'CREDENTIAL_REGISTRATION_REQUIRED') {
+      setCredentialStep('active');
+      setBatchStep('waiting');
+    } else if (workflow.state === 'BATCH_REGISTRATION_REQUIRED') {
+      setCredentialStep('complete');
+      setBatchStep('active');
+    } else {
+      setCredentialStep('complete');
+      setBatchStep('complete');
+    }
   };
 
-  const STEPS = ['Ingredient Info', 'Review & Issue'];
-
-  const confirm = () => {
-    setTx('pending');
-    setTimeout(() => setTx('confirmed'), 3000);
+  const register = async () => {
+    if (activeSubmission.current) return;
+    activeSubmission.current = true;
+    setBusy(true);
+    setError('');
+    setComplete(false);
+    try {
+      let workflow = await prepareWorkflow(buildInput());
+      applyState(workflow);
+      for (let transactionCount = 0; workflow.state !== 'COMPLETE'; transactionCount += 1) {
+        if (transactionCount >= 2 || !workflow.transaction) {
+          throw new Error('The server returned an incomplete ingredient registration workflow.');
+        }
+        await submitTransaction(workflow.transaction, workflow.supplierWallet);
+        workflow = await prepareWorkflow(buildInput());
+        applyState(workflow);
+      }
+      setComplete(true);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : 'The ingredient batch could not be registered.',
+      );
+    } finally {
+      activeSubmission.current = false;
+      setBusy(false);
+    }
   };
 
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
+        <Btn onClick={onBack} variant="ghost" size="sm" disabled={busy}>
           Back
         </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
@@ -63,35 +118,35 @@ export function RegisterBatch({ onBack }: { onBack: () => void }) {
         </h2>
       </div>
       <div style={{ maxWidth: 700, margin: '0 auto' }}>
-        <StepProgress steps={STEPS} current={step} />
+        <StepProgress steps={['Ingredient information', 'Review & register']} current={step} />
 
         {step === 0 && (
           <Card>
             <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 20 }}>
-              Ingredient Information
+              Ingredient information
             </div>
             <div style={{ display: 'grid', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div className="workspace-form-grid">
                 <Input
-                  label="Ingredient Name"
+                  label="Ingredient name"
                   placeholder="Cocoa Powder"
                   value={name}
                   onChange={setName}
                   required
                 />
                 <Input
-                  label="Batch Number"
+                  label="Batch reference"
                   placeholder="COCOA-2026-001"
-                  value={batchNum}
-                  onChange={setBatch}
+                  value={batchReference}
+                  onChange={setBatchReference}
                   required
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div className="workspace-form-grid">
                 <SelectField
                   label="Category"
                   value={category}
-                  onChange={setCat}
+                  onChange={setCategory}
                   options={[
                     { value: 'cocoa', label: 'Cocoa & Chocolate' },
                     { value: 'dairy', label: 'Dairy Products' },
@@ -101,58 +156,64 @@ export function RegisterBatch({ onBack }: { onBack: () => void }) {
                   ]}
                 />
                 <Input
-                  label="Country / Location of Origin"
+                  label="Country / location of origin"
                   placeholder="Ghana"
                   value={origin}
                   onChange={setOrigin}
                   required
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <div className="workspace-form-grid">
                 <Input
-                  label="Production Date"
+                  label="Production date"
                   type="date"
-                  value={produced}
-                  onChange={setProd}
+                  value={producedAt}
+                  onChange={setProducedAt}
                   required
                 />
                 <Input
-                  label="Expiry Date"
+                  label="Expiry date"
                   type="date"
-                  value={expires}
-                  onChange={setExpires}
+                  value={expiresAt}
+                  onChange={setExpiresAt}
                   required
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 14 }}>
-                <Input label="Quantity" placeholder="500" value={qty} onChange={setQty} required />
+              <div className="workspace-form-grid workspace-form-grid--quantity">
+                <Input
+                  label="Quantity"
+                  placeholder="500"
+                  value={quantity}
+                  onChange={setQuantity}
+                  required
+                />
                 <SelectField
                   label="Unit"
                   value={unit}
                   onChange={setUnit}
                   options={[
-                    { value: 'kg', label: 'Kilograms (kg)' },
-                    { value: 'L', label: 'Litres (L)' },
-                    { value: 'units', label: 'Units' },
+                    { value: 'kg', label: 'kg' },
+                    { value: 'g', label: 'g' },
+                    { value: 'litre', label: 'litre' },
+                    { value: 'unit', label: 'unit' },
                   ]}
                 />
               </div>
               <Input
-                label="Allergen Information"
-                placeholder="None / Dairy / Nuts / Gluten…"
+                label="Allergen information"
+                placeholder="None"
                 value={allergen}
                 onChange={setAllergen}
               />
               <Input
                 label="Certifications"
-                placeholder="Organic, Halal, Fair Trade, ISO 22000…"
-                value={cert}
-                onChange={setCert}
-                hint="Enter all applicable certifications separated by commas"
+                placeholder="Organic, Halal, Fair Trade"
+                value={certifications}
+                onChange={setCertifications}
+                hint="Separate multiple certifications with commas"
               />
-
-              <Btn onClick={() => setStep(1)} full disabled={!name || !batchNum || !origin}>
-                Continue to Review
+              <Btn onClick={() => setStep(1)} full disabled={!isFormComplete}>
+                Continue to review
               </Btn>
             </div>
           </Card>
@@ -161,68 +222,97 @@ export function RegisterBatch({ onBack }: { onBack: () => void }) {
         {step === 1 && (
           <div style={{ display: 'grid', gap: 16 }}>
             <Card>
-              <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 6 }}>
-                Review & Set Disclosure Levels
+              <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
+                Review batch
               </div>
-              <div style={{ fontSize: 13, color: T.text2, marginBottom: 16 }}>
-                Choose which information will be shared publicly, restricted to verified parties, or
-                kept confidential.
-              </div>
-              <div style={{ display: 'grid', gap: 8 }}>
+              <div className="workspace-review-grid">
                 {[
-                  { key: 'name', label: 'Ingredient Name', value: name || 'Cocoa Powder' },
-                  { key: 'batchNum', label: 'Batch Number', value: batchNum || 'COCOA-2026-001' },
-                  { key: 'origin', label: 'Origin', value: origin || 'Ghana' },
-                  { key: 'produced', label: 'Production Date', value: produced || '2026-04-15' },
-                  { key: 'expires', label: 'Expiry Date', value: expires || '2027-04-15' },
-                  { key: 'qty', label: 'Quantity', value: `${qty || '500'} ${unit}` },
-                  { key: 'allergen', label: 'Allergen Information', value: allergen || 'None' },
-                  { key: 'cert', label: 'Certifications', value: cert || 'Organic, Fair Trade' },
-                  {
-                    key: 'quality',
-                    label: 'Quality Test Results',
-                    value: 'Internal QA Report — Batch A1',
-                  },
-                  { key: 'price', label: 'Purchase Price', value: 'MYR 12.50 / kg' },
-                ].map((item) => (
-                  <ClaimRow
-                    key={item.key}
-                    label={item.label}
-                    value={item.value}
-                    sensitivity={disclosure[item.key] as any}
-                    included={disclosure[item.key] !== 'confidential'}
-                    onToggle={() => toggleDisc(item.key)}
-                  />
+                  ['Ingredient', name],
+                  ['Batch reference', batchReference],
+                  ['Origin', origin],
+                  ['Category', category],
+                  ['Production date', producedAt],
+                  ['Expiry date', expiresAt],
+                  ['Quantity', `${quantity} ${unit}`],
+                  ['Certifications', certifications || 'None'],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    style={{ borderBottom: `1px solid ${T.border}`, padding: '8px 0' }}
+                  >
+                    <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
+                    <div style={{ fontSize: 13, color: T.navy, fontWeight: 600 }}>{value}</div>
+                  </div>
                 ))}
               </div>
             </Card>
 
-            <Alert
-              type="info"
-              message="Confidential information will never be shared with other parties. Only the cryptographic hash will be recorded on the blockchain."
-            />
+            <Card>
+              <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 12 }}>
+                Registration progress
+              </div>
+              <WorkflowStatus label="Register Ingredient Credential" status={credentialStep} />
+              <WorkflowStatus label="Register ingredient batch" status={batchStep} />
+              <p style={{ fontSize: 12, color: T.text2, margin: '12px 0 0' }}>
+                MetaMask confirms each blockchain step separately. If a later step fails, retrying
+                safely resumes from the confirmed step.
+              </p>
+            </Card>
+
+            {error && <Alert type="error" message={error} />}
+            {complete && (
+              <Alert
+                type="success"
+                message="The Ingredient Credential and ingredient batch are registered and verified on-chain."
+              />
+            )}
 
             <div style={{ display: 'flex', gap: 10 }}>
-              <Btn onClick={() => setStep(0)} variant="outline" style={{ flex: 1 }}>
-                Back
-              </Btn>
-              <Btn onClick={confirm} style={{ flex: 2 }}>
-                Issue Ingredient Credential
+              {!complete && (
+                <Btn
+                  onClick={() => setStep(0)}
+                  variant="outline"
+                  style={{ flex: 1 }}
+                  disabled={busy}
+                >
+                  Edit details
+                </Btn>
+              )}
+              <Btn
+                onClick={complete ? (onCompleted ?? onBack) : register}
+                style={{ flex: 2 }}
+                disabled={busy}
+              >
+                {complete
+                  ? 'View ingredient batches'
+                  : busy
+                    ? 'Waiting for confirmation…'
+                    : error
+                      ? 'Retry registration'
+                      : 'Register with MetaMask'}
               </Btn>
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
 
-      <TxModal
-        state={txState}
-        title="Issuing Ingredient Credential"
-        message="Ingredient Credential issued successfully. The cryptographic hash has been recorded on the blockchain."
-        onClose={() => {
-          setTx(null);
-          onBack();
-        }}
-      />
+function WorkflowStatus({ label, status }: { label: string; status: WorkflowStep }) {
+  const text = status === 'complete' ? 'Complete' : status === 'active' ? 'Next' : 'Waiting';
+  const color = status === 'complete' ? T.green : status === 'active' ? T.teal : T.text2;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        padding: '10px 0',
+        borderBottom: `1px solid ${T.border}`,
+      }}
+    >
+      <span style={{ fontSize: 13, color: T.text }}>{label}</span>
+      <span style={{ color, fontSize: 12, fontWeight: 700 }}>{text}</span>
     </div>
   );
 }

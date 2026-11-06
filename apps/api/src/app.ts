@@ -35,6 +35,17 @@ import {
 } from './modules/custody-transfers/custody-transfer.gateway.js';
 import { createCustodyTransferRouter } from './modules/custody-transfers/custody-transfer.routes.js';
 import { CustodyTransferService } from './modules/custody-transfers/custody-transfer.service.js';
+import { IngredientBatchController } from './modules/ingredient-batches/ingredient-batch.controller.js';
+import {
+  EthersIngredientBatchGateway,
+  type IngredientBatchGateway,
+} from './modules/ingredient-batches/ingredient-batch.gateway.js';
+import {
+  JsonIngredientBatchWorkflowRepository,
+  type IngredientBatchWorkflowRepository,
+} from './modules/ingredient-batches/ingredient-batch.repository.js';
+import { createIngredientBatchRouter } from './modules/ingredient-batches/ingredient-batch.routes.js';
+import { IngredientBatchService } from './modules/ingredient-batches/ingredient-batch.service.js';
 import { SsiController } from './modules/ssi/ssi.controller.js';
 import {
   IpfsEncryptedCredentialStore,
@@ -56,6 +67,7 @@ interface CreateAppOptions {
   authService?: AuthService;
   blockchainGateway?: BlockchainGateway;
   custodyTransferService?: CustodyTransferService;
+  ingredientBatchService?: IngredientBatchService;
   ssi?: {
     agentProvider: TraceChainAgentProvider;
     authorityDidAlias: string;
@@ -68,6 +80,7 @@ export function createApp({
   authService,
   blockchainGateway,
   custodyTransferService,
+  ingredientBatchService,
   ssi,
 }: CreateAppOptions = {}) {
   const app = express();
@@ -123,7 +136,8 @@ export function createApp({
   const lazyGateway: BlockchainGateway = {
     listOperationalData: async (account) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
-      if (!resolvedGateway.listOperationalData) throw new Error('Operational blockchain reads are unavailable.');
+      if (!resolvedGateway.listOperationalData)
+        throw new Error('Operational blockchain reads are unavailable.');
       return resolvedGateway.listOperationalData(account);
     },
     getAdministrator: async () => {
@@ -235,6 +249,15 @@ export function createApp({
     }),
     env.AUTH_COOKIE_NAME,
   );
+  const ingredientBatchController = new IngredientBatchController(
+    ingredientBatchService ??
+      createDefaultIngredientBatchService(
+        resolvedAuthService,
+        defaultSsi.agentProvider,
+        lazyCredentialContentStore,
+      ),
+    env.AUTH_COOKIE_NAME,
+  );
 
   app.use(
     cors({
@@ -253,6 +276,11 @@ export function createApp({
 
   app.use('/api/auth', express.json({ limit: '10kb' }), createAuthRouter(authController));
   app.use('/api/ssi', express.json({ limit: '256kb' }), createSsiRouter(ssiController));
+  app.use(
+    '/api/ingredient-batches',
+    express.json({ limit: '32kb' }),
+    createIngredientBatchRouter(ingredientBatchController),
+  );
   app.use(
     '/api/blockchain',
     express.json({ limit: '32kb' }),
@@ -344,6 +372,57 @@ function createDefaultCustodyTransferService(authService: AuthService) {
     authService,
     configuration,
     gateway: lazyGateway,
+  });
+}
+
+function createDefaultIngredientBatchService(
+  authService: AuthService,
+  agentProvider: TraceChainAgentProvider,
+  contentStore: CredentialContentStore,
+) {
+  let gateway: IngredientBatchGateway | undefined;
+  let repository: IngredientBatchWorkflowRepository | undefined;
+  const resolveGateway = () => {
+    if (!gateway) {
+      const blockchain = loadBlockchainEnvironment();
+      gateway = new EthersIngredientBatchGateway(
+        env.CHAIN_ID,
+        blockchain.CHAIN_RPC_URL,
+        blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
+        blockchain.CREDENTIAL_REGISTRY_ADDRESS,
+        blockchain.INGREDIENT_REGISTRY_ADDRESS,
+      );
+    }
+    return gateway;
+  };
+  const lazyGateway: IngredientBatchGateway = {
+    assertDeployment: () => resolveGateway().assertDeployment(),
+    getBatch: (batchId) => resolveGateway().getBatch(batchId),
+    getCredential: (credentialId) => resolveGateway().getCredential(credentialId),
+    getSupplierAccess: (wallet, credentialHash) =>
+      resolveGateway().getSupplierAccess(wallet, credentialHash),
+    listBatchIds: (wallet) => resolveGateway().listBatchIds(wallet),
+    prepareBatchRegistration: (input) => resolveGateway().prepareBatchRegistration(input),
+    prepareIngredientCredentialRegistration: (input) =>
+      resolveGateway().prepareIngredientCredentialRegistration(input),
+  };
+  const resolveRepository = () => {
+    repository ??= new JsonIngredientBatchWorkflowRepository(
+      loadCredentialStorageEnvironment().ingredientWorkflowStorePath,
+    );
+    return repository;
+  };
+  const lazyRepository: IngredientBatchWorkflowRepository = {
+    find: (batchId) => resolveRepository().find(batchId),
+    listForSupplier: (wallet) => resolveRepository().listForSupplier(wallet),
+    save: (record) => resolveRepository().save(record),
+  };
+  return new IngredientBatchService({
+    agentProvider,
+    authService,
+    contentStore,
+    gateway: lazyGateway,
+    repository: lazyRepository,
   });
 }
 

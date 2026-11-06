@@ -35,3 +35,14 @@ export type {
   CompanyRoleCredentialVerificationResult,
 } from './credentials/verification.service.js';
 export { createOrGetAuthorityDid } from './did/authority-did.service.js';
+export { ingredientCredentialSchema } from './credentials/ingredient-credential.js';
+export type { IngredientCredential } from './credentials/ingredient-credential.js';
+export {
+  canonicalIngredientMetadata,
+  hashIngredientCredential,
+  issueIngredientCredential,
+  serializeIngredientCredential,
+  verifyIngredientCredential,
+} from './credentials/ingredient-credential.service.js';
+export type { IssueIngredientCredentialInput } from './credentials/ingredient-credential.service.js';
+export { createOrGetSupplierIssuerDid } from './did/supplier-issuer-did.service.js';

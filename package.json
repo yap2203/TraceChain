@@ -24,6 +24,7 @@
     "test:ssi": "npm run build --workspace @tracechain/shared && npm run test:ssi --workspace @tracechain/ssi",
     "test:contracts": "npm run test --workspace @tracechain/contracts",
     "test:custody-transfers": "npm run build --workspace @tracechain/shared && npm run test:custody-transfers --workspace @tracechain/api",
+    "test:ingredient-batches": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run test:ingredient-batches --workspace @tracechain/api",
     "test:qr": "npm run test --workspace @tracechain/shared",
     "typecheck": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run typecheck --workspace @tracechain/api && npm run typecheck --workspace @tracechain/web && npm run typecheck --workspace @tracechain/shared && npm run typecheck --workspace @tracechain/ssi && npm run typecheck --workspace @tracechain/contracts",
     "format": "prettier --write .",

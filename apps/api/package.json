@@ -13,6 +13,7 @@
     "test:auth": "vitest run src/modules/auth/auth.test.ts",
     "test:blockchain": "vitest run src/modules/blockchain/blockchain.test.ts",
     "test:custody-transfers": "vitest run src/modules/custody-transfers/custody-transfer.test.ts",
+    "test:ingredient-batches": "vitest run src/modules/ingredient-batches/ingredient-batch.test.ts",
     "test:ssi-api": "vitest run src/modules/ssi/ssi.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },

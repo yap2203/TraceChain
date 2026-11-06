@@ -12,12 +12,17 @@ import {
   CompanyRoleCredentialStatus,
   companyRoleCredentialSchema,
   createOrGetAuthorityDid,
+  createOrGetSupplierIssuerDid,
   createTraceChainAgent,
+  hashIngredientCredential,
+  ingredientCredentialSchema,
+  issueIngredientCredential,
   issueCompanyRoleCredential,
   SEPOLIA_CHAIN_ID,
   type TraceChainAgent,
   type TraceChainSsiConfig,
   verifyCompanyRoleCredential,
+  verifyIngredientCredential,
   walletAddressToDid,
 } from '../src/index.js';
 
@@ -266,6 +271,103 @@ describe('TraceChain SSI foundation', () => {
         expect.arrayContaining(['INACTIVE_STATUS', 'INVALID_SIGNATURE']),
       );
       expect(result.authorizationReady).toBe(false);
+    });
+  });
+
+  describe('Supplier Ingredient Credential issuance and verification', () => {
+    const supplierWallet = '0x2000000000000000000000000000000000000002';
+    let issuerDid: string;
+    let credential: Awaited<ReturnType<typeof issueIngredientCredential>>['credential'];
+
+    beforeAll(async () => {
+      issuerDid = (await createOrGetSupplierIssuerDid(agent, supplierWallet)).identifier.did;
+      credential = (
+        await issueIngredientCredential(agent, {
+          allergenInformation: 'None',
+          batchId: 'COCOA-2026-001',
+          category: 'cocoa',
+          certifications: ['Organic', 'Fair Trade'],
+          expiryDate: new Date('2030-01-01T00:00:00.000Z'),
+          ingredientName: 'Cocoa Powder',
+          issuanceDate: new Date('2026-11-06T00:00:00.000Z'),
+          issuerDid,
+          issuerOperatorChainId: SEPOLIA_CHAIN_ID,
+          origin: 'Ghana',
+          productionDate: new Date('2026-10-01T00:00:00.000Z'),
+          quantity: '500',
+          supplierWallet,
+          unit: 'kg',
+        })
+      ).credential;
+    });
+
+    it('issues a typed W3C JWT Ingredient Credential with every required claim', () => {
+      expect(ingredientCredentialSchema.safeParse(credential).success).toBe(true);
+      expect(credential.type).toEqual(
+        expect.arrayContaining(['VerifiableCredential', 'IngredientCredential']),
+      );
+      expect(credential.credentialSubject).toMatchObject({
+        allergenInformation: 'None',
+        batchId: 'COCOA-2026-001',
+        category: 'cocoa',
+        certifications: ['Organic', 'Fair Trade'],
+        ingredientName: 'Cocoa Powder',
+        origin: 'Ghana',
+        quantity: '500',
+        supplierWallet: getAddress(supplierWallet),
+        unit: 'kg',
+      });
+      expect(credential.proof.jwt).toMatch(/^[^.]+\.[^.]+\.[^.]+$/);
+      expect(hashIngredientCredential(credential)).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('cryptographically verifies the credential and its Supplier wallet binding', async () => {
+      const result = await verifyIngredientCredential(
+        agent,
+        credential,
+        supplierWallet,
+        issuerDid,
+        new Date('2026-11-06T00:00:00.000Z'),
+      );
+      expect(result).toMatchObject({ reasons: [], verified: true });
+    });
+
+    it('rejects tampered claims and a different Supplier wallet', async () => {
+      const tampered = structuredClone(credential);
+      tampered.credentialSubject.quantity = '999';
+      expect(
+        (
+          await verifyIngredientCredential(
+            agent,
+            tampered,
+            supplierWallet,
+            issuerDid,
+            new Date('2026-11-06T00:00:00.000Z'),
+          )
+        ).reasons,
+      ).toContain('INVALID_SIGNATURE');
+      expect(
+        (
+          await verifyIngredientCredential(
+            agent,
+            credential,
+            Wallet.createRandom().address,
+            issuerDid,
+            new Date('2026-11-06T00:00:00.000Z'),
+          )
+        ).reasons,
+      ).toContain('WRONG_WALLET');
+    });
+
+    it('uses a distinct, reusable issuer DID for each Supplier wallet', async () => {
+      const same = await createOrGetSupplierIssuerDid(agent, supplierWallet);
+      const other = await createOrGetSupplierIssuerDid(
+        agent,
+        '0x3000000000000000000000000000000000000003',
+      );
+      expect(same.identifier.did).toBe(issuerDid);
+      expect(same.created).toBe(false);
+      expect(other.identifier.did).not.toBe(issuerDid);
     });
   });
 });

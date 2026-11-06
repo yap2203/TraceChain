@@ -2,7 +2,7 @@
 
 TraceChain is a blockchain-based supply-chain traceability system with Self-Sovereign Identity credential verification. It is a TypeScript npm monorepo developed as a final-year project.
 
-The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, a server-side Veramo SSI foundation, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, and detail views now use authenticated chain reads; several write-oriented and report screens still require migration from fixtures.
+The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, and detail views use authenticated chain reads. Admin workflows, custody-transfer receipt confirmation, and Supplier Ingredient Credential/batch registration are connected to authenticated services; several remaining write-oriented, evidence, credential-card, and report screens still require migration from fixtures.
 
 ## Current implementation status
 
@@ -11,13 +11,14 @@ The current version includes a responsive React application, five stakeholder wo
 | Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected           |
 | MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target    |
 | Nonce and session storage                | Implemented in process memory for development                                         |
-| Stakeholder workspace UI                 | Admin applications use the local chain; other workflow pages still need migration     |
+| Stakeholder workspace UI                 | Admin, custody receipt, and Supplier batch registration use authenticated services    |
 | Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                   |
 | Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                       |
 | Company Role Credential presentation     | Authenticated JSON upload and safe session summary implemented                        |
 | Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
 | Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status      |
 | SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
+| Supplier Ingredient Credentials          | Typed JWT VC issuance, encrypted IPFS storage, and sequential on-chain registration   |
 | Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
 | Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
 | Custody-transfer QR workflow             | Verified scanning and recipient-signed local receipt confirmation implemented         |
@@ -143,6 +144,7 @@ CHAIN_RPC_URL=http://127.0.0.1:8545
 CHAIN_CURRENCY_SYMBOL=ETH
 STAKEHOLDER_REGISTRY_ADDRESS=0x...
 CREDENTIAL_REGISTRY_ADDRESS=0x...
+INGREDIENT_REGISTRY_ADDRESS=0x...
 CUSTODY_TRANSFER_ADDRESS=0x...
 DEV_DISTRIBUTOR_WALLET=0x...
 AUTH_COOKIE_NAME=tracechain_session
@@ -222,7 +224,13 @@ Login actions follow the current session state. Disconnected users connect throu
 
 Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakeholder and workflow. `WorkspaceApp.tsx` owns canonical routing and the access boundary; `WorkspaceScreen.tsx` dispatches detailed pages. Shared workspace presentation components, receipts, reports, and table controls are kept in focused subfolders.
 
-The Admin overview, company-application, Company Credential, Access Control, and Registry Audit screens use authenticated blockchain gateway reads. Credential management lists issued Company Role Credentials, displays authoritative `CredentialRegistry` records, and prepares real MetaMask-signed suspend, reactivate, and permanent-revoke transactions. Access Control displays the contract-enforced role and stakeholder lifecycle and prepares real stakeholder suspension, reactivation, and revocation transactions. The operational gateway also reconstructs wallet-scoped ingredient, product, evidence-request, custody-transfer, and inventory lists from contract events, then refreshes every item through its current-state getter. Supplier, Manufacturer, Distributor, and Retailer primary dashboards and their batch, shipment, inventory, and detail screens therefore display current contract state. Evidence-response, transfer-creation, QR/history, stakeholder credential-card, receipt-write, and non-admin report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative.
+The Admin overview, company-application, Company Credential, Access Control, and Registry Audit screens use authenticated blockchain gateway reads. Credential management lists authoritative `CredentialRegistry` records and prepares MetaMask-signed lifecycle transactions. Access Control displays contract-enforced role and stakeholder lifecycle data, and the Admin audit screen produces exportable current-state snapshots. Application rejection, approval, Company Role Credential issuance, encrypted IPFS storage, and sequential registry writes are backend-validated and MetaMask-signed, with restart-resumable workflow records under `.tracechain/issuance/`.
+
+The operational gateway reconstructs wallet-scoped ingredient, product, evidence-request, custody-transfer, and inventory lists from contract events, then refreshes each item through its current-state getter. Supplier, Manufacturer, Distributor, and Retailer primary dashboards and their batch, shipment, inventory, and detail screens therefore display current contract state.
+
+The Supplier ingredient screen issues a typed `IngredientCredential` whose subject is the authenticated Supplier wallet and whose issuer is a server-derived, Supplier-specific DID. The backend verifies the signed VC before hashing it, encrypts the complete credential and private batch metadata with AES-256-GCM, pins only the encrypted envelope to IPFS, and prepares `CredentialRegistry.registerCredential` followed by `IngredientRegistry.registerBatch`. MetaMask remains the signer, retries resume the first incomplete stage, and the authenticated Supplier receives enriched private metadata only through the narrower ingredient-batch API. This JWT VC implementation does not claim selective disclosure. The prototype server-managed KMS must be replaced by an organizational stakeholder key-custody design for production.
+
+Evidence-response, transfer-creation, QR product-history, stakeholder credential-card, receipt reconciliation/evidence, and non-admin report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative.
 
 Access Control also provides live role counts and a configurable on-chain permission matrix. Every grant or removal is prepared by the API, signed by the System Admin in MetaMask, recorded by `StakeholderRegistry`, and enforced by the affected contracts. System Admin authority and structural custody routes remain fixed safety constraints. This contract upgrade requires a fresh deployment.
 
@@ -288,8 +296,10 @@ npm run test:auth
 npm run test:blockchain
 npm run test:ssi
 npm run test:ssi-api
+npm run test:ingredient-batches
 npm run test:contracts
 npm run test:custody-transfers
+npm run test:ingredient-batches
 npm run test:qr
 npm run test:content --workspace @tracechain/api
 npm run test:frontend

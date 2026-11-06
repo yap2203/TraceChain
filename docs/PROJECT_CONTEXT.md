@@ -42,6 +42,8 @@
 - Development-only chain-31337 custody-transfer seeding against existing deployments
 - Recipient-only receipt confirmation through backend-validated unsigned calldata and MetaMask
 - Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
+- Supplier-specific did:ethr issuer DIDs, typed JWT Ingredient Credential issuance/verification, AES-GCM encrypted IPFS storage, and sequential MetaMask registration of credential and batch records
+- Authenticated Supplier ingredient batch list/detail/overview data reconstructed from `IngredientBatchRegistered` events, contract reads, and authorized encrypted metadata
 - Authenticated Company Role Credential JSON presentation with safe session summaries and fail-closed workspace guards
 - Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
 
@@ -54,7 +56,7 @@ authorization in every environment; there is no account-free localhost bypass.
 - MetaMask proves control of a wallet; it does not issue Company Role Credentials or Ingredient Credentials.
 - Veramo manages the current DID, credential, and presentation foundation.
 - Company Role Credentials determine stakeholder roles only after cryptographic verification.
-- Suppliers issue Ingredient Credentials and control disclosed claims.
+- Suppliers issue Ingredient Credentials through their authenticated, permission-checked workflow. Selective disclosure is not implemented by the current JWT credential format.
 - Invalid, expired, suspended, or revoked credentials must never grant access.
 - Routes, wallet addresses, fixture data, and browser storage are not trusted role evidence.
 - Complete credentials, supporting identity documents, and sensitive identity data remain off-chain.
@@ -78,10 +80,10 @@ authorization in every environment; there is no account-free localhost bypass.
 
 ## Current limitations
 
-- No durable database or persisted stakeholder workflow APIs
+- Nonce and session repositories remain development-only and in memory; issuance recovery currently uses ignored atomic JSON files rather than a production shared database
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
 - No damaged/rejected quantity reconciliation or encrypted receipt-evidence workflow yet; QR scanning itself remains read-only
-- Sample UI records and transaction states are not persisted or cryptographically verified
+- Several Manufacturer, Distributor, Retailer, evidence, and report records remain presentation fixtures and are not authoritative
 
 ## Important system qualities
 

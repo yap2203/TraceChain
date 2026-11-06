@@ -1,6 +1,10 @@
-import { useOperationalData } from '../../../blockchain/useOperationalData';
-import { Alert, Badge, Btn, Card, EmptyState, T } from '../../shared/ui';
-import { chainDate, recordStatuses, shortChainId } from '../../shared/operational-format';
+import { useEffect, useState } from 'react';
+
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
+import { Alert, Badge, Btn, Card, EmptyState, MONO, T } from '../../shared/ui';
+import { shortChainId } from '../../shared/operational-format';
+import { getIngredientBatches, type RegisteredIngredientBatch } from './ingredient-batch.api';
+
 export function IngredientBatchDetail({
   batchId,
   onBack,
@@ -8,52 +12,120 @@ export function IngredientBatchDetail({
   batchId: string;
   onBack: () => void;
 }) {
-  const { data, error, loading } = useOperationalData();
-  const batch = data.ingredientBatches.find((b) => b.batchId === batchId);
+  const [batch, setBatch] = useState<RegisteredIngredientBatch | null>();
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    getIngredientBatches()
+      .then(({ batches }) => {
+        if (active) setBatch(batches.find((candidate) => candidate.batchId === batchId) ?? null);
+      })
+      .catch((caught: unknown) => {
+        if (active)
+          setError(caught instanceof Error ? caught.message : 'The batch could not be loaded.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [batchId]);
+
   if (error) return <Alert type="error" message={error} />;
-  if (loading) return <div>Reading IngredientRegistry…</div>;
+  if (batch === undefined)
+    return (
+      <Card>
+        <LoadingIndicator label="Loading ingredient batch" />
+      </Card>
+    );
   if (!batch)
     return (
       <EmptyState
         icon={<span />}
         title="Batch not found on chain"
-        sub="This wallet does not own the requested ingredient batch."
+        sub="This authenticated Supplier does not own the requested ingredient batch."
       />
     );
-  const fields = [
-    ['Batch ID', batch.batchId],
-    ['Supplier', batch.supplier],
-    ['Total quantity', batch.totalQuantity],
-    ['Available quantity', batch.availableQuantity],
-    ['Produced', chainDate(batch.producedAt)],
-    ['Expires', chainDate(batch.expiresAt)],
-    ['Credential ID', batch.credentialId],
-    ['Metadata hash', batch.metadataHash],
-    ['Encrypted CID', batch.encryptedCid || '—'],
+
+  const details = [
+    ['Ingredient name', batch.ingredientName],
+    ['Batch reference', batch.batchReference],
+    ['Origin', batch.origin || 'Private'],
+    ['Category', batch.category || 'Private'],
+    ['Total quantity', `${batch.quantity} ${batch.unit}`],
+    ['Available quantity', `${batch.availableQuantity} ${batch.unit}`],
+    ['Production date', formatDate(batch.producedAt)],
+    ['Expiry date', formatDate(batch.expiresAt)],
+    ['Allergen information', batch.allergenInformation || 'None declared'],
+    ['Certifications', batch.certifications.join(', ') || 'None declared'],
   ];
+
   return (
     <div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
-        <Btn variant="ghost" size="sm" onClick={onBack}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 12,
+          alignItems: 'center',
+          marginBottom: 24,
+          flexWrap: 'wrap',
+        }}
+      >
+        <Btn onClick={onBack} variant="ghost" size="sm">
           Back to Batches
         </Btn>
-        <h2 style={{ margin: 0, color: T.navy }}>Ingredient · {shortChainId(batch.batchId)}</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
+          {batch.ingredientName} · {shortChainId(batch.batchId)}
+        </h2>
         <Badge
-          label={recordStatuses[batch.status] ?? 'Unknown'}
+          label={batch.status === 1 ? 'Active' : 'Unavailable'}
           variant={batch.status === 1 ? 'active' : 'pending'}
         />
       </div>
-      <Card>
-        <b>On-chain record</b>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', marginTop: 12 }}>
-          {fields.map(([label, value]) => (
-            <div key={label} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
-              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{value}</div>
-            </div>
-          ))}
-        </div>
-      </Card>
+      <div className="workspace-detail-grid">
+        <Card>
+          <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
+            Ingredient details
+          </div>
+          <div className="workspace-review-grid">
+            {details.map(([label, value]) => (
+              <div key={label} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ fontSize: 11, color: T.text2, marginBottom: 3 }}>{label}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: T.navy }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+        <Card>
+          <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
+            On-chain record
+          </div>
+          <TechnicalRow label="Batch ID" value={batch.batchId} />
+          <TechnicalRow label="Supplier" value={batch.supplier} />
+          <TechnicalRow label="Credential ID" value={batch.credentialId} />
+          <TechnicalRow label="Metadata hash" value={batch.metadataHash} />
+          <TechnicalRow label="Encrypted CID" value={batch.encryptedCid || '—'} />
+          <TechnicalRow label="Status" value={batch.status === 1 ? 'Active' : 'Unavailable'} />
+          <p style={{ fontSize: 12, color: T.text2, lineHeight: 1.55, marginBottom: 0 }}>
+            The complete Ingredient Credential and private metadata remain encrypted off-chain.
+            Private fields are returned only to the authenticated, currently authorized Supplier.
+          </p>
+        </Card>
+      </div>
     </div>
   );
+}
+
+function TechnicalRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ padding: '8px 0', borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
+      <div style={{ fontFamily: MONO, fontSize: 11, color: T.teal, overflowWrap: 'anywhere' }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function formatDate(timestamp: number) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(timestamp * 1_000);
 }

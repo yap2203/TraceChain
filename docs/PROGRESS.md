@@ -53,9 +53,7 @@
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Reused existing authorized extension providers, serialized connection attempts, added bounded timeouts and one stale-transport retry, and moved connection progress into the visible authentication card.
-- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, and receipt-confirmation tests; the frontend suite now contains 50 tests and performs no live relay or RPC calls.
-- Enabled temporary account-free sample UI access only on local Vite loopback hosts.
-- Kept production workspace access fail-closed because blockchain role and credential-status verification are not yet implemented, even when a Company Role Credential has been verified locally.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, receipt-confirmation, and Supplier registration tests; the frontend suite now contains 54 tests and performs no live relay or RPC calls.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
 
 ## Current contract and SSI version
@@ -70,11 +68,22 @@
 - Confirmed production contracts compile with the cached native Solidity 0.8.34 compiler and the
   complete Hardhat suite passes locally.
 - Added AES-256-GCM encrypted JSON content storage with an injectable IPFS pinning gateway and tamper-detection tests.
+- Implemented the Supplier Ingredient Credential and batch workflow: Supplier-specific issuer DIDs,
+  typed W3C JWT claims, immediate cryptographic verification, canonical SHA-256 hashes, encrypted
+  IPFS storage, and restart-resumable workflow records.
+- Added authenticated `POST /api/ingredient-batches/prepare` and `GET /api/ingredient-batches`.
+  The API rechecks Supplier role/status and both contract permissions, prepares credential and batch
+  writes sequentially, and verifies each on-chain record before advancing or reporting completion.
+- Replaced the Supplier ingredient registration timer and batch fixtures in the registration,
+  list, detail, and overview screens with the real two-transaction MetaMask workflow and
+  event/getBatch-backed API data. Errors remain resumable and duplicate submissions are blocked.
+- Added 4 Ingredient Credential SSI cases, 6 focused ingredient-batch API cases, and 4 Supplier
+  frontend workflow/list cases, all using mocked external services or local cryptographic agents.
 - Implemented a Veramo 7 server-side agent with DID, resolver, key-management, JWT VC/VP, verification, and JSON data-store plugins.
 - Added `did:ethr` Sepolia authority creation, separate atomic JSON stores, and SecretBox encryption for private issuer keys.
 - Added typed Company Role Credential issuance and verification with trusted issuer, subject/SIWE wallet binding, shared roles, date, local status, and deterministic SHA-256 checks.
 - Added an idempotent Product Traceability Authority and bootstrap System Admin service plus a safe CLI command.
-- Added 15 offline SSI tests without live RPC, MetaMask, or test ETH.
+- Added 19 offline SSI tests without live RPC, MetaMask, or test ETH.
 - Connected credential presentation to on-chain stakeholder role/lifecycle and credential hash/status checks; authorized sessions now set `onChainStatusChecked` and `authorizationReady` to true.
 
 ## Remaining work
@@ -88,4 +97,4 @@
 
 ## Important distinction
 
-The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are also chain-backed. Custody-transfer QR resolution and recipient-only receipt confirmation use the configured contract through the authenticated API and MetaMask. Evidence-response, transfer-creation, QR product-history, stakeholder credential cards, receipt reconciliation/evidence, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.
+The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are chain-backed. Supplier Ingredient Credential/batch registration and enriched Supplier batch views use verified credentials, encrypted IPFS content, MetaMask, contract events, and authoritative reads. Custody-transfer QR resolution and recipient-only receipt confirmation use the configured contract through the authenticated API and MetaMask. Evidence-response, transfer-creation, QR product-history, stakeholder credential cards, receipt reconciliation/evidence, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.
