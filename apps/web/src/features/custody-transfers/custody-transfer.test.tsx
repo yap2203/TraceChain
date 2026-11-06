@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { CustodyTransferResolutionError } from './custody-transfer.api';
@@ -116,6 +117,33 @@ describe('custody-transfer QR frontend', () => {
       await screen.findByText('This QR code belongs to a different blockchain network.'),
     ).toBeTruthy();
     expect(screen.queryByText(TRANSFER.productBatchId)).toBeNull();
+  });
+
+  it('leaves the resolving state after an API error in React StrictMode', async () => {
+    const resolvePayload = vi
+      .fn()
+      .mockRejectedValue(
+        new CustodyTransferResolutionError(
+          'TRANSFER_NOT_FOUND',
+          'The referenced custody transfer does not exist.',
+          404,
+        ),
+      );
+    render(
+      <StrictMode>
+        <TransferQrScanner reader={reader()} resolvePayload={resolvePayload} />
+      </StrictMode>,
+    );
+    enterManualPayload();
+    const submit = screen.getByRole('button', { name: 'Verify transfer' });
+
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+
+    expect(await screen.findByText('The referenced custody transfer was not found.')).toBeTruthy();
+    await waitFor(() => expect((submit as HTMLButtonElement).disabled).toBe(false));
+    expect(screen.queryByText('Verifying with TraceChain…')).toBeNull();
+    expect(resolvePayload).toHaveBeenCalledOnce();
   });
 
   it('prevents duplicate resolution requests while one is active', async () => {
