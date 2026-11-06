@@ -109,7 +109,7 @@ contract ProductRegistry is IProductRegistry {
             !stakeholders.isAuthorized(product.manufacturer, 3)
         ) return false;
         for (uint256 i; i < links[batchId].length; ++i)
-            if (!ingredients.isUsable(links[batchId][i].batchId)) return false;
+            if (!ingredients.isValidTraceabilitySource(links[batchId][i].batchId)) return false;
         return true;
     }
     function manufacturerOf(bytes32 id) external view override returns (address) {

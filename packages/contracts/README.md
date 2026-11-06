@@ -269,6 +269,11 @@ A batch is usable only while:
 
 Only the configured `ProductRegistry` can consume quantity. The Supplier or System Admin can suspend or recall a batch; recall is terminal.
 
+`isUsable` is the pre-consumption check and therefore requires remaining quantity.
+`isValidTraceabilitySource` applies to ingredients already linked into a product: it requires an
+active, unexpired batch, an authorized Supplier, and a valid Ingredient Credential, but it does not
+require unused quantity to remain.
+
 ### 6. Ingredient evidence exchange
 
 Requester: authorized Manufacturer or Retailer. Responder: the selected authorized Supplier.
@@ -299,7 +304,11 @@ For every ingredient link:
 
 Product status starts Active. The Manufacturer or System Admin can suspend or recall it; recall is terminal.
 
-A product is transferable only while the product is active and unexpired, the Manufacturer remains authorized, and every linked ingredient remains usable.
+A product is transferable only while the product is active and unexpired, the Manufacturer remains
+authorized, and every linked ingredient remains a valid traceability source. Consuming the final
+ingredient unit during product creation does not invalidate the finished product, while subsequent
+ingredient suspension, recall, expiry, Supplier deauthorization, or credential invalidation still
+blocks transfer.
 
 ### 8. Custody transfer and inventory
 
@@ -368,7 +377,6 @@ Review these points before Sepolia deployment:
 - **Approval is a two-transaction workflow.** If application approval succeeds but credential registration fails, the stakeholder exists but has no effective role until registration is completed.
 - **Role change and wallet replacement also require subsequent credential registration.** The registry reference alone does not create a CredentialRegistry record.
 - **Evidence acceptance does not prove that the supplied credential ID belongs to the requested ingredient batch or Supplier.** It only checks that the credential is currently valid. Add an explicit batch/credential binding before treating this as production-grade evidence authorization.
-- **Full ingredient consumption affects product transferability.** `IngredientRegistry.isUsable` requires `availableQuantity > 0`, while `ProductRegistry.isTransferable` rechecks every linked ingredient. Consuming the final available unit can therefore make a newly created product non-transferable. This rule should be changed or explicitly confirmed.
 - **Product creation loops over caller-provided ingredient arrays without a maximum count.** Transaction gas bounds the call, but an explicit maximum would make behavior predictable.
 - **Evidence, ingredient, product, and transfer records are not enumerable on-chain.** Event indexing is required for complete lists.
 - **No upgrade mechanism exists.** Contracts are immutable deployments; fixes require redeployment and migration unless an upgrade policy is intentionally introduced.

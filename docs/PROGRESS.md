@@ -63,7 +63,11 @@
 - Implemented StakeholderRegistry, CredentialRegistry, EvidenceRegistry, IngredientRegistry, ProductRegistry, and CustodyTransfer contracts with role/status enforcement and bounded paginated registry reads.
 - Added application review, additional-evidence, resubmission, reviewed role-change, wallet replacement, credential lifecycle, ingredient/product linkage, evidence acceptance, and custody discrepancy workflows.
 - Added one Ignition module that deploys and wires the complete suite and a TypeScript integration test covering authorization, credential lifecycle, traceability, reservation accounting, and duplicate-receipt protection.
-- Confirmed production contracts compile with the cached native Solidity 0.8.34 compiler. Full Hardhat execution is pending because the local Hardhat compiler-cache mutex is held by another process.
+- Separated pre-consumption ingredient usability from post-consumption traceability validity, so a
+  finished product remains transferable after consuming the final ingredient unit while ingredient
+  lifecycle, Supplier authorization, and credential validity still gate transfer.
+- Confirmed production contracts compile with the cached native Solidity 0.8.34 compiler and the
+  complete Hardhat suite passes locally.
 - Added AES-256-GCM encrypted JSON content storage with an injectable IPFS pinning gateway and tamper-detection tests.
 - Implemented a Veramo 7 server-side agent with DID, resolver, key-management, JWT VC/VP, verification, and JSON data-store plugins.
 - Added `did:ethr` Sepolia authority creation, separate atomic JSON stores, and SecretBox encryption for private issuer keys.
