@@ -152,15 +152,15 @@ async function main() {
   );
   await wait(
     connected(ingredients, supplierSigner).registerBatch(
-      ingredientBatchId,
-      id(`tracechain:dev:ingredient-metadata:${run}`),
-      'local-dev://ingredient-batch',
-      ingredientCredentialId,
-      50,
-      id('units'),
-      now,
-      now + 86_400,
-    ),
+  ingredientBatchId,
+  id(`tracechain:dev:ingredient-metadata:${run}`),
+  'local-dev://ingredient-batch',
+  ingredientCredentialId,
+  100, // Change from 50
+  id('units'),
+  now,
+  now + 86_400,
+)
   );
   await wait(
     connected(evidence, manufacturerSigner).requestEvidence(
