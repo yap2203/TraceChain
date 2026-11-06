@@ -53,6 +53,73 @@ export function getCompanyCredentials() {
   return blockchainRequest<{ credentials: ChainCredential[] }>('/credentials');
 }
 
+export interface OperationalIngredientBatch {
+  batchId: string;
+  supplier: string;
+  metadataHash: string;
+  encryptedCid: string;
+  credentialId: string;
+  totalQuantity: string;
+  availableQuantity: string;
+  unit: string;
+  producedAt: number;
+  expiresAt: number;
+  status: number;
+}
+export interface OperationalProductBatch {
+  batchId: string;
+  manufacturer: string;
+  metadataHash: string;
+  publicCid: string;
+  totalQuantity: string;
+  unit: string;
+  producedAt: number;
+  expiresAt: number;
+  status: number;
+  ingredients: Array<{ batchId: string; quantity: string }>;
+}
+export interface OperationalTransfer {
+  transferId: string;
+  productBatchId: string;
+  sender: string;
+  recipient: string;
+  quantity: string;
+  shipmentHash: string;
+  shipmentCid: string;
+  dispatchedAt: number;
+  expectedAt: number;
+  status: number;
+  usable: string;
+  damaged: string;
+  rejected: string;
+  direction: 'incoming' | 'outgoing';
+  inventory: { available: string; reserved: string; damaged: string; rejected: string };
+}
+export interface OperationalEvidenceRequest {
+  requestId: string;
+  requester: string;
+  supplier: string;
+  ingredientBatchId: string;
+  claimsHash: string;
+  challengeHash: string;
+  requestCid: string;
+  presentationCid: string;
+  presentationHash: string;
+  status: number;
+  dueAt: number;
+  presentationExpiresAt: number;
+  updatedAt: number;
+}
+export interface OperationalData {
+  ingredientBatches: OperationalIngredientBatch[];
+  productBatches: OperationalProductBatch[];
+  transfers: OperationalTransfer[];
+  evidenceRequests: OperationalEvidenceRequest[];
+}
+export function getOperationalData() {
+  return blockchainRequest<OperationalData>('/operations');
+}
+
 export function prepareCredentialLifecycle(input: {
   action: 'reactivate' | 'revoke' | 'suspend';
   credentialId: string;
@@ -70,14 +137,28 @@ export function prepareStakeholderLifecycle(input: {
   reasonHash?: string;
 }) {
   return blockchainRequest<PreparedTransaction>('/transactions/stakeholder-lifecycle', {
-    body: JSON.stringify(input), method: 'POST',
+    body: JSON.stringify(input),
+    method: 'POST',
   });
 }
 
-export interface RolePermissionRecord { id: string; name: string; roles: Record<string, boolean> }
-export function getRolePermissions() { return blockchainRequest<{ permissions: RolePermissionRecord[] }>('/role-permissions'); }
-export function prepareRolePermission(input: { allowed: boolean; permission: string; role: number }) {
-  return blockchainRequest<PreparedTransaction>('/transactions/role-permission', { body: JSON.stringify(input), method: 'POST' });
+export interface RolePermissionRecord {
+  id: string;
+  name: string;
+  roles: Record<string, boolean>;
+}
+export function getRolePermissions() {
+  return blockchainRequest<{ permissions: RolePermissionRecord[] }>('/role-permissions');
+}
+export function prepareRolePermission(input: {
+  allowed: boolean;
+  permission: string;
+  role: number;
+}) {
+  return blockchainRequest<PreparedTransaction>('/transactions/role-permission', {
+    body: JSON.stringify(input),
+    method: 'POST',
+  });
 }
 
 export function prepareCompanyApplication(input: {
@@ -95,10 +176,7 @@ export function prepareCompanyApplication(input: {
   });
 }
 
-export function prepareApplicationRejection(input: {
-  applicationId: string;
-  reasonHash: string;
-}) {
+export function prepareApplicationRejection(input: { applicationId: string; reasonHash: string }) {
   return blockchainRequest<PreparedTransaction>('/transactions/application-rejection', {
     body: JSON.stringify(input),
     method: 'POST',
@@ -107,7 +185,6 @@ export function prepareApplicationRejection(input: {
 import { JsonRpcProvider, type JsonRpcSigner } from 'ethers';
 
 import { chainConfig } from '../../config/network';
-
 
 export async function sendPreparedTransaction(
   signer: JsonRpcSigner,

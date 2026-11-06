@@ -1,119 +1,96 @@
-import { Layers, BadgeCheck, Inbox, Clock } from 'lucide-react';
-import { T, Btn, Card, StatCard, Badge, Alert } from '../shared/ui';
-import { BATCHES, REQUESTS } from './fixtures';
-
+import { Boxes, ClipboardList, PackageCheck, ShieldCheck } from 'lucide-react';
+import { useOperationalData } from '../../blockchain/useOperationalData';
+import { T, Alert, Btn, Card, EmptyState, StatCard, Badge } from '../shared/ui';
+import { evidenceStatuses, recordStatuses, shortChainId } from '../shared/operational-format';
 export function SupplierOverview({ onNav }: { onNav: (tab: string) => void }) {
+  const { data, error, loading } = useOperationalData();
+  const pending = data.evidenceRequests.filter((r) => r.status === 1);
   return (
     <div style={{ display: 'grid', gap: 20 }}>
+      {error && <Alert type="error" message={error} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
         <StatCard
-          label="Active Ingredient Batches"
-          value="3"
+          label="Ingredient Batches"
+          value={loading ? '…' : String(data.ingredientBatches.length)}
+          color={T.navy}
+          icon={<Boxes size={22} />}
+        />
+        <StatCard
+          label="Available Batches"
+          value={String(
+            data.ingredientBatches.filter((b) => b.status === 1 && BigInt(b.availableQuantity) > 0n)
+              .length,
+          )}
           color={T.green}
-          icon={<Layers size={22} />}
+          icon={<PackageCheck size={22} />}
         />
         <StatCard
-          label="Credentials Issued"
-          value="3"
-          color={T.teal}
-          icon={<BadgeCheck size={22} />}
+          label="Evidence Requests"
+          value={String(data.evidenceRequests.length)}
+          color={T.grey}
+          icon={<ClipboardList size={22} />}
         />
         <StatCard
-          label="Pending Info Requests"
-          value="1"
+          label="Awaiting Response"
+          value={String(pending.length)}
           color={T.amber}
-          icon={<Inbox size={22} />}
-          delta="Due 2026-08-15"
+          icon={<ShieldCheck size={22} />}
         />
-        <StatCard label="Expiring Soon" value="0" color={T.grey} icon={<Clock size={22} />} />
       </div>
-
-      {/* Pending requests alert */}
-      <Alert
-        type="warning"
-        message="1 information request from CocoaCraft Manufacturing Sdn. Bhd. is due on 2026-08-15. Review and share the required evidence."
-      />
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <Card>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy }}>
-              My Ingredient Batches
-            </div>
-            <Btn onClick={() => onNav('batches')} variant="outline" size="sm">
-              View All
-            </Btn>
-          </div>
-          {BATCHES.map((b) => (
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+          <b>On-chain ingredient batches</b>
+          <Btn size="sm" variant="outline" onClick={() => onNav('batches')}>
+            View all
+          </Btn>
+        </div>
+        {!loading && data.ingredientBatches.length === 0 ? (
+          <EmptyState
+            title="No ingredient batches on chain"
+            sub="Register a batch to create the first record."
+            icon={<Boxes size={40} />}
+          />
+        ) : (
+          data.ingredientBatches.slice(0, 4).map((b) => (
             <div
-              key={b.id}
+              key={b.batchId}
               style={{
+                padding: '10px 0',
+                borderBottom: `1px solid ${T.border}`,
                 display: 'flex',
                 justifyContent: 'space-between',
-                alignItems: 'center',
-                padding: '11px 0',
-                borderBottom: `1px solid ${T.border}`,
               }}
             >
               <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.navy }}>{b.name}</div>
-                <div style={{ fontSize: 11, color: T.text2, marginTop: 2 }}>
-                  {b.id} · {b.qty} · {b.origin}
+                <b>{shortChainId(b.batchId)}</b>
+                <div style={{ color: T.text2, fontSize: 12 }}>
+                  {b.availableQuantity} / {b.totalQuantity} available
                 </div>
               </div>
-              <Badge label={b.status} variant={b.status} />
+              <Badge
+                label={recordStatuses[b.status] ?? 'Unknown'}
+                variant={b.status === 1 ? 'active' : 'pending'}
+              />
             </div>
-          ))}
-          <div style={{ marginTop: 14 }}>
-            <Btn onClick={() => onNav('batches-new')} full>
-              + Register Ingredient Batch
-            </Btn>
-          </div>
-        </Card>
-
+          ))
+        )}
+      </Card>
+      {pending.length > 0 && (
         <Card>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy }}>Information Requests</div>
-            <Btn onClick={() => onNav('requests')} variant="outline" size="sm">
-              View All
-            </Btn>
-          </div>
-          {REQUESTS.map((r) => (
-            <div key={r.id} style={{ padding: '12px 0', borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 500, color: T.navy }}>
-                  {r.from.split(' ')[0]}
-                </span>
-                <Badge label={r.status} variant={r.status} />
-              </div>
-              <div style={{ fontSize: 11, color: T.text2 }}>
-                {r.ingredient} · Due {r.due}
-              </div>
-              {r.status === 'pending' && (
-                <div style={{ marginTop: 8 }}>
-                  <Btn onClick={() => onNav('requests')} size="xs">
-                    Respond Now
-                  </Btn>
-                </div>
-              )}
+          <b>Requests needing response</b>
+          {pending.map((r) => (
+            <div
+              key={r.requestId}
+              style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}
+            >
+              {shortChainId(r.ingredientBatchId)} · {evidenceStatuses[r.status]}
             </div>
           ))}
+          <Btn onClick={() => onNav('requests')} size="sm">
+            Review requests
+          </Btn>
         </Card>
-      </div>
+      )}
     </div>
   );
 }

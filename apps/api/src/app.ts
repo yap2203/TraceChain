@@ -100,6 +100,11 @@ export function createApp({ applicationMetadataRepository, authService, blockcha
       };
   let resolvedGateway = blockchainGateway;
   const lazyGateway: BlockchainGateway = {
+    listOperationalData: async (account) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      if (!resolvedGateway.listOperationalData) throw new Error('Operational blockchain reads are unavailable.');
+      return resolvedGateway.listOperationalData(account);
+    },
     getAdministrator: async () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.getAdministrator();
@@ -267,6 +272,10 @@ function createDefaultBlockchainGateway() {
     blockchain.CHAIN_RPC_URL,
     blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
     blockchain.CREDENTIAL_REGISTRY_ADDRESS,
+    blockchain.INGREDIENT_REGISTRY_ADDRESS,
+    blockchain.PRODUCT_REGISTRY_ADDRESS,
+    blockchain.CUSTODY_TRANSFER_ADDRESS,
+    blockchain.EVIDENCE_REGISTRY_ADDRESS,
   );
 }
 

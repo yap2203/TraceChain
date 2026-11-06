@@ -1,105 +1,91 @@
-import { CheckCircle, Store, ClipboardList, Package } from 'lucide-react';
-import { T, Btn, Card, StatCard, Badge, Alert } from '../shared/ui';
-import { RETAIL_SHIPMENTS } from '../shared/custody-fixtures';
-
+import { CheckCircle, ClipboardList, Package, Store } from 'lucide-react';
+import { useOperationalData } from '../../blockchain/useOperationalData';
+import { Alert, Badge, Btn, Card, EmptyState, StatCard, T } from '../shared/ui';
+import { shortChainId, transferStatuses } from '../shared/operational-format';
 export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
+  const { data, error, loading } = useOperationalData();
+  const incoming = data.transfers.filter((t) => t.direction === 'incoming' && t.status === 1);
+  const stock = data.transfers
+    .filter(
+      (transfer, index, all) =>
+        all.findIndex((candidate) => candidate.productBatchId === transfer.productBatchId) === index,
+    )
+    .reduce((sum, transfer) => sum + BigInt(transfer.inventory.available), 0n);
   return (
     <div style={{ display: 'grid', gap: 20 }}>
+      {error && <Alert type="error" message={error} />}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
         <StatCard
           label="Incoming Shipments"
-          value="1"
+          value={loading ? '…' : String(incoming.length)}
           color={T.amber}
           icon={<Package size={22} />}
-          delta="1 to receive"
         />
         <StatCard
           label="Products in Stock"
-          value="490"
+          value={String(stock)}
           color={T.navy}
           icon={<Store size={22} />}
-          delta="1 product type"
         />
         <StatCard
           label="Evidence Requests"
-          value="1"
+          value={String(data.evidenceRequests.length)}
           color={T.grey}
           icon={<ClipboardList size={22} />}
         />
         <StatCard
-          label="Verified Products"
-          value="3"
+          label="Received Transfers"
+          value={String(data.transfers.filter((t) => t.status === 2).length)}
           color={T.green}
           icon={<CheckCircle size={22} />}
         />
       </div>
-      <Alert
-        type="info"
-        message="1 incoming shipment from Swift Distribution Sdn. Bhd. is ready for receipt — Milk Chocolate CHOCOLATE-2026-050, 490 units."
-      />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        <Card>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy }}>Incoming Shipments</div>
-            <Btn onClick={() => onNav('receive')} variant="outline" size="sm">
-              View All
-            </Btn>
-          </div>
-          {RETAIL_SHIPMENTS.map((s) => (
-            <div key={s.id} style={{ padding: '12px 0', borderBottom: `1px solid ${T.border}` }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: 4,
-                }}
-              >
-                <span style={{ fontSize: 13, fontWeight: 600, color: T.navy }}>{s.product}</span>
-                <Badge label="Awaiting Acceptance" variant="transfer-pending" />
+      <Card>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
+          <b>On-chain incoming shipments</b>
+          <Btn size="sm" variant="outline" onClick={() => onNav('receive')}>
+            View all
+          </Btn>
+        </div>
+        {!loading && incoming.length === 0 ? (
+          <EmptyState
+            icon={<Package size={40} />}
+            title="No incoming shipments"
+            sub="Distributor transfers will appear here."
+          />
+        ) : (
+          incoming.map((t) => (
+            <div
+              key={t.transferId}
+              style={{
+                padding: '10px 0',
+                borderBottom: `1px solid ${T.border}`,
+                display: 'flex',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div>
+                <b>{shortChainId(t.productBatchId)}</b>
+                <div style={{ fontSize: 12, color: T.text2 }}>
+                  {t.quantity} units · {shortChainId(t.sender)}
+                </div>
               </div>
-              <div style={{ fontSize: 11, color: T.text2 }}>
-                {s.batch} · {s.qty} units · {s.sender.split(' ')[0]}
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <Btn onClick={() => onNav('receive')} size="xs">
-                  Receive Now
-                </Btn>
-              </div>
+              <Badge label={transferStatuses[t.status]} variant="transfer-pending" />
             </div>
-          ))}
-        </Card>
-        <Card>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: 16,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy }}>Quick Actions</div>
-          </div>
-          <div style={{ display: 'grid', gap: 8 }}>
-            <Btn onClick={() => onNav('scan')} variant="secondary" full>
-              Scan & Verify QR
-            </Btn>
-            <Btn onClick={() => onNav('history')} variant="outline" full>
-              Product History
-            </Btn>
-            <Btn onClick={() => onNav('evidence')} variant="outline" full>
-              Evidence Requests
-            </Btn>
-          </div>
-        </Card>
-      </div>
+          ))
+        )}
+      </Card>
+      <Card>
+        <b>Quick actions</b>
+        <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+          <Btn onClick={() => onNav('scan')} variant="secondary" full>
+            Scan & Verify QR
+          </Btn>
+          <Btn onClick={() => onNav('history')} variant="outline" full>
+            Product History
+          </Btn>
+        </div>
+      </Card>
     </div>
   );
 }

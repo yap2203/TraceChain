@@ -1,90 +1,70 @@
 import { PackageCheck, QrCode } from 'lucide-react';
-import { T, Btn, Card, Badge, Table, TR, TD, SectionTitle, EmptyState } from '../../shared/ui';
-import { INCOMING_SHIPMENTS } from '../../shared/custody-fixtures';
-
+import { useOperationalData } from '../../../blockchain/useOperationalData';
+import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
+import { chainDate, shortChainId, transferStatuses } from '../../shared/operational-format';
 export function IncomingShipmentsList({
   onSelect,
   onAccept,
   onScanReceipt,
 }: {
   onSelect: (id: string) => void;
-  onAccept: (shipmentId: string, transferRef: string) => void;
+  onAccept: (id: string, ref: string) => void;
   onScanReceipt?: () => void;
 }) {
+  const { data, error, loading } = useOperationalData();
+  const rows = data.transfers.filter((t) => t.direction === 'incoming' && t.status === 1);
   return (
     <div>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'flex-start',
-          marginBottom: 20,
-        }}
-      >
-        <SectionTitle title="Incoming Shipments" sub="Product transfers awaiting your acceptance" />
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <SectionTitle
+          title="Incoming Shipments"
+          sub="Awaiting-receipt transfers addressed to this wallet"
+        />
         <Btn onClick={onScanReceipt} variant="secondary">
-          <QrCode size={14} style={{ marginRight: 6 }} />
-          Scan Receipt QR
+          <QrCode size={14} /> Scan Receipt QR
         </Btn>
       </div>
-      <div
-        style={{
-          padding: '10px 14px',
-          background: T.tealLight,
-          border: `1px solid color-mix(in srgb, ${T.teal} 19%, transparent)`,
-          borderRadius: 8,
-          fontSize: 12,
-          color: T.text2,
-          marginBottom: 16,
-          lineHeight: 1.6,
-        }}
-      >
-        Scan the sender's Receipt Confirmation QR before confirming receipt. You may view shipment
-        details without scanning.
-      </div>
-      {INCOMING_SHIPMENTS.length === 0 ? (
+      {error && <Alert type="error" message={error} />}{' '}
+      {!loading && rows.length === 0 ? (
         <EmptyState
           icon={<PackageCheck size={44} />}
           title="No incoming shipments"
-          sub="New transfers from manufacturers will appear here."
+          sub="Transfers from manufacturers will appear here."
         />
       ) : (
         <Card padding="0">
           <Table
             headers={[
-              'Shipment Ref',
-              'Product',
-              'Batch',
+              'Transfer',
+              'Product Batch',
               'Sender',
-              'Expected Qty',
-              'Dispatch Date',
+              'Quantity',
+              'Dispatched',
               'Status',
               '',
             ]}
           >
-            {INCOMING_SHIPMENTS.map((s) => (
-              <TR key={s.id}>
+            {rows.map((t) => (
+              <TR key={t.transferId}>
                 <TD mono muted>
-                  {s.id}
+                  {shortChainId(t.transferId)}
                 </TD>
-                <TD bold>{s.product}</TD>
+                <TD mono>{shortChainId(t.productBatchId)}</TD>
                 <TD mono muted>
-                  {s.batch}
+                  {shortChainId(t.sender)}
                 </TD>
-                <TD muted>{s.sender.split(' Sdn')[0]}</TD>
-                <TD>{s.qty} units</TD>
-                <TD muted>{s.dispatch}</TD>
+                <TD>{t.quantity}</TD>
+                <TD muted>{chainDate(t.dispatchedAt)}</TD>
                 <TD>
-                  <Badge label="Awaiting Acceptance" variant="transfer-pending" />
+                  <Badge label={transferStatuses[t.status]} variant="transfer-pending" />
                 </TD>
                 <TD>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <Btn onClick={() => onSelect(s.id)} size="xs" variant="outline">
+                    <Btn size="xs" variant="outline" onClick={() => onSelect(t.transferId)}>
                       View
                     </Btn>
-                    <Btn onClick={() => onAccept(s.id, s.transferRef)} size="xs">
-                      <QrCode size={11} style={{ marginRight: 4 }} />
-                      Accept
+                    <Btn size="xs" onClick={() => onAccept(t.transferId, t.transferId)}>
+                      Receive
                     </Btn>
                   </div>
                 </TD>

@@ -118,6 +118,7 @@ SIWE proves control of a wallet address only. Workspace authorization requires b
 - `POST /api/blockchain/transactions/credential-lifecycle` validates a suspend, reactivate, or revoke transition and returns the unsigned CredentialRegistry transaction.
 - `POST /api/blockchain/transactions/stakeholder-lifecycle` validates a stakeholder suspend, reactivate, or revoke transition and returns the unsigned StakeholderRegistry transaction.
 - `GET /api/blockchain/role-permissions` returns the current on-chain operational permission matrix; `POST /api/blockchain/transactions/role-permission` returns an Admin-only permission grant/removal transaction.
+- `GET /api/blockchain/operations` requires a fully authorized stakeholder session and returns wallet-scoped ingredient batches, product batches, evidence requests, custody transfers, and current inventory reconstructed from contract events and refreshed through contract getters.
 
 Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend verifies the chain ID and sends the transaction through MetaMask. The API never signs on behalf of a stakeholder, so Solidity still receives the user's wallet as `msg.sender`.
 

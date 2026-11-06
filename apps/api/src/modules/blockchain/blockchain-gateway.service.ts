@@ -26,6 +26,25 @@ const credentialRegistryAbi = [
   'function revokeCredential(bytes32 credentialId, bytes32 reasonHash)',
 ] as const;
 
+const ingredientRegistryAbi = [
+  'event IngredientBatchRegistered(bytes32 indexed batchId,address indexed supplier,bytes32 indexed credentialId,uint256 quantity,bytes32 metadataHash,string encryptedCid)',
+  'function getBatch(bytes32 batchId) view returns (tuple(address supplier,bytes32 metadataHash,string encryptedCid,bytes32 credentialId,uint256 totalQuantity,uint256 availableQuantity,bytes32 unit,uint64 producedAt,uint64 expiresAt,uint8 status))',
+] as const;
+const productRegistryAbi = [
+  'event ProductCreated(bytes32 indexed batchId,address indexed manufacturer,uint256 quantity,bytes32 metadataHash,string publicCid)',
+  'function getProduct(bytes32 id) view returns (tuple(address manufacturer,bytes32 metadataHash,string publicCid,uint256 totalQuantity,bytes32 unit,uint64 producedAt,uint64 expiresAt,uint8 status))',
+  'function getIngredientLinks(bytes32 id) view returns (tuple(bytes32 batchId,uint256 quantity)[])',
+] as const;
+const custodyTransferAbi = [
+  'event TransferCreated(bytes32 indexed transferId,bytes32 indexed productBatchId,address indexed sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid)',
+  'function getTransfer(bytes32 id) view returns (tuple(bytes32 productBatchId,address sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid,uint64 dispatchedAt,uint64 expectedAt,uint8 status,uint256 usable,uint256 damaged,uint256 rejected))',
+  'function getInventory(bytes32 batchId,address holder) view returns (tuple(uint256 available,uint256 reserved,uint256 damaged,uint256 rejected))',
+] as const;
+const evidenceRegistryAbi = [
+  'event EvidenceRequested(bytes32 indexed requestId,address indexed requester,address indexed supplier,bytes32 ingredientBatchId,bytes32 claimsHash,bytes32 challengeHash,string requestCid,uint64 dueAt)',
+  'function getRequest(bytes32 requestId) view returns (tuple(address requester,address supplier,bytes32 ingredientBatchId,bytes32 claimsHash,bytes32 challengeHash,string requestCid,string presentationCid,bytes32 presentationHash,uint8 status,uint64 dueAt,uint64 presentationExpiresAt,uint64 updatedAt))',
+] as const;
+
 const registryInterface = new Interface(stakeholderRegistryAbi);
 const credentialRegistryInterface = new Interface(credentialRegistryAbi);
 const roles = ['', 'System Admin', 'Supplier', 'Manufacturer', 'Distributor', 'Retailer'] as const;
@@ -58,6 +77,7 @@ export interface ChainApplicationRecord {
 }
 
 export interface BlockchainGateway {
+  listOperationalData?(account: string): Promise<OperationalData>;
   getAdministrator(): Promise<string>;
   getApplicationForIssuance(applicationId: string): Promise<{
     applicant: string;
@@ -66,10 +86,24 @@ export interface BlockchainGateway {
   }>;
   getCredentialState(credentialHash: string): Promise<{ credentialId: string; status: number }>;
   getCredential(credentialId: string): Promise<{
-    credentialHash: string; encryptedCid: string; expiresAt: number; issuedAt: number;
-    issuer: string; status: number; subject: string; updatedAt: number;
+    credentialHash: string;
+    encryptedCid: string;
+    expiresAt: number;
+    issuedAt: number;
+    issuer: string;
+    status: number;
+    subject: string;
+    updatedAt: number;
   }>;
-  getStakeholder(account: string): Promise<{ credentialExpiresAt: number; credentialHash: string; role: number; status: number; updatedAt: number }>;
+  getStakeholder(
+    account: string,
+  ): Promise<{
+    credentialExpiresAt: number;
+    credentialHash: string;
+    role: number;
+    status: number;
+    updatedAt: number;
+  }>;
   getRolePermission(role: number, permission: string): Promise<boolean>;
   listApplications(): Promise<ChainApplicationRecord[]>;
   prepareApplication(input: {
@@ -93,21 +127,48 @@ export interface BlockchainGateway {
     expiresAt: number;
     subject: string;
   }): PreparedTransaction;
-  prepareCredentialLifecycle(input: { action: 'reactivate' | 'revoke' | 'suspend'; credentialId: string; reasonHash?: string }): PreparedTransaction;
-  prepareStakeholderLifecycle(input: { account: string; action: 'reactivate' | 'revoke' | 'suspend'; reasonHash?: string }): PreparedTransaction;
-  prepareRolePermission(input: { allowed: boolean; permission: string; role: number }): PreparedTransaction;
+  prepareCredentialLifecycle(input: {
+    action: 'reactivate' | 'revoke' | 'suspend';
+    credentialId: string;
+    reasonHash?: string;
+  }): PreparedTransaction;
+  prepareStakeholderLifecycle(input: {
+    account: string;
+    action: 'reactivate' | 'revoke' | 'suspend';
+    reasonHash?: string;
+  }): PreparedTransaction;
+  prepareRolePermission(input: {
+    allowed: boolean;
+    permission: string;
+    role: number;
+  }): PreparedTransaction;
+}
+
+export interface OperationalData {
+  evidenceRequests: Array<Record<string, unknown>>;
+  ingredientBatches: Array<Record<string, unknown>>;
+  productBatches: Array<Record<string, unknown>>;
+  transfers: Array<Record<string, unknown>>;
 }
 
 export class BlockchainGatewayService implements BlockchainGateway {
   private readonly provider: JsonRpcProvider;
   private readonly registry: Contract;
   private readonly credentialRegistry: Contract;
+  private readonly ingredients: Contract;
+  private readonly products: Contract;
+  private readonly custody: Contract;
+  private readonly evidence: Contract;
 
   constructor(
     private readonly chainId: number,
     rpcUrl: string,
     private readonly registryAddress: string,
     private readonly credentialRegistryAddress: string,
+    ingredientRegistryAddress: string,
+    productRegistryAddress: string,
+    custodyTransferAddress: string,
+    evidenceRegistryAddress: string,
   ) {
     this.provider = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
     this.registry = new Contract(registryAddress, stakeholderRegistryAbi, this.provider);
@@ -116,6 +177,136 @@ export class BlockchainGatewayService implements BlockchainGateway {
       credentialRegistryAbi,
       this.provider,
     );
+    this.ingredients = new Contract(
+      ingredientRegistryAddress,
+      ingredientRegistryAbi,
+      this.provider,
+    );
+    this.products = new Contract(productRegistryAddress, productRegistryAbi, this.provider);
+    this.custody = new Contract(custodyTransferAddress, custodyTransferAbi, this.provider);
+    this.evidence = new Contract(evidenceRegistryAddress, evidenceRegistryAbi, this.provider);
+  }
+
+  async listOperationalData(account: string): Promise<OperationalData> {
+    const normalized = account.toLowerCase();
+    const [ingredientEvents, productEvents, transferEvents, evidenceEvents] = await Promise.all([
+      this.ingredients.queryFilter(this.ingredients.filters.IngredientBatchRegistered()),
+      this.products.queryFilter(this.products.filters.ProductCreated()),
+      this.custody.queryFilter(this.custody.filters.TransferCreated()),
+      this.evidence.queryFilter(this.evidence.filters.EvidenceRequested()),
+    ]);
+    const eventArg = (event: unknown, name: string) =>
+      String((event as { args?: Record<string, unknown> }).args?.[name] ?? '');
+    const ingredientIds = [...new Set(ingredientEvents.map((event) => eventArg(event, 'batchId')))];
+    const productIds = [...new Set(productEvents.map((event) => eventArg(event, 'batchId')))];
+    const transferIds = [...new Set(transferEvents.map((event) => eventArg(event, 'transferId')))];
+    const requestIds = [...new Set(evidenceEvents.map((event) => eventArg(event, 'requestId')))];
+    const allIngredients = await Promise.all(
+      ingredientIds.map(async (batchId) => {
+        const r = await this.ingredients.getBatch(batchId);
+        return {
+          batchId,
+          supplier: String(r.supplier),
+          metadataHash: String(r.metadataHash),
+          encryptedCid: String(r.encryptedCid),
+          credentialId: String(r.credentialId),
+          totalQuantity: String(r.totalQuantity),
+          availableQuantity: String(r.availableQuantity),
+          unit: String(r.unit),
+          producedAt: Number(r.producedAt),
+          expiresAt: Number(r.expiresAt),
+          status: Number(r.status),
+        };
+      }),
+    );
+    const allProducts = await Promise.all(
+      productIds.map(async (batchId) => {
+        const [r, links] = await Promise.all([
+          this.products.getProduct(batchId),
+          this.products.getIngredientLinks(batchId),
+        ]);
+        return {
+          batchId,
+          manufacturer: String(r.manufacturer),
+          metadataHash: String(r.metadataHash),
+          publicCid: String(r.publicCid),
+          totalQuantity: String(r.totalQuantity),
+          unit: String(r.unit),
+          producedAt: Number(r.producedAt),
+          expiresAt: Number(r.expiresAt),
+          status: Number(r.status),
+          ingredients: Array.from(links as ArrayLike<{ batchId: string; quantity: bigint }>).map(
+            (link) => ({ batchId: String(link.batchId), quantity: String(link.quantity) }),
+          ),
+        };
+      }),
+    );
+    const allTransfers = await Promise.all(
+      transferIds.map(async (transferId) => {
+        const r = await this.custody.getTransfer(transferId);
+        const inventory = await this.custody.getInventory(String(r.productBatchId), account);
+        return {
+          transferId,
+          productBatchId: String(r.productBatchId),
+          sender: String(r.sender),
+          recipient: String(r.recipient),
+          quantity: String(r.quantity),
+          shipmentHash: String(r.shipmentHash),
+          shipmentCid: String(r.shipmentCid),
+          dispatchedAt: Number(r.dispatchedAt),
+          expectedAt: Number(r.expectedAt),
+          status: Number(r.status),
+          usable: String(r.usable),
+          damaged: String(r.damaged),
+          rejected: String(r.rejected),
+          inventory: {
+            available: String(inventory.available),
+            reserved: String(inventory.reserved),
+            damaged: String(inventory.damaged),
+            rejected: String(inventory.rejected),
+          },
+        };
+      }),
+    );
+    const relevantTransfers = allTransfers
+      .filter(
+        (r) => r.sender.toLowerCase() === normalized || r.recipient.toLowerCase() === normalized,
+      )
+      .map((r) => ({
+        ...r,
+        direction: r.recipient.toLowerCase() === normalized ? 'incoming' : 'outgoing',
+      }));
+    const relevantProductIds = new Set(relevantTransfers.map((r) => r.productBatchId));
+    const evidenceRequests = await Promise.all(
+      requestIds.map(async (requestId) => {
+        const r = await this.evidence.getRequest(requestId);
+        return {
+          requestId,
+          requester: String(r.requester),
+          supplier: String(r.supplier),
+          ingredientBatchId: String(r.ingredientBatchId),
+          claimsHash: String(r.claimsHash),
+          challengeHash: String(r.challengeHash),
+          requestCid: String(r.requestCid),
+          presentationCid: String(r.presentationCid),
+          presentationHash: String(r.presentationHash),
+          status: Number(r.status),
+          dueAt: Number(r.dueAt),
+          presentationExpiresAt: Number(r.presentationExpiresAt),
+          updatedAt: Number(r.updatedAt),
+        };
+      }),
+    );
+    return {
+      ingredientBatches: allIngredients.filter((r) => r.supplier.toLowerCase() === normalized),
+      productBatches: allProducts.filter(
+        (r) => r.manufacturer.toLowerCase() === normalized || relevantProductIds.has(r.batchId),
+      ),
+      transfers: relevantTransfers,
+      evidenceRequests: evidenceRequests.filter(
+        (r) => r.requester.toLowerCase() === normalized || r.supplier.toLowerCase() === normalized,
+      ),
+    };
   }
 
   async getAdministrator() {
@@ -145,15 +336,26 @@ export class BlockchainGatewayService implements BlockchainGateway {
   async getCredential(credentialId: string) {
     const record = await this.credentialRegistry.getCredential(credentialId);
     return {
-      credentialHash: String(record.credentialHash), encryptedCid: String(record.encryptedCid),
-      expiresAt: Number(record.expiresAt), issuedAt: Number(record.issuedAt), issuer: String(record.issuer),
-      status: Number(record.status), subject: String(record.subject), updatedAt: Number(record.updatedAt),
+      credentialHash: String(record.credentialHash),
+      encryptedCid: String(record.encryptedCid),
+      expiresAt: Number(record.expiresAt),
+      issuedAt: Number(record.issuedAt),
+      issuer: String(record.issuer),
+      status: Number(record.status),
+      subject: String(record.subject),
+      updatedAt: Number(record.updatedAt),
     };
   }
 
   async getStakeholder(account: string) {
     const record = await this.registry.getStakeholder(account);
-    return { credentialExpiresAt: Number(record.credentialExpiresAt), credentialHash: String(record.credentialHash), role: Number(record.role), status: Number(record.status), updatedAt: Number(record.updatedAt) };
+    return {
+      credentialExpiresAt: Number(record.credentialExpiresAt),
+      credentialHash: String(record.credentialHash),
+      role: Number(record.role),
+      status: Number(record.status),
+      updatedAt: Number(record.updatedAt),
+    };
   }
   async getRolePermission(role: number, permission: string) {
     return Boolean(await this.registry.roleHasPermission(role, permission));
@@ -244,23 +446,48 @@ export class BlockchainGatewayService implements BlockchainGateway {
     };
   }
 
-  prepareCredentialLifecycle(input: { action: 'reactivate' | 'revoke' | 'suspend'; credentialId: string; reasonHash?: string }): PreparedTransaction {
-    const data = input.action === 'reactivate'
-      ? credentialRegistryInterface.encodeFunctionData('reactivateCredential', [input.credentialId])
-      : credentialRegistryInterface.encodeFunctionData(
-          input.action === 'suspend' ? 'suspendCredential' : 'revokeCredential',
-          [input.credentialId, input.reasonHash],
-        );
+  prepareCredentialLifecycle(input: {
+    action: 'reactivate' | 'revoke' | 'suspend';
+    credentialId: string;
+    reasonHash?: string;
+  }): PreparedTransaction {
+    const data =
+      input.action === 'reactivate'
+        ? credentialRegistryInterface.encodeFunctionData('reactivateCredential', [
+            input.credentialId,
+          ])
+        : credentialRegistryInterface.encodeFunctionData(
+            input.action === 'suspend' ? 'suspendCredential' : 'revokeCredential',
+            [input.credentialId, input.reasonHash],
+          );
     return { chainId: this.chainId, data, to: this.credentialRegistryAddress, value: '0x0' };
   }
-  prepareStakeholderLifecycle(input: { account: string; action: 'reactivate' | 'revoke' | 'suspend'; reasonHash?: string }): PreparedTransaction {
-    const data = input.action === 'reactivate'
-      ? registryInterface.encodeFunctionData('reactivateStakeholder', [input.account])
-      : registryInterface.encodeFunctionData(input.action === 'suspend' ? 'suspendStakeholder' : 'revokeStakeholder', [input.account, input.reasonHash]);
+  prepareStakeholderLifecycle(input: {
+    account: string;
+    action: 'reactivate' | 'revoke' | 'suspend';
+    reasonHash?: string;
+  }): PreparedTransaction {
+    const data =
+      input.action === 'reactivate'
+        ? registryInterface.encodeFunctionData('reactivateStakeholder', [input.account])
+        : registryInterface.encodeFunctionData(
+            input.action === 'suspend' ? 'suspendStakeholder' : 'revokeStakeholder',
+            [input.account, input.reasonHash],
+          );
     return this.transaction(data);
   }
-  prepareRolePermission(input: { allowed: boolean; permission: string; role: number }): PreparedTransaction {
-    return this.transaction(registryInterface.encodeFunctionData('setRolePermission', [input.role, input.permission, input.allowed]));
+  prepareRolePermission(input: {
+    allowed: boolean;
+    permission: string;
+    role: number;
+  }): PreparedTransaction {
+    return this.transaction(
+      registryInterface.encodeFunctionData('setRolePermission', [
+        input.role,
+        input.permission,
+        input.allowed,
+      ]),
+    );
   }
 
   private transaction(data: string): PreparedTransaction {

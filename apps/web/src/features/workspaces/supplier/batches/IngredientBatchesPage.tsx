@@ -1,6 +1,7 @@
-import { Btn, Card, Badge, Table, TR, TD, SectionTitle } from '../../shared/ui';
-import { BATCHES } from '../fixtures';
-
+import { Boxes } from 'lucide-react';
+import { useOperationalData } from '../../../blockchain/useOperationalData';
+import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
+import { chainDate, recordStatuses, shortChainId } from '../../shared/operational-format';
 export function IngredientBatches({
   onNew,
   onDetail,
@@ -8,59 +9,51 @@ export function IngredientBatches({
   onNew: () => void;
   onDetail: (id: string) => void;
 }) {
+  const { data, error, loading } = useOperationalData();
   return (
     <div>
       <SectionTitle
         title="Ingredient Batches"
-        sub="All registered ingredient batches and issued credentials"
-        action={<Btn onClick={onNew}>Register Ingredient Batch</Btn>}
+        sub="Current records read from IngredientRegistry"
+        action={<Btn onClick={onNew}>+ Register Batch</Btn>}
       />
-      <Card padding="0">
-        <Table
-          headers={[
-            'Batch ID',
-            'Ingredient',
-            'Origin',
-            'Quantity',
-            'Produced',
-            'Expires',
-            'Allergen',
-            'Certifications',
-            'Credential',
-            '',
-          ]}
-        >
-          {BATCHES.map((b) => (
-            <TR key={b.id} onClick={() => onDetail(b.id)}>
-              <TD mono muted>
-                {b.id}
-              </TD>
-              <TD bold>{b.name}</TD>
-              <TD muted>{b.origin}</TD>
-              <TD>{b.qty}</TD>
-              <TD muted>{b.produced}</TD>
-              <TD muted>{b.expires}</TD>
-              <TD>{b.allergen}</TD>
-              <TD>{b.cert}</TD>
-              <TD>
-                <Badge label="Active" variant="active" />
-              </TD>
-              <TD>
-                <Btn
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDetail(b.id);
-                  }}
-                  variant="outline"
-                  size="xs"
-                >
-                  View →
-                </Btn>
-              </TD>
-            </TR>
-          ))}
-        </Table>
-      </Card>
+      {error && <Alert type="error" message={error} />}
+      {!loading && data.ingredientBatches.length === 0 ? (
+        <EmptyState
+          icon={<Boxes size={44} />}
+          title="No on-chain ingredient batches"
+          sub="Registered batches belonging to this wallet will appear here."
+        />
+      ) : (
+        <Card padding="0">
+          <Table
+            headers={['Batch ID', 'Quantity', 'Available', 'Produced', 'Expires', 'Status', '']}
+          >
+            {data.ingredientBatches.map((b) => (
+              <TR key={b.batchId}>
+                <TD mono muted>
+                  {shortChainId(b.batchId)}
+                </TD>
+                <TD>{b.totalQuantity}</TD>
+                <TD bold>{b.availableQuantity}</TD>
+                <TD muted>{chainDate(b.producedAt)}</TD>
+                <TD muted>{chainDate(b.expiresAt)}</TD>
+                <TD>
+                  <Badge
+                    label={recordStatuses[b.status] ?? 'Unknown'}
+                    variant={b.status === 1 ? 'active' : 'pending'}
+                  />
+                </TD>
+                <TD>
+                  <Btn size="xs" variant="outline" onClick={() => onDetail(b.batchId)}>
+                    View →
+                  </Btn>
+                </TD>
+              </TR>
+            ))}
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }

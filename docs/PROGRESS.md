@@ -34,6 +34,7 @@
 - Completed the company approval path with authority-signed Company Role Credential issuance, backend-prepared credential registration and stakeholder approval transactions, sequential Admin MetaMask confirmation, and credential JSON download for holder delivery.
 - Replaced the Admin credential-management fixtures with live CredentialRegistry records and MetaMask-signed suspend, reactivate, and permanent-revoke actions; authorization now rejects non-active registry credentials.
 - Replaced Admin Access Control fixtures with live stakeholder and credential lifecycle records, MetaMask-signed stakeholder suspend/reactivate/revoke actions, live role counts, and a configurable on-chain role-permission matrix; replaced the Admin audit fixture with exportable registry snapshots.
+- Added authenticated, wallet-scoped operational reads across IngredientRegistry, ProductRegistry, EvidenceRegistry, and CustodyTransfer. Supplier, Manufacturer, Distributor, and Retailer primary dashboards, batch/shipment/inventory lists, and their detail views now display current chain state instead of sample records.
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Added mocked MetaMask client, EIP-1193 provider, transport-tab, and QR-selection tests; the frontend suite now contains 26 tests and performs no live relay or RPC calls.
@@ -60,11 +61,11 @@
 
 - Select the database and replace process-local nonce and session storage.
 - Replace prototype filesystem issuance metadata and Veramo JSON key storage with production-managed database and key-management services.
-- Replace the remaining credential, access-control, supplier, manufacturer, distributor, retailer, receipt, and report fixtures with authenticated chain-backed workflows.
+- Replace the remaining evidence-response, transfer-creation, QR/history, stakeholder credential-card, receipt-write, and non-admin report fixtures with authenticated chain-backed workflows.
 - Complete a clean Hardhat test run and deploy the suite to Sepolia when the deployment wallet is ready.
 - Define QR payloads and implement real generation, scanning, and intended-receiver validation.
 - Add committed end-to-end browser tests and production deployment configuration.
 
 ## Important distinction
 
-The Admin application list and overview use authoritative local-chain records. Credential cards, access-control lists, supplier/manufacturer/distributor/retailer workflows, receipt confirmations, reports, and QR states remain presentation fixtures until their contract and encrypted-content integrations are completed.
+The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are also chain-backed. Evidence-response, transfer-creation, QR/history, stakeholder credential cards, receipt writes, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.

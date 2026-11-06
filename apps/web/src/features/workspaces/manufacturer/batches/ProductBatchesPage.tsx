@@ -1,6 +1,7 @@
-import { Btn, Card, Badge, Table, TR, TD, SectionTitle } from '../../shared/ui';
-import { PRODUCT_BATCHES } from '../fixtures';
-
+import { Package } from 'lucide-react';
+import { useOperationalData } from '../../../blockchain/useOperationalData';
+import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
+import { chainDate, recordStatuses, shortChainId } from '../../shared/operational-format';
 export function ProductBatches({
   onNew,
   onTransfer,
@@ -10,67 +11,56 @@ export function ProductBatches({
   onTransfer: () => void;
   onDetail: (id: string) => void;
 }) {
+  const { data, error, loading } = useOperationalData();
   return (
     <div>
       <SectionTitle
         title="Product Batches"
+        sub="Current records read from ProductRegistry"
         action={<Btn onClick={onNew}>+ Create Product Batch</Btn>}
       />
-      <Card padding="0">
-        <Table
-          headers={[
-            'Batch ID',
-            'Product',
-            'Produced',
-            'Qty',
-            'Ingredients',
-            'Custodian',
-            'Status',
-            'QR',
-            '',
-          ]}
-        >
-          {PRODUCT_BATCHES.map((p) => (
-            <TR key={p.id} onClick={() => onDetail(p.id)}>
-              <TD mono muted>
-                {p.id}
-              </TD>
-              <TD bold>{p.name}</TD>
-              <TD muted>{p.produced}</TD>
-              <TD>{p.qty} units</TD>
-              <TD>{p.ingredients} linked</TD>
-              <TD muted>{p.custodian}</TD>
-              <TD>
-                <Badge label={p.status} variant={p.status} />
-              </TD>
-              <TD>
-                <Btn
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDetail(p.id);
-                  }}
-                  variant="outline"
-                  size="xs"
-                >
-                  QR
-                </Btn>
-              </TD>
-              <TD>
-                <Btn
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onTransfer();
-                  }}
-                  variant="outline"
-                  size="xs"
-                >
-                  Transfer →
-                </Btn>
-              </TD>
-            </TR>
-          ))}
-        </Table>
-      </Card>
+      {error && <Alert type="error" message={error} />}{' '}
+      {!loading && data.productBatches.length === 0 ? (
+        <EmptyState
+          icon={<Package size={44} />}
+          title="No on-chain product batches"
+          sub="Products created by this wallet will appear here."
+        />
+      ) : (
+        <Card padding="0">
+          <Table
+            headers={['Batch ID', 'Quantity', 'Ingredients', 'Produced', 'Expires', 'Status', '']}
+          >
+            {data.productBatches.map((p) => (
+              <TR key={p.batchId}>
+                <TD mono muted>
+                  {shortChainId(p.batchId)}
+                </TD>
+                <TD>{p.totalQuantity}</TD>
+                <TD>{p.ingredients.length} linked</TD>
+                <TD muted>{chainDate(p.producedAt)}</TD>
+                <TD muted>{chainDate(p.expiresAt)}</TD>
+                <TD>
+                  <Badge
+                    label={recordStatuses[p.status] ?? 'Unknown'}
+                    variant={p.status === 1 ? 'active' : 'pending'}
+                  />
+                </TD>
+                <TD>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <Btn size="xs" variant="outline" onClick={() => onDetail(p.batchId)}>
+                      View
+                    </Btn>
+                    <Btn size="xs" onClick={onTransfer}>
+                      Transfer
+                    </Btn>
+                  </div>
+                </TD>
+              </TR>
+            ))}
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }
