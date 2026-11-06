@@ -20,6 +20,7 @@ The current version includes a responsive React application, five stakeholder wo
 | SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
 | Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
 | Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
+| Custody-transfer QR workflow             | Verified scanning and recipient-signed local receipt confirmation implemented         |
 | Business persistence                     | Not implemented                                                                       |
 
 ## Repository structure
@@ -29,7 +30,7 @@ apps/
   web/             React 19, Vite 8, React Router, ethers, and MetaMask Connect
   api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
-  shared/          Shared company-role definitions
+  shared/          Shared company-role definitions and custody-transfer QR locator codec
   ssi/             Veramo agent, did:ethr, JWT VC/VP, encrypted JSON storage, and verification
   contracts/       Hardhat 3 starter, Solidity example, tests, and deployment module
 docs/
@@ -108,13 +109,27 @@ npx hardhat ignition deploy ignition/modules/TraceChain.ts --network localhost -
 
 Copy the resulting backend contract addresses from `ignition/deployments/tracechain-local/deployed_addresses.json` into the ignored root `.env`. The tracked root example contains the deterministic addresses produced by the current local deployment. Restart both development servers after changing environment variables.
 
+To create one real Manufacturer-to-Distributor transfer without redeploying, first set
+`DEV_DISTRIBUTOR_WALLET` to an unlocked Hardhat account that is already an active Distributor and
+has its matching Company Role Credential. Then run:
+
+```bash
+npm run dev:seed-custody-transfer
+```
+
+The command refuses any chain other than 31337, discovers the already-deployed traceability
+contracts through the configured registries, creates only the minimum upstream local test records,
+and prints the real transfer ID and canonical QR payload. It uses unlocked Hardhat accounts through
+the local RPC and never reads or stores a private key. It does not create or bypass the
+Distributor's SSI credential.
+
 MetaMask can add the configured local network automatically. Hardhat account 0 is the deployed System Admin; use a different generated account to test a new company application because an active administrator cannot submit a stakeholder application. Hardhat development private keys are public test keys and must never be funded or reused on a public network.
 
 The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. The API durably retains the submitted company name and registration number, bound to the application ID and profile hash, so the Admin issuance form is populated automatically. During this local-only phase the contract still records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
 
 ### Environment variables
 
-The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL` and the public `CHAIN_*` network values; server secrets remain backend-only:
+The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL`, the public `CHAIN_*` network values, and `CUSTODY_TRANSFER_ADDRESS`; server secrets remain backend-only:
 
 ```text
 PORT=3000
@@ -128,6 +143,8 @@ CHAIN_RPC_URL=http://127.0.0.1:8545
 CHAIN_CURRENCY_SYMBOL=ETH
 STAKEHOLDER_REGISTRY_ADDRESS=0x...
 CREDENTIAL_REGISTRY_ADDRESS=0x...
+CUSTODY_TRANSFER_ADDRESS=0x...
+DEV_DISTRIBUTOR_WALLET=0x...
 AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
 SEPOLIA_RPC_URL=https://example.invalid
@@ -193,7 +210,7 @@ Localhost uses the same wallet, credential, on-chain role, and status gate as ot
 
 ## Authentication
 
-The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it connects MetaMask, requires the environment-configured chain, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API. Local development uses chain 31337; the public test deployment uses Sepolia.
+The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it reuses an already-authorized injected MetaMask extension provider when available, or uses MetaMask Connect for Mobile QR and extension fallback. Connection attempts are serialized and time-bounded, and progress plus cancellation remains visible inside the authentication card. It then requires the environment-configured chain, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API. Local development uses chain 31337; the public test deployment uses Sepolia.
 
 The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It then creates a process-local session. Authentication proves wallet control only. Once signed in, a user may select a Company Role Credential JSON file; the browser sends it directly to `POST /api/ssi/company-role/verify` without storing it in browser storage.
 
@@ -230,6 +247,36 @@ Resume the same Ignition deployment after a provider interruption; do not deploy
 
 Private company documents and evidence are encrypted before being sent to a configured pinning provider. Only their CID and integrity hash belong on-chain. `IPFS_ENCRYPTION_KEY` must decode to exactly 32 bytes and must be backed up outside the repository; losing it makes encrypted content unrecoverable.
 
+## Custody-transfer QR locator
+
+TraceChain uses this canonical version 1 reference:
+
+```text
+tracechain://transfer/v1?chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}
+```
+
+The QR payload is only an untrusted locator for an existing on-chain transfer. It never contains
+quantity, product, credential, company, private-document, key, wallet-secret, or receipt data.
+The frontend generates the QR only from a successful on-chain `bytes32` transfer ID, using the
+configured `CHAIN_ID` and `CUSTODY_TRANSFER_ADDRESS`. It supports live camera scanning, PNG/JPG/WebP
+QR upload, and manual payload paste. Decoded QR fields are never treated as transfer data or shown
+as verified data.
+
+`POST /api/custody-transfers/resolve-qr` requires a fully credential-authorized SIWE session,
+resolves `getTransfer(transferId)` through a read-only gateway, and verifies the configured chain,
+contract deployment, `AwaitingReceipt` status, and intended recipient before returning a minimal
+transfer summary. The frontend displays that summary only after this response succeeds. Scanning
+never prepares or sends a transaction.
+
+After resolution, `POST /api/custody-transfers/transactions/confirm-receipt` repeats the session,
+credential authorization, transfer-status, and recipient checks before returning unsigned
+`confirmReceipt` calldata. The frontend verifies the destination and chain, requires the connected
+MetaMask account to equal the recipient, submits the transaction from that wallet, waits for its
+receipt, and refreshes the authoritative transfer through `GET /api/custody-transfers/:transferId`.
+The backend never signs or broadcasts the transaction. This local phase confirms the complete
+quantity as usable with zero damaged/rejected units; quantity reconciliation and encrypted receipt
+evidence remain future work.
+
 ## Validation
 
 From the repository root:
@@ -242,6 +289,8 @@ npm run test:blockchain
 npm run test:ssi
 npm run test:ssi-api
 npm run test:contracts
+npm run test:custody-transfers
+npm run test:qr
 npm run test:content --workspace @tracechain/api
 npm run test:frontend
 npm run test:workspace-access
@@ -249,7 +298,7 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 8 tests, and the frontend contains 26 wallet-adapter, authentication-hook, presentation, credential-panel, and workspace-access tests. Frontend wallet tests use mocked MetaMask clients and EIP-1193 providers; they do not contact a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 10 tests, and the custody-transfer API contains 16 tests. The frontend suite includes wallet-adapter, authentication-hook, credential, workspace-access, QR, and receipt-confirmation tests. Custody-transfer API tests inject the blockchain gateway and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

@@ -14,9 +14,11 @@
   "dependencies": {
     "@metamask/connect-evm": "^2.1.1",
     "@tracechain/shared": "^0.1.0",
+    "@zxing/browser": "^0.2.1",
     "buffer": "^6.0.3",
     "ethers": "^6.17.0",
     "lucide-react": "^1.63.0",
+    "qrcode-generator": "^1.5.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-router-dom": "^7.18.4",

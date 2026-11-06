@@ -114,6 +114,22 @@ packages/contracts/contracts/
   interfaces/IStakeholderRegistry.sol
 ```
 
+## Custody-transfer QR locator
+
+- Use the versioned canonical URI `tracechain://transfer/v1?chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}` for custody-transfer QR payloads.
+- Keep the payload limited to the configured chain ID, CustodyTransfer deployment address, and existing bytes32 transfer ID. It is a locator, not trusted transfer data or an authorization token.
+- Never put quantities, product data, credentials, JWTs, company data, private documents, encryption keys, wallet secrets, or receipt data in the QR payload.
+- Treat every decoded field as untrusted until the authenticated API resolves `getTransfer(transferId)` against the configured CustodyTransfer contract.
+- Require the API to verify the configured chain and contract, transfer existence, `AwaitingReceipt` status, and that the authenticated SIWE wallet is the on-chain recipient.
+- Expose resolution through authenticated `POST /api/custody-transfers/resolve-qr`; require a locally verified credential with completed on-chain authorization before returning transfer data.
+- Keep the contract read behind an injectable, read-only gateway and return only the transfer ID, product batch ID, sender, recipient, quantity, dispatch/expected timestamps, and status.
+- Generate QR images through the shared canonical encoder only after a successful on-chain transfer provides a `bytes32` transfer ID; local fixture previews must be explicitly labelled as development-only.
+- Support camera, image-file, and manual-paste inputs, but send the complete payload to the authenticated resolution endpoint and display no decoded transfer fields before that endpoint succeeds.
+- Release camera tracks on completion, failure, close, or unmount and suppress duplicate scan-resolution requests while one is active.
+- Require receipt confirmation through a separate MetaMask-signed transaction. Scanning alone must never change custody.
+- For local custody testing, seed only already-deployed chain-31337 contracts with unlocked Hardhat accounts; require the recipient Distributor to be independently onboarded and credential-authorized, and never load a private key in the seed command.
+- Revalidate the authorized SIWE recipient and current transfer state before returning unsigned `confirmReceipt` calldata. Keep signing and broadcasting exclusively in the recipient's MetaMask, wait for its receipt, and refresh the authoritative contract record before showing `Received`.
+
 ## Credential and evidence storage
 
 - Encrypt complete credentials, supporting documents, photographs, and reports before uploading them to IPFS.
@@ -144,7 +160,8 @@ Record CID, integrity hash, and status on Ethereum
 ## Authentication and transient state
 
 - Use ERC-4361 Sign-In with Ethereum for wallet authentication.
-- Use the official `@metamask/connect-evm` client as the frontend wallet-connection adapter. Present Browser extension and Mobile QR tabs so the user explicitly selects the official transport. Clear only MetaMask Connect's persisted transport-choice marker before a mobile connection so an earlier extension choice cannot override the QR tab, while preserving the existing SIWE proof flow.
+- Reuse MetaMask's injected EIP-1193 provider for browser-extension connections, including existing authorized accounts, and use the official `@metamask/connect-evm` client for Mobile QR and extension fallback. Keep one connection attempt active, use bounded timeouts, retry one stale SDK transport once after disconnecting only that transport, and skip duplicate EIP-6963 announcement from SDK clients owned directly by TraceChain.
+- Present Browser extension and Mobile QR tabs so the user explicitly selects the transport. Clear only MetaMask Connect's persisted transport-choice marker before a mobile connection so an earlier extension choice cannot override the QR tab, while preserving the existing SIWE proof flow.
 - Access nonce and session storage through repository interfaces.
 - Use development-only, in-memory nonce and session repository implementations for the current demonstration.
 - Keep authentication state short-lived.
@@ -188,5 +205,4 @@ Record CID, integrity hash, and status on Ethereum
 - Immediate session-revocation design if signed stateless tokens replace server-side sessions
 - Smart-contract upgrade policy and final authorization-library choice
 - Hosting and deployment platform
-- Exact QR-code payload format
 - Whether references to “Veramo 2” mean the historical Veramo 2.0 release, DIDComm v2, or W3C VC Data Model 2.0

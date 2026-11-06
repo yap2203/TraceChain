@@ -1,8 +1,11 @@
+import { isHexString } from 'ethers';
 import { useState } from 'react';
-import { CheckCircle2, Download, Printer, Link2 } from 'lucide-react';
+import { CheckCircle2, Printer, Link2 } from 'lucide-react';
+import { TransferQrDisplay } from '../../custody-transfers';
 import { T, UI, MONO, Btn, Card, Badge, Alert } from '../shared/ui';
 import { TRANSFERS } from './fixtures';
-import { QRPlaceholder } from './QRPlaceholder';
+
+const LOCAL_DEVELOPMENT_TRANSFER_PREVIEW = `0x${'ab'.repeat(32)}`;
 
 export function TransferCreatedQR({
   transferId,
@@ -15,6 +18,9 @@ export function TransferCreatedQR({
 }) {
   const transfer = TRANSFERS[transferId];
   const [copied, setCopied] = useState(false);
+  const confirmedOnChainTransferId = isHexString(transferId, 32) ? transferId : null;
+  const qrTransferId =
+    confirmedOnChainTransferId ?? (import.meta.env.DEV ? LOCAL_DEVELOPMENT_TRANSFER_PREVIEW : null);
 
   const copyLink = () => {
     navigator.clipboard?.writeText(`https://tracechain.app/receipt/${transferId}`);
@@ -113,7 +119,30 @@ export function TransferCreatedQR({
             >
               Receipt Confirmation QR
             </div>
-            <QRPlaceholder transferId={transfer.id} size={160} />
+            {!confirmedOnChainTransferId && import.meta.env.DEV && (
+              <div
+                style={{
+                  maxWidth: 260,
+                  marginBottom: 10,
+                  padding: '7px 9px',
+                  border: `1px solid ${T.amber}`,
+                  borderRadius: 7,
+                  background: T.amberBg,
+                  color: T.amber,
+                  fontSize: 10,
+                  lineHeight: 1.5,
+                }}
+              >
+                Local-development QR preview — this fixture is not an on-chain transfer.
+              </div>
+            )}
+            {qrTransferId ? (
+              <TransferQrDisplay transferId={qrTransferId} />
+            ) : (
+              <div className="transfer-qr-error">
+                QR generation requires a successful on-chain bytes32 transfer ID.
+              </div>
+            )}
             <div
               style={{ fontSize: 10, color: T.text3, marginTop: 8, maxWidth: 160, lineHeight: 1.5 }}
             >
@@ -122,10 +151,6 @@ export function TransferCreatedQR({
           </div>
 
           <div style={{ display: 'grid', gap: 6, width: 160 }}>
-            <Btn size="sm" full>
-              <Download size={12} style={{ marginRight: 4 }} />
-              Download QR
-            </Btn>
             <Btn size="sm" variant="secondary" full>
               <Printer size={12} style={{ marginRight: 4 }} />
               Print Label

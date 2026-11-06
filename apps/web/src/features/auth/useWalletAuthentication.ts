@@ -128,6 +128,7 @@ export function useWalletAuthentication(
   );
   const authenticatedAddress = useRef<string | undefined>(undefined);
   const connectionAttempt = useRef(0);
+  const connectionInFlight = useRef(false);
   const pendingConnection = useRef<
     | {
         address: string;
@@ -136,20 +137,24 @@ export function useWalletAuthentication(
     | undefined
   >(undefined);
 
+  useEffect(() => {
+    return () => {
+      connectionAttempt.current += 1;
+      connectionInFlight.current = false;
+    };
+  }, []);
+
   const clearSession = useCallback(
     async (message = 'Wallet session ended') => {
       connectionAttempt.current += 1;
-      try {
-        await Promise.all([deleteAuthSession(), walletConnection.disconnect()]);
-      } catch {
-        // Local state is still cleared when the API or wallet relay cannot be reached.
-      }
-
+      connectionInFlight.current = false;
       authenticatedAddress.current = undefined;
       pendingConnection.current = undefined;
       setWalletProvider(undefined);
       setCredentialState({ message: '', phase: 'idle', reasons: [] });
       setState({ ...emptyAuthorization, message, phase: 'idle' });
+
+      await Promise.allSettled([deleteAuthSession(), walletConnection.disconnect()]);
     },
     [walletConnection],
   );
@@ -268,6 +273,8 @@ export function useWalletAuthentication(
 
   const connect = useCallback(
     async (preference: WalletConnectionPreference = 'automatic') => {
+      if (connectionInFlight.current) return;
+      connectionInFlight.current = true;
       const attempt = ++connectionAttempt.current;
 
       try {
@@ -319,6 +326,8 @@ export function useWalletAuthentication(
         }
 
         setState({ ...emptyAuthorization, message: errorMessage(error), phase: 'error' });
+      } finally {
+        if (attempt === connectionAttempt.current) connectionInFlight.current = false;
       }
     },
     [signIn, walletConnection],
@@ -326,14 +335,16 @@ export function useWalletAuthentication(
 
   const cancelConnection = useCallback(async () => {
     connectionAttempt.current += 1;
+    connectionInFlight.current = false;
+    pendingConnection.current = undefined;
+    setWalletProvider(undefined);
+    setState({ ...emptyAuthorization, message: 'MetaMask connection cancelled', phase: 'idle' });
+
     try {
       await walletConnection.disconnect();
     } catch {
       // A pending remote session may already be closed or expired.
     }
-    pendingConnection.current = undefined;
-    setWalletProvider(undefined);
-    setState({ ...emptyAuthorization, message: 'MetaMask connection cancelled', phase: 'idle' });
   }, [walletConnection]);
 
   const switchToTargetNetwork = useCallback(async () => {

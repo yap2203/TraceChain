@@ -19,6 +19,21 @@
 - Added shared role-to-workspace mapping and fail-closed production workspace guards; local verification still cannot authorize access.
 - Added a development-only Admin holder export command with overwrite protection.
 - Added 8 SSI presentation API tests and 3 workspace access tests.
+- Added the versioned custody-transfer QR locator codec, safe error codes, canonical normalization,
+  and focused shared-package tests. The QR contains only chain, contract, and transfer references.
+- Added authenticated custody-transfer QR resolution with configured chain/contract matching,
+  read-only `getTransfer` lookup, intended-recipient enforcement, minimal safe responses, and 11
+  injected-gateway API tests.
+- Added canonical QR rendering and PNG download plus camera, image-file, and manual-paste scanning.
+  Distributor and Retailer receipt screens now show transfer data only after authenticated API
+  resolution and release camera resources deterministically.
+- Added a chain-31337-only seed command that reuses the configured deployed contracts and unlocked
+  Hardhat accounts to create one real Manufacturer-to-Distributor `AwaitingReceipt` transfer.
+- Added recipient-only receipt confirmation: the API revalidates authorization and returns unsigned
+  calldata, MetaMask submits it, the UI waits for the receipt, and the API refreshes the confirmed
+  contract record. QR scanning remains read-only.
+- Expanded the custody-transfer API suite to 16 injected-gateway tests, including exact
+  `confirmReceipt` calldata encoding without a live RPC.
 
 ## Current frontend version
 
@@ -37,7 +52,8 @@
 - Added authenticated, wallet-scoped operational reads across IngredientRegistry, ProductRegistry, EvidenceRegistry, and CustodyTransfer. Supplier, Manufacturer, Distributor, and Retailer primary dashboards, batch/shipment/inventory lists, and their detail views now display current chain state instead of sample records.
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
-- Added mocked MetaMask client, EIP-1193 provider, transport-tab, and QR-selection tests; the frontend suite now contains 26 tests and performs no live relay or RPC calls.
+- Reused existing authorized extension providers, serialized connection attempts, added bounded timeouts and one stale-transport retry, and moved connection progress into the visible authentication card.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, and receipt-confirmation tests; the frontend suite now contains 50 tests and performs no live relay or RPC calls.
 - Enabled temporary account-free sample UI access only on local Vite loopback hosts.
 - Kept production workspace access fail-closed because blockchain role and credential-status verification are not yet implemented, even when a Company Role Credential has been verified locally.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
@@ -48,7 +64,11 @@
 - Implemented StakeholderRegistry, CredentialRegistry, EvidenceRegistry, IngredientRegistry, ProductRegistry, and CustodyTransfer contracts with role/status enforcement and bounded paginated registry reads.
 - Added application review, additional-evidence, resubmission, reviewed role-change, wallet replacement, credential lifecycle, ingredient/product linkage, evidence acceptance, and custody discrepancy workflows.
 - Added one Ignition module that deploys and wires the complete suite and a TypeScript integration test covering authorization, credential lifecycle, traceability, reservation accounting, and duplicate-receipt protection.
-- Confirmed production contracts compile with the cached native Solidity 0.8.34 compiler. Full Hardhat execution is pending because the local Hardhat compiler-cache mutex is held by another process.
+- Separated pre-consumption ingredient usability from post-consumption traceability validity, so a
+  finished product remains transferable after consuming the final ingredient unit while ingredient
+  lifecycle, Supplier authorization, and credential validity still gate transfer.
+- Confirmed production contracts compile with the cached native Solidity 0.8.34 compiler and the
+  complete Hardhat suite passes locally.
 - Added AES-256-GCM encrypted JSON content storage with an injectable IPFS pinning gateway and tamper-detection tests.
 - Implemented a Veramo 7 server-side agent with DID, resolver, key-management, JWT VC/VP, verification, and JSON data-store plugins.
 - Added `did:ethr` Sepolia authority creation, separate atomic JSON stores, and SecretBox encryption for private issuer keys.
@@ -63,9 +83,9 @@
 - Replace prototype filesystem issuance metadata and Veramo JSON key storage with production-managed database and key-management services.
 - Replace the remaining evidence-response, transfer-creation, QR/history, stakeholder credential-card, receipt-write, and non-admin report fixtures with authenticated chain-backed workflows.
 - Complete a clean Hardhat test run and deploy the suite to Sepolia when the deployment wallet is ready.
-- Define QR payloads and implement real generation, scanning, and intended-receiver validation.
+- Add damaged/rejected quantity reconciliation and encrypted receipt evidence to receipt confirmation.
 - Add committed end-to-end browser tests and production deployment configuration.
 
 ## Important distinction
 
-The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are also chain-backed. Evidence-response, transfer-creation, QR/history, stakeholder credential cards, receipt writes, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.
+The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are also chain-backed. Custody-transfer QR resolution and recipient-only receipt confirmation use the configured contract through the authenticated API and MetaMask. Evidence-response, transfer-creation, QR product-history, stakeholder credential cards, receipt reconciliation/evidence, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.

@@ -19,12 +19,22 @@ import {
   type BlockchainAuthorizationService,
 } from './modules/blockchain/blockchain-authorization.service.js';
 import { BlockchainController } from './modules/blockchain/blockchain.controller.js';
-import { JsonApplicationMetadataRepository, type ApplicationMetadataRepository } from './modules/blockchain/application-metadata.repository.js';
+import {
+  JsonApplicationMetadataRepository,
+  type ApplicationMetadataRepository,
+} from './modules/blockchain/application-metadata.repository.js';
 import {
   BlockchainGatewayService,
   type BlockchainGateway,
 } from './modules/blockchain/blockchain-gateway.service.js';
 import { createBlockchainRouter } from './modules/blockchain/blockchain.routes.js';
+import { CustodyTransferController } from './modules/custody-transfers/custody-transfer.controller.js';
+import {
+  EthersCustodyTransferGateway,
+  type CustodyTransferGateway,
+} from './modules/custody-transfers/custody-transfer.gateway.js';
+import { createCustodyTransferRouter } from './modules/custody-transfers/custody-transfer.routes.js';
+import { CustodyTransferService } from './modules/custody-transfers/custody-transfer.service.js';
 import { SsiController } from './modules/ssi/ssi.controller.js';
 import {
   IpfsEncryptedCredentialStore,
@@ -45,6 +55,7 @@ interface CreateAppOptions {
   applicationMetadataRepository?: ApplicationMetadataRepository;
   authService?: AuthService;
   blockchainGateway?: BlockchainGateway;
+  custodyTransferService?: CustodyTransferService;
   ssi?: {
     agentProvider: TraceChainAgentProvider;
     authorityDidAlias: string;
@@ -52,7 +63,13 @@ interface CreateAppOptions {
   };
 }
 
-export function createApp({ applicationMetadataRepository, authService, blockchainGateway, ssi }: CreateAppOptions = {}) {
+export function createApp({
+  applicationMetadataRepository,
+  authService,
+  blockchainGateway,
+  custodyTransferService,
+  ssi,
+}: CreateAppOptions = {}) {
   const app = express();
   const sessionTtlMs = env.AUTH_SESSION_TTL_SECONDS * 1_000;
   const resolvedAuthService =
@@ -73,6 +90,10 @@ export function createApp({ applicationMetadataRepository, authService, blockcha
     cookieSecure: env.NODE_ENV === 'production',
     sessionTtlMs,
   });
+  const custodyTransferController = new CustodyTransferController(
+    custodyTransferService ?? createDefaultCustodyTransferService(resolvedAuthService),
+    env.AUTH_COOKIE_NAME,
+  );
   const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
   let blockchainService: BlockchainAuthorizationService | undefined;
   const blockchainAuthorization: BlockchainAuthorizationService | undefined = ssi
@@ -182,9 +203,12 @@ export function createApp({ applicationMetadataRepository, authService, blockcha
     lazyGateway,
     resolvedAuthService,
     env.AUTH_COOKIE_NAME,
-    applicationMetadataRepository ?? new JsonApplicationMetadataRepository(
-      fileURLToPath(new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url)),
-    ),
+    applicationMetadataRepository ??
+      new JsonApplicationMetadataRepository(
+        fileURLToPath(
+          new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url),
+        ),
+      ),
     lazyIssuanceRepository,
   );
   const lazyCredentialContentStore: CredentialContentStore = {
@@ -234,6 +258,11 @@ export function createApp({ applicationMetadataRepository, authService, blockcha
     express.json({ limit: '32kb' }),
     createBlockchainRouter(blockchainController),
   );
+  app.use(
+    '/api/custody-transfers',
+    express.json({ limit: '4kb' }),
+    createCustodyTransferRouter(custodyTransferController),
+  );
 
   app.use(
     (
@@ -277,6 +306,45 @@ function createDefaultBlockchainGateway() {
     blockchain.CUSTODY_TRANSFER_ADDRESS,
     blockchain.EVIDENCE_REGISTRY_ADDRESS,
   );
+}
+
+function createDefaultCustodyTransferService(authService: AuthService) {
+  let blockchainEnvironment: ReturnType<typeof loadBlockchainEnvironment> | undefined;
+  let gateway: CustodyTransferGateway | undefined;
+  const configuration = () => {
+    blockchainEnvironment ??= loadBlockchainEnvironment();
+    return {
+      chainId: env.CHAIN_ID,
+      contractAddress: blockchainEnvironment.CUSTODY_TRANSFER_ADDRESS,
+    };
+  };
+
+  const lazyGateway: CustodyTransferGateway = {
+    getTransfer: async (transferId) => {
+      const resolvedConfiguration = configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        resolvedConfiguration.chainId,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        resolvedConfiguration.contractAddress,
+      );
+      return gateway.getTransfer(transferId);
+    },
+    prepareReceiptConfirmation: (input) => {
+      const resolvedConfiguration = configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        resolvedConfiguration.chainId,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        resolvedConfiguration.contractAddress,
+      );
+      return gateway.prepareReceiptConfirmation(input);
+    },
+  };
+
+  return new CustodyTransferService({
+    authService,
+    configuration,
+    gateway: lazyGateway,
+  });
 }
 
 function createIssuanceDependencies() {
