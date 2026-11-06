@@ -46,3 +46,8 @@ export {
 } from './credentials/ingredient-credential.service.js';
 export type { IssueIngredientCredentialInput } from './credentials/ingredient-credential.service.js';
 export { createOrGetSupplierIssuerDid } from './did/supplier-issuer-did.service.js';
+export {
+  createIngredientEvidencePresentation,
+  verifyIngredientEvidencePresentation,
+} from './presentations/ingredient-evidence-presentation.js';
+export type { CreateIngredientEvidencePresentationInput } from './presentations/ingredient-evidence-presentation.js';

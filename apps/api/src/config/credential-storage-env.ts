@@ -24,6 +24,10 @@ export function loadCredentialStorageEnvironment() {
       repositoryRoot,
       '.tracechain/issuance/ingredient-batches.json',
     ),
+    productionWorkflowStorePath: resolve(
+      repositoryRoot,
+      '.tracechain/issuance/production-flow.json',
+    ),
     workflowStorePath: resolve(repositoryRoot, '.tracechain/issuance/company-role.json'),
   };
 }

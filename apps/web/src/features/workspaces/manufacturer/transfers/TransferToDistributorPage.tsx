@@ -1,131 +1,152 @@
-import { useState } from 'react';
-import {
-  T,
-  MONO,
-  Btn,
-  Card,
-  Badge,
-  Alert,
-  TxModal,
-  Input,
-  Textarea,
-  SelectField,
-  CustodyTimeline,
-} from '../../shared/ui';
+import { useEffect, useState } from 'react';
+
+import { useOperationalData } from '../../../blockchain/useOperationalData';
+import { TransferQrDisplay } from '../../../custody-transfers';
+import { listDistributors, prepareTransfer } from '../../../production-flow/production-flow.api';
+import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import { Alert, Btn, Card, Input, T } from '../../shared/ui';
+import { shortChainId } from '../../shared/operational-format';
 
 export function TransferToDistributor({ onBack }: { onBack: () => void }) {
-  const [qty, setQty] = useState('');
-  const [date, setDate] = useState('');
-  const [ref, setRef] = useState('');
-  const [txState, setTx] = useState<'pending' | 'confirmed' | 'failed' | null>(null);
+  const { data, error: readError } = useOperationalData();
+  const [distributors, setDistributors] = useState<string[]>([]);
+  const [productBatchId, setProductBatchId] = useState('');
+  const [recipient, setRecipient] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [expectedAt, setExpectedAt] = useState('');
+  const [shipmentReference, setShipmentReference] = useState('');
+  const [transferId, setTransferId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  const send = () => {
-    setTx('pending');
-    setTimeout(() => setTx('confirmed'), 3000);
+  useEffect(() => {
+    void listDistributors()
+      .then((result) => setDistributors(result.distributors))
+      .catch((cause) =>
+        setError(cause instanceof Error ? cause.message : 'Could not load Distributors.'),
+      );
+  }, []);
+  const submit = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await completePreparedWorkflow(() =>
+        prepareTransfer({
+          expectedAt: new Date(`${expectedAt}T23:59:59`).toISOString(),
+          productBatchId,
+          quantity,
+          recipient,
+          shipmentReference,
+        }),
+      );
+      setTransferId(
+        'transferId' in result && typeof result.transferId === 'string' ? result.transferId : '',
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Transfer creation failed.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <Btn onClick={onBack} variant="ghost" size="sm">
           Back
         </Btn>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
-          Transfer Product to Distributor
-        </h2>
+        <h2 style={{ margin: 0, color: T.navy }}>Transfer Product to Distributor</h2>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20 }}>
+      {(error || readError) && <Alert type="error" message={error || readError} />}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 360px', gap: 20 }}>
         <Card>
           <div style={{ display: 'grid', gap: 14 }}>
-            <SelectField
-              label="Product Batch"
-              value="CHOCOLATE-2026-050"
-              onChange={() => {}}
-              options={[
-                {
-                  value: 'CHOCOLATE-2026-050',
-                  label: 'Milk Chocolate — CHOCOLATE-2026-050 (500 units available)',
-                },
-              ]}
-            />
-            <div style={{ background: T.tealLight, borderRadius: 8, padding: '12px 14px' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: T.teal, marginBottom: 4 }}>
-                Receiving Distributor — Verified
-              </div>
-              <div style={{ fontWeight: 600, fontSize: 13, color: T.navy }}>
-                Swift Distribution Sdn. Bhd.
-              </div>
-              <div style={{ fontFamily: MONO, fontSize: 10, color: T.teal, marginTop: 4 }}>
-                did:ethr:0x5C91…19D4
-              </div>
-              <div style={{ marginTop: 6 }}>
-                <Badge label="active" variant="active" />
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <Input
-                label="Transfer Quantity"
-                placeholder="500"
-                value={qty}
-                onChange={setQty}
-                required
-              />
-              <Input label="Dispatch Date" type="date" value={date} onChange={setDate} required />
-            </div>
+            <label style={{ fontSize: 12, color: T.text2 }}>
+              Product batch
+              <select
+                value={productBatchId}
+                onChange={(event) => setProductBatchId(event.target.value)}
+                style={{ display: 'block', width: '100%', padding: 10, marginTop: 6 }}
+              >
+                <option value="">Select a real product</option>
+                {data.productBatches
+                  .filter((product) => product.status === 1)
+                  .map((product) => (
+                    <option key={product.batchId} value={product.batchId}>
+                      {shortChainId(product.batchId)} · {product.totalQuantity} total
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label style={{ fontSize: 12, color: T.text2 }}>
+              Active Distributor
+              <select
+                value={recipient}
+                onChange={(event) => setRecipient(event.target.value)}
+                style={{ display: 'block', width: '100%', padding: 10, marginTop: 6 }}
+              >
+                <option value="">Select recipient wallet</option>
+                {distributors.map((wallet) => (
+                  <option key={wallet} value={wallet}>
+                    {shortChainId(wallet)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Input label="Transfer quantity" value={quantity} onChange={setQuantity} required />
             <Input
-              label="Shipment Reference"
-              placeholder="SHIP-2026-088"
-              value={ref}
-              onChange={setRef}
+              label="Expected arrival"
+              type="date"
+              value={expectedAt}
+              onChange={setExpectedAt}
+              required
             />
-            <Textarea
-              label="Notes"
-              value=""
-              onChange={() => {}}
-              placeholder="Shipping instructions, handling requirements…"
-              rows={2}
+            <Input
+              label="Shipment reference"
+              value={shipmentReference}
+              onChange={setShipmentReference}
+              required
             />
             <Alert
               type="warning"
-              message="This transfer will be recorded on the blockchain. The distributor must accept custody before the transfer is complete."
+              message="The backend validates the current Manufacturer role, product transferability, recipient role, and inventory before returning unsigned createTransfer calldata. MetaMask remains the only signer."
             />
-            <Btn onClick={send} full disabled={!qty || !date}>
-              Submit Transfer
+            <Btn
+              full
+              disabled={
+                busy ||
+                !productBatchId ||
+                !recipient ||
+                !quantity ||
+                !expectedAt ||
+                !shipmentReference ||
+                Boolean(transferId)
+              }
+              onClick={() => void submit()}
+            >
+              {busy ? 'Confirming transfer…' : 'Create transfer with MetaMask'}
             </Btn>
           </div>
         </Card>
         <Card>
-          <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
-            Transfer Summary
-          </div>
-          <CustodyTimeline
-            steps={[
-              {
-                org: 'CocoaCraft Manufacturing Sdn. Bhd.',
-                action: 'Product Batch Created',
-                date: '2026-08-01',
-                qty: '500 units',
-                verified: true,
-              },
-              {
-                org: 'Swift Distribution Sdn. Bhd.',
-                action: 'Awaiting custody acceptance',
-                date: 'Pending',
-                active: true,
-              },
-            ]}
-          />
+          {transferId ? (
+            <>
+              <Alert
+                type="success"
+                message="Transfer confirmed with Awaiting Receipt status. Share this QR with the intended Distributor."
+              />
+              <div style={{ marginTop: 14 }}>
+                <TransferQrDisplay transferId={transferId} />
+              </div>
+            </>
+          ) : (
+            <div style={{ color: T.text2, fontSize: 13 }}>
+              The QR appears only after a real createTransfer transaction is mined and the API
+              verifies its Awaiting Receipt record.
+            </div>
+          )}
         </Card>
       </div>
-      <TxModal
-        state={txState}
-        title="Submitting Transfer"
-        message="Transfer submitted. Swift Distribution Sdn. Bhd. must accept custody to complete the handoff."
-        onClose={() => {
-          setTx(null);
-          onBack();
-        }}
-      />
     </div>
   );
 }

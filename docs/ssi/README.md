@@ -14,6 +14,7 @@ TraceChain has a server-side Veramo SSI foundation in `@tracechain/ssi`. It crea
 - Typed `IngredientCredential` issuance with batch, Supplier wallet, ingredient, origin, date, quantity, unit, allergen, and certification claims.
 - One server-derived issuer DID per Supplier wallet; a Supplier cannot choose another issuer through the API.
 - Cryptographic Ingredient Credential verification and deterministic canonical SHA-256 hashing before blockchain preparation.
+- Challenge-bound JWT Verifiable Presentations containing one complete Ingredient Credential, with presentation and nested-credential verification before evidence acceptance.
 - Signature, trusted issuer, subject DID, SIWE wallet binding, role, date, and local status checks.
 - SHA-256 hashing of the encoded JWT for future blockchain registration.
 
@@ -57,12 +58,16 @@ The API creates one lazy Veramo agent promise per process only when an SSI reque
 
 The prototype Veramo KMS holds each Supplier issuer DID key in the server-side encrypted JSON key store. This demonstrates distinct issuer identities without requesting Supplier wallet private keys. A production deployment needs organizational stakeholder key custody, rotation, recovery, access-control, audit, and multi-operator policy rather than relying on one application-server filesystem.
 
+## Ingredient evidence presentation flow
+
+The intended Supplier retrieves the complete issued Ingredient Credential only through the authorized server repository. Veramo signs a JWT VP that binds the full credential to the cryptographically random request challenge and a short presentation expiration. The server verifies the VP signature, challenge, holder/issuer DID, nested Ingredient Credential signature, Supplier wallet, batch identity, credential ID/hash, dates, and current on-chain credential and Supplier status before a Manufacturer can receive unsigned `EvidenceRegistry.accept` calldata. The encrypted VP is pinned off chain; only its hash and encrypted CID are written to Ethereum. JWT selective disclosure is not supported, so the UI explicitly describes this as full-credential presentation.
+
 ## Still required
 
 - Production credential delivery and holder-wallet design (the Admin file export remains development-only).
 - Production-grade organizational DID key custody, rotation, recovery, and durable workflow repositories.
 - Redundant IPFS retention and encrypted-content recovery procedures.
-- A separately designed presentation/selective-disclosure format if the project later requires selective disclosure; JWT VC issuance alone does not provide it.
+- A separately designed presentation/selective-disclosure format if the project later requires selective disclosure; the current JWT VP presents the complete credential.
 - Migration of remaining Manufacturer, Distributor, Retailer, evidence, and report fixtures.
 
 No browser route exposes raw Veramo methods. Supplier workspace access continues to depend on the existing Company Role Credential and blockchain authorization gate.

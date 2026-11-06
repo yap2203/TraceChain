@@ -46,6 +46,17 @@ import {
 } from './modules/ingredient-batches/ingredient-batch.repository.js';
 import { createIngredientBatchRouter } from './modules/ingredient-batches/ingredient-batch.routes.js';
 import { IngredientBatchService } from './modules/ingredient-batches/ingredient-batch.service.js';
+import { ProductionFlowController } from './modules/production-flow/production-flow.controller.js';
+import {
+  EthersProductionFlowGateway,
+  type ProductionFlowGateway,
+} from './modules/production-flow/production-flow.gateway.js';
+import {
+  JsonProductionFlowRepository,
+  type ProductionFlowRepository,
+} from './modules/production-flow/production-flow.repository.js';
+import { createProductionFlowRouter } from './modules/production-flow/production-flow.routes.js';
+import { ProductionFlowService } from './modules/production-flow/production-flow.service.js';
 import { SsiController } from './modules/ssi/ssi.controller.js';
 import {
   IpfsEncryptedCredentialStore,
@@ -68,6 +79,7 @@ interface CreateAppOptions {
   blockchainGateway?: BlockchainGateway;
   custodyTransferService?: CustodyTransferService;
   ingredientBatchService?: IngredientBatchService;
+  productionFlowService?: ProductionFlowService;
   ssi?: {
     agentProvider: TraceChainAgentProvider;
     authorityDidAlias: string;
@@ -81,6 +93,7 @@ export function createApp({
   blockchainGateway,
   custodyTransferService,
   ingredientBatchService,
+  productionFlowService,
   ssi,
 }: CreateAppOptions = {}) {
   const app = express();
@@ -258,6 +271,15 @@ export function createApp({
       ),
     env.AUTH_COOKIE_NAME,
   );
+  const productionFlowController = new ProductionFlowController(
+    productionFlowService ??
+      createDefaultProductionFlowService(
+        resolvedAuthService,
+        defaultSsi.agentProvider,
+        lazyCredentialContentStore,
+      ),
+    env.AUTH_COOKIE_NAME,
+  );
 
   app.use(
     cors({
@@ -290,6 +312,11 @@ export function createApp({
     '/api/custody-transfers',
     express.json({ limit: '4kb' }),
     createCustodyTransferRouter(custodyTransferController),
+  );
+  app.use(
+    '/api/production-flow',
+    express.json({ limit: '64kb' }),
+    createProductionFlowRouter(productionFlowController),
   );
 
   app.use(
@@ -422,6 +449,79 @@ function createDefaultIngredientBatchService(
     authService,
     contentStore,
     gateway: lazyGateway,
+    repository: lazyRepository,
+  });
+}
+
+function createDefaultProductionFlowService(
+  authService: AuthService,
+  agentProvider: TraceChainAgentProvider,
+  contentStore: CredentialContentStore,
+) {
+  let gateway: ProductionFlowGateway | undefined;
+  let repository: ProductionFlowRepository | undefined;
+  let ingredientRepository: IngredientBatchWorkflowRepository | undefined;
+  const storage = () => loadCredentialStorageEnvironment();
+  const resolveGateway = () => {
+    if (!gateway) {
+      const blockchain = loadBlockchainEnvironment();
+      gateway = new EthersProductionFlowGateway(env.CHAIN_ID, blockchain.CHAIN_RPC_URL, {
+        credential: blockchain.CREDENTIAL_REGISTRY_ADDRESS,
+        custody: blockchain.CUSTODY_TRANSFER_ADDRESS,
+        evidence: blockchain.EVIDENCE_REGISTRY_ADDRESS,
+        ingredient: blockchain.INGREDIENT_REGISTRY_ADDRESS,
+        product: blockchain.PRODUCT_REGISTRY_ADDRESS,
+        stakeholder: blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
+      });
+    }
+    return gateway;
+  };
+  const lazyGateway: ProductionFlowGateway = {
+    assertDeployment: () => resolveGateway().assertDeployment(),
+    getAccess: (...input) => resolveGateway().getAccess(...input),
+    getAccepted: (...input) => resolveGateway().getAccepted(...input),
+    getCredential: (input) => resolveGateway().getCredential(input),
+    getEvidenceRequest: (input) => resolveGateway().getEvidenceRequest(input),
+    getIngredient: (input) => resolveGateway().getIngredient(input),
+    getInventory: (...input) => resolveGateway().getInventory(...input),
+    getProduct: (input) => resolveGateway().getProduct(input),
+    getProductLinks: (input) => resolveGateway().getProductLinks(input),
+    getTransfer: (input) => resolveGateway().getTransfer(input),
+    isRoleAuthorized: (...input) => resolveGateway().isRoleAuthorized(...input),
+    isTransferable: (input) => resolveGateway().isTransferable(input),
+    listActiveDistributors: () => resolveGateway().listActiveDistributors(),
+    listEvidenceRequestIds: (...input) => resolveGateway().listEvidenceRequestIds(...input),
+    listIngredients: () => resolveGateway().listIngredients(),
+    prepareAccept: (...input) => resolveGateway().prepareAccept(...input),
+    prepareEvidenceRequest: (input) => resolveGateway().prepareEvidenceRequest(input),
+    prepareEvidenceResponse: (input) => resolveGateway().prepareEvidenceResponse(input),
+    prepareProduct: (input) => resolveGateway().prepareProduct(input),
+    prepareTransfer: (input) => resolveGateway().prepareTransfer(input),
+  };
+  const resolveRepository = () =>
+    (repository ??= new JsonProductionFlowRepository(storage().productionWorkflowStorePath));
+  const lazyRepository: ProductionFlowRepository = {
+    findEvidence: (input) => resolveRepository().findEvidence(input),
+    findEvidenceByOperation: (...input) => resolveRepository().findEvidenceByOperation(...input),
+    findPrivate: (...input) => resolveRepository().findPrivate(...input),
+    saveEvidence: (input) => resolveRepository().saveEvidence(input),
+    savePrivate: (...input) => resolveRepository().savePrivate(...input),
+  };
+  const resolveIngredientRepository = () =>
+    (ingredientRepository ??= new JsonIngredientBatchWorkflowRepository(
+      storage().ingredientWorkflowStorePath,
+    ));
+  const lazyIngredientRepository: IngredientBatchWorkflowRepository = {
+    find: (input) => resolveIngredientRepository().find(input),
+    listForSupplier: (input) => resolveIngredientRepository().listForSupplier(input),
+    save: (input) => resolveIngredientRepository().save(input),
+  };
+  return new ProductionFlowService({
+    agentProvider,
+    authService,
+    contentStore,
+    gateway: lazyGateway,
+    ingredientRepository: lazyIngredientRepository,
     repository: lazyRepository,
   });
 }

@@ -23,7 +23,7 @@
 - ERC-4361 Sign-In with Ethereum
 - Veramo agent services and stakeholder-specific repositories
 - Company Role Credentials for credential-based RBAC
-- Ingredient Credentials and selective disclosure
+- Ingredient Credentials and challenge-bound full-credential presentations; selective disclosure requires a future credential format
 - Solidity smart contracts and a blockchain gateway
 - QR-code generation and scanning
 
@@ -44,6 +44,7 @@
 - Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
 - Supplier-specific did:ethr issuer DIDs, typed JWT Ingredient Credential issuance/verification, AES-GCM encrypted IPFS storage, and sequential MetaMask registration of credential and batch records
 - Authenticated Supplier ingredient batch list/detail/overview data reconstructed from `IngredientBatchRegistered` events, contract reads, and authorized encrypted metadata
+- Real Manufacturer-to-Distributor production workflow: encrypted evidence requests, Supplier challenge-bound full-credential VPs, cryptographic acceptance, accepted-ingredient product creation, transfer preparation, and QR generation from the verified transfer ID
 - Authenticated Company Role Credential JSON presentation with safe session summaries and fail-closed workspace guards
 - Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
 
@@ -83,7 +84,7 @@ authorization in every environment; there is no account-free localhost bypass.
 - Nonce and session repositories remain development-only and in memory; issuance recovery currently uses ignored atomic JSON files rather than a production shared database
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
 - No damaged/rejected quantity reconciliation or encrypted receipt-evidence workflow yet; QR scanning itself remains read-only
-- Several Manufacturer, Distributor, Retailer, evidence, and report records remain presentation fixtures and are not authoritative
+- Distributor-to-Retailer writes, QR product history, stakeholder credential cards, receipt evidence/reconciliation, and non-admin reports remain presentation fixtures and are not authoritative
 
 ## Important system qualities
 

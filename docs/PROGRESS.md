@@ -34,6 +34,13 @@
   contract record. QR scanning remains read-only.
 - Expanded the custody-transfer API suite to 16 injected-gateway tests, including exact
   `confirmReceipt` calldata encoding without a live RPC.
+- Implemented the real Manufacturer-to-Distributor production workflow: encrypted challenge-bound
+  evidence requests, Supplier full-credential JWT VPs, cryptographic/on-chain evidence acceptance,
+  accepted-ingredient product creation, active-Distributor transfer creation, and QR rendering from
+  the verified real `AwaitingReceipt` transfer ID.
+- Added authenticated `/api/production-flow` reads and unsigned transaction-preparation endpoints,
+  current role/credential/permission rechecks, ignored restart-resumable workflow records, and safe
+  failure handling that never returns plaintext credentials, VPs, encryption keys, or private metadata.
 
 ## Current frontend version
 
@@ -53,7 +60,7 @@
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Reused existing authorized extension providers, serialized connection attempts, added bounded timeouts and one stale-transport retry, and moved connection progress into the visible authentication card.
-- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, receipt-confirmation, and Supplier registration tests; the frontend suite now contains 54 tests and performs no live relay or RPC calls.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, receipt-confirmation, Supplier registration, and production-flow tests; the frontend suite now contains 58 tests and performs no live relay or RPC calls.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
 
 ## Current contract and SSI version
@@ -83,18 +90,18 @@
 - Added `did:ethr` Sepolia authority creation, separate atomic JSON stores, and SecretBox encryption for private issuer keys.
 - Added typed Company Role Credential issuance and verification with trusted issuer, subject/SIWE wallet binding, shared roles, date, local status, and deterministic SHA-256 checks.
 - Added an idempotent Product Traceability Authority and bootstrap System Admin service plus a safe CLI command.
-- Added 19 offline SSI tests without live RPC, MetaMask, or test ETH.
+- Added 21 offline SSI tests, including successful challenge-bound Ingredient VP verification plus challenge/signature rejection, without live RPC, MetaMask, or test ETH.
 - Connected credential presentation to on-chain stakeholder role/lifecycle and credential hash/status checks; authorized sessions now set `onChainStatusChecked` and `authorizationReady` to true.
 
 ## Remaining work
 
 - Select the database and replace process-local nonce and session storage.
 - Replace prototype filesystem issuance metadata and Veramo JSON key storage with production-managed database and key-management services.
-- Replace the remaining evidence-response, transfer-creation, QR/history, stakeholder credential-card, receipt-write, and non-admin report fixtures with authenticated chain-backed workflows.
+- Replace the remaining Distributor-to-Retailer, QR/history, stakeholder credential-card, receipt-evidence/reconciliation, and non-admin report fixtures with authenticated chain-backed workflows.
 - Complete a clean Hardhat test run and deploy the suite to Sepolia when the deployment wallet is ready.
 - Add damaged/rejected quantity reconciliation and encrypted receipt evidence to receipt confirmation.
 - Add committed end-to-end browser tests and production deployment configuration.
 
 ## Important distinction
 
-The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are chain-backed. Supplier Ingredient Credential/batch registration and enriched Supplier batch views use verified credentials, encrypted IPFS content, MetaMask, contract events, and authoritative reads. Custody-transfer QR resolution and recipient-only receipt confirmation use the configured contract through the authenticated API and MetaMask. Evidence-response, transfer-creation, QR product-history, stakeholder credential cards, receipt reconciliation/evidence, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.
+The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are chain-backed. Supplier Ingredient Credential/batch registration and the Manufacturer evidence, product, Manufacturer-to-Distributor transfer, QR handoff, and recipient-confirmation flows use verified credentials, encrypted IPFS content, MetaMask, contract events, and authoritative reads. Distributor-to-Retailer writes, QR product history, stakeholder credential cards, receipt reconciliation/evidence, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.

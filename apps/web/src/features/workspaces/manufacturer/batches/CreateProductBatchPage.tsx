@@ -1,336 +1,171 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
 import {
-  T,
-  Btn,
-  Card,
-  Badge,
-  Table,
-  TR,
-  TD,
-  HashChip,
-  Alert,
-  TxModal,
-  StepProgress,
-  Input,
-  SelectField,
-} from '../../shared/ui';
-import { INGREDIENT_CREDS } from '../fixtures';
+  listProductionIngredients,
+  prepareProduct,
+  type ProductionIngredient,
+} from '../../../production-flow/production-flow.api';
+import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import { Alert, Badge, Btn, Card, Input, T } from '../../shared/ui';
+import { shortChainId } from '../../shared/operational-format';
 
 export function CreateProductBatch({ onBack }: { onBack: () => void }) {
-  const [step, setStep] = useState(0);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [txState, setTx] = useState<'pending' | 'confirmed' | 'failed' | null>(null);
+  const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [productName, setProductName] = useState('');
+  const [batchReference, setBatchReference] = useState('');
+  const [category, setCategory] = useState('');
+  const [quantity, setQuantity] = useState('');
+  const [unit, setUnit] = useState('units');
+  const [producedAt, setProducedAt] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
 
-  const STEPS = [
-    'Product Details',
-    'Select Ingredients',
-    'Review Ingredient Links',
-    'Blockchain Info',
-    'Confirm',
-  ];
-  const toggle = (id: string) =>
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  useEffect(() => {
+    void listProductionIngredients()
+      .then((result) => setIngredients(result.batches.filter((batch) => batch.accepted)))
+      .catch((cause) =>
+        setError(cause instanceof Error ? cause.message : 'Could not load ingredients.'),
+      );
+  }, []);
+
+  const links = Object.entries(amounts)
+    .filter(([, amount]) => /^[1-9]\d*$/.test(amount))
+    .map(([batchId, amount]) => ({ batchId, quantity: amount }));
+  const submit = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await completePreparedWorkflow(() =>
+        prepareProduct({
+          batchReference,
+          category,
+          expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
+          ingredientLinks: links,
+          privateMetadata: { productName, category },
+          producedAt: new Date(`${producedAt}T00:00:00`).toISOString(),
+          productName,
+          quantity,
+          unit,
+        }),
+      );
+      onBack();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Product creation failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
+    <div style={{ maxWidth: 820 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <Btn onClick={onBack} variant="ghost" size="sm">
           Back
         </Btn>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
-          Create Product Batch
-        </h2>
+        <h2 style={{ margin: 0, color: T.navy }}>Create Product Batch</h2>
       </div>
-      <div style={{ maxWidth: 720 }}>
-        <StepProgress steps={STEPS} current={step} />
-
-        {step === 0 && (
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 20 }}>
-              Product Details
-            </div>
-            <div style={{ display: 'grid', gap: 14 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <Input
-                  label="Product Name"
-                  placeholder="Milk Chocolate"
-                  value="Milk Chocolate"
-                  onChange={() => {}}
-                  required
-                />
-                <Input
-                  label="Product Batch Number"
-                  placeholder="CHOCOLATE-2026-050"
-                  value="CHOCOLATE-2026-050"
-                  onChange={() => {}}
-                  required
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <SelectField
-                  label="Product Category"
-                  value="chocolate"
-                  onChange={() => {}}
-                  options={[{ value: 'chocolate', label: 'Chocolate & Confectionery' }]}
-                />
-                <Input
-                  label="Quantity Produced"
-                  placeholder="500"
-                  value="500"
-                  onChange={() => {}}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <Input
-                  label="Production Date"
-                  type="date"
-                  value="2026-08-01"
-                  onChange={() => {}}
-                  required
-                />
-                <Input
-                  label="Expiry Date"
-                  type="date"
-                  value="2027-02-01"
-                  onChange={() => {}}
-                  required
-                />
-              </div>
-              <Btn onClick={() => setStep(1)} full>
-                Continue
-              </Btn>
-            </div>
-          </Card>
-        )}
-
-        {step === 1 && (
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 6 }}>
-              Select Verified Ingredients
-            </div>
-            <div style={{ fontSize: 13, color: T.text2, marginBottom: 16 }}>
-              Only active, verified ingredient credentials can be selected.
-            </div>
-            <div style={{ display: 'grid', gap: 10, marginBottom: 20 }}>
-              {INGREDIENT_CREDS.map((ic) => (
-                <div
-                  key={ic.id}
-                  onClick={() => toggle(ic.id)}
-                  style={{
-                    padding: '14px 16px',
-                    borderRadius: 10,
-                    border: `2px solid ${selected.includes(ic.id) ? T.teal : T.border}`,
-                    background: selected.includes(ic.id) ? T.tealLight : T.surface,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: T.navy }}>{ic.name}</div>
-                      <div style={{ fontSize: 11, color: T.text2, marginTop: 2 }}>
-                        {ic.batch} · {ic.supplier}
-                      </div>
-                      <div style={{ fontSize: 11, color: T.text3, marginTop: 1 }}>
-                        Expires: {ic.expires}
-                      </div>
-                    </div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'flex-end',
-                        gap: 5,
-                      }}
-                    >
-                      <Badge label="Verified" variant="verified" />
-                      <Badge label="Active" variant="active" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <Btn onClick={() => setStep(0)} variant="outline" style={{ flex: 1 }}>
-                Back
-              </Btn>
-              <Btn onClick={() => setStep(2)} disabled={selected.length === 0} style={{ flex: 2 }}>
-                Continue ({selected.length} selected)
-              </Btn>
-            </div>
-          </Card>
-        )}
-
-        {step === 2 && (
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
-              Review Ingredient Links
-            </div>
-            <Table headers={['Ingredient', 'Batch ID', 'Supplier', 'Credential Hash', 'Verified']}>
-              {INGREDIENT_CREDS.filter((ic) => selected.includes(ic.id)).map((ic) => (
-                <TR key={ic.id}>
-                  <TD bold>{ic.name}</TD>
-                  <TD mono muted>
-                    {ic.batch}
-                  </TD>
-                  <TD muted>{ic.supplier.split(' ')[0]}</TD>
-                  <TD>
-                    <HashChip value={`0x${ic.id.replace(/-/g, '').slice(0, 20)}`} />
-                  </TD>
-                  <TD>
-                    <Badge label="Verified" variant="verified" />
-                  </TD>
-                </TR>
-              ))}
-            </Table>
-            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <Btn onClick={() => setStep(1)} variant="outline" style={{ flex: 1 }}>
-                Back
-              </Btn>
-              <Btn onClick={() => setStep(3)} style={{ flex: 2 }}>
-                Continue
-              </Btn>
-            </div>
-          </Card>
-        )}
-
-        {step === 3 && (
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
-              Blockchain Information
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              <div style={{ background: T.surface2, borderRadius: 10, padding: '16px' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.navy, marginBottom: 10 }}>
-                  Stored on Blockchain
-                </div>
-                {[
-                  'Product batch ID: CHOCOLATE-2026-050',
-                  'Product name: Milk Chocolate',
-                  'Manufacturer reference: CocoaCraft',
-                  'Public ingredient summary',
-                  'Ingredient batch references',
-                  'Credential hashes (3)',
-                  'Creation timestamp',
-                ].map((item) => (
-                  <div
-                    key={item}
-                    style={{
-                      fontSize: 12,
-                      color: T.text2,
-                      padding: '4px 0',
-                      borderBottom: `1px solid ${T.border}`,
-                    }}
-                  >
-                    ✓ {item}
-                  </div>
-                ))}
-              </div>
+      {error && <Alert type="error" message={error} />}
+      <Card>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Input label="Product name" value={productName} onChange={setProductName} required />
+          <Input
+            label="Product batch reference"
+            value={batchReference}
+            onChange={setBatchReference}
+            required
+          />
+          <Input label="Category" value={category} onChange={setCategory} required />
+          <Input label="Quantity produced" value={quantity} onChange={setQuantity} required />
+          <Input label="Unit" value={unit} onChange={setUnit} required />
+          <Input
+            label="Production date"
+            type="date"
+            value={producedAt}
+            onChange={setProducedAt}
+            required
+          />
+          <Input
+            label="Expiry date"
+            type="date"
+            value={expiresAt}
+            onChange={setExpiresAt}
+            required
+          />
+        </div>
+      </Card>
+      <Card>
+        <div style={{ fontWeight: 700, color: T.navy, marginBottom: 5 }}>
+          Accepted ingredient evidence
+        </div>
+        <p style={{ color: T.text2, fontSize: 12, marginTop: 0 }}>
+          Enter the amount to consume from one or more accepted, active ingredient batches.
+        </p>
+        {ingredients.length === 0 ? (
+          <Alert
+            type="warning"
+            message="No ingredient evidence has been accepted for this Manufacturer yet."
+          />
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {ingredients.map((ingredient) => (
               <div
-                style={{ background: 'rgba(139,92,246,0.1)', borderRadius: 10, padding: '16px' }}
-              >
-                <div style={{ fontSize: 12, fontWeight: 700, color: T.teal, marginBottom: 10 }}>
-                  Stored in Credential Wallet
-                </div>
-                {[
-                  'Complete Ingredient Credentials',
-                  'Selectively disclosed claims',
-                  'Private supporting documents',
-                  'Internal QA data',
-                ].map((item) => (
-                  <div
-                    key={item}
-                    style={{
-                      fontSize: 12,
-                      color: T.teal,
-                      padding: '4px 0',
-                      borderBottom: `1px solid ${T.border}`,
-                    }}
-                  >
-                    · {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-              <Btn onClick={() => setStep(2)} variant="outline" style={{ flex: 1 }}>
-                Back
-              </Btn>
-              <Btn onClick={() => setStep(4)} style={{ flex: 2 }}>
-                Continue
-              </Btn>
-            </div>
-          </Card>
-        )}
-
-        {step === 4 && (
-          <Card>
-            <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
-              Confirm Registration
-            </div>
-            <div
-              style={{
-                background: T.surface2,
-                borderRadius: 10,
-                padding: '16px',
-                marginBottom: 16,
-              }}
-            >
-              {[
-                { label: 'Product', value: 'Milk Chocolate' },
-                { label: 'Batch ID', value: 'CHOCOLATE-2026-050' },
-                { label: 'Quantity', value: '500 units' },
-                { label: 'Ingredients', value: `${selected.length} linked ingredient credentials` },
-              ].map((row) => (
-                <div
-                  key={row.label}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    padding: '8px 0',
-                    borderBottom: `1px solid ${T.border}`,
-                  }}
-                >
-                  <span style={{ fontSize: 12, color: T.text2 }}>{row.label}</span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: T.navy }}>{row.value}</span>
-                </div>
-              ))}
-            </div>
-            <Alert
-              type="info"
-              message="Registering this product batch will write an immutable record to the blockchain, linking all selected ingredient credential hashes."
-            />
-            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-              <Btn onClick={() => setStep(3)} variant="outline" style={{ flex: 1 }}>
-                Back
-              </Btn>
-              <Btn
-                onClick={() => {
-                  setTx('pending');
-                  setTimeout(() => setTx('confirmed'), 3500);
+                key={ingredient.batchId}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 180px',
+                  alignItems: 'center',
+                  gap: 12,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 9,
+                  padding: 12,
                 }}
-                style={{ flex: 2 }}
               >
-                Confirm & Sign
-              </Btn>
-            </div>
-          </Card>
+                <div>
+                  <b>{shortChainId(ingredient.batchId)}</b>
+                  <div style={{ fontSize: 11, color: T.text2 }}>
+                    Supplier {shortChainId(ingredient.supplier)} · {ingredient.availableQuantity}{' '}
+                    available
+                  </div>
+                </div>
+                <Input
+                  label="Quantity to consume"
+                  value={amounts[ingredient.batchId] ?? ''}
+                  onChange={(value) =>
+                    setAmounts((current) => ({ ...current, [ingredient.batchId]: value }))
+                  }
+                />
+              </div>
+            ))}
+          </div>
         )}
-      </div>
-      <TxModal
-        state={txState}
-        title="Registering Product Batch"
-        message="Product Batch CHOCOLATE-2026-050 registered successfully. Generate a QR code to track custody."
-        onClose={() => {
-          setTx(null);
-          onBack();
-        }}
-      />
+        <div style={{ marginTop: 14 }}>
+          <Alert
+            type="info"
+            message="Private product metadata is encrypted off chain. The contract receives only the metadata hash, encrypted content reference, quantities, dates, and accepted ingredient links."
+          />
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <Btn
+            full
+            disabled={
+              busy ||
+              !productName ||
+              !batchReference ||
+              !category ||
+              !quantity ||
+              !unit ||
+              !producedAt ||
+              !expiresAt ||
+              links.length === 0
+            }
+            onClick={() => void submit()}
+          >
+            {busy ? 'Confirming product…' : 'Create product with MetaMask'}
+          </Btn>
+        </div>
+      </Card>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import {
   companyRoleCredentialSchema,
   createOrGetAuthorityDid,
   createOrGetSupplierIssuerDid,
+  createIngredientEvidencePresentation,
   createTraceChainAgent,
   hashIngredientCredential,
   ingredientCredentialSchema,
@@ -23,6 +24,7 @@ import {
   type TraceChainSsiConfig,
   verifyCompanyRoleCredential,
   verifyIngredientCredential,
+  verifyIngredientEvidencePresentation,
   walletAddressToDid,
 } from '../src/index.js';
 
@@ -368,6 +370,51 @@ describe('TraceChain SSI foundation', () => {
       expect(same.identifier.did).toBe(issuerDid);
       expect(same.created).toBe(false);
       expect(other.identifier.did).not.toBe(issuerDid);
+    });
+
+    it('creates and verifies a challenge-bound presentation containing the complete credential', async () => {
+      const challenge = 'manufacturer-request-challenge';
+      const presentation = await createIngredientEvidencePresentation(agent, {
+        challenge,
+        credential,
+        expirationDate: new Date('2026-11-08T00:00:00.000Z'),
+        holderDid: issuerDid,
+      });
+      expect(presentation.verifiableCredential).toHaveLength(1);
+      expect(presentation.verifiableCredential?.[0]).toEqual(credential);
+      const result = await verifyIngredientEvidencePresentation(agent, presentation, {
+        challenge,
+        expectedIssuerDid: issuerDid,
+        now: new Date('2026-11-06T23:00:00.000Z'),
+        supplierWallet,
+      });
+      expect(result).toMatchObject({ reasons: [], verified: true });
+    });
+
+    it('rejects a challenge mismatch and invalid presentation signature', async () => {
+      const presentation = await createIngredientEvidencePresentation(agent, {
+        challenge: 'correct-challenge',
+        credential,
+        expirationDate: new Date('2026-11-08T00:00:00.000Z'),
+        holderDid: issuerDid,
+      });
+      const wrongChallenge = await verifyIngredientEvidencePresentation(agent, presentation, {
+        challenge: 'different-challenge',
+        expectedIssuerDid: issuerDid,
+        now: new Date('2026-11-06T23:00:00.000Z'),
+        supplierWallet,
+      });
+      expect(wrongChallenge.reasons).toContain('INVALID_PRESENTATION_SIGNATURE');
+
+      const tampered = structuredClone(presentation);
+      tampered.proof.jwt = `${tampered.proof.jwt.slice(0, -1)}x`;
+      const invalidSignature = await verifyIngredientEvidencePresentation(agent, tampered, {
+        challenge: 'correct-challenge',
+        expectedIssuerDid: issuerDid,
+        now: new Date('2026-11-06T23:00:00.000Z'),
+        supplierWallet,
+      });
+      expect(invalidSignature.reasons).toContain('INVALID_PRESENTATION_SIGNATURE');
     });
   });
 });

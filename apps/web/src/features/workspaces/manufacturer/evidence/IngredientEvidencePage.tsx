@@ -1,266 +1,226 @@
-import { useState } from 'react';
-import { Search, Clock, CheckCircle2, AlertCircle, FileCheck } from 'lucide-react';
-import { T, UI, Btn, StatCard } from '../../shared/ui';
-import { type EvidenceRequest, type AcceptedEvidence } from './types';
-import { INIT_REQUESTS, INIT_ACCEPTED } from './fixtures';
-import { RequestWizard } from './RequestWizard';
-import { RequestDetail } from './RequestDetail';
-import { ReviewEvidence } from './ReviewEvidence';
-import { RequestsTable } from './RequestsTable';
-import { AcceptedEvidenceTable } from './AcceptedEvidenceTable';
-export function IngredientEvidence({ onNav }: { onNav: (t: string) => void }) {
-  type View = 'list' | 'wizard' | 'detail' | 'review';
-  const [view, setView] = useState<View>('list');
-  const [tab, setTab] = useState<'requests' | 'accepted'>('requests');
-  const [search, setSearch] = useState('');
-  const [requests, setRequests] = useState<EvidenceRequest[]>(INIT_REQUESTS);
-  const [accepted, setAccepted] = useState<AcceptedEvidence[]>(INIT_ACCEPTED);
-  const [activeId, setActiveId] = useState<string | null>(null);
+import { useEffect, useState } from 'react';
+import { CheckCircle2, Clock, FileCheck } from 'lucide-react';
 
-  const activeReq = requests.find((r) => r.id === activeId) ?? null;
+import {
+  listEvidenceRequests,
+  listProductionIngredients,
+  prepareEvidenceAcceptance,
+  prepareEvidenceRequest,
+  type ProductionEvidenceRequest,
+  type ProductionIngredient,
+} from '../../../production-flow/production-flow.api';
+import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import {
+  Alert,
+  Badge,
+  Btn,
+  Card,
+  EmptyState,
+  Input,
+  SectionTitle,
+  StatCard,
+  T,
+  Table,
+  TD,
+  TR,
+} from '../../shared/ui';
+import { chainDate, shortChainId } from '../../shared/operational-format';
 
-  const updateReq = (id: string, patch: Partial<EvidenceRequest>) =>
-    setRequests((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+const statuses = [
+  'Unknown',
+  'Awaiting response',
+  'Evidence received',
+  'Accepted',
+  'Declined',
+  'Rejected',
+  'Cancelled',
+];
 
-  const counts = {
-    awaiting: requests.filter((r) => r.status === 'awaiting').length,
-    received: requests.filter((r) => r.status === 'received').length,
-    accepted: accepted.length,
-    attention: requests.filter(
-      (r) => (r.status === 'awaiting' && r.overdue) || r.status === 'declined',
-    ).length,
+export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) => void }) {
+  const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
+  const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
+  const [batchId, setBatchId] = useState('');
+  const [reason, setReason] = useState('Product ingredient traceability verification');
+  const [dueAt, setDueAt] = useState('');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const load = async () => {
+    const [ingredientResult, requestResult] = await Promise.all([
+      listProductionIngredients(),
+      listEvidenceRequests(),
+    ]);
+    setIngredients(ingredientResult.batches);
+    setRequests(requestResult.requests);
+  };
+  useEffect(() => {
+    void load().catch((cause) =>
+      setError(cause instanceof Error ? cause.message : 'Could not load evidence records.'),
+    );
+  }, []);
+
+  const requestEvidence = async () => {
+    setBusy('request');
+    setError('');
+    setNotice('');
+    try {
+      const operationId = crypto.randomUUID();
+      await completePreparedWorkflow(() =>
+        prepareEvidenceRequest({
+          batchId,
+          claims: [
+            'Full Ingredient Credential',
+            'Ingredient batch identity',
+            'Credential validity',
+          ],
+          dueAt: new Date(`${dueAt}T23:59:59`).toISOString(),
+          operationId,
+          reason,
+        }),
+      );
+      setNotice('The evidence request is confirmed on chain.');
+      setBatchId('');
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The request failed.');
+    } finally {
+      setBusy('');
+    }
   };
 
-  const filteredRequests = requests.filter((r) => {
-    const q = search.toLowerCase();
-    return (
-      !q ||
-      r.id.toLowerCase().includes(q) ||
-      r.supplier.toLowerCase().includes(q) ||
-      r.ingredient.toLowerCase().includes(q) ||
-      r.batch.toLowerCase().includes(q)
-    );
-  });
+  const accept = async (requestId: string) => {
+    setBusy(requestId);
+    setError('');
+    setNotice('');
+    try {
+      await completePreparedWorkflow(() => prepareEvidenceAcceptance(requestId));
+      setNotice('The cryptographically verified evidence is accepted for this Manufacturer.');
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Evidence acceptance failed.');
+    } finally {
+      setBusy('');
+    }
+  };
 
-  const filteredAccepted = accepted.filter((a) => {
-    const q = search.toLowerCase();
-    return (
-      !q ||
-      a.ingredient.toLowerCase().includes(q) ||
-      a.batch.toLowerCase().includes(q) ||
-      a.supplier.toLowerCase().includes(q) ||
-      a.credentialId.toLowerCase().includes(q)
-    );
-  });
-
-  // ── Wizard ─────────────────────────────────────────────────────────────────
-  if (view === 'wizard') {
-    return (
-      <RequestWizard
-        onBack={() => setView('list')}
-        onSent={(newReq) => {
-          setRequests((prev) => [newReq, ...prev]);
-          setView('list');
-        }}
-      />
-    );
-  }
-
-  // ── Detail ─────────────────────────────────────────────────────────────────
-  if (view === 'detail' && activeReq) {
-    return (
-      <RequestDetail
-        req={activeReq}
-        onBack={() => setView('list')}
-        onReview={() => setView('review')}
-        onFollowUp={() => {
-          setView('wizard');
-        }}
-        onCancel={(reason) => {
-          updateReq(activeReq.id, {
-            status: 'cancelled',
-            timeline: [
-              ...activeReq.timeline,
-              {
-                date:
-                  '2026-09-07 ' +
-                  new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-                event: `Request cancelled. Reason: ${reason}`,
-                type: 'cancelled',
-              },
-            ],
-          });
-          setView('list');
-        }}
-      />
-    );
-  }
-
-  // ── Review ─────────────────────────────────────────────────────────────────
-  if (view === 'review' && activeReq) {
-    return (
-      <ReviewEvidence
-        req={activeReq}
-        onBack={() => setView('detail')}
-        onAccept={(notes) => {
-          const acc: AcceptedEvidence = {
-            reqId: activeReq.id,
-            ingredient: activeReq.ingredient,
-            batch: activeReq.batch,
-            supplier: activeReq.supplier,
-            credentialId: activeReq.credentialId ?? 'IC-' + activeReq.batch,
-            acceptedDate: '2026-09-07',
-            credentialExpiry: activeReq.credentialExpiry ?? '2027-09-07',
-            credentialStatus: 'active',
-            availability: 'available',
-          };
-          setAccepted((prev) => [acc, ...prev]);
-          updateReq(activeReq.id, {
-            status: 'accepted',
-            acceptedDate: '2026-09-07',
-            reviewNotes: notes,
-            timeline: [
-              ...activeReq.timeline,
-              {
-                date:
-                  '2026-09-07 ' +
-                  new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-                event: 'Evidence accepted and added to Accepted Evidence.',
-                type: 'accepted',
-              },
-            ],
-          });
-          setView('list');
-          setTab('accepted');
-        }}
-        onReject={(reason, notes) => {
-          updateReq(activeReq.id, {
-            status: 'rejected',
-            declineReason: reason,
-            timeline: [
-              ...activeReq.timeline,
-              {
-                date:
-                  '2026-09-07 ' +
-                  new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
-                event: `Evidence rejected by manufacturer. ${notes ? 'Notes: ' + notes : ''}`,
-                type: 'rejected',
-              },
-            ],
-          });
-          setView('list');
-        }}
-      />
-    );
-  }
-
-  // ── List ───────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      {/* Page header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: T.navy, margin: '0 0 4px' }}>
-            Ingredient Evidence
-          </h1>
-          <p style={{ fontSize: 13, color: T.text2, margin: 0 }}>
-            Request, review and verify supplier evidence before using ingredients in your products.
-          </p>
-        </div>
-        <Btn onClick={() => setView('wizard')}>Request Ingredient Evidence</Btn>
-      </div>
-
-      {/* Stat cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
+    <div style={{ display: 'grid', gap: 18 }}>
+      <SectionTitle
+        title="Ingredient Evidence"
+        sub="Real EvidenceRegistry requests and challenge-bound Supplier presentations"
+      />
+      {error && <Alert type="error" message={error} />}
+      {notice && <Alert type="success" message={notice} />}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 14 }}>
         <StatCard
-          label="Awaiting Supplier Response"
-          value={counts.awaiting}
+          label="Awaiting Supplier"
+          value={requests.filter((item) => item.status === 1).length}
           color={T.amber}
-          icon={<Clock size={22} />}
+          icon={<Clock size={20} />}
         />
         <StatCard
-          label="Evidence Ready for Review"
-          value={counts.received}
+          label="Ready for Review"
+          value={requests.filter((item) => item.status === 2).length}
           color={T.teal}
-          icon={<FileCheck size={22} />}
+          icon={<FileCheck size={20} />}
         />
         <StatCard
-          label="Accepted Evidence"
-          value={counts.accepted}
+          label="Accepted"
+          value={requests.filter((item) => item.status === 3).length}
           color={T.green}
-          icon={<CheckCircle2 size={22} />}
-        />
-        <StatCard
-          label="Requiring Attention"
-          value={counts.attention}
-          color={T.red}
-          icon={<AlertCircle size={22} />}
+          icon={<CheckCircle2 size={20} />}
         />
       </div>
-
-      {/* Tabs + search */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div
-          style={{ display: 'flex', gap: 2, background: T.surface2, borderRadius: 8, padding: 3 }}
-        >
-          {(['requests', 'accepted'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
+      <Card>
+        <div style={{ fontWeight: 700, color: T.navy, marginBottom: 12 }}>
+          Request evidence for an active Supplier batch
+        </div>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <label style={{ fontSize: 12, color: T.text2 }}>
+            Ingredient batch
+            <select
+              value={batchId}
+              onChange={(event) => setBatchId(event.target.value)}
               style={{
-                padding: '6px 18px',
-                borderRadius: 6,
-                border: 'none',
-                cursor: 'pointer',
-                fontFamily: UI,
-                fontSize: 13,
-                fontWeight: tab === t ? 600 : 400,
-                background: tab === t ? T.surface : 'transparent',
-                color: tab === t ? T.navy : T.text2,
-                boxShadow: tab === t ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+                display: 'block',
+                width: '100%',
+                marginTop: 6,
+                padding: 10,
+                border: `1px solid ${T.border}`,
+                borderRadius: 8,
               }}
             >
-              {t === 'requests' ? 'Requests' : 'Accepted Evidence'}
-            </button>
-          ))}
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '7px 12px',
-            background: T.surface,
-            border: `1px solid ${T.border}`,
-            borderRadius: 8,
-            width: 280,
-          }}
-        >
-          <Search size={14} color={T.text3} />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search supplier, ingredient, batch, ID…"
-            style={{
-              border: 'none',
-              background: 'none',
-              color: T.text,
-              fontSize: 13,
-              outline: 'none',
-              flex: 1,
-              fontFamily: UI,
-            }}
+              <option value="">Select a real on-chain batch</option>
+              {ingredients
+                .filter((item) => !item.accepted)
+                .map((item) => (
+                  <option key={item.batchId} value={item.batchId}>
+                    {shortChainId(item.batchId)} · Supplier {shortChainId(item.supplier)} ·{' '}
+                    {item.availableQuantity} available
+                  </option>
+                ))}
+            </select>
+          </label>
+          <Input label="Reason" value={reason} onChange={setReason} required />
+          <Input label="Response deadline" type="date" value={dueAt} onChange={setDueAt} required />
+          <Alert
+            type="info"
+            message="The request details and random challenge are encrypted before upload. Only their hashes and encrypted content reference are recorded on chain."
           />
+          <Btn
+            disabled={!batchId || !reason.trim() || !dueAt || Boolean(busy)}
+            onClick={() => void requestEvidence()}
+          >
+            {busy === 'request' ? 'Confirming…' : 'Request evidence with MetaMask'}
+          </Btn>
         </div>
-      </div>
-
-      <RequestsTable
-        tab={tab}
-        filteredRequests={filteredRequests}
-        setView={setView}
-        setActiveId={setActiveId}
-      />
-      <AcceptedEvidenceTable tab={tab} filteredAccepted={filteredAccepted} onNav={onNav} />
+      </Card>
+      {requests.length === 0 ? (
+        <EmptyState
+          icon={<FileCheck size={42} />}
+          title="No real evidence requests"
+          sub="Select an active Supplier ingredient batch to begin."
+        />
+      ) : (
+        <Card padding="0">
+          <Table headers={['Request', 'Ingredient batch', 'Supplier', 'Due', 'Status', '']}>
+            {requests.map((request) => (
+              <TR key={request.requestId}>
+                <TD mono>{shortChainId(request.requestId)}</TD>
+                <TD mono>{shortChainId(request.ingredientBatchId)}</TD>
+                <TD mono muted>
+                  {shortChainId(request.supplier)}
+                </TD>
+                <TD muted>{chainDate(request.dueAt)}</TD>
+                <TD>
+                  <Badge
+                    label={statuses[request.status] ?? 'Unknown'}
+                    variant={
+                      request.status === 3
+                        ? 'active'
+                        : request.status === 2
+                          ? 'verified'
+                          : 'pending'
+                    }
+                  />
+                </TD>
+                <TD>
+                  {request.status === 2 && (
+                    <Btn
+                      size="xs"
+                      disabled={Boolean(busy)}
+                      onClick={() => void accept(request.requestId)}
+                    >
+                      {busy === request.requestId ? 'Verifying…' : 'Verify & accept'}
+                    </Btn>
+                  )}
+                </TD>
+              </TR>
+            ))}
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }

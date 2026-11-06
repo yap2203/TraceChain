@@ -20,6 +20,8 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 | `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry         |
 | `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry          |
 | `INGREDIENT_REGISTRY_ADDRESS`    | Address placeholder      | Deployed ingredient registry          |
+| `EVIDENCE_REGISTRY_ADDRESS`      | Address placeholder      | Deployed evidence registry            |
+| `PRODUCT_REGISTRY_ADDRESS`       | Address placeholder      | Deployed product registry             |
 | `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract    |
 | `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                   |
 | `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds           |
@@ -125,6 +127,21 @@ Retries reuse the persisted workflow under `.tracechain/issuance/ingredient-batc
 ### `GET /api/ingredient-batches`
 
 Requires the same Supplier authorization. The API obtains batch IDs from `IngredientBatchRegistered` events, re-reads each batch with `getBatch`, filters by the authenticated Supplier wallet, and merges authorized private metadata from the encrypted local workflow envelope. It does not accept a Supplier wallet query parameter.
+
+### Production flow endpoints
+
+The following endpoints require a SIWE session, a cryptographically verified Company Role Credential, and a fresh matching on-chain role/credential/permission check. They use the session wallet as the actor and never accept a caller-selected sender wallet:
+
+- `GET /api/production-flow/ingredients` lists active Supplier ingredient batches for a Manufacturer and marks batches already accepted for that Manufacturer.
+- `POST /api/production-flow/evidence-requests/prepare` creates or resumes an encrypted, random-challenge evidence request and returns unsigned `EvidenceRegistry.requestEvidence` calldata until the exact contract record exists.
+- `GET /api/production-flow/evidence-requests` returns authoritative request state scoped to the authenticated Manufacturer or intended Supplier.
+- `POST /api/production-flow/evidence-requests/:requestId/respond/prepare` retrieves the intended Supplier's server-authorized issued Ingredient Credential, creates and verifies a challenge-bound VP containing the complete credential, encrypts it, and returns unsigned `respond` calldata.
+- `POST /api/production-flow/evidence-requests/:requestId/accept/prepare` decrypts and cryptographically verifies the stored VP, challenge, Supplier issuer, batch, credential ID/hash, dates, current credential state, and Supplier role before returning unsigned `accept` calldata.
+- `POST /api/production-flow/products/prepare` requires accepted evidence and sufficient available quantity for every ingredient, encrypts private product metadata, and returns unsigned `ProductRegistry.createProduct` calldata.
+- `GET /api/production-flow/distributors` lists currently authorized Distributor wallets discovered from registry events and refreshed through `roleOf`.
+- `POST /api/production-flow/transfers/prepare` validates the Manufacturer, product transferability, inventory, intended Distributor, quantity, and arrival date before returning unsigned `CustodyTransfer.createTransfer` calldata. Completion is reported only after `getTransfer` matches and reports `AwaitingReceipt`.
+
+Workflow retries reuse ignored metadata under `.tracechain/issuance/production-flow.json` and reject changed inputs. Complete credentials, VPs, private metadata, encryption keys, and pinning credentials are never returned to the browser. The current JWT VP contains the complete Ingredient Credential; selective disclosure is not supported or claimed.
 
 ### `POST /api/custody-transfers/resolve-qr`
 

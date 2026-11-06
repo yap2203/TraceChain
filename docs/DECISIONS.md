@@ -144,6 +144,12 @@ packages/contracts/contracts/
 
 ## Credential and evidence storage
 
+- Use the existing issued Ingredient Credential repository as the only source for Supplier evidence responses; never accept a browser-submitted credential ID or credential body for evidence acceptance.
+- Bind every evidence presentation to a cryptographically random server-generated request challenge, encrypt the complete VP before IPFS upload, and verify the presentation, nested credential, batch, issuer, credential ID/hash, dates, on-chain credential state, and Supplier authorization before preparing acceptance calldata.
+- Present the complete JWT Ingredient Credential in Phase 6. JWT selective disclosure is not supported and must not be claimed in the UI or documentation.
+- Persist only ignored recovery metadata for evidence/product/transfer preparation so rejected or interrupted MetaMask writes can resume without generating different content or calldata inputs.
+- Prepare evidence, product, and transfer writes in the API, but keep every transaction signature and broadcast in the authenticated stakeholder's MetaMask.
+
 - Encrypt complete credentials, supporting documents, photographs, and reports before uploading them to IPFS.
 - Treat an IPFS CID as a content-addressed integrity reference, not a password or access-control mechanism.
 - Use authenticated encryption such as AES-256-GCM for sensitive IPFS content.

@@ -2,7 +2,7 @@
 
 TraceChain is a blockchain-based supply-chain traceability system with Self-Sovereign Identity credential verification. It is a TypeScript npm monorepo developed as a final-year project.
 
-The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, and detail views use authenticated chain reads. Admin workflows, custody-transfer receipt confirmation, and Supplier Ingredient Credential/batch registration are connected to authenticated services; several remaining write-oriented, evidence, credential-card, and report screens still require migration from fixtures.
+The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, and detail views use authenticated chain reads. Admin workflows, Supplier Ingredient Credential registration, Manufacturer evidence/product/Distributor-transfer writes, and custody receipt confirmation are connected to authenticated services; remaining credential-card, QR-history, receipt-evidence, and report screens still require migration from fixtures.
 
 ## Current implementation status
 
@@ -19,6 +19,7 @@ The current version includes a responsive React application, five stakeholder wo
 | Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status      |
 | SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
 | Supplier Ingredient Credentials          | Typed JWT VC issuance, encrypted IPFS storage, and sequential on-chain registration   |
+| Manufacturer production flow             | Real evidence VP, product creation, Distributor transfer, and transfer QR implemented |
 | Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
 | Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
 | Custody-transfer QR workflow             | Verified scanning and recipient-signed local receipt confirmation implemented         |
@@ -145,6 +146,8 @@ CHAIN_CURRENCY_SYMBOL=ETH
 STAKEHOLDER_REGISTRY_ADDRESS=0x...
 CREDENTIAL_REGISTRY_ADDRESS=0x...
 INGREDIENT_REGISTRY_ADDRESS=0x...
+EVIDENCE_REGISTRY_ADDRESS=0x...
+PRODUCT_REGISTRY_ADDRESS=0x...
 CUSTODY_TRANSFER_ADDRESS=0x...
 DEV_DISTRIBUTOR_WALLET=0x...
 AUTH_COOKIE_NAME=tracechain_session
@@ -230,7 +233,9 @@ The operational gateway reconstructs wallet-scoped ingredient, product, evidence
 
 The Supplier ingredient screen issues a typed `IngredientCredential` whose subject is the authenticated Supplier wallet and whose issuer is a server-derived, Supplier-specific DID. The backend verifies the signed VC before hashing it, encrypts the complete credential and private batch metadata with AES-256-GCM, pins only the encrypted envelope to IPFS, and prepares `CredentialRegistry.registerCredential` followed by `IngredientRegistry.registerBatch`. MetaMask remains the signer, retries resume the first incomplete stage, and the authenticated Supplier receives enriched private metadata only through the narrower ingredient-batch API. This JWT VC implementation does not claim selective disclosure. The prototype server-managed KMS must be replaced by an organizational stakeholder key-custody design for production.
 
-Evidence-response, transfer-creation, QR product-history, stakeholder credential-card, receipt reconciliation/evidence, and non-admin report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative.
+The Manufacturer production flow now uses real contract records. A Manufacturer selects an active Supplier batch, prepares an encrypted challenge-bound evidence request, and signs `EvidenceRegistry.requestEvidence`. The intended Supplier retrieves its server-authorized issued Ingredient Credential, presents the complete JWT VC in a Veramo-signed VP, encrypts that VP, and signs `respond`. JWT selective disclosure is not supported or claimed. The Manufacturer API decrypts and cryptographically verifies the VP, challenge, issuer, batch, credential hash/ID, expiry, on-chain credential status, and Supplier authorization before returning unsigned `accept` calldata. Accepted batches can then be consumed by a real `createProduct` transaction and transferred to an active Distributor through `createTransfer`. Only a verified `AwaitingReceipt` transfer ID is passed to the existing QR renderer.
+
+QR product-history, stakeholder credential-card, receipt reconciliation/evidence, Distributor-to-Retailer writes, and non-admin report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative.
 
 Access Control also provides live role counts and a configurable on-chain permission matrix. Every grant or removal is prepared by the API, signed by the System Admin in MetaMask, recorded by `StakeholderRegistry`, and enforced by the affected contracts. System Admin authority and structural custody routes remain fixed safety constraints. This contract upgrade requires a fresh deployment.
 
