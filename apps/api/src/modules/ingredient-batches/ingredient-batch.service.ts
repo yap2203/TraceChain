@@ -52,7 +52,7 @@ export class IngredientBatchService {
     const supplierWallet = getAddress(session.address);
     await this.requireChainAuthorization(
       supplierWallet,
-      session.credentialVerification!.credentialHash,
+      session.onChainAuthorization!.credentialHash!,
     );
 
     const normalized = this.issueInput(input, supplierWallet);
@@ -93,7 +93,7 @@ export class IngredientBatchService {
     const supplierWallet = getAddress(session.address);
     await this.requireChainAuthorization(
       supplierWallet,
-      session.credentialVerification!.credentialHash,
+      session.onChainAuthorization!.credentialHash!,
     );
     const batchIds = await this.safeGateway(() =>
       this.dependencies.gateway.listBatchIds(supplierWallet),
@@ -282,11 +282,15 @@ export class IngredientBatchService {
 
   private async requireSupplier(sessionId: string | undefined) {
     const session = await this.dependencies.authService.requireSession(sessionId);
-    const verification = session.credentialVerification;
-    if (!verification?.authorizationReady || verification.role !== CompanyRole.SUPPLIER) {
+    const authorization = session.onChainAuthorization;
+    if (
+      authorization?.status !== 'AUTHORIZED' ||
+      authorization.role !== CompanyRole.SUPPLIER ||
+      !authorization.credentialHash
+    ) {
       throw new IngredientBatchApiError(
         'SUPPLIER_AUTHORIZATION_REQUIRED',
-        'An active Supplier Company Role Credential is required.',
+        'Current on-chain Supplier authorization is required.',
         403,
       );
     }

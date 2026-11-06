@@ -190,6 +190,12 @@ describe('Supplier ingredient-batch API', () => {
       authService: {
         requireSession: async () => ({
           address: SUPPLIER,
+          onChainAuthorization: {
+            checkedAt: new Date(),
+            credentialHash: 'a'.repeat(64),
+            role: CompanyRole.DISTRIBUTOR,
+            status: 'AUTHORIZED',
+          },
           credentialVerification: {
             authorizationReady: true,
             credentialHash: 'a'.repeat(64),
@@ -379,6 +385,12 @@ function authorizedAuthService() {
         throw new AuthError('AUTHENTICATION_REQUIRED', 'Authentication is required.', 401);
       return {
         address: getAddress(SUPPLIER),
+        onChainAuthorization: {
+          checkedAt: new Date(),
+          credentialHash: 'a'.repeat(64),
+          role: CompanyRole.SUPPLIER,
+          status: 'AUTHORIZED',
+        },
         credentialVerification: {
           authorizationReady: true,
           credentialHash: 'a'.repeat(64),

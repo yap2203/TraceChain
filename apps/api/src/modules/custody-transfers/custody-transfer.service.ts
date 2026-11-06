@@ -153,15 +153,11 @@ export class CustodyTransferService {
 
   private async requireAuthorizedSession(sessionId: string | undefined) {
     const session = await this.dependencies.authService.requireSession(sessionId);
-    const authorization = session.credentialVerification;
-    if (
-      !authorization?.locallyVerified ||
-      !authorization.onChainStatusChecked ||
-      !authorization.authorizationReady
-    ) {
+    const authorization = session.onChainAuthorization;
+    if (authorization?.status !== 'AUTHORIZED') {
       throw new CustodyTransferApiError(
-        'CREDENTIAL_AUTHORIZATION_REQUIRED',
-        'An active Company Role Credential and blockchain authorization are required.',
+        'ON_CHAIN_AUTHORIZATION_REQUIRED',
+        'Current on-chain company authorization is required.',
         403,
       );
     }

@@ -40,7 +40,10 @@ export class AuthController {
   verify = async (request: Request, response: Response, next: NextFunction) => {
     try {
       const input = verifyRequestSchema.parse(request.body);
+      const previousSessionId = request.cookies?.[this.cookieName] as string | undefined;
       const result = await this.authService.verify(input.message, input.signature);
+      if (previousSessionId && previousSessionId !== result.sessionId)
+        await this.authService.logout(previousSessionId);
 
       response.cookie(this.cookieName, result.sessionId, this.cookieOptions);
       response.json(result.response);

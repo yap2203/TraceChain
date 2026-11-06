@@ -244,6 +244,11 @@ describe('Company Role Credential presentation API', () => {
     const fakeAuthService = {
       requireSession: async () => ({
         address: administrator.address,
+        onChainAuthorization: {
+          checkedAt: NOW,
+          role: CompanyRole.SYSTEM_ADMIN,
+          status: 'AUTHORIZED',
+        },
         credentialVerification: {
           authorizationReady: true,
           role: CompanyRole.SYSTEM_ADMIN,

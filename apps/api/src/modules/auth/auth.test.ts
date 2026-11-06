@@ -1,4 +1,5 @@
 import { Wallet } from 'ethers';
+import { CompanyRole } from '@tracechain/shared';
 import request from 'supertest';
 import { SiweMessage } from 'siwe';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -99,7 +100,8 @@ describe('SIWE authentication', () => {
       address: wallet.address,
       authenticated: true,
       credentialVerified: false,
-      message: 'Wallet verified. Company Role Credential verification is required.',
+      authorizationStatus: 'UNAVAILABLE',
+      message: 'Wallet verified, but on-chain authorization is temporarily unavailable.',
     });
     expect(response.headers['set-cookie']?.[0]).toContain('HttpOnly');
     expect(response.headers['set-cookie']?.[0]).toContain('SameSite=Lax');
@@ -279,5 +281,75 @@ describe('SIWE authentication', () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ authenticated: false });
+  });
+
+  it('allows only one concurrent verification to consume a nonce', async () => {
+    const agent = request.agent(app);
+    const wallet = Wallet.createRandom();
+    const challenge = await issueNonce(agent, wallet.address);
+    const signed = await createSignedMessage(wallet, challenge.nonce, {
+      expirationTime: challenge.expiresAt,
+    });
+    const responses = await Promise.all([
+      agent.post('/api/auth/verify').send(signed),
+      agent.post('/api/auth/verify').send(signed),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 401]);
+  });
+
+  it('rejects state-changing browser requests from an untrusted origin', async () => {
+    const response = await request(app)
+      .post('/api/auth/nonce')
+      .set('Origin', 'https://attacker.example')
+      .send({ address: Wallet.createRandom().address });
+    expect(response.status).toBe(403);
+    expect(response.body.error.code).toBe('UNTRUSTED_ORIGIN');
+  });
+
+  it('rate limits repeated nonce creation for one wallet', async () => {
+    const wallet = Wallet.createRandom();
+    for (let attempt = 0; attempt < 20; attempt += 1)
+      await request(app).post('/api/auth/nonce').send({ address: wallet.address }).expect(201);
+    const response = await request(app).post('/api/auth/nonce').send({ address: wallet.address });
+    expect(response.status).toBe(429);
+    expect(response.body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('rechecks registry authorization when restoring an existing session', async () => {
+    let authorizationStatus: 'AUTHORIZED' | 'SUSPENDED' = 'AUTHORIZED';
+    const authService = new AuthService({
+      authorizationResolver: {
+        resolve: async () => ({
+          checkedAt: new Date(now),
+          credentialHash: `0x${'12'.repeat(32)}`,
+          credentialId: `0x${'34'.repeat(32)}`,
+          role: CompanyRole.SUPPLIER,
+          status: authorizationStatus,
+        }),
+      },
+      clock: () => new Date(now),
+      configuration: {
+        chainId: CHAIN_ID,
+        domain: DOMAIN,
+        nonceTtlMs: NONCE_TTL_MS,
+        sessionTtlMs: 8 * 60 * 60 * 1_000,
+        uri: URI,
+      },
+      nonceRepository: new InMemoryNonceRepository(),
+      sessionRepository: new InMemorySessionRepository(),
+    });
+    app = createApp({ authService });
+    const agent = request.agent(app);
+    const authentication = await authenticate(agent, Wallet.createRandom());
+    expect(authentication.body).toMatchObject({ authorizationReady: true, role: 'SUPPLIER' });
+
+    authorizationStatus = 'SUSPENDED';
+    const restored = await agent.get('/api/auth/session').expect(200);
+    expect(restored.body).toMatchObject({
+      authenticated: true,
+      authorizationReady: false,
+      authorizationStatus: 'SUSPENDED',
+    });
+    expect(restored.body.role).toBeUndefined();
   });
 });

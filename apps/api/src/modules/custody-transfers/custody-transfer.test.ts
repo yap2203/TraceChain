@@ -62,6 +62,13 @@ describe('custody-transfer QR resolution API', () => {
     await sessionRepository.save({
       address: RECIPIENT,
       createdAt: NOW,
+      onChainAuthorization: {
+        checkedAt: NOW,
+        credentialHash: `0x${'33'.repeat(32)}`,
+        credentialId: `0x${'44'.repeat(32)}`,
+        role: CompanyRole.DISTRIBUTOR,
+        status: 'AUTHORIZED',
+      },
       credentialVerification: {
         authorizationReady: true,
         credentialHash: `0x${'33'.repeat(32)}`,
@@ -144,7 +151,7 @@ describe('custody-transfer QR resolution API', () => {
   it('keeps existing credential and on-chain authorization rules enforced', async () => {
     const response = await resolve(qrPayload(), WALLET_ONLY_SESSION_ID).expect(403);
 
-    expect(response.body.error.code).toBe('CREDENTIAL_AUTHORIZATION_REQUIRED');
+    expect(response.body.error.code).toBe('ON_CHAIN_AUTHORIZATION_REQUIRED');
     expect(getTransfer).not.toHaveBeenCalled();
   });
 
@@ -239,7 +246,7 @@ describe('custody-transfer QR resolution API', () => {
       .expect(401);
 
     const unauthorized = await prepare(WALLET_ONLY_SESSION_ID).expect(403);
-    expect(unauthorized.body.error.code).toBe('CREDENTIAL_AUTHORIZATION_REQUIRED');
+    expect(unauthorized.body.error.code).toBe('ON_CHAIN_AUTHORIZATION_REQUIRED');
     expect(getTransfer).not.toHaveBeenCalled();
     expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
   });

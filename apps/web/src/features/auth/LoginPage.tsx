@@ -5,7 +5,6 @@ import { COMPANY_ROLE_TO_WORKSPACE } from '@tracechain/shared';
 import { Brand } from '../../components/brand/Brand';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { chainConfig } from '../../config/network';
-import { CredentialVerificationPanel } from './CredentialVerificationPanel';
 import { getLoginAuthPresentation } from './login-auth-presentation';
 import { shortenAddress, useWalletAuthentication } from './useWalletAuthentication';
 
@@ -118,9 +117,8 @@ function LoginPage() {
     cancelConnection,
     connect,
     connectMobile,
-    credentialState,
     logout,
-    presentCredential,
+    refreshSession,
     state: walletState,
     switchToTargetNetwork,
   } = useWalletAuthentication();
@@ -299,11 +297,9 @@ function LoginPage() {
 
                 <h2 id="sign-in-title">{authPresentation.authenticationTitle}</h2>
                 <p className="sign-in-intro">
-                  {authPresentation.locallyVerified
-                    ? 'Your wallet and Company Role Credential are verified locally.'
-                    : authPresentation.authenticated
-                      ? 'Verify your Company Role Credential to continue.'
-                      : "Use your organisation's MetaMask wallet."}
+                  {authPresentation.authenticated
+                    ? 'Wallet ownership is verified. Access is resolved from the configured registries.'
+                    : "Use your organisation's MetaMask wallet and sign the gas-free login message."}
                 </p>
 
                 <dl className="network-panel">
@@ -336,13 +332,13 @@ function LoginPage() {
                     </dd>
                   </div>
                   <div>
-                    <dt>Credential</dt>
+                    <dt>Authorization</dt>
                     <dd>
-                      {walletState.credentialVerified
-                        ? `${walletState.role ?? 'Role'} · locally verified`
-                        : walletState.phase === 'authenticated'
-                          ? 'Verification required'
-                          : 'Not verified'}
+                      {walletState.phase === 'authenticated'
+                        ? walletState.authorizationReady
+                          ? `${walletState.role ?? 'Company'} · authorized`
+                          : formatAuthorizationStatus(walletState.authorizationStatus)
+                        : 'Not checked'}
                     </dd>
                   </div>
                 </dl>
@@ -484,19 +480,23 @@ function LoginPage() {
                     {walletState.message}
                   </p>
                 )}
-                {walletState.phase === 'authenticated' && (
-                  <CredentialVerificationPanel
-                    authorizationReady={walletState.authorizationReady}
-                    credentialId={walletState.credentialId}
-                    credentialState={credentialState}
-                    credentialVerified={walletState.credentialVerified}
-                    onPresent={presentCredential}
-                    onChainStatusChecked={walletState.onChainStatusChecked}
-                    role={walletState.role}
-                    walletAddress={
-                      walletState.address ? shortenAddress(walletState.address) : undefined
-                    }
-                  />
+                {walletState.phase === 'authenticated' &&
+                  walletState.authorizationStatus === 'UNAVAILABLE' && (
+                    <button
+                      className="connect-button"
+                      onClick={() => void refreshSession()}
+                      type="button"
+                    >
+                      Retry authorization check
+                    </button>
+                  )}
+                {walletState.phase === 'authenticated' && walletState.applicationId && (
+                  <p className="wallet-help-panel">
+                    Application {shortenReference(walletState.applicationId)}
+                    {walletState.applicationUpdatedAt
+                      ? ` · updated ${new Date(walletState.applicationUpdatedAt * 1000).toLocaleString()}`
+                      : ''}
+                  </p>
                 )}
                 <Link className="register-button" to="/register-company">
                   Register a company
@@ -518,8 +518,8 @@ function LoginPage() {
               </button>
               {showWalletHelp && (
                 <p className="wallet-help-panel">
-                  Your wallet proves address control. Your role is verified separately from your
-                  Company Role Credential.
+                  SIWE proves address control. TraceChain separately checks the wallet's current
+                  stakeholder, role, and credential registry records.
                 </p>
               )}
             </div>
@@ -630,7 +630,7 @@ function LoginPage() {
               <Icon name="check" size={14} /> No private keys stored
             </span>
             <span>
-              <Icon name="check" size={14} /> Credentials verified before access
+              <Icon name="check" size={14} /> Current registry authorization checked
             </span>
             <a href="#sign-in">{authPresentation.securityActionLabel} →</a>
           </div>
@@ -647,3 +647,24 @@ function LoginPage() {
 }
 
 export default LoginPage;
+
+function formatAuthorizationStatus(status?: string) {
+  return (
+    {
+      ACTIVATION_PENDING: 'Credential activation pending',
+      ADDITIONAL_EVIDENCE_REQUIRED: 'Additional evidence required',
+      APPLICATION_PENDING: 'Application pending',
+      APPLICATION_REJECTED: 'Application rejected',
+      EXPIRED: 'Authorization expired',
+      REVOKED: 'Authorization revoked',
+      SUSPENDED: 'Authorization suspended',
+      UNAUTHORIZED: 'Not authorized',
+      UNAVAILABLE: 'Check unavailable',
+      UNREGISTERED: 'Not registered',
+    } as Record<string, string>
+  )[status ?? 'UNAVAILABLE'];
+}
+
+function shortenReference(value: string) {
+  return `${value.slice(0, 10)}…${value.slice(-6)}`;
+}

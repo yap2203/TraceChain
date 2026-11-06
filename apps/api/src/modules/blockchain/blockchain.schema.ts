@@ -29,16 +29,33 @@ export const credentialLifecycleTransactionSchema = z
   })
   .superRefine((value, context) => {
     if (value.action !== 'reactivate' && !value.reasonHash) {
-      context.addIssue({ code: 'custom', message: 'A reason hash is required.', path: ['reasonHash'] });
+      context.addIssue({
+        code: 'custom',
+        message: 'A reason hash is required.',
+        path: ['reasonHash'],
+      });
     }
   });
 
 export const stakeholderLifecycleTransactionSchema = z
-  .object({ action: z.enum(['suspend', 'reactivate', 'revoke']), account: z.string().regex(/^0x[0-9a-fA-F]{40}$/), reasonHash: bytes32Schema.optional() })
-  .superRefine((value, context) => { if (value.action !== 'reactivate' && !value.reasonHash) context.addIssue({ code: 'custom', message: 'A reason hash is required.', path: ['reasonHash'] }); });
+  .object({
+    action: z.enum(['suspend', 'reactivate', 'revoke']),
+    account: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    reasonHash: bytes32Schema.optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.action !== 'reactivate' && !value.reasonHash)
+      context.addIssue({
+        code: 'custom',
+        message: 'A reason hash is required.',
+        path: ['reasonHash'],
+      });
+  });
 
-export const rolePermissionTransactionSchema = z.object({
-  allowed: z.boolean(),
-  permission: bytes32Schema,
-  role: z.number().int().min(2).max(5),
-}).strict();
+export const rolePermissionTransactionSchema = z
+  .object({
+    allowed: z.boolean(),
+    permission: bytes32Schema,
+    role: z.number().int().min(2).max(5),
+  })
+  .strict();

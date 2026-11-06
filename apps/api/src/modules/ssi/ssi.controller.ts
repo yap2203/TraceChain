@@ -41,6 +41,23 @@ export class SsiController {
     }
   };
 
+  prepareAdministratorCredential = async (
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
+      response.json(await this.service.prepareAdministratorCredentialOnChain(sessionId));
+    } catch (error) {
+      if (error instanceof AuthError || error instanceof SsiApiError) {
+        response.status(error.status).json({ error: { code: error.code, message: error.message } });
+        return;
+      }
+      next(error);
+    }
+  };
+
   issueCompanyRole = async (request: Request, response: Response, next: NextFunction) => {
     try {
       const input = companyRoleIssuanceRequestSchema.parse(request.body);

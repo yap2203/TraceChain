@@ -19,9 +19,34 @@ export interface NonceRecord {
 export interface SessionRecord {
   address: string;
   credentialVerification?: CredentialVerificationSummary;
+  onChainAuthorization?: OnChainAuthorizationSummary;
   createdAt: Date;
   expiresAt: Date;
   id: string;
+}
+
+export type OnChainAuthorizationStatus =
+  | 'AUTHORIZED'
+  | 'UNREGISTERED'
+  | 'APPLICATION_PENDING'
+  | 'ADDITIONAL_EVIDENCE_REQUIRED'
+  | 'APPLICATION_REJECTED'
+  | 'ACTIVATION_PENDING'
+  | 'SUSPENDED'
+  | 'REVOKED'
+  | 'EXPIRED'
+  | 'UNAUTHORIZED'
+  | 'UNAVAILABLE';
+
+export interface OnChainAuthorizationSummary {
+  applicationId?: string;
+  applicationSubmittedAt?: number;
+  applicationUpdatedAt?: number;
+  checkedAt: Date;
+  credentialHash?: string;
+  credentialId?: string;
+  role?: CompanyRole;
+  status: OnChainAuthorizationStatus;
 }
 
 export interface CredentialVerificationSummary {
@@ -42,22 +67,26 @@ interface AuthenticatedSessionBase {
   authorizationReady: boolean;
   expiresAt: string;
   onChainStatusChecked: boolean;
+  authorizationStatus: OnChainAuthorizationStatus;
+  applicationId?: string;
+  applicationSubmittedAt?: number;
+  applicationUpdatedAt?: number;
+  credentialId?: string;
+  role?: CompanyRole;
+  verifiedAt?: string;
 }
 
 export interface WalletOnlyAuthenticatedSession extends AuthenticatedSessionBase {
   credentialVerified: false;
   locallyVerified: false;
-  message: 'Wallet verified. Company Role Credential verification is required.';
+  message: string;
 }
 
 export interface LocallyVerifiedAuthenticatedSession extends AuthenticatedSessionBase {
   credentialId: string;
   credentialVerified: true;
   locallyVerified: true;
-  message:
-    | 'Credential verified locally. Blockchain status verification is required.'
-    | 'Credential verified, but the blockchain record does not authorize this wallet.'
-    | 'Wallet, credential, and blockchain authorization verified.';
+  message: string;
   role: CompanyRole;
   verifiedAt: string;
 }

@@ -10,8 +10,6 @@ describe('login authentication presentation', () => {
   it('presents one clear start action before wallet authentication', () => {
     expect(
       getLoginAuthPresentation({
-        credentialVerified: false,
-        locallyVerified: false,
         phase: 'idle',
       }),
     ).toMatchObject({
@@ -21,32 +19,29 @@ describe('login authentication presentation', () => {
     });
   });
 
-  it('continues to credential verification after wallet authentication', () => {
+  it('shows registry authorization status after wallet authentication', () => {
     expect(
       getLoginAuthPresentation({
-        credentialVerified: false,
-        locallyVerified: false,
         phase: 'authenticated',
       }),
     ).toMatchObject({
       authenticated: true,
-      authenticationTitle: 'Wallet connected',
-      heroActionLabel: 'Continue verification',
+      authenticationTitle: 'Company access status',
+      heroActionLabel: 'View authorization status',
       locallyVerified: false,
     });
   });
 
-  it('shows authorization status without connect wording after local verification', () => {
+  it('shows authorized company access without claiming local VC verification', () => {
     const presentation = getLoginAuthPresentation({
-      credentialVerified: true,
-      locallyVerified: true,
+      authorizationReady: true,
       phase: 'authenticated',
     });
 
     expect(presentation).toMatchObject({
-      authenticationTitle: 'Role verified locally',
-      heroActionLabel: 'View authorization status',
-      locallyVerified: true,
+      authenticationTitle: 'Company access verified',
+      heroActionLabel: 'Open workspace',
+      locallyVerified: false,
     });
     expect(JSON.stringify(presentation).toLowerCase()).not.toContain('connect wallet');
   });

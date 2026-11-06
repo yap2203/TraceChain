@@ -45,18 +45,20 @@
 - Supplier-specific did:ethr issuer DIDs, typed JWT Ingredient Credential issuance/verification, AES-GCM encrypted IPFS storage, and sequential MetaMask registration of credential and batch records
 - Authenticated Supplier ingredient batch list/detail/overview data reconstructed from `IngredientBatchRegistered` events, contract reads, and authorized encrypted metadata
 - Real Manufacturer-to-Distributor production workflow: encrypted evidence requests, Supplier challenge-bound full-credential VPs, cryptographic acceptance, accepted-ingredient product creation, transfer preparation, and QR generation from the verified transfer ID
-- Authenticated Company Role Credential JSON presentation with safe session summaries and fail-closed workspace guards
+- Direct SIWE-to-registry login authorization with fresh stakeholder, role, and Company Role credential-record checks; manual VC verification remains separate from login
+- On-chain Company Role credential linkage for every company role plus an Admin bootstrap-to-registry workflow; complete credentials remain encrypted off-chain
 - Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
 
 Several non-admin stakeholder screens still use presentation fixtures. Workspace access requires a
-SIWE session, cryptographically verified Company Role Credential, and matching active blockchain
-authorization in every environment; there is no account-free localhost bypass.
+SIWE session and current matching blockchain authorization in every environment; there is no
+account-free localhost bypass. Normal login does not cryptographically verify the off-chain Company
+Role VC, although issuance and manual verification remain available separately.
 
 ## Identity and security rules
 
 - MetaMask proves control of a wallet; it does not issue Company Role Credentials or Ingredient Credentials.
 - Veramo manages the current DID, credential, and presentation foundation.
-- Company Role Credentials determine stakeholder roles only after cryptographic verification.
+- Login roles come only from current contract authorization. Company Role VCs remain independently verifiable off-chain and their registered type, subject, hash/reference, lifecycle, and expiry constrain on-chain company access.
 - Suppliers issue Ingredient Credentials through their authenticated, permission-checked workflow. Selective disclosure is not implemented by the current JWT credential format.
 - Invalid, expired, suspended, or revoked credentials must never grant access.
 - Routes, wallet addresses, fixture data, and browser storage are not trusted role evidence.

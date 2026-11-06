@@ -38,7 +38,7 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 The root template also contains `DEV_DISTRIBUTOR_WALLET` for the chain-31337 seed command. It is a
 public unlocked Hardhat address consumed by the CLI, not an API runtime secret.
 
-The SSI and blockchain variables are loaded lazily when credential verification needs them. They are not required by SIWE-only tests. The API and frontend both use `CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. The example KMS value and zero addresses intentionally fail credential-verification or command validation. Never provide or store the Admin wallet private key.
+SSI variables are loaded lazily when an SSI operation needs them. Blockchain RPC and registry configuration are required for direct login authorization, although injected SIWE unit tests do not require a live chain. The API and frontend both use `CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. The example KMS value and zero addresses intentionally fail SSI operations or command validation. Never provide or store the Admin wallet private key.
 
 ## Endpoints
 
@@ -72,17 +72,24 @@ Accepts a complete ERC-4361 message and wallet signature:
 { "message": "...", "signature": "0x..." }
 ```
 
-The API verifies the signature, recovered address, domain, URI, Sepolia chain ID, nonce, issue time, and expiration. A successful request consumes the nonce, creates a server-side session, sets an HttpOnly SameSite=Lax cookie, and returns:
+The API verifies the signature, recovered address, configured domain, URI and chain ID, nonce, issue time, and expiration. A successful request consumes the nonce, creates a server-side session, sets an HttpOnly SameSite=Lax cookie, and returns:
+
+EOA wallets are supported. ERC-1271 contract-wallet verification is not configured or claimed.
 
 ```json
 {
   "authenticated": true,
   "address": "0x...",
   "credentialVerified": false,
+  "authorizationStatus": "AUTHORIZED",
+  "authorizationReady": true,
+  "role": "SUPPLIER",
   "expiresAt": "...",
-  "message": "Wallet verified. Company Role Credential verification is required."
+  "message": "Wallet verified and currently authorized by the configured registries."
 }
 ```
+
+The response may instead report `UNREGISTERED`, `APPLICATION_PENDING`, `ADDITIONAL_EVIDENCE_REQUIRED`, `APPLICATION_REJECTED`, `ACTIVATION_PENDING`, `SUSPENDED`, `REVOKED`, `EXPIRED`, `UNAUTHORIZED`, or `UNAVAILABLE`. `credentialVerified` and `locallyVerified` remain false because login does not verify an off-chain VC.
 
 ### `GET /api/auth/session`
 
@@ -96,7 +103,7 @@ Returns the authenticated response above for a valid cookie, or:
 
 Deletes the server-side session, clears the cookie, and returns `204 No Content`.
 
-### `POST /api/ssi/company-role/verify`
+### `POST /api/ssi/company-role/verify` (separate diagnostic capability)
 
 Requires the HttpOnly SIWE session cookie and accepts a JSON credential only:
 
@@ -130,7 +137,7 @@ Requires the same Supplier authorization. The API obtains batch IDs from `Ingred
 
 ### Production flow endpoints
 
-The following endpoints require a SIWE session, a cryptographically verified Company Role Credential, and a fresh matching on-chain role/credential/permission check. They use the session wallet as the actor and never accept a caller-selected sender wallet:
+The following endpoints require a SIWE session and a fresh matching on-chain role, Company Role credential-record, and permission check. They use the session wallet as the actor and never accept a caller-selected sender wallet:
 
 - `GET /api/production-flow/ingredients` lists active Supplier ingredient batches for a Manufacturer and marks batches already accepted for that Manufacturer.
 - `POST /api/production-flow/evidence-requests/prepare` creates or resumes an encrypted, random-challenge evidence request and returns unsigned `EvidenceRegistry.requestEvidence` calldata until the exact contract record exists.
@@ -145,8 +152,7 @@ Workflow retries reuse ignored metadata under `.tracechain/issuance/production-f
 
 ### `POST /api/custody-transfers/resolve-qr`
 
-Requires a SIWE session whose Company Role Credential is locally verified and currently authorized
-against the blockchain registries. The request contains only the Stage 1 locator:
+Requires a SIWE session currently authorized against the blockchain registries. The request contains only the Stage 1 locator:
 
 ```json
 { "qrPayload": "tracechain://transfer/v1?chainId=31337&contract=0x...&transferId=0x..." }
@@ -177,7 +183,7 @@ contract now reports status `2` (`Received`).
 
 ## Authentication boundary
 
-SIWE proves control of a wallet address only. Workspace authorization requires both a cryptographically verified Company Role Credential and a matching active blockchain record. The frontend must not derive a role from its URL, wallet address, fixture data, or local storage.
+SIWE proves control of a wallet address only. Workspace authorization comes from current configured registry state and is refreshed during restoration and protected operations. This login check does not cryptographically verify the off-chain Company Role VC. The frontend must not derive a role from its URL, wallet address, fixture data, or local storage.
 
 ### Blockchain gateway
 
@@ -194,4 +200,4 @@ Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend
 
 ## Storage and production limitations
 
-Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Company Role and Ingredient issuance workflow metadata currently uses ignored atomic JSON files, while complete credentials are encrypted before IPFS upload. Production deployment requires durable shared repositories, appropriate rate limiting and operational monitoring, HTTPS, redundant encrypted-content retention, and managed organizational key custody.
+Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Nonces are wallet-bound, expire after five minutes, and are atomically single-use in the supported single-process model. Nonce creation and verification are rate-limited per wallet, expired records are cleaned opportunistically, and state-changing browser requests with an unexpected `Origin` are rejected. Cookies are HttpOnly, SameSite=Lax, explicitly expiring, and Secure in production. Production deployment still requires shared atomic repositories, trusted proxy configuration, HTTPS, monitoring, and stronger distributed rate limiting.

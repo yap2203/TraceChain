@@ -100,7 +100,7 @@ export class ProductionFlowService {
 
   async listEvidence(sessionId?: string) {
     const session = await this.requireEitherRole(sessionId);
-    const role = session.credentialVerification!.role === CompanyRole.SUPPLIER ? 2 : 3;
+    const role = session.onChainAuthorization!.role === CompanyRole.SUPPLIER ? 2 : 3;
     const requestIds = await this.safeGateway(() =>
       this.dependencies.gateway.listEvidenceRequestIds(session.address, role),
     );
@@ -717,19 +717,24 @@ export class ProductionFlowService {
     permission: string,
   ) {
     const session = await this.dependencies.authService.requireSession(sessionId);
-    const verification = session.credentialVerification;
-    if (!verification?.authorizationReady || verification.role !== role) {
+    const authorization = session.onChainAuthorization;
+    if (
+      authorization?.status !== 'AUTHORIZED' ||
+      authorization.role !== role ||
+      !authorization.credentialHash
+    ) {
       throw new ProductionFlowApiError(
         'ROLE_AUTHORIZATION_REQUIRED',
-        `An active ${role === CompanyRole.SUPPLIER ? 'Supplier' : 'Manufacturer'} Company Role Credential is required.`,
+        `Current on-chain ${role === CompanyRole.SUPPLIER ? 'Supplier' : 'Manufacturer'} authorization is required.`,
         403,
       );
     }
+    const companyRoleCredentialHash = authorization.credentialHash;
     await this.safeGateway(() => this.dependencies.gateway.assertDeployment());
     const allowed = await this.safeGateway(() =>
       this.dependencies.gateway.getAccess(
         session.address,
-        verification.credentialHash,
+        companyRoleCredentialHash,
         ROLE_NUMBERS[role],
         permission,
       ),
@@ -745,7 +750,7 @@ export class ProductionFlowService {
 
   private async requireEitherRole(sessionId?: string) {
     const session = await this.dependencies.authService.requireSession(sessionId);
-    const role = session.credentialVerification?.role;
+    const role = session.onChainAuthorization?.role;
     if (role === CompanyRole.SUPPLIER)
       return this.requireRole(sessionId, role, 'ISSUE_INGREDIENT_CREDENTIAL');
     if (role === CompanyRole.MANUFACTURER)

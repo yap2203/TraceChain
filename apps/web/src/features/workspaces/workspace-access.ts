@@ -8,8 +8,6 @@ export const LOCAL_SAMPLE_STATUS = 'Local development · Sample data';
 
 export interface WorkspaceAuthorizationState {
   authorizationReady: boolean;
-  credentialVerified: boolean;
-  locallyVerified: boolean;
   onChainStatusChecked: boolean;
   role?: CompanyRole;
 }
@@ -19,8 +17,6 @@ export function canAccessWorkspace(
   workspace: TraceChainWorkspaceRole,
 ) {
   return (
-    authorization.credentialVerified &&
-    authorization.locallyVerified &&
     authorization.onChainStatusChecked &&
     authorization.authorizationReady &&
     !!authorization.role &&

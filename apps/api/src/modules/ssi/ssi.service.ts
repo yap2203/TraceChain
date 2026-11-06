@@ -3,6 +3,7 @@ import {
   companyRoleCredentialSchema,
   serializeCompanyRoleCredential,
   issueCompanyRoleCredential,
+  findStoredCompanyRoleCredential,
   verifyCompanyRoleCredential,
   walletAddressToDid,
   type TraceChainAgent,
@@ -60,6 +61,137 @@ export class CompanyRoleSsiService {
     this.clock = dependencies.clock ?? (() => new Date());
   }
 
+  async prepareAdministratorCredentialOnChain(sessionId: string | undefined) {
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    if (
+      session.onChainAuthorization?.status !== 'AUTHORIZED' ||
+      session.onChainAuthorization.role !== CompanyRole.SYSTEM_ADMIN
+    ) {
+      throw new SsiApiError(
+        'ADMIN_AUTHORIZATION_REQUIRED',
+        'System Admin authorization is required to connect the Admin credential on-chain.',
+        403,
+      );
+    }
+    const gateway = this.dependencies.blockchainGateway;
+    const repository = this.dependencies.issuanceRepository;
+    const contentStore = this.dependencies.credentialContentStore;
+    if (!gateway || !repository || !contentStore || !this.dependencies.chainId) {
+      throw new SsiApiError(
+        'ISSUANCE_UNAVAILABLE',
+        'Credential storage or blockchain configuration is unavailable.',
+        503,
+      );
+    }
+    const administrator = getAddress(await gateway.getAdministrator());
+    if (administrator !== getAddress(session.address)) {
+      throw new SsiApiError(
+        'ADMIN_WALLET_MISMATCH',
+        'The authenticated wallet is not the deployed contract administrator.',
+        403,
+      );
+    }
+    const agent = await this.dependencies.agentProvider();
+    const authorityDid = await this.authorityDid(agent);
+    const match = await findStoredCompanyRoleCredential(agent, {
+      authorityDid,
+      companyId: 'TRACECHAIN_AUTHORITY',
+      role: CompanyRole.SYSTEM_ADMIN,
+      walletAddress: administrator,
+      now: this.clock(),
+    });
+    if (!match) {
+      throw new SsiApiError(
+        'ADMIN_CREDENTIAL_UNAVAILABLE',
+        'Run npm run ssi:bootstrap-admin before connecting the Admin credential on-chain.',
+        409,
+      );
+    }
+    const credentialId = id(match.credential.id);
+    const credentialHash = `0x${match.credentialHash}`;
+    const expiresAt = Math.floor(new Date(match.credential.expirationDate).getTime() / 1_000);
+    let record = await repository.find(`0x${'0'.repeat(64)}`);
+    if (!record) {
+      const stored = await contentStore.encryptAndStore(
+        serializeCompanyRoleCredential(match.credential),
+        credentialId,
+      );
+      record = {
+        applicantWallet: administrator,
+        applicationId: `0x${'0'.repeat(64)}`,
+        companyName: match.credential.credentialSubject.companyName,
+        companyRegistrationNumber: match.credential.credentialSubject.companyRegistrationNumber,
+        credentialHash,
+        credentialId,
+        encryptedCredentialCid: stored.cid,
+        encryptedPayload: stored.payload,
+        expiresAt,
+        issuedAt: match.credential.issuanceDate,
+        role: CompanyRole.SYSTEM_ADMIN,
+      };
+      await repository.save(record);
+    } else if (
+      record.credentialId !== credentialId ||
+      record.credentialHash.toLowerCase() !== credentialHash.toLowerCase() ||
+      getAddress(record.applicantWallet) !== administrator
+    ) {
+      throw new SsiApiError(
+        'ISSUANCE_CONFLICT',
+        'The persisted Admin credential does not match the active bootstrap credential.',
+        409,
+      );
+    }
+
+    const [credentialState, stakeholder] = await Promise.all([
+      gateway.getCredentialState(record.credentialHash),
+      gateway.getStakeholder(administrator),
+    ]);
+    if (credentialState.status !== 0) {
+      const chainCredential = await gateway.getCredential(credentialState.credentialId);
+      if (
+        chainCredential.credentialType !== 1 ||
+        getAddress(chainCredential.issuer) !== administrator ||
+        getAddress(chainCredential.subject) !== administrator ||
+        chainCredential.credentialHash.toLowerCase() !== record.credentialHash.toLowerCase() ||
+        chainCredential.encryptedCid !== record.encryptedCredentialCid ||
+        chainCredential.expiresAt !== record.expiresAt
+      ) {
+        throw new SsiApiError(
+          'ON_CHAIN_CREDENTIAL_MISMATCH',
+          'The existing on-chain Admin credential record does not match the verified credential.',
+          409,
+        );
+      }
+    }
+    const registrationTransaction =
+      credentialState.status === 0
+        ? gateway.prepareCredentialRegistration({
+            credentialHash: record.credentialHash,
+            credentialId: record.credentialId,
+            credentialReference: record.encryptedCredentialCid,
+            expiresAt: record.expiresAt,
+            subject: administrator,
+          })
+        : undefined;
+    const referenceMatches =
+      stakeholder.credentialHash.toLowerCase() === record.credentialHash.toLowerCase() &&
+      stakeholder.credentialCid === record.encryptedCredentialCid &&
+      stakeholder.credentialExpiresAt === record.expiresAt;
+    return {
+      credentialId: record.credentialId,
+      credentialRegistrationTransaction: registrationTransaction,
+      credentialReferenceTransaction: referenceMatches
+        ? undefined
+        : gateway.prepareCredentialReference({
+            account: administrator,
+            credentialHash: record.credentialHash,
+            credentialReference: record.encryptedCredentialCid,
+            expiresAt: record.expiresAt,
+          }),
+      state: !registrationTransaction && referenceMatches ? 'ACTIVE' : 'TRANSACTIONS_REQUIRED',
+    };
+  }
+
   async issueCredentialForApplication(
     sessionId: string | undefined,
     input: {
@@ -71,11 +203,8 @@ export class CompanyRoleSsiService {
     },
   ) {
     const session = await this.dependencies.authService.requireSession(sessionId);
-    const verification = session.credentialVerification;
-    if (
-      !verification?.authorizationReady ||
-      verification.role !== CompanyRole.SYSTEM_ADMIN
-    ) {
+    const verification = session.onChainAuthorization;
+    if (verification?.status !== 'AUTHORIZED' || verification.role !== CompanyRole.SYSTEM_ADMIN) {
       throw new SsiApiError(
         'ADMIN_AUTHORIZATION_REQUIRED',
         'System Admin authorization is required to issue a Company Role Credential.',
@@ -86,12 +215,20 @@ export class CompanyRoleSsiService {
     const repository = this.dependencies.issuanceRepository;
     const contentStore = this.dependencies.credentialContentStore;
     if (!gateway || !repository || !contentStore || !this.dependencies.chainId) {
-      throw new SsiApiError('ISSUANCE_UNAVAILABLE', 'Credential issuance storage or blockchain configuration is unavailable.', 503);
+      throw new SsiApiError(
+        'ISSUANCE_UNAVAILABLE',
+        'Credential issuance storage or blockchain configuration is unavailable.',
+        503,
+      );
     }
 
     const administrator = getAddress(await gateway.getAdministrator());
     if (administrator !== getAddress(session.address)) {
-      throw new SsiApiError('ADMIN_WALLET_MISMATCH', 'The authenticated wallet is not the deployed contract administrator.', 403);
+      throw new SsiApiError(
+        'ADMIN_WALLET_MISMATCH',
+        'The authenticated wallet is not the deployed contract administrator.',
+        403,
+      );
     }
     const application = await gateway.getApplicationForIssuance(input.applicationId);
     if (input.approvedRole !== application.requestedRole) {
@@ -113,16 +250,30 @@ export class CompanyRoleSsiService {
         existing.companyRegistrationNumber !== input.companyRegistrationNumber ||
         existing.expiresAt !== Math.floor(input.expirationDate.getTime() / 1_000)
       ) {
-        throw new SsiApiError('ISSUANCE_CONFLICT', 'This application already has a different persisted issuance workflow.', 409);
+        throw new SsiApiError(
+          'ISSUANCE_CONFLICT',
+          'This application already has a different persisted issuance workflow.',
+          409,
+        );
       }
       const credential = companyRoleCredentialSchema.parse(
         JSON.parse(await contentStore.decrypt(existing.encryptedPayload)),
       );
-      await this.verifyIssuedCredential(agent, credential, application.applicant, authorityDid, existing.credentialHash);
+      await this.verifyIssuedCredential(
+        agent,
+        credential,
+        application.applicant,
+        authorityDid,
+        existing.credentialHash,
+      );
       return this.issuanceResponse(existing, credential, application.status, gateway);
     }
     if (application.status !== 1) {
-      throw new SsiApiError('APPLICATION_NOT_PENDING', 'Only a pending application can start credential issuance.', 409);
+      throw new SsiApiError(
+        'APPLICATION_NOT_PENDING',
+        'Only a pending application can start credential issuance.',
+        409,
+      );
     }
 
     const issued = await issueCompanyRoleCredential(agent, {
@@ -225,7 +376,11 @@ export class CompanyRoleSsiService {
       this.clock(),
     );
     if (!result.verified || result.credentialHash !== expectedHash.replace(/^0x/, '')) {
-      throw new SsiApiError('ISSUED_CREDENTIAL_INVALID', 'The generated credential failed cryptographic verification.', 500);
+      throw new SsiApiError(
+        'ISSUED_CREDENTIAL_INVALID',
+        'The generated credential failed cryptographic verification.',
+        500,
+      );
     }
   }
 
@@ -348,7 +503,8 @@ function roleFromContract(role: number) {
     5: CompanyRole.RETAILER,
   };
   const resolved = roles[role];
-  if (!resolved) throw new SsiApiError('UNSUPPORTED_ROLE', 'The requested company role is invalid.', 409);
+  if (!resolved)
+    throw new SsiApiError('UNSUPPORTED_ROLE', 'The requested company role is invalid.', 409);
   return resolved;
 }
 

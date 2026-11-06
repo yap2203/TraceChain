@@ -16,13 +16,16 @@ export interface ApplicationMetadataRepository {
 export class JsonApplicationMetadataRepository implements ApplicationMetadataRepository {
   constructor(private readonly path: string) {}
 
-  async find(applicationId: string) { return (await this.read())[applicationId.toLowerCase()]; }
+  async find(applicationId: string) {
+    return (await this.read())[applicationId.toLowerCase()];
+  }
 
   async save(record: ApplicationMetadata) {
     const records = await this.read();
     const key = record.applicationId.toLowerCase();
     const existing = records[key];
-    if (existing && existing.profileHash.toLowerCase() !== record.profileHash.toLowerCase()) throw new Error('Application metadata conflicts with the persisted profile hash.');
+    if (existing && existing.profileHash.toLowerCase() !== record.profileHash.toLowerCase())
+      throw new Error('Application metadata conflicts with the persisted profile hash.');
     records[key] = record;
     await mkdir(dirname(this.path), { recursive: true });
     const temporary = `${this.path}.tmp`;
@@ -31,7 +34,11 @@ export class JsonApplicationMetadataRepository implements ApplicationMetadataRep
   }
 
   private async read(): Promise<Record<string, ApplicationMetadata>> {
-    try { return JSON.parse(await readFile(this.path, 'utf8')) as Record<string, ApplicationMetadata>; }
-    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error; }
+    try {
+      return JSON.parse(await readFile(this.path, 'utf8')) as Record<string, ApplicationMetadata>;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+      throw error;
+    }
   }
 }

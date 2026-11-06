@@ -40,6 +40,10 @@ export type WalletAuthPhase =
 export interface WalletAuthState {
   address?: string;
   authorizationReady: boolean;
+  authorizationStatus?: AuthenticatedSession['authorizationStatus'];
+  applicationId?: string;
+  applicationSubmittedAt?: number;
+  applicationUpdatedAt?: number;
   credentialId?: string;
   credentialVerified: boolean;
   locallyVerified: boolean;
@@ -71,6 +75,10 @@ function stateFromSession(session: AuthenticatedSession): WalletAuthState {
   return {
     address: session.address,
     authorizationReady: session.authorizationReady,
+    authorizationStatus: session.authorizationStatus,
+    applicationId: session.applicationId,
+    applicationSubmittedAt: session.applicationSubmittedAt,
+    applicationUpdatedAt: session.applicationUpdatedAt,
     credentialId: session.credentialId,
     credentialVerified: session.credentialVerified,
     locallyVerified: session.locallyVerified,
@@ -208,13 +216,19 @@ export function useWalletAuthentication(
         );
       }
     };
+    const handleDisconnect = () => {
+      if (authenticatedAddress.current)
+        void clearSession('Wallet disconnected. Sign in again to continue.');
+    };
 
     walletProvider.on('accountsChanged', handleAccountsChanged);
     walletProvider.on('chainChanged', handleChainChanged);
+    walletProvider.on('disconnect', handleDisconnect);
 
     return () => {
       walletProvider.removeListener?.('accountsChanged', handleAccountsChanged);
       walletProvider.removeListener?.('chainChanged', handleChainChanged);
+      walletProvider.removeListener?.('disconnect', handleDisconnect);
     };
   }, [clearSession, walletProvider]);
 
@@ -248,7 +262,7 @@ export function useWalletAuthentication(
       setState({
         ...emptyAuthorization,
         address,
-        message: 'Verifying the wallet signature',
+        message: 'Verifying the wallet and checking company authorization',
         phase: 'verifying',
       });
       const session = await verifySiweMessage(siweMessage, signature);
@@ -415,6 +429,23 @@ export function useWalletAuthentication(
     }
   }, []);
 
+  const refreshSession = useCallback(async () => {
+    try {
+      const session = await getAuthSession();
+      if (!session.authenticated) {
+        setState({
+          ...emptyAuthorization,
+          message: 'Session expired. Sign in again.',
+          phase: 'idle',
+        });
+        return;
+      }
+      setState(stateFromSession(session));
+    } catch (error) {
+      setState((current) => ({ ...current, message: errorMessage(error), phase: 'error' }));
+    }
+  }, []);
+
   return {
     cancelConnection,
     connect,
@@ -422,6 +453,7 @@ export function useWalletAuthentication(
     credentialState,
     logout: clearSession,
     presentCredential,
+    refreshSession,
     state,
     switchToTargetNetwork,
   };

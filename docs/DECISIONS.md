@@ -58,9 +58,10 @@ Hardhat is development tooling. It is not the production blockchain and does not
 ## Identity and role authorization
 
 - MetaMask proves control of a wallet address; it does not issue credentials or determine a stakeholder role.
-- Use Company Role Credentials together with an on-chain stakeholder registry for role-based access control.
-- Require Veramo to verify the credential signature, trusted issuer, holder or subject binding, expiry, suspension, and revocation before the application trusts role claims.
-- Check the verified credential hash and current status against Ethereum before authorizing sensitive operations.
+- Normal login uses SIWE only for wallet authentication, followed by direct authorization from the configured `StakeholderRegistry` and `CredentialRegistry`. It does not upload, retrieve, decrypt, or present the Company Role VC.
+- For a company wallet, require an active stakeholder, unexpired matching credential reference, active Company Role credential record with the expected type and subject, and the effective role returned by `roleOf`. The current constructor administrator is authorized through `administrator()` without requiring a credential reference.
+- Allow the current constructor administrator to bootstrap through `administrator()`, then explicitly connect its verified `SYSTEM_ADMIN` Company Role VC to both credential and stakeholder registries using Admin-signed transactions. Keep this bootstrap exception recoverable so a missing or damaged Admin credential reference cannot permanently lock registry administration.
+- Keep off-chain Company Role VC issuance and Veramo verification as separate capabilities; never report direct registry authorization as cryptographic verification of the off-chain VC.
 - Require smart contracts to check `msg.sender` and its assigned on-chain role before changing authoritative state.
 - Treat frontend route restrictions as usability controls only. Every sensitive API request and contract transaction must be independently authorized.
 - Never derive authority from a URL, frontend fixture, wallet address alone, or browser storage.
@@ -70,11 +71,11 @@ The target authorization sequence is:
 ```text
 MetaMask proves wallet ownership
             ↓
-Holder presents Company Role Credential
+API resolves current stakeholder and credential records
             ↓
-Veramo verifies issuer, signature, subject, expiry, and status
+Registry returns the wallet's effective role
             ↓
-Application checks credential hash and status on-chain
+Protected APIs recheck current authorization
             ↓
 Smart contract checks msg.sender and assigned role
 ```
@@ -96,7 +97,7 @@ Smart contract checks msg.sender and assigned role
 
 ## Supplier Ingredient Credential registration
 
-- Require SIWE authentication, a cryptographically and on-chain authorized Supplier Company Role Credential, an active Supplier record, and both ingredient issuance/registration permissions.
+- Require SIWE authentication, current on-chain Supplier authorization, an active matching Company Role credential record, and both ingredient issuance/registration permissions.
 - Bind the Ingredient Credential subject to the authenticated Supplier wallet and derive its Supplier-specific issuer DID on the server.
 - Verify the newly issued VC cryptographically before deterministic canonical SHA-256 hashing or transaction preparation.
 - Encrypt the complete VC and private metadata with AES-256-GCM before IPFS upload. Put only identifiers, hashes, the encrypted CID, status/lifecycle data, and required traceability fields on-chain.

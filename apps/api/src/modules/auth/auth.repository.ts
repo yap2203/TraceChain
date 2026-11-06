@@ -16,6 +16,15 @@ export class InMemoryNonceRepository implements NonceRepository {
   private readonly records = new Map<string, NonceRecord>();
 
   async save(record: NonceRecord) {
+    for (const [nonce, existing] of this.records) {
+      if (existing.expiresAt.getTime() <= record.createdAt.getTime()) this.records.delete(nonce);
+    }
+    if (!this.records.has(record.nonce) && this.records.size >= 10_000) {
+      const oldest = [...this.records.values()].sort(
+        (left, right) => left.expiresAt.getTime() - right.expiresAt.getTime(),
+      )[0];
+      if (oldest) this.records.delete(oldest.nonce);
+    }
     this.records.set(record.nonce, { ...record });
   }
 
@@ -41,6 +50,15 @@ export class InMemorySessionRepository implements SessionRepository {
   private readonly records = new Map<string, SessionRecord>();
 
   async save(record: SessionRecord) {
+    for (const [id, existing] of this.records) {
+      if (existing.expiresAt.getTime() <= record.createdAt.getTime()) this.records.delete(id);
+    }
+    if (!this.records.has(record.id) && this.records.size >= 10_000) {
+      const oldest = [...this.records.values()].sort(
+        (left, right) => left.expiresAt.getTime() - right.expiresAt.getTime(),
+      )[0];
+      if (oldest) this.records.delete(oldest.id);
+    }
     this.records.set(record.id, copySessionRecord(record));
   }
 
@@ -69,6 +87,12 @@ function copySessionRecord(record: SessionRecord): SessionRecord {
       ? {
           ...record.credentialVerification,
           verifiedAt: new Date(record.credentialVerification.verifiedAt),
+        }
+      : undefined,
+    onChainAuthorization: record.onChainAuthorization
+      ? {
+          ...record.onChainAuthorization,
+          checkedAt: new Date(record.onChainAuthorization.checkedAt),
         }
       : undefined,
   };

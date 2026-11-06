@@ -2,8 +2,6 @@ import type { WalletAuthPhase } from './useWalletAuthentication';
 
 interface LoginAuthPresentationInput {
   authorizationReady?: boolean;
-  credentialVerified: boolean;
-  locallyVerified: boolean;
   phase: WalletAuthPhase;
 }
 
@@ -17,9 +15,9 @@ export interface LoginAuthPresentation {
 
 export function getLoginAuthPresentation(state: LoginAuthPresentationInput): LoginAuthPresentation {
   const authenticated = state.phase === 'authenticated';
-  const locallyVerified = authenticated && state.credentialVerified && state.locallyVerified;
+  const locallyVerified = false;
 
-  if (locallyVerified && state.authorizationReady) {
+  if (authenticated && state.authorizationReady) {
     return {
       authenticated,
       authenticationTitle: 'Company access verified',
@@ -29,23 +27,13 @@ export function getLoginAuthPresentation(state: LoginAuthPresentationInput): Log
     };
   }
 
-  if (locallyVerified) {
-    return {
-      authenticated,
-      authenticationTitle: 'Role verified locally',
-      heroActionLabel: 'View authorization status',
-      locallyVerified,
-      securityActionLabel: 'View authorization status',
-    };
-  }
-
   if (authenticated) {
     return {
       authenticated,
-      authenticationTitle: 'Wallet connected',
-      heroActionLabel: 'Continue verification',
+      authenticationTitle: 'Company access status',
+      heroActionLabel: 'View authorization status',
       locallyVerified,
-      securityActionLabel: 'Continue verification',
+      securityActionLabel: 'View authorization status',
     };
   }
 

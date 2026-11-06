@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { getAddress } from 'ethers';
 import { SiweMessage } from 'siwe';
 
+import type { LoginAuthorizationResolver } from '../blockchain/login-authorization.service.js';
 import type { NonceRepository, SessionRepository } from './auth.repository.js';
 import { walletAddressSchema } from './auth.schema.js';
 import type {
@@ -14,14 +15,8 @@ import type {
   SessionResponse,
 } from './auth.types.js';
 
-const AUTHENTICATED_MESSAGE =
-  'Wallet verified. Company Role Credential verification is required.' as const;
-const LOCALLY_VERIFIED_MESSAGE =
-  'Credential verified locally. Blockchain status verification is required.' as const;
 const AUTHORIZED_MESSAGE =
-  'Wallet, credential, and blockchain authorization verified.' as const;
-const BLOCKCHAIN_DENIED_MESSAGE =
-  'Credential verified, but the blockchain record does not authorize this wallet.' as const;
+  'Wallet verified and currently authorized by the configured registries.' as const;
 const CLOCK_SKEW_MS = 60_000;
 
 export class AuthError extends Error {
@@ -35,6 +30,7 @@ export class AuthError extends Error {
 }
 
 interface AuthServiceDependencies {
+  authorizationResolver?: LoginAuthorizationResolver;
   clock?: () => Date;
   configuration: AuthConfiguration;
   nonceRepository: NonceRepository;
@@ -46,14 +42,18 @@ export class AuthService {
   private readonly configuration: AuthConfiguration;
   private readonly nonceRepository: NonceRepository;
   private readonly sessionRepository: SessionRepository;
+  private readonly authorizationResolver?: LoginAuthorizationResolver;
+  private readonly attempts = new Map<string, number[]>();
 
   constructor({
+    authorizationResolver,
     clock = () => new Date(),
     configuration,
     nonceRepository,
     sessionRepository,
   }: AuthServiceDependencies) {
     this.clock = clock;
+    this.authorizationResolver = authorizationResolver;
     this.configuration = configuration;
     this.nonceRepository = nonceRepository;
     this.sessionRepository = sessionRepository;
@@ -61,6 +61,7 @@ export class AuthService {
 
   async createNonce(addressInput: string) {
     const address = getAddress(walletAddressSchema.parse(addressInput));
+    this.checkRateLimit(`nonce:${address}`, 20);
     const createdAt = this.clock();
     const record: NonceRecord = {
       address,
@@ -91,6 +92,7 @@ export class AuthService {
     if (!parsedAddress.success) {
       throw new AuthError('INVALID_ADDRESS', 'The SIWE wallet address is invalid.', 401);
     }
+    this.checkRateLimit(`verify:${getAddress(parsedAddress.data)}`, 10);
 
     if (message.domain !== this.configuration.domain) {
       throw new AuthError('INVALID_DOMAIN', 'The SIWE domain is not accepted.', 401);
@@ -163,10 +165,11 @@ export class AuthService {
       id: randomBytes(32).toString('base64url'),
     };
 
-    await this.sessionRepository.save(session);
+    const authorizedSession = await this.refreshAuthorization(session);
+    await this.sessionRepository.save(authorizedSession);
 
     return {
-      response: this.toAuthenticatedSession(session),
+      response: this.toAuthenticatedSession(authorizedSession),
       sessionId: session.id,
     };
   }
@@ -175,7 +178,10 @@ export class AuthService {
     if (!sessionId) return { authenticated: false };
 
     const session = await this.sessionRepository.find(sessionId, this.clock());
-    return session ? this.toAuthenticatedSession(session) : { authenticated: false };
+    if (!session) return { authenticated: false };
+    const refreshed = await this.refreshAuthorization(session);
+    await this.sessionRepository.save(refreshed);
+    return this.toAuthenticatedSession(refreshed);
   }
 
   async requireSession(sessionId?: string): Promise<SessionRecord> {
@@ -188,7 +194,9 @@ export class AuthService {
       throw new AuthError('AUTHENTICATION_REQUIRED', 'Wallet authentication is required.', 401);
     }
 
-    return session;
+    const refreshed = await this.refreshAuthorization(session);
+    await this.sessionRepository.save(refreshed);
+    return refreshed;
   }
 
   async setCredentialVerification(
@@ -211,35 +219,93 @@ export class AuthService {
 
   private toAuthenticatedSession(session: SessionRecord): AuthenticatedSession {
     const verification = session.credentialVerification;
+    const authorization = session.onChainAuthorization;
+    const authorizationReady = authorization?.status === 'AUTHORIZED';
+    const common = {
+      address: session.address,
+      applicationId: authorization?.applicationId,
+      applicationSubmittedAt: authorization?.applicationSubmittedAt,
+      applicationUpdatedAt: authorization?.applicationUpdatedAt,
+      authenticated: true as const,
+      authorizationReady,
+      authorizationStatus: authorization?.status ?? 'UNAVAILABLE',
+      credentialId: authorization?.credentialId,
+      expiresAt: session.expiresAt.toISOString(),
+      onChainStatusChecked: authorization?.status !== 'UNAVAILABLE',
+      role: authorizationReady ? authorization.role : undefined,
+    };
     if (verification?.locallyVerified) {
       return {
-        address: session.address,
-        authenticated: true,
-        authorizationReady: verification.authorizationReady,
-        credentialId: verification.credentialId,
+        ...common,
+        credentialId: common.credentialId ?? verification.credentialId,
         credentialVerified: true,
-        expiresAt: session.expiresAt.toISOString(),
         locallyVerified: true,
-        message: verification.authorizationReady
+        message: authorizationReady
           ? AUTHORIZED_MESSAGE
-          : verification.onChainStatusChecked
-            ? BLOCKCHAIN_DENIED_MESSAGE
-            : LOCALLY_VERIFIED_MESSAGE,
-        onChainStatusChecked: verification.onChainStatusChecked,
-        role: verification.role,
+          : authorizationMessage(authorization?.status),
+        role: common.role ?? verification.role,
         verifiedAt: verification.verifiedAt.toISOString(),
       };
     }
 
     return {
-      address: session.address,
-      authenticated: true,
-      authorizationReady: false,
+      ...common,
       credentialVerified: false,
-      expiresAt: session.expiresAt.toISOString(),
       locallyVerified: false,
-      message: AUTHENTICATED_MESSAGE,
-      onChainStatusChecked: false,
+      message: authorizationMessage(authorization?.status),
     };
   }
+
+  private async refreshAuthorization(session: SessionRecord): Promise<SessionRecord> {
+    const onChainAuthorization = this.authorizationResolver
+      ? await this.authorizationResolver.resolve(session.address)
+      : (session.onChainAuthorization ?? {
+          checkedAt: this.clock(),
+          status: 'UNAVAILABLE' as const,
+        });
+    return { ...session, onChainAuthorization };
+  }
+
+  private checkRateLimit(key: string, limit: number) {
+    const now = this.clock().getTime();
+    if (this.attempts.size >= 10_000) {
+      for (const [candidate, times] of this.attempts) {
+        if (!times.some((time) => now - time < 60_000)) this.attempts.delete(candidate);
+      }
+      if (!this.attempts.has(key) && this.attempts.size >= 10_000)
+        throw new AuthError(
+          'RATE_LIMITED',
+          'Authentication is temporarily busy. Try again shortly.',
+          429,
+        );
+    }
+    const recent = (this.attempts.get(key) ?? []).filter((time) => now - time < 60_000);
+    if (recent.length >= limit)
+      throw new AuthError(
+        'RATE_LIMITED',
+        'Too many authentication attempts. Try again shortly.',
+        429,
+      );
+    recent.push(now);
+    this.attempts.set(key, recent);
+  }
+}
+
+function authorizationMessage(status?: string) {
+  return (
+    {
+      ACTIVATION_PENDING: 'Approval complete — credential activation pending.',
+      ADDITIONAL_EVIDENCE_REQUIRED: 'Additional evidence is required for the company application.',
+      APPLICATION_PENDING: 'The company application is awaiting administrator review.',
+      APPLICATION_REJECTED:
+        'The company application was rejected. Review its status before reapplying.',
+      AUTHORIZED: 'Wallet verified and currently authorized by the configured registries.',
+      EXPIRED: 'The company authorization or credential has expired.',
+      REVOKED: 'The company authorization has been revoked.',
+      SUSPENDED: 'The company authorization is suspended.',
+      UNAVAILABLE: 'Wallet verified, but on-chain authorization is temporarily unavailable.',
+      UNAUTHORIZED: 'The wallet does not satisfy the current registry authorization rules.',
+      UNREGISTERED: 'No company registration was found for this wallet.',
+    } as Record<string, string>
+  )[status ?? 'UNAVAILABLE'];
 }

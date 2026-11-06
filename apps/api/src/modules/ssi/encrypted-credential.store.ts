@@ -15,7 +15,10 @@ export interface StoredEncryptedCredential {
 
 export interface CredentialContentStore {
   decrypt(payload: EncryptedCredentialPayload): Promise<string>;
-  encryptAndStore(serializedCredential: string, credentialId: string): Promise<StoredEncryptedCredential>;
+  encryptAndStore(
+    serializedCredential: string,
+    credentialId: string,
+  ): Promise<StoredEncryptedCredential>;
 }
 
 export class IpfsEncryptedCredentialStore implements CredentialContentStore {
@@ -49,10 +52,12 @@ export class IpfsEncryptedCredentialStore implements CredentialContentStore {
       headers: { Authorization: `Bearer ${this.pinningToken}` },
       method: 'POST',
     });
-    if (!response.ok) throw new Error(`Encrypted credential pinning failed with HTTP ${response.status}.`);
+    if (!response.ok)
+      throw new Error(`Encrypted credential pinning failed with HTTP ${response.status}.`);
     const result = (await response.json()) as Record<string, unknown>;
     const cid = result.IpfsHash ?? result.cid ?? result.Hash;
-    if (typeof cid !== 'string' || !cid) throw new Error('The pinning provider did not return an IPFS CID.');
+    if (typeof cid !== 'string' || !cid)
+      throw new Error('The pinning provider did not return an IPFS CID.');
     return { cid, payload };
   }
 

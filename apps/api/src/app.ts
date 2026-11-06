@@ -28,6 +28,7 @@ import {
   type BlockchainGateway,
 } from './modules/blockchain/blockchain-gateway.service.js';
 import { createBlockchainRouter } from './modules/blockchain/blockchain.routes.js';
+import { GatewayLoginAuthorizationResolver } from './modules/blockchain/login-authorization.service.js';
 import { CustodyTransferController } from './modules/custody-transfers/custody-transfer.controller.js';
 import {
   EthersCustodyTransferGateway,
@@ -98,9 +99,16 @@ export function createApp({
 }: CreateAppOptions = {}) {
   const app = express();
   const sessionTtlMs = env.AUTH_SESSION_TTL_SECONDS * 1_000;
+  let resolvedGateway = blockchainGateway;
   const resolvedAuthService =
     authService ??
     new AuthService({
+      authorizationResolver: {
+        resolve: async (address) => {
+          resolvedGateway ??= createDefaultBlockchainGateway();
+          return new GatewayLoginAuthorizationResolver(resolvedGateway).resolve(address);
+        },
+      },
       configuration: {
         chainId: env.CHAIN_ID,
         domain: env.SIWE_DOMAIN,
@@ -145,7 +153,6 @@ export function createApp({
           }
         },
       };
-  let resolvedGateway = blockchainGateway;
   const lazyGateway: BlockchainGateway = {
     listOperationalData: async (account) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
@@ -173,6 +180,10 @@ export function createApp({
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.getStakeholder(account);
     },
+    getEffectiveRole: async (account) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getEffectiveRole(account);
+    },
     getRolePermission: async (role, permission) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.getRolePermission(role, permission);
@@ -196,6 +207,10 @@ export function createApp({
     prepareCredentialRegistration: (input) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.prepareCredentialRegistration(input);
+    },
+    prepareCredentialReference: (input) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.prepareCredentialReference(input);
     },
     prepareCredentialLifecycle: (input) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
@@ -288,6 +303,20 @@ export function createApp({
     }),
   );
   app.use(cookieParser());
+  app.use('/api', (request, response, next) => {
+    const origin = request.get('origin');
+    if (
+      origin &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(request.method) &&
+      origin !== env.FRONTEND_URL
+    ) {
+      response.status(403).json({
+        error: { code: 'UNTRUSTED_ORIGIN', message: 'The request origin is not trusted.' },
+      });
+      return;
+    }
+    next();
+  });
 
   app.get('/api/health', (_request, response) => {
     response.json({

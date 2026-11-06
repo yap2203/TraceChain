@@ -14,7 +14,7 @@ The current version includes a responsive React application, five stakeholder wo
 | Stakeholder workspace UI                 | Admin, custody receipt, and Supplier batch registration use authenticated services    |
 | Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                   |
 | Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                       |
-| Company Role Credential presentation     | Authenticated JSON upload and safe session summary implemented                        |
+| Company Role Credential presentation     | Separate diagnostic API retained; no VC upload is required during normal login        |
 | Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
 | Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status      |
 | SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
@@ -190,7 +190,7 @@ npm run ssi:export-admin-credential
 
 Do not run these commands with `.env.example` placeholders. The bootstrap command creates or reuses the server-managed Product Traceability Authority DID, derives the Admin subject DID from the public wallet address, and issues at most one active bootstrap `SYSTEM_ADMIN` Company Role Credential. The export command copies that verified credential to `.tracechain/holder/admin-company-role-credential.json` for development-only holder delivery. It will not silently overwrite a different credential. CLI output contains safe identifiers and status only. The credential and encrypted issuer key remain off-chain; MetaMask continues to control the Admin wallet key.
 
-The credential verification service returns a deterministic SHA-256 hash used for blockchain registration. After local cryptographic verification, the API checks the session wallet, role, stakeholder lifecycle, credential hash, subject, type, and current status against the configured registries. The constructor-created System Admin is handled as a narrow bootstrap exception: the verified credential must claim `SYSTEM_ADMIN`, and the wallet must equal the active on-chain administrator.
+The credential verification service returns a deterministic SHA-256 hash used for blockchain registration. After local cryptographic verification, the API checks the session wallet, role, stakeholder lifecycle, credential hash, subject, type, and current status against the configured registries. The constructor-created System Admin remains a narrow bootstrap exception until its credential is connected. From **Admin → Company Credentials**, use **Connect Admin credential** to encrypt and pin the bootstrapped VC, register its hash/reference in `CredentialRegistry`, and link the same reference in `StakeholderRegistry`. Both steps require Admin MetaMask transactions; the complete VC remains off-chain.
 
 ## Frontend routes
 
@@ -211,17 +211,21 @@ The `/register-company` route provides the complete three-step application inter
 
 ### Local workspace access
 
-Localhost uses the same wallet, credential, on-chain role, and status gate as other environments. There is no account-free sample-data bypass. An authorized session is required before workspace controls are enabled.
+Localhost uses the same SIWE and current on-chain role/status gate as other environments. There is no account-free sample-data bypass. An authorized session is required before workspace controls are enabled.
 
 ## Authentication
 
 The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it reuses an already-authorized injected MetaMask extension provider when available, or uses MetaMask Connect for Mobile QR and extension fallback. Connection attempts are serialized and time-bounded, and progress plus cancellation remains visible inside the authentication card. It then requires the environment-configured chain, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API. Local development uses chain 31337; the public test deployment uses Sepolia.
 
-The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It then creates a process-local session. Authentication proves wallet control only. Once signed in, a user may select a Company Role Credential JSON file; the browser sends it directly to `POST /api/ssi/company-role/verify` without storing it in browser storage.
+The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It atomically consumes the nonce, creates a process-local HttpOnly-cookie session, and resolves current authorization from the configured registries. The constructor administrator is checked through `administrator()`. Company wallets must have an active stakeholder, matching active/unexpired Company Role credential record and reference, valid subject/type, and a nonzero effective `roleOf` result. No VC upload, vault password, VP, Snap, transaction, or gas is required for login.
 
-Successful credential verification stores only a safe session summary and displays the verified role. Workspace access is unlocked only when both cryptographic verification and the current blockchain authorization check succeed. A URL, wallet address, fixture value, or local browser value never grants production access.
+SIWE authentication and registry authorization are distinct. Direct registry authorization does not claim that the off-chain VC signature was cryptographically verified. Manual Company Role VC verification remains available as a separate SSI capability, while protected APIs refresh authorization from chain state before use. A URL, frontend role, historical approval, fixture, environment allowlist, or browser value never grants access.
 
-Login actions follow the current session state. Disconnected users connect through the authentication panel; wallet-authenticated users continue to credential verification; and locally verified users see their role, wallet, three-step authorization status, and an optional credential-replacement action. Local verification never unlocks a workspace before blockchain role and credential-status checks are implemented.
+Login displays connecting, challenge, signature, wallet verification, registry-check, authorized, application-status, denied, and unavailable states. Unregistered, pending, evidence-required, rejected, activation-pending, suspended, revoked, and expired wallets remain authenticated only for permitted status/onboarding operations. Active wallets are redirected to the workspace mapped from the authoritative role.
+
+The current SIWE verifier is tested for EOA wallets. ERC-1271 contract-wallet authentication is not configured and must not be assumed to work.
+
+For local testing, start `npx hardhat node` from `packages/contracts`, deploy the suite to `localhost`, place the resulting addresses plus `CHAIN_ID=31337` and `CHAIN_RPC_URL=http://127.0.0.1:8545` in the root `.env`, then run `npm run dev` from the repository root. Import the relevant unlocked Hardhat account into MetaMask, select TraceChain Local, and connect from `/login`. Login requests one message signature and no gas; active wallets go directly to their role workspace, while other wallets remain on the status view.
 
 ## Workspace UI
 

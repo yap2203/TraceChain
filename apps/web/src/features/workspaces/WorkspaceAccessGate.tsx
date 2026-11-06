@@ -6,7 +6,7 @@ import type { useWalletAuthentication } from '../auth/useWalletAuthentication';
 import type { WorkspaceRole } from './workspace-navigation';
 import { canAccessWorkspace } from './workspace-access';
 
-/** Only a role cryptographically verified by the server may unlock page content. */
+/** Only a role currently resolved from the configured registries may unlock page content. */
 export function WorkspaceAccessGate({
   state,
   role,
@@ -34,9 +34,7 @@ export function WorkspaceAccessGate({
           : unavailable
             ? 'Unable to check your session'
             : authenticated
-              ? state.locallyVerified
-                ? 'Blockchain role and credential-status verification is required.'
-                : 'Company Role Credential verification is required.'
+              ? 'Current on-chain company authorization is required.'
               : 'Sign in to your workspace'}
       </h2>
       <p>
@@ -45,10 +43,8 @@ export function WorkspaceAccessGate({
           : unavailable
             ? 'We could not reach the authentication service. Return to sign-in to try again.'
             : authenticated
-              ? state.locallyVerified
-                ? 'Your Company Role Credential was verified locally. Access remains locked until the wallet role and credential status are verified on-chain.'
-                : 'Your wallet is verified. Workspace records and actions remain locked until your company role can be verified.'
-              : 'Connect your wallet and sign in to continue. Access to company records requires a verified Company Role Credential.'}
+              ? state.message
+              : 'Connect your wallet and sign a SIWE message. TraceChain then checks current registry authorization.'}
       </p>
       {!restoring && (
         <div className="workspace-access-actions">

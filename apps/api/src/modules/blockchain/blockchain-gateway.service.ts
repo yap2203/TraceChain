@@ -9,6 +9,8 @@ const stakeholderRegistryAbi = [
   'function rejectApplication(bytes32 applicationId, bytes32 reasonHash)',
   'function approveApplication(bytes32 applicationId, bytes32 credentialHash, string credentialCid, uint64 credentialExpiresAt)',
   'function getStakeholder(address account) view returns (tuple(uint8 role,uint8 status,bytes32 credentialHash,string credentialCid,uint64 credentialExpiresAt,uint64 updatedAt))',
+  'function roleOf(address account) view returns (uint8)',
+  'function updateCredentialReference(address account, bytes32 newHash, string newCid, uint64 expiresAt)',
   'function suspendStakeholder(address account, bytes32 reasonHash)',
   'function reactivateStakeholder(address account)',
   'function revokeStakeholder(address account, bytes32 reasonHash)',
@@ -87,6 +89,7 @@ export interface BlockchainGateway {
   getCredentialState(credentialHash: string): Promise<{ credentialId: string; status: number }>;
   getCredential(credentialId: string): Promise<{
     credentialHash: string;
+    credentialType: number;
     encryptedCid: string;
     expiresAt: number;
     issuedAt: number;
@@ -95,15 +98,15 @@ export interface BlockchainGateway {
     subject: string;
     updatedAt: number;
   }>;
-  getStakeholder(
-    account: string,
-  ): Promise<{
+  getStakeholder(account: string): Promise<{
+    credentialCid: string;
     credentialExpiresAt: number;
     credentialHash: string;
     role: number;
     status: number;
     updatedAt: number;
   }>;
+  getEffectiveRole(account: string): Promise<number>;
   getRolePermission(role: number, permission: string): Promise<boolean>;
   listApplications(): Promise<ChainApplicationRecord[]>;
   prepareApplication(input: {
@@ -126,6 +129,12 @@ export interface BlockchainGateway {
     credentialReference: string;
     expiresAt: number;
     subject: string;
+  }): PreparedTransaction;
+  prepareCredentialReference(input: {
+    account: string;
+    credentialHash: string;
+    credentialReference: string;
+    expiresAt: number;
   }): PreparedTransaction;
   prepareCredentialLifecycle(input: {
     action: 'reactivate' | 'revoke' | 'suspend';
@@ -337,6 +346,7 @@ export class BlockchainGatewayService implements BlockchainGateway {
     const record = await this.credentialRegistry.getCredential(credentialId);
     return {
       credentialHash: String(record.credentialHash),
+      credentialType: Number(record.credentialType),
       encryptedCid: String(record.encryptedCid),
       expiresAt: Number(record.expiresAt),
       issuedAt: Number(record.issuedAt),
@@ -350,12 +360,16 @@ export class BlockchainGatewayService implements BlockchainGateway {
   async getStakeholder(account: string) {
     const record = await this.registry.getStakeholder(account);
     return {
+      credentialCid: String(record.credentialCid),
       credentialExpiresAt: Number(record.credentialExpiresAt),
       credentialHash: String(record.credentialHash),
       role: Number(record.role),
       status: Number(record.status),
       updatedAt: Number(record.updatedAt),
     };
+  }
+  async getEffectiveRole(account: string) {
+    return Number(await this.registry.roleOf(account));
   }
   async getRolePermission(role: number, permission: string) {
     return Boolean(await this.registry.roleHasPermission(role, permission));
@@ -444,6 +458,22 @@ export class BlockchainGatewayService implements BlockchainGateway {
       to: this.credentialRegistryAddress,
       value: '0x0',
     };
+  }
+
+  prepareCredentialReference(input: {
+    account: string;
+    credentialHash: string;
+    credentialReference: string;
+    expiresAt: number;
+  }): PreparedTransaction {
+    return this.transaction(
+      registryInterface.encodeFunctionData('updateCredentialReference', [
+        input.account,
+        input.credentialHash,
+        input.credentialReference,
+        input.expiresAt,
+      ]),
+    );
   }
 
   prepareCredentialLifecycle(input: {

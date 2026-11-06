@@ -67,24 +67,27 @@ class MockProvider implements TraceChainWalletProvider {
     return Promise.resolve(null);
   });
 
-  on(event: 'accountsChanged' | 'chainChanged', listener: (...args: unknown[]) => void) {
+  on(
+    event: 'accountsChanged' | 'chainChanged' | 'disconnect',
+    listener: (...args: unknown[]) => void,
+  ) {
     const listeners = this.listeners.get(event) ?? new Set();
     listeners.add(listener);
     this.listeners.set(event, listeners);
   }
 
   removeListener(
-    event: 'accountsChanged' | 'chainChanged',
+    event: 'accountsChanged' | 'chainChanged' | 'disconnect',
     listener: (...args: unknown[]) => void,
   ) {
     this.listeners.get(event)?.delete(listener);
   }
 
-  emit(event: 'accountsChanged' | 'chainChanged', value: unknown) {
+  emit(event: 'accountsChanged' | 'chainChanged' | 'disconnect', value?: unknown) {
     this.listeners.get(event)?.forEach((listener) => listener(value));
   }
 
-  listenerCount(event: 'accountsChanged' | 'chainChanged') {
+  listenerCount(event: 'accountsChanged' | 'chainChanged' | 'disconnect') {
     return this.listeners.get(event)?.size ?? 0;
   }
 }
@@ -103,6 +106,7 @@ const authenticatedSession = {
   address: getAddress(ACCOUNT),
   authenticated: true as const,
   authorizationReady: false as const,
+  authorizationStatus: 'UNAVAILABLE' as const,
   credentialVerified: false as const,
   expiresAt: '2026-11-05T00:00:00.000Z',
   locallyVerified: false as const,
@@ -288,6 +292,19 @@ describe('wallet authentication with MetaMask Connect', () => {
     expect(result.current.state.message).toContain('network changed');
   });
 
+  it('clears the authenticated session when the provider disconnects', async () => {
+    const { adapter, provider } = setupAdapter();
+    const { result } = renderHook(() => useWalletAuthentication(adapter));
+    await waitFor(() => expect(result.current.state.phase).toBe('idle'));
+    await act(() => result.current.connect());
+
+    act(() => provider.emit('disconnect'));
+    await waitFor(() => expect(result.current.state.phase).toBe('idle'));
+
+    expect(authMocks.deleteAuthSession).toHaveBeenCalledOnce();
+    expect(result.current.state.message).toContain('Wallet disconnected');
+  });
+
   it('does not duplicate provider listeners when mounted in React StrictMode', async () => {
     const { adapter, provider } = setupAdapter();
     const wrapper = ({ children }: { children: ReactNode }) =>
@@ -299,6 +316,7 @@ describe('wallet authentication with MetaMask Connect', () => {
 
     expect(provider.listenerCount('accountsChanged')).toBe(1);
     expect(provider.listenerCount('chainChanged')).toBe(1);
+    expect(provider.listenerCount('disconnect')).toBe(1);
   });
 
   it('removes provider listeners when the hook unmounts', async () => {
@@ -311,5 +329,6 @@ describe('wallet authentication with MetaMask Connect', () => {
 
     expect(provider.listenerCount('accountsChanged')).toBe(0);
     expect(provider.listenerCount('chainChanged')).toBe(0);
+    expect(provider.listenerCount('disconnect')).toBe(0);
   });
 });

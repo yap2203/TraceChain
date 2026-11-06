@@ -6,7 +6,7 @@ import { chainConfig, targetChainHex, targetChainId } from '../../config/network
 export const TARGET_CHAIN_ID = targetChainId;
 export const TARGET_CHAIN_HEX = targetChainHex;
 
-export type WalletProviderEvent = 'accountsChanged' | 'chainChanged';
+export type WalletProviderEvent = 'accountsChanged' | 'chainChanged' | 'disconnect';
 export type MobileConnectionMode = 'deeplink' | 'qr';
 export type WalletConnectionPreference = 'automatic' | 'mobile';
 

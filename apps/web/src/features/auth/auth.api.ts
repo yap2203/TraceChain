@@ -7,6 +7,21 @@ export interface AuthenticatedSession {
   address: string;
   authenticated: true;
   authorizationReady: boolean;
+  authorizationStatus:
+    | 'AUTHORIZED'
+    | 'UNREGISTERED'
+    | 'APPLICATION_PENDING'
+    | 'ADDITIONAL_EVIDENCE_REQUIRED'
+    | 'APPLICATION_REJECTED'
+    | 'ACTIVATION_PENDING'
+    | 'SUSPENDED'
+    | 'REVOKED'
+    | 'EXPIRED'
+    | 'UNAUTHORIZED'
+    | 'UNAVAILABLE';
+  applicationId?: string;
+  applicationSubmittedAt?: number;
+  applicationUpdatedAt?: number;
   credentialId?: string;
   credentialVerified: boolean;
   expiresAt: string;
@@ -139,4 +154,18 @@ export function issueCompanyRoleCredential(input: {
     body: JSON.stringify(input),
     method: 'POST',
   });
+}
+
+export interface AdministratorCredentialOnChainResponse {
+  credentialId: string;
+  credentialReferenceTransaction?: PreparedTransaction;
+  credentialRegistrationTransaction?: PreparedTransaction;
+  state: 'ACTIVE' | 'TRANSACTIONS_REQUIRED';
+}
+
+export function prepareAdministratorCredentialOnChain() {
+  return apiRequest<AdministratorCredentialOnChainResponse>(
+    '/api/ssi/company-role/admin/on-chain',
+    { method: 'POST' },
+  );
 }

@@ -244,7 +244,6 @@ export class BlockchainController {
     if (
       !session.authenticated ||
       !session.authorizationReady ||
-      !session.credentialVerified ||
       session.role !== CompanyRole.SYSTEM_ADMIN
     ) {
       throw new BlockchainApiError(
@@ -258,12 +257,7 @@ export class BlockchainController {
   private async requireAuthorizedStakeholder(request: Request) {
     const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
     const session = await this.authService.getSession(sessionId);
-    if (
-      !session.authenticated ||
-      !session.authorizationReady ||
-      !session.credentialVerified ||
-      !session.address
-    ) {
+    if (!session.authenticated || !session.authorizationReady || !session.address) {
       throw new BlockchainApiError(
         'STAKEHOLDER_AUTHORIZATION_REQUIRED',
         'An authorized stakeholder session is required.',
@@ -275,14 +269,12 @@ export class BlockchainController {
 
   private handleError(error: unknown, response: Response, next: NextFunction) {
     if (error instanceof ZodError) {
-      response
-        .status(400)
-        .json({
-          error: {
-            code: 'INVALID_REQUEST',
-            message: error.issues[0]?.message ?? 'The transaction request is invalid.',
-          },
-        });
+      response.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: error.issues[0]?.message ?? 'The transaction request is invalid.',
+        },
+      });
       return;
     }
     if (error instanceof BlockchainApiError) {

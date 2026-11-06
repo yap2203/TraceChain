@@ -29,6 +29,7 @@ vi.mock('./useWalletAuthentication', () => ({
     credentialState: { message: '', phase: 'idle', reasons: [] },
     logout: vi.fn(),
     presentCredential: vi.fn(),
+    refreshSession: vi.fn(),
     state: walletMocks.state,
     switchToTargetNetwork: vi.fn(),
   }),
@@ -95,5 +96,20 @@ describe('login wallet connection tabs', () => {
     expect(container.querySelector('.loading-indicator--screen')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(walletMocks.cancelConnection).toHaveBeenCalledOnce();
+  });
+
+  it('does not present Company Role VC upload during login', () => {
+    Object.assign(walletMocks.state, {
+      authorizationStatus: 'APPLICATION_PENDING',
+      message: 'The company application is awaiting administrator review.',
+      phase: 'authenticated',
+    });
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText('Choose credential file')).toBeNull();
+    expect(screen.getByText('Application pending')).toBeTruthy();
   });
 });

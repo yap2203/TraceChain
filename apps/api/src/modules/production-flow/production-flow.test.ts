@@ -462,6 +462,13 @@ function session(role: CompanyRole, address: string): SessionRecord {
     createdAt: NOW,
     expiresAt: new Date('2027-01-01'),
     id: 'session',
+    onChainAuthorization: {
+      checkedAt: NOW,
+      credentialHash: 'cc'.repeat(32),
+      credentialId: CREDENTIAL_ID,
+      role,
+      status: 'AUTHORIZED',
+    },
     credentialVerification: {
       authorizationReady: true,
       credentialHash: 'cc'.repeat(32),
