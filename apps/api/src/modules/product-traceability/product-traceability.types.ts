@@ -31,6 +31,12 @@ export interface TraceabilityTransferRecord {
   sender: string;
   status: number;
   transferId: string;
+  lifecycleEvents?: Array<{
+    status?: number;
+    timestamp: number;
+    transactionHash?: string;
+    type: 'DISCREPANCY_REPORTED' | 'STATUS_CHANGED';
+  }>;
 }
 
 export interface TraceabilityMetadataReader {

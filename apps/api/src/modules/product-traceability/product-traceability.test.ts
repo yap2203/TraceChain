@@ -220,6 +220,44 @@ describe('product traceability service', () => {
     await service.resolve(undefined, { qrPayload: qr() });
     expect(Object.keys(gateway).every((key) => !/confirm|prepare|write/i.test(key))).toBe(true);
   });
+
+  it('shows only safe custody lifecycle events and filters private receipt evidence', async () => {
+    vi.mocked(gateway.listTransfers).mockResolvedValue([
+      {
+        dispatchedAt: 1_790_100_000,
+        dispatchTransactionHash: `0x${'aa'.repeat(32)}`,
+        lifecycleEvents: [
+          { timestamp: 1_790_150_000, type: 'DISCREPANCY_REPORTED' },
+          { status: 1, timestamp: 1_790_160_000, type: 'STATUS_CHANGED' },
+          { status: 4, timestamp: 1_790_170_000, type: 'STATUS_CHANGED' },
+        ],
+        productBatchId: PRODUCT,
+        quantity: '35',
+        recipient: DISTRIBUTOR,
+        sender: MANUFACTURER,
+        status: 4,
+        transferId: `0x${'44'.repeat(32)}`,
+      },
+    ]);
+
+    const result = await service.resolve(undefined, { qrPayload: qr() });
+    const serialized = JSON.stringify(result);
+
+    expect(result.timeline.map((event) => event.type)).toEqual([
+      'PRODUCT_CREATED',
+      'TRANSFER_DISPATCHED',
+      'DISCREPANCY_REPORTED',
+      'DISCREPANCY_RESOLVED',
+      'TRANSFER_CANCELLED',
+    ]);
+    expect(
+      result.timeline.slice(2).every((event) => event.action.startsWith('Recorded custody event')),
+    ).toBe(true);
+    expect(serialized).not.toContain('evidenceCid');
+    expect(serialized).not.toContain('receiptHash');
+    expect(serialized).not.toContain('privateDetails');
+    expect(serialized).not.toContain('Counted at receiving bay');
+  });
 });
 
 function qr(override: Partial<{ chainId: number; productRegistryAddress: string }> = {}) {

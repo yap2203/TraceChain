@@ -43,7 +43,8 @@
 - Authenticated, credential-authorized custody-transfer resolution with intended-recipient checks
 - Canonical custody-transfer QR rendering, PNG download, camera/image/manual scanning, and API-verified transfer summaries
 - Development-only chain-31337 custody-transfer seeding against existing deployments
-- Recipient-only receipt confirmation through backend-validated unsigned calldata and MetaMask
+- Recipient-only quantity reconciliation, encrypted receipt evidence, discrepancy reporting, rejection, and confirmation through backend-validated unsigned calldata and MetaMask
+- System Admin discrepancy review using real contract events and unsigned `resolveDiscrepancy` transactions
 - Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
 - Supplier-specific did:ethr issuer DIDs, typed JWT Ingredient Credential issuance/verification, AES-GCM encrypted IPFS storage, and sequential MetaMask registration of credential and batch records
 - Authenticated Supplier ingredient batch list/detail/overview data reconstructed from `IngredientBatchRegistered` events, contract reads, and authorized encrypted metadata
@@ -92,8 +93,9 @@ Role VC, although issuance and manual verification remain available separately.
 
 - Nonce and session repositories remain development-only and in memory; issuance recovery currently uses ignored atomic JSON files rather than a production shared database
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
-- No damaged/rejected quantity reconciliation or encrypted receipt-evidence workflow yet; QR scanning itself remains read-only
-- Receipt evidence/reconciliation and remaining non-admin reports remain presentation fixtures and are not authoritative
+- Receipt encryption currently reuses the prototype server-managed AES key and ignored atomic JSON workflow repository; production needs durable shared metadata storage and managed key custody
+- Direct contract rejection records only a reason hash, so its encrypted evidence CID remains in the authorized off-chain receipt repository rather than on-chain
+- Remaining non-admin reports still contain presentation fixtures and are not authoritative
 
 ## Important system qualities
 

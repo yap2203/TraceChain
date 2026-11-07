@@ -23,6 +23,8 @@ const credentialAbi = [
 const custodyAbi = [
   'event TransferCreated(bytes32 indexed transferId,bytes32 indexed productBatchId,address indexed sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid)',
   'event ReceiptConfirmed(bytes32 indexed transferId,address indexed recipient,uint256 usable,uint256 damaged,uint256 rejected,bytes32 receiptHash,string receiptCid)',
+  'event DiscrepancyReported(bytes32 indexed transferId,uint8 kind,uint256 expected,uint256 actual,bytes32 detailsHash,string evidenceCid)',
+  'event TransferStatusChanged(bytes32 indexed transferId,uint8 status,bytes32 reasonHash)',
   'function getTransfer(bytes32) view returns (tuple(bytes32 productBatchId,address sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid,uint64 dispatchedAt,uint64 expectedAt,uint8 status,uint256 usable,uint256 damaged,uint256 rejected))',
 ] as const;
 
@@ -126,6 +128,30 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
         const receiptBlock = receiptEvent
           ? await this.provider.getBlock(receiptEvent.blockNumber)
           : undefined;
+        const [discrepancyEvents, statusEvents] = await Promise.all([
+          this.custody.queryFilter(this.custody.filters.DiscrepancyReported(transferId)),
+          this.custody.queryFilter(this.custody.filters.TransferStatusChanged(transferId)),
+        ]);
+        const lifecycleEvents = await Promise.all([
+          ...discrepancyEvents.map(async (lifecycleEvent) => {
+            const block = await this.provider.getBlock(lifecycleEvent.blockNumber);
+            return {
+              timestamp: Number(block?.timestamp ?? 0),
+              transactionHash: lifecycleEvent.transactionHash,
+              type: 'DISCREPANCY_REPORTED' as const,
+            };
+          }),
+          ...statusEvents.map(async (lifecycleEvent) => {
+            const block = await this.provider.getBlock(lifecycleEvent.blockNumber);
+            const lifecycleArgs = (lifecycleEvent as unknown as { args: { status?: bigint } }).args;
+            return {
+              status: Number(lifecycleArgs.status),
+              timestamp: Number(block?.timestamp ?? 0),
+              transactionHash: lifecycleEvent.transactionHash,
+              type: 'STATUS_CHANGED' as const,
+            };
+          }),
+        ]);
         return {
           dispatchedAt: Number(record.dispatchedAt),
           dispatchTransactionHash: event.transactionHash,
@@ -137,6 +163,7 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
           sender: getAddress(String(record.sender)),
           status: Number(record.status),
           transferId,
+          lifecycleEvents,
         };
       }),
     );

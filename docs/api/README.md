@@ -186,8 +186,9 @@ Requires a SIWE session currently authorized against the blockchain registries. 
 
 The API verifies the configured chain and `CUSTODY_TRANSFER_ADDRESS`, reads
 `getTransfer(transferId)`, requires status `1` (`AwaitingReceipt`), and requires the SIWE wallet to
-equal the on-chain recipient. A successful response contains only `transferId`, `productBatchId`,
-`sender`, `recipient`, string `quantity`, `dispatchedAt`, `expectedAt`, and numeric `status`.
+equal the on-chain recipient. A successful response contains the safe transfer fields plus readable
+product/company presentation and current usable, damaged, and rejected totals. Technical IDs and
+wallets are kept in the frontend's collapsed Technical details.
 
 Resolution is read-only. It does not call `confirmReceipt`, prepare a transaction, or change
 custody. The frontend supports canonical QR generation plus camera, image-file, and manual-paste
@@ -211,17 +212,53 @@ Resolution never prepares or submits a transaction and never confirms receipt.
 
 ### `POST /api/custody-transfers/transactions/confirm-receipt`
 
-Requires the same fully authorized SIWE session and accepts a `bytes32` transfer ID. The service
-re-reads the transfer and rechecks `AwaitingReceipt` plus the intended-recipient wallet before
-returning unsigned `confirmReceipt` calldata. It never signs or broadcasts a transaction. The
-current local workflow confirms the full transfer quantity with zero damaged/rejected units and no
-receipt CID.
+Requires the fully authorized intended-recipient SIWE session. The request includes `transferId`,
+`actualQuantity`, `damagedQuantity`, `rejectedQuantity`, optional ISO `actualArrivalAt`, receipt
+`notes`, and up to three optional PNG/JPEG/WebP/PDF evidence envelopes. Quantities are non-negative
+safe-integer strings and damaged plus rejected cannot exceed actual.
+
+The service re-reads the transfer, rechecks current authorization and `AwaitingReceipt`, calculates
+usable quantity, deterministically serializes the private metadata, encrypts it through the
+injectable content store, and persists only its encrypted envelope and CID in ignored workflow
+metadata. Storage must succeed before a transaction is prepared. If actual equals expected, the
+response contains action `CONFIRM_RECEIPT`, usable quantity, and unsigned `confirmReceipt` calldata.
+If actual differs, notes are required and the response contains action `REPORT_DISCREPANCY`,
+`SHORTAGE` or `EXCESS`, usable quantity, and unsigned `reportDiscrepancy` calldata. The API never
+signs or broadcasts.
+
+### `POST /api/custody-transfers/transactions/reject`
+
+Requires the authorized intended recipient and an `AwaitingReceipt` transfer. It encrypts the
+rejection reason/type and optional evidence before returning unsigned `reject` calldata. The
+current contract accepts a reason hash but not an evidence CID, so encrypted rejection evidence is
+resolved through the authorized off-chain repository and is not placed on-chain.
+
+### `GET /api/custody-transfers/discrepancies`
+
+Requires current System Admin authorization. It combines real `DiscrepancyReported` events,
+`getDiscrepancy`, `getTransfer`, product metadata, stakeholder display names, and decrypted private
+details available to that Admin. Wallets, hashes, CIDs, and transfer IDs are returned in a separate
+`technical` object for collapsed presentation.
+
+### `POST /api/custody-transfers/transactions/resolve-discrepancy`
+
+Requires current System Admin authorization, an unresolved discrepancy, a decision, and a reason.
+It returns unsigned `resolveDiscrepancy` calldata. Accepting the actual quantity returns the contract
+to `AwaitingReceipt`; it does not confirm receipt. Rejecting the discrepancy cancels the transfer
+and releases reserved sender inventory according to the contract.
+
+### `GET /api/custody-transfers/:transferId/evidence`
+
+Requires current authorization and restricts access to the transfer sender, recipient, or System
+Admin. It decrypts the selected server-managed receipt workflow record. It never returns an
+encryption key or plaintext content to public product traceability.
 
 ### `GET /api/custody-transfers/:transferId`
 
 Requires the authorized intended-recipient session and returns the same minimal safe transfer
-summary. The frontend uses this endpoint after the MetaMask transaction receipt to confirm that the
-contract now reports status `2` (`Received`).
+summary. The frontend uses this endpoint after MetaMask mining to confirm `Received`, `Rejected`,
+or `DiscrepancyReported`, and reloads operational inventory. After an Admin accepts a discrepancy,
+the recipient uses the same endpoint and performs a separate final confirmation.
 
 ## Authentication boundary
 

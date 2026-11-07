@@ -34,6 +34,7 @@ import {
   EthersCustodyTransferGateway,
   type CustodyTransferGateway,
 } from './modules/custody-transfers/custody-transfer.gateway.js';
+import { JsonReceiptWorkflowRepository } from './modules/custody-transfers/custody-transfer.repository.js';
 import { createCustodyTransferRouter } from './modules/custody-transfers/custody-transfer.routes.js';
 import { CustodyTransferService } from './modules/custody-transfers/custody-transfer.service.js';
 import { IngredientBatchController } from './modules/ingredient-batches/ingredient-batch.controller.js';
@@ -159,11 +160,6 @@ export function createApp({
     cookieSecure: env.NODE_ENV === 'production',
     sessionTtlMs,
   });
-  const custodyTransferController = new CustodyTransferController(
-    custodyTransferService ??
-      createDefaultCustodyTransferService(resolvedAuthService, stakeholderDirectory),
-    env.AUTH_COOKIE_NAME,
-  );
   const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
   let blockchainService: BlockchainAuthorizationService | undefined;
   const blockchainAuthorization: BlockchainAuthorizationService | undefined = ssi
@@ -293,6 +289,15 @@ export function createApp({
       return credentialContentStore.encryptAndStore(serialized, credentialId);
     },
   };
+  const custodyTransferController = new CustodyTransferController(
+    custodyTransferService ??
+      createDefaultCustodyTransferService(
+        resolvedAuthService,
+        stakeholderDirectory,
+        lazyCredentialContentStore,
+      ),
+    env.AUTH_COOKIE_NAME,
+  );
   const ssiController = new SsiController(
     new CompanyRoleSsiService({
       agentProvider: defaultSsi.agentProvider,
@@ -389,7 +394,7 @@ export function createApp({
   );
   app.use(
     '/api/custody-transfers',
-    express.json({ limit: '4kb' }),
+    express.json({ limit: '24mb' }),
     createCustodyTransferRouter(custodyTransferController),
   );
   app.use(
@@ -500,6 +505,7 @@ function createDefaultProductTraceabilityService(
 function createDefaultCustodyTransferService(
   authService: AuthService,
   stakeholderDirectory: StakeholderDirectory,
+  contentStore: CredentialContentStore,
 ) {
   let blockchainEnvironment: ReturnType<typeof loadBlockchainEnvironment> | undefined;
   let gateway: CustodyTransferGateway | undefined;
@@ -512,6 +518,15 @@ function createDefaultCustodyTransferService(
   };
 
   const lazyGateway: CustodyTransferGateway = {
+    getDiscrepancy: async (transferId) => {
+      configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        env.CHAIN_ID,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+      );
+      return gateway.getDiscrepancy(transferId);
+    },
     getTransfer: async (transferId) => {
       const resolvedConfiguration = configuration();
       gateway ??= new EthersCustodyTransferGateway(
@@ -520,6 +535,33 @@ function createDefaultCustodyTransferService(
         resolvedConfiguration.contractAddress,
       );
       return gateway.getTransfer(transferId);
+    },
+    listDiscrepancies: async () => {
+      configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        env.CHAIN_ID,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+      );
+      return gateway.listDiscrepancies();
+    },
+    prepareDiscrepancyReport: (input) => {
+      configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        env.CHAIN_ID,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+      );
+      return gateway.prepareDiscrepancyReport(input);
+    },
+    prepareDiscrepancyResolution: (input) => {
+      configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        env.CHAIN_ID,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+      );
+      return gateway.prepareDiscrepancyResolution(input);
     },
     prepareReceiptConfirmation: (input) => {
       const resolvedConfiguration = configuration();
@@ -530,12 +572,37 @@ function createDefaultCustodyTransferService(
       );
       return gateway.prepareReceiptConfirmation(input);
     },
+    prepareRejection: (input) => {
+      configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        env.CHAIN_ID,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+      );
+      return gateway.prepareRejection(input);
+    },
   };
+
+  const repositoryRoot = new URL('../../../.tracechain/issuance/', import.meta.url);
+  const productMetadata = new RepositoryTraceabilityMetadataReader(
+    new JsonProductionFlowRepository(
+      fileURLToPath(new URL('production-flow.json', repositoryRoot)),
+    ),
+    new JsonIngredientBatchWorkflowRepository(
+      fileURLToPath(new URL('ingredient-batches.json', repositoryRoot)),
+    ),
+    contentStore,
+  );
 
   return new CustodyTransferService({
     authService,
     configuration,
+    contentStore,
     gateway: lazyGateway,
+    productMetadata,
+    receiptRepository: new JsonReceiptWorkflowRepository(
+      fileURLToPath(new URL('custody-receipts.json', repositoryRoot)),
+    ),
     stakeholderDirectory,
   });
 }

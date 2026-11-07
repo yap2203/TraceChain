@@ -1,5 +1,8 @@
 import type {
-  PreparedReceiptConfirmation,
+  AdminCustodyDiscrepancy,
+  PreparedDiscrepancyResolution,
+  PreparedReceiptAction,
+  ReceiptEvidenceUpload,
   ResolvedCustodyTransfer,
 } from './custody-transfer.types';
 
@@ -33,11 +36,30 @@ export async function resolveTransferQr(qrPayload: string): Promise<ResolvedCust
   });
 }
 
-export function prepareReceiptConfirmation(
-  transferId: string,
-): Promise<PreparedReceiptConfirmation> {
+export function prepareReceiptConfirmation(input: {
+  actualArrivalAt?: string;
+  actualQuantity: string;
+  damagedQuantity: string;
+  evidence: ReceiptEvidenceUpload[];
+  notes: string;
+  rejectedQuantity: string;
+  transferId: string;
+}): Promise<PreparedReceiptAction> {
   return custodyTransferRequest('/transactions/confirm-receipt', {
-    body: JSON.stringify({ transferId }),
+    body: JSON.stringify(input),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
+}
+
+export function prepareTransferRejection(input: {
+  evidence: ReceiptEvidenceUpload[];
+  reason: string;
+  reasonType: 'COMPLETE_REJECTION' | 'SHIPMENT_REFUSED' | 'WRONG_PRODUCT';
+  transferId: string;
+}): Promise<PreparedReceiptAction> {
+  return custodyTransferRequest('/transactions/reject', {
+    body: JSON.stringify(input),
     headers: { 'Content-Type': 'application/json' },
     method: 'POST',
   });
@@ -45,6 +67,25 @@ export function prepareReceiptConfirmation(
 
 export function getCustodyTransfer(transferId: string): Promise<ResolvedCustodyTransfer> {
   return custodyTransferRequest(`/${encodeURIComponent(transferId)}`);
+}
+
+export async function getCustodyDiscrepancies(): Promise<AdminCustodyDiscrepancy[]> {
+  const response = await custodyTransferRequest<{ discrepancies: AdminCustodyDiscrepancy[] }>(
+    '/discrepancies',
+  );
+  return response.discrepancies;
+}
+
+export function prepareDiscrepancyResolution(input: {
+  acceptActual: boolean;
+  reason: string;
+  transferId: string;
+}): Promise<PreparedDiscrepancyResolution> {
+  return custodyTransferRequest('/transactions/resolve-discrepancy', {
+    body: JSON.stringify(input),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
+  });
 }
 
 async function custodyTransferRequest<T>(path: string, init?: RequestInit): Promise<T> {

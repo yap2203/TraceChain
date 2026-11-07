@@ -16,6 +16,7 @@ import {
   ScanQrCode,
   History,
   FlaskConical,
+  AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
 import type { WorkspaceKey } from './workspace-config';
@@ -28,6 +29,7 @@ export const workspaceNavigation = {
     ['applications', 'Applications', ClipboardList],
     ['credentials', 'Credentials', BadgeCheck],
     ['accesscontrol', 'Access control', ShieldCheck],
+    ['discrepancies', 'Receipt discrepancies', AlertTriangle],
     ['audit', 'Audit reports', ChartNoAxesCombined],
   ],
   supplier: [

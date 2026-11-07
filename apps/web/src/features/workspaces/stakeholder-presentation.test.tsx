@@ -15,16 +15,21 @@ describe('stakeholder presentation', () => {
     const { container } = render(
       <ResolvedTransferCard
         transfer={{
+          damaged: '0',
           dispatchedAt: 1_800_000_000,
           expectedAt: 1_800_086_400,
           productBatchId: `0x${'22'.repeat(32)}`,
+          productName: 'Chocolate Bars',
+          productReference: 'PB-2026-001',
           quantity: '25',
           recipient: RECIPIENT,
           recipientName: 'Swift Distribution Sdn. Bhd.',
           sender: SENDER,
           senderName: 'CocoaCraft Manufacturing Sdn. Bhd.',
+          rejected: '0',
           status: 1,
           transferId: `0x${'44'.repeat(32)}`,
+          usable: '0',
         }}
       />,
     );

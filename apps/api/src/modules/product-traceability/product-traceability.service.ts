@@ -240,12 +240,46 @@ export class ProductTraceabilityService {
       });
       if (transfer.status === 2) {
         events.push({
-          action: 'Custody receipt confirmed',
+          action: 'Recorded custody event: receipt confirmed',
           organizationName: name(transfer.recipient, 'Verified recipient record unavailable'),
           status: 'RECEIVED',
           timestamp: transfer.receivedAt ?? transfer.dispatchedAt,
           type: 'TRANSFER_RECEIVED',
         });
+      }
+      for (const lifecycle of transfer.lifecycleEvents ?? []) {
+        if (lifecycle.type === 'DISCREPANCY_REPORTED') {
+          events.push({
+            action:
+              'Recorded custody event: quantity discrepancy reported for administrator review',
+            organizationName: name(transfer.recipient, 'Verified recipient record unavailable'),
+            status: 'DISCREPANCY_REPORTED',
+            timestamp: lifecycle.timestamp,
+            type: 'DISCREPANCY_REPORTED',
+          });
+        } else if (lifecycle.status === 1) {
+          events.push({
+            action: 'Recorded custody event: discrepancy resolved; recipient confirmation required',
+            organizationName: 'Recorded on TraceChain',
+            status: 'AWAITING_RECEIPT',
+            timestamp: lifecycle.timestamp,
+            type: 'DISCREPANCY_RESOLVED',
+          });
+        } else if (lifecycle.status === 3 || lifecycle.status === 4) {
+          events.push({
+            action:
+              lifecycle.status === 3
+                ? 'Recorded custody event: shipment rejected'
+                : 'Recorded custody event: transfer cancelled',
+            organizationName:
+              lifecycle.status === 3
+                ? name(transfer.recipient, 'Verified recipient record unavailable')
+                : 'Recorded on TraceChain',
+            status: lifecycle.status === 3 ? 'REJECTED' : 'CANCELLED',
+            timestamp: lifecycle.timestamp,
+            type: lifecycle.status === 3 ? 'TRANSFER_REJECTED' : 'TRANSFER_CANCELLED',
+          });
+        }
       }
     }
     return events.sort((left, right) => left.timestamp - right.timestamp);
