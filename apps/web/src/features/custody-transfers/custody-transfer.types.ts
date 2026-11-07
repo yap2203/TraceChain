@@ -1,4 +1,5 @@
 export interface ResolvedCustodyTransfer {
+  actualArrivalAt?: string | null;
   damaged: string;
   dispatchedAt: number;
   expectedAt: number;

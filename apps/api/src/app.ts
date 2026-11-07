@@ -518,6 +518,24 @@ function createDefaultCustodyTransferService(
   };
 
   const lazyGateway: CustodyTransferGateway = {
+    getReceiptEvidenceReference: async (transferId) => {
+      configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        env.CHAIN_ID,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+      );
+      return gateway.getReceiptEvidenceReference(transferId);
+    },
+    getRejectionEvidenceReference: async (transferId) => {
+      configuration();
+      gateway ??= new EthersCustodyTransferGateway(
+        env.CHAIN_ID,
+        blockchainEnvironment!.CHAIN_RPC_URL,
+        blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+      );
+      return gateway.getRejectionEvidenceReference(transferId);
+    },
     getDiscrepancy: async (transferId) => {
       configuration();
       gateway ??= new EthersCustodyTransferGateway(

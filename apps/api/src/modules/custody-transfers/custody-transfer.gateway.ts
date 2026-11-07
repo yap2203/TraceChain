@@ -2,6 +2,7 @@ import { Contract, Interface, JsonRpcProvider, getAddress } from 'ethers';
 
 import type {
   CustodyDiscrepancyRecord,
+  CustodyEvidenceReference,
   CustodyTransferRecord,
   PreparedCustodyTransferTransaction,
 } from './custody-transfer.types.js';
@@ -9,6 +10,8 @@ import type {
 const custodyTransferAbi = [
   'error InvalidInput()',
   'event DiscrepancyReported(bytes32 indexed transferId,uint8 kind,uint256 expected,uint256 actual,bytes32 detailsHash,string evidenceCid)',
+  'event ReceiptConfirmed(bytes32 indexed transferId,address indexed recipient,uint256 usable,uint256 damaged,uint256 rejected,bytes32 receiptHash,string receiptCid)',
+  'event TransferStatusChanged(bytes32 indexed transferId,uint8 status,bytes32 reasonHash)',
   'function getTransfer(bytes32 id) view returns (tuple(bytes32 productBatchId,address sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid,uint64 dispatchedAt,uint64 expectedAt,uint8 status,uint256 usable,uint256 damaged,uint256 rejected))',
   'function getDiscrepancy(bytes32 id) view returns (tuple(uint8 kind,uint256 actualQuantity,bytes32 detailsHash,string evidenceCid,bool resolved))',
   'function confirmReceipt(bytes32 transferId,uint256 totalReceived,uint256 damaged,uint256 rejectedQuantity,bytes32 receiptHash,string receiptCid)',
@@ -20,6 +23,8 @@ const custodyTransferAbi = [
 const custodyTransferInterface = new Interface(custodyTransferAbi);
 
 export interface CustodyTransferGateway {
+  getReceiptEvidenceReference(transferId: string): Promise<CustodyEvidenceReference | null>;
+  getRejectionEvidenceReference(transferId: string): Promise<CustodyEvidenceReference | null>;
   getTransfer(transferId: string): Promise<CustodyTransferRecord | null>;
   getDiscrepancy(transferId: string): Promise<CustodyDiscrepancyRecord | null>;
   listDiscrepancies(): Promise<CustodyDiscrepancyRecord[]>;
@@ -85,6 +90,29 @@ export class EthersCustodyTransferGateway implements CustodyTransferGateway {
       if (isMissingTransferError(error)) return null;
       throw error;
     }
+  }
+
+  async getReceiptEvidenceReference(transferId: string) {
+    const events = await this.contract.queryFilter(
+      this.contract.filters.ReceiptConfirmed(transferId),
+    );
+    const event = events.at(-1);
+    if (!event) return null;
+    const args = (event as unknown as { args: { receiptCid: string; receiptHash: string } }).args;
+    return { cid: String(args.receiptCid), contentHash: String(args.receiptHash) };
+  }
+
+  async getRejectionEvidenceReference(transferId: string) {
+    const events = await this.contract.queryFilter(
+      this.contract.filters.TransferStatusChanged(transferId),
+    );
+    const event = [...events].reverse().find((candidate) => {
+      const args = (candidate as unknown as { args: { status: bigint } }).args;
+      return Number(args.status) === 3;
+    });
+    if (!event) return null;
+    const args = (event as unknown as { args: { reasonHash: string } }).args;
+    return { contentHash: String(args.reasonHash) };
   }
 
   async getDiscrepancy(transferId: string): Promise<CustodyDiscrepancyRecord | null> {

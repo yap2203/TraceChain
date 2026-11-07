@@ -12,6 +12,7 @@ export interface CustodyTransferRecord {
 }
 
 export interface CustodyTransferSummary {
+  actualArrivalAt?: string | null;
   damaged: string;
   dispatchedAt: number;
   expectedAt: number;
@@ -27,6 +28,11 @@ export interface CustodyTransferSummary {
   status: number;
   transferId: string;
   usable: string;
+}
+
+export interface CustodyEvidenceReference {
+  cid?: string;
+  contentHash: string;
 }
 
 export interface CustodyDiscrepancyRecord {

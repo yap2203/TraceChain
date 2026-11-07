@@ -8,6 +8,7 @@ import { CustodyTransferResolutionError } from './custody-transfer.api';
 import type { ResolvedCustodyTransfer } from './custody-transfer.types';
 import type { TransferQrReader } from './qr-reader';
 import { ReceiptConfirmationError } from './receipt-confirmation';
+import { ResolvedTransferCard } from './ResolvedTransferCard';
 import { createTransferQrModel, createTransferQrPayload } from './transfer-qr';
 import { TransferQrScanner } from './TransferQrScanner';
 
@@ -245,7 +246,11 @@ describe('custody-transfer QR frontend', () => {
         }),
     );
     const submitConfirmation = vi.fn().mockResolvedValue(undefined);
-    const received = { ...TRANSFER, status: 2 as const };
+    const received = {
+      ...TRANSFER,
+      actualArrivalAt: '2026-11-06T09:30:00.000Z',
+      status: 2 as const,
+    };
     const refreshTransfer = vi.fn().mockResolvedValue(received);
     render(
       <TransferQrScanner
@@ -272,6 +277,8 @@ describe('custody-transfer QR frontend', () => {
     });
     expect(await screen.findByText('Receipt confirmed on-chain')).toBeTruthy();
     expect(screen.getByText('Received')).toBeTruthy();
+    expect(screen.getByText('Actual arrival')).toBeTruthy();
+    expect(screen.queryByText('Not recorded')).toBeNull();
     expect(submitConfirmation).toHaveBeenCalledOnce();
     expect(prepareConfirmation).toHaveBeenCalledWith({
       actualArrivalAt: undefined,
@@ -461,6 +468,66 @@ describe('custody-transfer QR frontend', () => {
     ).toBeTruthy();
     expect(screen.getByText('Awaiting Receipt')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Confirm reconciled receipt' })).toBeTruthy();
+  });
+
+  it('keeps the form editable for a corrected retry after MetaMask cancellation', async () => {
+    const prepareConfirmation = vi.fn().mockResolvedValue({
+      action: 'CONFIRM_RECEIPT',
+      transaction: {
+        chainId: 31_337,
+        data: '0x1234',
+        to: CONTRACT_ADDRESS,
+        value: '0x0',
+      },
+      usableQuantity: '250',
+    });
+    const submitConfirmation = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ReceiptConfirmationError(
+          'REJECTED',
+          'The MetaMask transaction was cancelled. The transfer remains awaiting receipt.',
+        ),
+      )
+      .mockResolvedValueOnce(undefined);
+    render(
+      <TransferQrScanner
+        prepareConfirmation={prepareConfirmation}
+        reader={reader()}
+        refreshTransfer={vi.fn().mockResolvedValue({ ...TRANSFER, status: 2 as const })}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={submitConfirmation}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
+    await screen.findByText(
+      'The MetaMask transaction was cancelled. The transfer remains awaiting receipt.',
+    );
+
+    fireEvent.change(screen.getByLabelText('Damaged quantity'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText(/Receipt notes/), {
+      target: { value: 'Corrected after reviewing the delivery.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reconciled receipt' }));
+
+    expect(await screen.findByText('Receipt confirmed on-chain')).toBeTruthy();
+    expect(prepareConfirmation).toHaveBeenCalledTimes(2);
+    expect(prepareConfirmation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        damagedQuantity: '2',
+        notes: 'Corrected after reviewing the delivery.',
+      }),
+    );
+    expect(submitConfirmation).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an honest actual-arrival fallback when no time was recorded', async () => {
+    render(<ResolvedTransferCard transfer={{ ...TRANSFER, status: 2, usable: '250' }} />);
+
+    expect(screen.getByText('Actual arrival')).toBeTruthy();
+    expect(screen.getByText('Not recorded')).toBeTruthy();
   });
 
   it('does not submit a second transaction when post-receipt refresh fails', async () => {

@@ -45,6 +45,8 @@
 - Development-only chain-31337 custody-transfer seeding against existing deployments
 - Recipient-only quantity reconciliation, encrypted receipt evidence, discrepancy reporting, rejection, and confirmation through backend-validated unsigned calldata and MetaMask
 - System Admin discrepancy review using real contract events and unsigned `resolveDiscrepancy` transactions
+- Versioned, content-addressed encrypted receipt drafts with authoritative contract-reference matching after finalization
+- Authorized participant/Admin actual-arrival presentation; public traceability excludes actual arrival and private receipt content
 - Server-side Veramo agent with did:ethr Sepolia, JWT VC/VP, encrypted JSON key storage, Company Role Credential issuance/verification, Admin bootstrap, and development holder export
 - Supplier-specific did:ethr issuer DIDs, typed JWT Ingredient Credential issuance/verification, AES-GCM encrypted IPFS storage, and sequential MetaMask registration of credential and batch records
 - Authenticated Supplier ingredient batch list/detail/overview data reconstructed from `IngredientBatchRegistered` events, contract reads, and authorized encrypted metadata
@@ -94,6 +96,7 @@ Role VC, although issuance and manual verification remain available separately.
 - Nonce and session repositories remain development-only and in memory; issuance recovery currently uses ignored atomic JSON files rather than a production shared database
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
 - Receipt encryption currently reuses the prototype server-managed AES key and ignored atomic JSON workflow repository; production needs durable shared metadata storage and managed key custody
+- Superseded encrypted receipt drafts remain in prototype storage for audit-safe non-overwrite behavior; retention and cleanup policy requires a future production design
 - Direct contract rejection records only a reason hash, so its encrypted evidence CID remains in the authorized off-chain receipt repository rather than on-chain
 - Remaining non-admin reports still contain presentation fixtures and are not authoritative
 

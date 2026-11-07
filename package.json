@@ -23,7 +23,7 @@
     "test:frontend": "npm run test --workspace @tracechain/web",
     "test:ssi": "npm run build --workspace @tracechain/shared && npm run test:ssi --workspace @tracechain/ssi",
     "test:contracts": "npm run test --workspace @tracechain/contracts",
-    "test:custody-transfers": "npm run build --workspace @tracechain/shared && npm run test:custody-transfers --workspace @tracechain/api",
+    "test:custody-transfers": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run test:custody-transfers --workspace @tracechain/api",
     "test:ingredient-batches": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run test:ingredient-batches --workspace @tracechain/api",
     "test:production-flow": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run test:production-flow --workspace @tracechain/api",
     "test:product-traceability": "npm run build --workspace @tracechain/shared && npm run test:product-traceability --workspace @tracechain/api",

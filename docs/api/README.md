@@ -220,7 +220,9 @@ safe-integer strings and damaged plus rejected cannot exceed actual.
 The service re-reads the transfer, rechecks current authorization and `AwaitingReceipt`, calculates
 usable quantity, deterministically serializes the private metadata, encrypts it through the
 injectable content store, and persists only its encrypted envelope and CID in ignored workflow
-metadata. Storage must succeed before a transaction is prepared. If actual equals expected, the
+metadata. Drafts are keyed by transfer, action kind, and deterministic content hash; exact retries
+reuse a draft and corrected input creates a new schema-version-2 draft without overwriting earlier
+content. Storage must succeed before a transaction is prepared. If actual equals expected, the
 response contains action `CONFIRM_RECEIPT`, usable quantity, and unsigned `confirmReceipt` calldata.
 If actual differs, notes are required and the response contains action `REPORT_DISCREPANCY`,
 `SHORTAGE` or `EXCESS`, usable quantity, and unsigned `reportDiscrepancy` calldata. The API never
@@ -250,15 +252,18 @@ and releases reserved sender inventory according to the contract.
 ### `GET /api/custody-transfers/:transferId/evidence`
 
 Requires current authorization and restricts access to the transfer sender, recipient, or System
-Admin. It decrypts the selected server-managed receipt workflow record. It never returns an
-encryption key or plaintext content to public product traceability.
+Admin. It decrypts only the workflow record matching the authoritative on-chain receipt hash/CID,
+discrepancy hash/CID, or rejection reason hash. It never returns a superseded draft, an encryption
+key, or plaintext content to public product traceability.
 
 ### `GET /api/custody-transfers/:transferId`
 
 Requires the authorized intended-recipient session and returns the same minimal safe transfer
 summary. The frontend uses this endpoint after MetaMask mining to confirm `Received`, `Rejected`,
 or `DiscrepancyReported`, and reloads operational inventory. After an Admin accepts a discrepancy,
-the recipient uses the same endpoint and performs a separate final confirmation.
+the recipient uses the same endpoint and performs a separate final confirmation. For a confirmed
+transfer, a currently authorized sender, recipient, or System Admin also receives the actual-arrival
+time from the private record matching `ReceiptConfirmed`; a missing value is returned as `null`.
 
 ## Authentication boundary
 

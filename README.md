@@ -316,6 +316,18 @@ transaction. The frontend validates the destination, network, and recipient wall
 to sign, waits for mining, then refreshes `GET /api/custody-transfers/:transferId` and operational
 inventory.
 
+Encrypted receipt preparations are versioned, content-hash-addressed drafts. An identical retry
+reuses its existing draft, while corrected quantities, notes, arrival time, or evidence create a new
+draft without overwriting the earlier one as long as the transfer remains `AwaitingReceipt`. After
+the contract action is finalized, private retrieval selects only the draft matching the
+authoritative receipt hash/CID, discrepancy hash/CID, or rejection reason hash. Superseded drafts
+are never returned as finalized evidence. Existing single-record JSON receipt repositories remain
+readable as schema version 1; new records use schema version 2.
+
+Confirmed transfers show the private recorded actual-arrival time to the authorized sender,
+recipient, and System Admin. If the recipient omitted it, the UI says **Not recorded**. Actual
+arrival is not included in public product traceability.
+
 The Admin **Receipt discrepancies** screen reads real discrepancy events and current contract
 records. An authorized System Admin can prepare `resolveDiscrepancy` to accept the reported actual
 quantity or cancel the transfer. Acceptance returns the transfer to `AwaitingReceipt`; the intended
@@ -381,8 +393,8 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, the custody-transfer API contains 30 tests, and the product-traceability API contains 11 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite contains 90 tests and includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, both QR workflows, reconciliation validation, Admin discrepancy decisions, public traceability states, and receipt transaction errors. Product-traceability and custody-transfer API tests inject blockchain and encrypted-content gateways and do not require Hardhat, Pinata, or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, the custody-transfer API contains 36 tests, and the product-traceability API contains 11 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite contains 93 tests and includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, both QR workflows, reconciliation validation, corrected MetaMask-cancellation retries, Admin discrepancy decisions, public traceability states, and receipt transaction errors. Product-traceability and custody-transfer API tests inject blockchain and encrypted-content gateways and do not require Hardhat, Pinata, or an RPC endpoint. Frontend tests use fixed chain-31337 public test values from Vite test mode and do not require a private root `.env`; non-test builds retain normal environment validation. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
-The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
+The root `test:auth`, `test:ssi-api`, and `test:custody-transfers` commands build their required shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 
 See [project context](docs/PROJECT_CONTEXT.md), [decisions](docs/DECISIONS.md), and [progress](docs/PROGRESS.md) for the project source of truth.

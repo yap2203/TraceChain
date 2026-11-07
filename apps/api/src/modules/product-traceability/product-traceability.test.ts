@@ -257,6 +257,7 @@ describe('product traceability service', () => {
     expect(serialized).not.toContain('receiptHash');
     expect(serialized).not.toContain('privateDetails');
     expect(serialized).not.toContain('Counted at receiving bay');
+    expect(serialized).not.toContain('actualArrival');
   });
 });
 

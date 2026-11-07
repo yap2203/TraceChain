@@ -9,6 +9,7 @@ import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-
 import type { CustodyTransferGateway } from './custody-transfer.gateway.js';
 import type {
   ReceiptWorkflowRecord,
+  ReceiptWorkflowReference,
   ReceiptWorkflowRepository,
 } from './custody-transfer.repository.js';
 import {
@@ -103,8 +104,15 @@ export class CustodyTransferService {
     const session = await this.requireAuthorizedSession(sessionId);
     const transferId = this.transferId(parameters);
     const transfer = await this.lookupTransfer(transferId);
-    this.requireRecipient(session.address, transfer.recipient);
-    return this.safeSummary(transferId, transfer);
+    this.requireParticipantOrAdmin(session.address, session.onChainAuthorization?.role, transfer);
+    const summary = await this.safeSummary(transferId, transfer);
+    if (transfer.status !== 2) return summary;
+    const details = await this.authoritativePrivateDetails(transferId, transfer);
+    return {
+      ...summary,
+      actualArrivalAt:
+        typeof details?.actualArrivalAt === 'string' ? details.actualArrivalAt : null,
+    };
   }
 
   async prepareReceiptConfirmation(sessionId: string | undefined, body: unknown) {
@@ -235,7 +243,12 @@ export class CustodyTransferService {
             actualQuantity: discrepancy.actualQuantity.toString(),
             discrepancyType: discrepancyKind(discrepancy.kind),
             expectedQuantity: discrepancy.expectedQuantity.toString(),
-            privateDetails: await this.privateDetails(discrepancy.transferId, 'DISCREPANCY'),
+            privateDetails: await this.privateDetails({
+              cid: discrepancy.evidenceCid,
+              contentHash: discrepancy.detailsHash,
+              kind: 'DISCREPANCY',
+              transferId: discrepancy.transferId,
+            }),
             reportedAt: discrepancy.reportedAt,
             resolved: discrepancy.resolved,
             technical: {
@@ -294,18 +307,8 @@ export class CustodyTransferService {
     const session = await this.requireAuthorizedSession(sessionId);
     const transferId = this.transferId(parameters);
     const transfer = await this.lookupTransfer(transferId);
-    const role = session.onChainAuthorization?.role;
-    if (
-      role !== CompanyRole.SYSTEM_ADMIN &&
-      !sameAddress(session.address, transfer.sender) &&
-      !sameAddress(session.address, transfer.recipient)
-    )
-      throw new CustodyTransferApiError(
-        'TRANSFER_PARTICIPANT_REQUIRED',
-        'Only transfer participants and the System Admin may access receipt evidence.',
-        403,
-      );
-    const privateDetails = await this.privateDetails(transferId);
+    this.requireParticipantOrAdmin(session.address, session.onChainAuthorization?.role, transfer);
+    const privateDetails = await this.authoritativePrivateDetails(transferId, transfer);
     if (!privateDetails)
       throw new CustodyTransferApiError(
         'RECEIPT_EVIDENCE_NOT_FOUND',
@@ -315,8 +318,38 @@ export class CustodyTransferService {
     return { privateDetails };
   }
 
-  private async privateDetails(transferId: string, kind?: ReceiptWorkflowRecord['kind']) {
-    const record = await this.dependencies.receiptRepository?.find(transferId, kind);
+  private async authoritativePrivateDetails(transferId: string, transfer: CustodyTransferRecord) {
+    let reference: ReceiptWorkflowReference | undefined;
+    try {
+      if (transfer.status === 2) {
+        const receipt = await this.dependencies.gateway.getReceiptEvidenceReference(transferId);
+        if (receipt) reference = { ...receipt, kind: 'RECEIPT', transferId };
+      } else if (transfer.status === 3) {
+        const rejection = await this.dependencies.gateway.getRejectionEvidenceReference(transferId);
+        if (rejection) reference = { ...rejection, kind: 'REJECTION', transferId };
+      } else if ([1, 4, 5].includes(transfer.status)) {
+        const discrepancy = await this.dependencies.gateway.getDiscrepancy(transferId);
+        if (discrepancy && (transfer.status !== 1 || discrepancy.resolved)) {
+          reference = {
+            cid: discrepancy.evidenceCid,
+            contentHash: discrepancy.detailsHash,
+            kind: 'DISCREPANCY',
+            transferId,
+          };
+        }
+      }
+    } catch {
+      throw new CustodyTransferApiError(
+        'RECEIPT_EVIDENCE_LOOKUP_UNAVAILABLE',
+        'Authoritative receipt evidence could not be resolved.',
+        502,
+      );
+    }
+    return reference ? this.privateDetails(reference) : undefined;
+  }
+
+  private async privateDetails(reference: ReceiptWorkflowReference) {
+    const record = await this.dependencies.receiptRepository?.find(reference);
     if (!record || !this.dependencies.contentStore) return undefined;
     try {
       return JSON.parse(await this.dependencies.contentStore.decrypt(record.payload)) as Record<
@@ -334,13 +367,14 @@ export class CustodyTransferService {
     kind: ReceiptWorkflowRecord['kind'],
     serialized: string,
   ): Promise<ReceiptWorkflowRecord> {
-    const key = `${transferId.toLowerCase()}:${kind}`;
+    const contentHash = sha256(toUtf8Bytes(serialized));
+    const key = `${transferId.toLowerCase()}:${kind}:${contentHash.toLowerCase()}`;
     const active = this.workflowWrites.get(key);
     if (active) {
       await active;
       return this.storeWorkflow(transferId, actor, kind, serialized);
     }
-    const write = this.persistWorkflow(transferId, actor, kind, serialized);
+    const write = this.persistWorkflow(transferId, actor, kind, serialized, contentHash);
     this.workflowWrites.set(key, write);
     try {
       return await write;
@@ -354,6 +388,7 @@ export class CustodyTransferService {
     actor: string,
     kind: ReceiptWorkflowRecord['kind'],
     serialized: string,
+    contentHash: string,
   ) {
     const repository = this.dependencies.receiptRepository;
     const contentStore = this.dependencies.contentStore;
@@ -363,14 +398,9 @@ export class CustodyTransferService {
         'Encrypted receipt storage is unavailable. No transaction was prepared.',
         503,
       );
-    const contentHash = sha256(toUtf8Bytes(serialized));
-    const existing = await repository.find(transferId, kind);
+    const existing = await repository.find({ contentHash, kind, transferId });
     if (existing) {
-      if (
-        existing.contentHash !== contentHash ||
-        existing.kind !== kind ||
-        !sameAddress(existing.actor, actor)
-      )
+      if (!sameAddress(existing.actor, actor))
         throw new CustodyTransferApiError(
           'RECEIPT_WORKFLOW_CONFLICT',
           'This transfer already has different receipt details.',
@@ -395,6 +425,7 @@ export class CustodyTransferService {
       createdAt: this.clock().toISOString(),
       kind,
       payload: stored.payload,
+      schemaVersion: 2,
       transferId,
     };
     await repository.save(record);
@@ -458,6 +489,23 @@ export class CustodyTransferService {
       throw new CustodyTransferApiError(
         'INTENDED_RECIPIENT_REQUIRED',
         'Only the intended transfer recipient may access this transfer.',
+        403,
+      );
+  }
+
+  private requireParticipantOrAdmin(
+    sessionAddress: string,
+    role: CompanyRole | undefined,
+    transfer: CustodyTransferRecord,
+  ) {
+    if (
+      role !== CompanyRole.SYSTEM_ADMIN &&
+      !sameAddress(sessionAddress, transfer.sender) &&
+      !sameAddress(sessionAddress, transfer.recipient)
+    )
+      throw new CustodyTransferApiError(
+        'TRANSFER_PARTICIPANT_REQUIRED',
+        'Only transfer participants and the System Admin may access this receipt record.',
         403,
       );
   }

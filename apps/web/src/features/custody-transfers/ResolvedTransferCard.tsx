@@ -25,6 +25,17 @@ export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTr
     { icon: Route, label: 'Expected quantity', value: transfer.quantity },
     { icon: Clock3, label: 'Dispatch time', value: formatTimestamp(transfer.dispatchedAt) },
     { icon: Clock3, label: 'Expected arrival', value: formatTimestamp(transfer.expectedAt) },
+    ...(received
+      ? [
+          {
+            icon: Clock3,
+            label: 'Actual arrival',
+            value: transfer.actualArrivalAt
+              ? formatDateTime(transfer.actualArrivalAt)
+              : 'Not recorded',
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -67,6 +78,13 @@ export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTr
       <p className="resolved-transfer-readonly">{statusDescription(transfer.status)}</p>
     </section>
   );
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
 }
 
 function statusLabel(status: number) {
