@@ -16,5 +16,8 @@ export function createProductionFlowRouter(controller: ProductionFlowController)
   router.post('/products/prepare', controller.prepareProduct);
   router.get('/distributors', controller.listDistributors);
   router.post('/transfers/prepare', controller.prepareTransfer);
+  router.get('/distributor/inventory', controller.listDistributorInventory);
+  router.get('/retailers', controller.listRetailers);
+  router.post('/distributor/transfers/prepare', controller.prepareDistributorTransfer);
   return router;
 }

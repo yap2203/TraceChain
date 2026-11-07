@@ -45,6 +45,7 @@
 - Supplier-specific did:ethr issuer DIDs, typed JWT Ingredient Credential issuance/verification, AES-GCM encrypted IPFS storage, and sequential MetaMask registration of credential and batch records
 - Authenticated Supplier ingredient batch list/detail/overview data reconstructed from `IngredientBatchRegistered` events, contract reads, and authorized encrypted metadata
 - Real Manufacturer-to-Distributor production workflow: encrypted evidence requests, Supplier challenge-bound full-credential VPs, cryptographic acceptance, accepted-ingredient product creation, transfer preparation, and QR generation from the verified transfer ID
+- Real Distributor-to-Retailer transfer workflow: received inventory filtering, verified Retailer selection, encrypted shipment details, unsigned transaction preparation, MetaMask signing, authoritative post-write verification, and QR handoff
 - Direct SIWE-to-registry login authorization with fresh stakeholder, role, and Company Role credential-record checks; manual VC verification remains separate from login
 - Verified stakeholder identity presentation from existing Company Role issuance records, with current registry cross-checks, safe legacy fallbacks, and company-name enrichment for authenticated operational responses
 - On-chain Company Role credential linkage for every company role plus an Admin bootstrap-to-registry workflow; complete credentials remain encrypted off-chain
@@ -89,7 +90,7 @@ Role VC, although issuance and manual verification remain available separately.
 - Nonce and session repositories remain development-only and in memory; issuance recovery currently uses ignored atomic JSON files rather than a production shared database
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
 - No damaged/rejected quantity reconciliation or encrypted receipt-evidence workflow yet; QR scanning itself remains read-only
-- Distributor-to-Retailer writes, QR product history, receipt evidence/reconciliation, and non-admin reports remain presentation fixtures and are not authoritative
+- QR product history, receipt evidence/reconciliation, and non-admin reports remain presentation fixtures and are not authoritative
 
 ## Important system qualities
 

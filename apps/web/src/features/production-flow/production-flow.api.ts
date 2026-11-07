@@ -72,6 +72,19 @@ export interface StakeholderRecipient {
 export const listDistributors = () =>
   request<{ distributors: StakeholderRecipient[] }>('/distributors');
 
+export interface DistributorInventoryProduct {
+  availableQuantity: string;
+  productBatchId: string;
+  productName?: string;
+  productReference?: string;
+  reservedQuantity: string;
+  unit: string;
+}
+
+export const listDistributorInventory = () =>
+  request<{ products: DistributorInventoryProduct[] }>('/distributor/inventory');
+export const listRetailers = () => request<{ retailers: StakeholderRecipient[] }>('/retailers');
+
 export const prepareEvidenceRequest = (input: {
   batchId: string;
   claims: string[];
@@ -107,3 +120,17 @@ export const prepareTransfer = (input: {
   shipmentReference: string;
 }) =>
   request<WorkflowResponse>('/transfers/prepare', { body: JSON.stringify(input), method: 'POST' });
+
+export const prepareDistributorTransfer = (input: {
+  expectedAt: string;
+  handlingNotes: string;
+  operationId: string;
+  productBatchId: string;
+  quantity: string;
+  recipient: string;
+  shipmentReference: string;
+}) =>
+  request<WorkflowResponse>('/distributor/transfers/prepare', {
+    body: JSON.stringify(input),
+    method: 'POST',
+  });

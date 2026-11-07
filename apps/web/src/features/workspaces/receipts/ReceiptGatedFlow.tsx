@@ -1,4 +1,5 @@
 import { TransferQrScanner } from '../../custody-transfers';
+import { useOperationalData } from '../../blockchain/useOperationalData';
 
 export function ReceiptGatedFlow({
   onDone,
@@ -7,5 +8,6 @@ export function ReceiptGatedFlow({
   expectedTransferId?: string;
   onDone: () => void;
 }) {
-  return <TransferQrScanner onClose={onDone} />;
+  const { reload } = useOperationalData();
+  return <TransferQrScanner onClose={onDone} onResolved={() => void reload()} />;
 }

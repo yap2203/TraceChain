@@ -3,6 +3,7 @@ import { ZodError } from 'zod';
 
 import { AuthError } from '../auth/auth.service.js';
 import {
+  distributorTransferRequestSchema,
   evidenceRequestSchema,
   productRequestSchema,
   requestIdSchema,
@@ -19,6 +20,10 @@ export class ProductionFlowController {
   listIngredients = this.action((request) => this.service.listIngredients(this.session(request)));
   listEvidence = this.action((request) => this.service.listEvidence(this.session(request)));
   listDistributors = this.action((request) => this.service.listDistributors(this.session(request)));
+  listDistributorInventory = this.action((request) =>
+    this.service.listDistributorInventory(this.session(request)),
+  );
+  listRetailers = this.action((request) => this.service.listRetailers(this.session(request)));
   prepareEvidenceRequest = this.action((request) =>
     this.service.prepareEvidenceRequest(
       this.session(request),
@@ -42,6 +47,12 @@ export class ProductionFlowController {
   );
   prepareTransfer = this.action((request) =>
     this.service.prepareTransfer(this.session(request), transferRequestSchema.parse(request.body)),
+  );
+  prepareDistributorTransfer = this.action((request) =>
+    this.service.prepareDistributorTransfer(
+      this.session(request),
+      distributorTransferRequestSchema.parse(request.body),
+    ),
   );
 
   private session(request: Request) {

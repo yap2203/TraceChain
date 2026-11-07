@@ -23,6 +23,7 @@ import type { AuthService } from '../auth/auth.service.js';
 import type { SessionRecord } from '../auth/auth.types.js';
 import type { IngredientBatchWorkflowRepository } from '../ingredient-batches/ingredient-batch.repository.js';
 import type { EncryptedCredentialPayload } from '../ssi/encrypted-credential.store.js';
+import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import {
   EthersProductionFlowGateway,
   type ProductionFlowGateway,
@@ -37,6 +38,7 @@ const NOW = new Date('2026-11-06T08:00:00.000Z');
 const MANUFACTURER = '0x3000000000000000000000000000000000000003';
 const SUPPLIER = '0x2000000000000000000000000000000000000002';
 const DISTRIBUTOR = '0x4000000000000000000000000000000000000004';
+const RETAILER = '0x5000000000000000000000000000000000000005';
 const BATCH_ID = `0x${'11'.repeat(32)}`;
 const PRODUCT_ID = `0x${'22'.repeat(32)}`;
 const CREDENTIAL_ID = `0x${'33'.repeat(32)}`;
@@ -120,9 +122,12 @@ describe('production flow service', () => {
       getProduct: vi.fn().mockResolvedValue(null),
       getProductLinks: vi.fn().mockResolvedValue([]),
       getTransfer: vi.fn().mockResolvedValue(null),
+      hasPermission: vi.fn().mockResolvedValue(true),
       isRoleAuthorized: vi.fn().mockResolvedValue(true),
       isTransferable: vi.fn().mockResolvedValue(true),
       listActiveDistributors: vi.fn().mockResolvedValue([DISTRIBUTOR]),
+      listActiveRetailers: vi.fn().mockResolvedValue([RETAILER]),
+      listReceivedProductBatchIds: vi.fn().mockResolvedValue([]),
       listEvidenceRequestIds: vi.fn().mockResolvedValue([]),
       listIngredients: vi.fn().mockResolvedValue([]),
       prepareAccept: vi.fn().mockReturnValue(prepared),
@@ -384,6 +389,155 @@ describe('production flow service', () => {
       status: 409,
     });
   });
+
+  it('returns only positive Distributor inventory and resolves active Retailer company names', async () => {
+    vi.mocked(gateway.listReceivedProductBatchIds).mockResolvedValue([PRODUCT_ID, BATCH_ID]);
+    vi.mocked(gateway.getProduct).mockResolvedValue({
+      expiresAt: 1_900_000_000,
+      manufacturer: MANUFACTURER,
+      metadataHash: `0x${'88'.repeat(32)}`,
+      producedAt: 1_790_000_000,
+      publicCid: 'bafy-product',
+      status: 1,
+      totalQuantity: '500',
+      unit: `0x${'00'.repeat(32)}`,
+    });
+    vi.mocked(gateway.getInventory).mockImplementation(async (batchId) => ({
+      available: batchId === PRODUCT_ID ? '25' : '0',
+      initialized: true,
+      reserved: '5',
+    }));
+    const distributorService = createService(
+      gateway,
+      repository,
+      distributorAuth(),
+      encryptedWrites,
+      retailerDirectory(),
+    );
+    await expect(distributorService.listDistributorInventory('session')).resolves.toMatchObject({
+      products: [{ availableQuantity: '25', productBatchId: PRODUCT_ID }],
+    });
+    await expect(distributorService.listRetailers('session')).resolves.toEqual({
+      retailers: [
+        {
+          active: true,
+          companyName: 'FreshMart Retail Sdn. Bhd.',
+          role: CompanyRole.RETAILER,
+          walletAddress: RETAILER,
+        },
+      ],
+    });
+  });
+
+  it('rejects the wrong role, inactive Retailers, and insufficient Distributor inventory', async () => {
+    const wrongRole = createService(
+      gateway,
+      repository,
+      manufacturerAuth(),
+      encryptedWrites,
+      retailerDirectory(),
+    );
+    await expect(
+      wrongRole.prepareDistributorTransfer('session', distributorTransferInput()),
+    ).rejects.toMatchObject({ code: 'ROLE_AUTHORIZATION_REQUIRED', status: 403 });
+
+    const distributorService = createService(
+      gateway,
+      repository,
+      distributorAuth(),
+      encryptedWrites,
+      retailerDirectory(),
+    );
+    vi.mocked(gateway.listActiveRetailers).mockResolvedValueOnce([]);
+    await expect(
+      distributorService.prepareDistributorTransfer('session', distributorTransferInput()),
+    ).rejects.toMatchObject({ code: 'INVALID_RETAILER', status: 409 });
+
+    vi.mocked(gateway.getProduct).mockResolvedValue({
+      expiresAt: 1_900_000_000,
+      manufacturer: MANUFACTURER,
+      metadataHash: `0x${'88'.repeat(32)}`,
+      producedAt: 1_790_000_000,
+      publicCid: 'bafy-product',
+      status: 1,
+      totalQuantity: '500',
+      unit: `0x${'00'.repeat(32)}`,
+    });
+    vi.mocked(gateway.getInventory).mockResolvedValue({
+      available: '10',
+      initialized: true,
+      reserved: '0',
+    });
+    await expect(
+      distributorService.prepareDistributorTransfer('session', distributorTransferInput()),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_INVENTORY', status: 409 });
+  });
+
+  it('prepares an idempotent Retailer transfer and verifies the mined record', async () => {
+    const privateRecords = new Map<
+      string,
+      Awaited<ReturnType<ProductionFlowRepository['findPrivate']>>
+    >();
+    repository.findPrivate = vi.fn(async (_kind, key) => privateRecords.get(key.toLowerCase()));
+    repository.savePrivate = vi.fn(async (_kind, record) => {
+      privateRecords.set(record.id.toLowerCase(), record);
+    });
+    vi.mocked(gateway.getProduct).mockResolvedValue({
+      expiresAt: 1_900_000_000,
+      manufacturer: MANUFACTURER,
+      metadataHash: `0x${'88'.repeat(32)}`,
+      producedAt: 1_790_000_000,
+      publicCid: 'bafy-product',
+      status: 1,
+      totalQuantity: '500',
+      unit: `0x${'00'.repeat(32)}`,
+    });
+    vi.mocked(gateway.getInventory).mockResolvedValue({
+      available: '100',
+      initialized: true,
+      reserved: '0',
+    });
+    const distributorService = createService(
+      gateway,
+      repository,
+      distributorAuth(),
+      encryptedWrites,
+      retailerDirectory(),
+    );
+    const input = distributorTransferInput();
+    const prepared = await distributorService.prepareDistributorTransfer('session', input);
+    expect(prepared.state).toBe('TRANSACTION_REQUIRED');
+    expect(gateway.prepareTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productBatchId: PRODUCT_ID,
+        quantity: '25',
+        recipient: RETAILER,
+        transferId: prepared.transferId,
+      }),
+    );
+    expect(encryptedWrites[0]).toContain('Keep chilled');
+
+    const tx = vi.mocked(gateway.prepareTransfer).mock.calls.at(-1)![0];
+    vi.mocked(gateway.getTransfer).mockResolvedValue({
+      expectedAt: tx.expectedAt,
+      productBatchId: PRODUCT_ID,
+      quantity: '25',
+      recipient: RETAILER,
+      sender: DISTRIBUTOR,
+      shipmentCid: tx.shipmentCid,
+      shipmentHash: tx.shipmentHash,
+      status: 1,
+      transferId: tx.transferId,
+    });
+    vi.mocked(gateway.getInventory).mockResolvedValue({
+      available: '0',
+      initialized: true,
+      reserved: '25',
+    });
+    await expect(
+      distributorService.prepareDistributorTransfer('session', input),
+    ).resolves.toMatchObject({ state: 'COMPLETE', transferId: prepared.transferId });
+  });
 });
 
 describe('production calldata', () => {
@@ -434,6 +588,7 @@ function createService(
   repository: ProductionFlowRepository,
   authService: AuthService,
   encryptedWrites: string[],
+  stakeholderDirectory?: StakeholderDirectory,
 ) {
   const ingredientRepository: IngredientBatchWorkflowRepository = {
     find: vi.fn().mockResolvedValue(undefined),
@@ -454,6 +609,7 @@ function createService(
     gateway,
     ingredientRepository,
     repository,
+    stakeholderDirectory,
   });
 }
 function session(role: CompanyRole, address: string): SessionRecord {
@@ -492,6 +648,24 @@ function supplierAuth() {
     requireSession: vi.fn().mockResolvedValue(session(CompanyRole.SUPPLIER, SUPPLIER)),
   } as unknown as AuthService;
 }
+function distributorAuth() {
+  return {
+    requireSession: vi.fn().mockResolvedValue(session(CompanyRole.DISTRIBUTOR, DISTRIBUTOR)),
+  } as unknown as AuthService;
+}
+function retailerDirectory() {
+  const identity = {
+    active: true as const,
+    companyName: 'FreshMart Retail Sdn. Bhd.',
+    role: CompanyRole.RETAILER,
+    walletAddress: RETAILER,
+  };
+  return {
+    list: vi.fn().mockResolvedValue([identity]),
+    resolve: vi.fn().mockResolvedValue(identity),
+    resolveMany: vi.fn().mockResolvedValue([identity]),
+  } satisfies StakeholderDirectory;
+}
 function requestInput() {
   return {
     batchId: BATCH_ID,
@@ -521,5 +695,16 @@ function transferInput() {
     quantity: '25',
     recipient: DISTRIBUTOR,
     shipmentReference: 'SHIP-001',
+  };
+}
+function distributorTransferInput() {
+  return {
+    expectedAt: new Date('2026-11-10'),
+    handlingNotes: 'Keep chilled',
+    operationId: '33333333-3333-4333-8333-333333333333',
+    productBatchId: PRODUCT_ID,
+    quantity: '25',
+    recipient: RETAILER,
+    shipmentReference: 'DIST-RETAIL-001',
   };
 }

@@ -151,6 +151,7 @@ packages/contracts/contracts/
 - Present the complete JWT Ingredient Credential in Phase 6. JWT selective disclosure is not supported and must not be claimed in the UI or documentation.
 - Persist only ignored recovery metadata for evidence/product/transfer preparation so rejected or interrupted MetaMask writes can resume without generating different content or calldata inputs.
 - Prepare evidence, product, and transfer writes in the API, but keep every transaction signature and broadcast in the authenticated stakeholder's MetaMask.
+- For Distributor-to-Retailer custody, derive selectable products from positive received `CustodyTransfer` inventory, resolve recipients through the verified stakeholder directory, retain the Retailer wallet only as the internal transaction recipient, encrypt shipment references and handling notes, and expose the real QR only after `getTransfer` verifies the mined `AwaitingReceipt` record.
 
 - Encrypt complete credentials, supporting documents, photographs, and reports before uploading them to IPFS.
 - Treat an IPFS CID as a content-addressed integrity reference, not a password or access-control mechanism.
