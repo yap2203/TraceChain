@@ -23,6 +23,7 @@ import type {
   ProductionFlowRepository,
 } from './production-flow.repository.js';
 import type {
+  DistributorTransferRequestInput,
   EvidenceRequestInput,
   ProductRequestInput,
   TransferRequestInput,
@@ -31,6 +32,7 @@ import type {
 const ROLE_NUMBERS = {
   [CompanyRole.SUPPLIER]: 2,
   [CompanyRole.MANUFACTURER]: 3,
+  [CompanyRole.DISTRIBUTOR]: 4,
 } as const;
 
 export class ProductionFlowApiError extends Error {
@@ -449,6 +451,52 @@ export class ProductionFlowService {
     };
   }
 
+  async listDistributorInventory(sessionId?: string) {
+    const session = await this.requireRole(sessionId, CompanyRole.DISTRIBUTOR, 'INITIATE_TRANSFER');
+    const batchIds = await this.safeGateway(() =>
+      this.dependencies.gateway.listReceivedProductBatchIds(session.address),
+    );
+    const products = (
+      await Promise.all(
+        batchIds.map(async (productBatchId) => {
+          const [inventory, product] = await Promise.all([
+            this.safeGateway(() =>
+              this.dependencies.gateway.getInventory(productBatchId, session.address),
+            ),
+            this.safeGateway(() => this.dependencies.gateway.getProduct(productBatchId)),
+          ]);
+          if (!product || BigInt(inventory.available) <= 0n) return null;
+          const presentation = await this.productPresentation(productBatchId);
+          return {
+            availableQuantity: inventory.available,
+            productBatchId,
+            productName: presentation?.productName,
+            productReference: presentation?.batchReference,
+            reservedQuantity: inventory.reserved,
+            unit: product.unit,
+          };
+        }),
+      )
+    ).filter((product) => product !== null);
+    return { products };
+  }
+
+  async listRetailers(sessionId?: string) {
+    await this.requireRole(sessionId, CompanyRole.DISTRIBUTOR, 'INITIATE_TRANSFER');
+    const wallets = await this.safeGateway(() => this.dependencies.gateway.listActiveRetailers());
+    const identities = this.dependencies.stakeholderDirectory
+      ? await this.dependencies.stakeholderDirectory.resolveMany(wallets)
+      : [];
+    const activeWallets = new Set(wallets.map((wallet) => wallet.toLowerCase()));
+    return {
+      retailers: identities.filter(
+        (identity) =>
+          identity.role === CompanyRole.RETAILER &&
+          activeWallets.has(identity.walletAddress.toLowerCase()),
+      ),
+    };
+  }
+
   private async identityNames(wallets: string[]) {
     if (!this.dependencies.stakeholderDirectory) return new Map<string, string>();
     const identities = await this.dependencies.stakeholderDirectory.resolveMany(wallets);
@@ -579,6 +627,155 @@ export class ProductionFlowService {
         transferId,
       }),
     };
+  }
+
+  async prepareDistributorTransfer(
+    sessionId: string | undefined,
+    input: DistributorTransferRequestInput,
+  ) {
+    const session = await this.requireRole(sessionId, CompanyRole.DISTRIBUTOR, 'INITIATE_TRANSFER');
+    const recipient = getAddress(input.recipient);
+    const retailerWallets = await this.safeGateway(() =>
+      this.dependencies.gateway.listActiveRetailers(),
+    );
+    const identity = this.dependencies.stakeholderDirectory
+      ? (await this.dependencies.stakeholderDirectory.resolveMany([recipient]))[0]
+      : undefined;
+    if (
+      !retailerWallets.some((wallet) => sameAddress(wallet, recipient)) ||
+      identity?.role !== CompanyRole.RETAILER ||
+      !(await this.safeGateway(() => this.dependencies.gateway.isRoleAuthorized(recipient, 5))) ||
+      !(await this.safeGateway(() =>
+        this.dependencies.gateway.hasPermission(recipient, 'RECEIVE_TRANSFER'),
+      ))
+    ) {
+      throw new ProductionFlowApiError(
+        'INVALID_RETAILER',
+        'The recipient is not an active Retailer authorized to receive transfers.',
+        409,
+      );
+    }
+    const product = await this.safeGateway(() =>
+      this.dependencies.gateway.getProduct(input.productBatchId),
+    );
+    if (
+      !product ||
+      product.status !== 1 ||
+      !(await this.safeGateway(() =>
+        this.dependencies.gateway.isTransferable(input.productBatchId),
+      ))
+    ) {
+      throw new ProductionFlowApiError(
+        'PRODUCT_NOT_TRANSFERABLE',
+        'The selected product is not transferable.',
+        409,
+      );
+    }
+    const expectedAt = Math.floor(input.expectedAt.getTime() / 1_000);
+    if (expectedAt < this.nowSeconds()) {
+      throw new ProductionFlowApiError(
+        'INVALID_EXPECTED_AT',
+        'Expected arrival cannot be in the past.',
+        400,
+      );
+    }
+    const transferId = id(`${input.operationId}:${session.address}`);
+    const shipment = canonical({
+      expectedAt,
+      handlingNotes: input.handlingNotes,
+      operationId: input.operationId,
+      productBatchId: input.productBatchId,
+      quantity: input.quantity,
+      recipient,
+      shipmentReference: input.shipmentReference,
+    });
+    const shipmentHash = sha256(shipment);
+    let workflow = await this.dependencies.repository.findPrivate('transfers', transferId);
+    const existing = await this.safeGateway(() =>
+      this.dependencies.gateway.getTransfer(transferId),
+    );
+    if (existing) {
+      if (
+        !workflow ||
+        existing.status !== 1 ||
+        !sameAddress(existing.sender, session.address) ||
+        !sameAddress(existing.recipient, recipient) ||
+        existing.productBatchId.toLowerCase() !== input.productBatchId.toLowerCase() ||
+        existing.quantity !== input.quantity ||
+        existing.expectedAt !== expectedAt ||
+        existing.shipmentHash.toLowerCase() !== shipmentHash.toLowerCase() ||
+        existing.shipmentCid !== workflow.cid
+      ) {
+        throw this.recordMismatch('Distributor transfer record mismatch.');
+      }
+      return {
+        actorWallet: session.address,
+        state: 'COMPLETE' as const,
+        status: existing.status,
+        transferId,
+      };
+    }
+    const inventory = await this.safeGateway(() =>
+      this.dependencies.gateway.getInventory(input.productBatchId, session.address),
+    );
+    if (!inventory.initialized || BigInt(input.quantity) > BigInt(inventory.available)) {
+      throw new ProductionFlowApiError(
+        'INSUFFICIENT_INVENTORY',
+        'The Distributor inventory is insufficient.',
+        409,
+      );
+    }
+    if (!workflow) {
+      const stored = await this.store(shipment, transferId);
+      workflow = {
+        cid: stored.cid,
+        contentHash: shipmentHash,
+        id: transferId,
+        owner: session.address,
+        payload: stored.payload,
+      };
+      await this.dependencies.repository.savePrivate('transfers', workflow);
+    } else if (
+      workflow.contentHash !== shipmentHash ||
+      !sameAddress(workflow.owner, session.address)
+    ) {
+      throw new ProductionFlowApiError(
+        'TRANSFER_WORKFLOW_CONFLICT',
+        'This transfer operation is already bound to different details.',
+        409,
+      );
+    }
+    return {
+      actorWallet: session.address,
+      state: 'TRANSACTION_REQUIRED' as const,
+      transferId,
+      transaction: this.dependencies.gateway.prepareTransfer({
+        expectedAt,
+        productBatchId: input.productBatchId,
+        quantity: input.quantity,
+        recipient,
+        shipmentCid: workflow.cid,
+        shipmentHash,
+        transferId,
+      }),
+    };
+  }
+
+  private async productPresentation(productBatchId: string) {
+    const workflow = await this.dependencies.repository.findPrivate('products', productBatchId);
+    if (!workflow) return undefined;
+    try {
+      const parsed = JSON.parse(
+        await this.dependencies.contentStore.decrypt(workflow.payload),
+      ) as Record<string, unknown>;
+      return {
+        batchReference:
+          typeof parsed.batchReference === 'string' ? parsed.batchReference : undefined,
+        productName: typeof parsed.productName === 'string' ? parsed.productName : undefined,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   private async createEvidenceWorkflow(
@@ -754,7 +951,7 @@ export class ProductionFlowService {
 
   private async requireRole(
     sessionId: string | undefined,
-    role: CompanyRole.SUPPLIER | CompanyRole.MANUFACTURER,
+    role: CompanyRole.SUPPLIER | CompanyRole.MANUFACTURER | CompanyRole.DISTRIBUTOR,
     permission: string,
   ) {
     const session = await this.dependencies.authService.requireSession(sessionId);
@@ -766,7 +963,7 @@ export class ProductionFlowService {
     ) {
       throw new ProductionFlowApiError(
         'ROLE_AUTHORIZATION_REQUIRED',
-        `Current on-chain ${role === CompanyRole.SUPPLIER ? 'Supplier' : 'Manufacturer'} authorization is required.`,
+        `Current on-chain ${roleLabel(role)} authorization is required.`,
         403,
       );
     }
@@ -902,4 +1099,12 @@ function sameAddress(left: string, right: string) {
   } catch {
     return false;
   }
+}
+
+function roleLabel(role: CompanyRole) {
+  return role
+    .toLowerCase()
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }

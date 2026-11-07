@@ -51,8 +51,21 @@ export const transferRequestSchema = z
   })
   .strict();
 
+export const distributorTransferRequestSchema = z
+  .object({
+    expectedAt: z.coerce.date(),
+    handlingNotes: z.string().trim().max(1_000).default(''),
+    operationId: z.string().uuid(),
+    productBatchId: bytes32,
+    quantity: positiveInteger,
+    recipient: wallet,
+    shipmentReference: z.string().trim().min(1).max(120),
+  })
+  .strict();
+
 export const requestIdSchema = z.object({ requestId: bytes32 }).strict();
 
 export type EvidenceRequestInput = z.infer<typeof evidenceRequestSchema>;
 export type ProductRequestInput = z.infer<typeof productRequestSchema>;
 export type TransferRequestInput = z.infer<typeof transferRequestSchema>;
+export type DistributorTransferRequestInput = z.infer<typeof distributorTransferRequestSchema>;

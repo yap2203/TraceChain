@@ -1,5 +1,12 @@
 # Project Progress
 
+## 2026-11-07 — Distributor-to-Retailer custody transfer
+
+- Replaced the Distributor transfer fixtures, hardcoded company identities, simulated timer, and fake QR transfer ID with authenticated inventory and verified Retailer APIs.
+- Added positive-available-inventory filtering, active Retailer directory resolution, Distributor and Retailer permission checks, product/inventory/date validation, encrypted shipment details, idempotent transfer IDs, unsigned `createTransfer` preparation, and authoritative post-mining verification.
+- Added the MetaMask review/submission flow, real QR and PNG rendering, company-first presentation, collapsible technical identifiers, duplicate-submit protection, and post-write inventory/history refresh.
+- Added focused API and frontend tests for inventory filtering, roles, inactive recipients, insufficient inventory, exact transaction inputs, verified completion, recipient wallet retention, real QR IDs, and duplicate submission.
+
 ## 2026-11-07 — Verified stakeholder identity presentation
 
 - Added a reusable stakeholder directory backed by existing Company Role issuance records and the live fail-closed registry authorization resolver; revoked or stale entries are excluded, legacy names fall back safely, and duplicate names are disambiguated with shortened wallets.
@@ -74,7 +81,7 @@
 - Made Company Role Credential issuance durable and idempotent: generated VCs are verified before use, deterministically hashed, AES-256-GCM encrypted, pinned through an injectable IPFS gateway, and persisted for restart-safe partial-failure recovery.
 - Added cancellable mobile-wallet guidance, connection rejection/expiry handling, wallet transport cleanup on logout, and lazy initialization that leaves session restoration non-interactive.
 - Reused existing authorized extension providers, serialized connection attempts, added bounded timeouts and one stale-transport retry, and moved connection progress into the visible authentication card.
-- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, receipt-confirmation, Supplier registration, and production-flow tests; the frontend suite now contains 58 tests and performs no live relay or RPC calls.
+- Added mocked MetaMask client, EIP-1193 provider, transport-tab, QR-selection, stale-session, timeout, StrictMode, listener-cleanup, custody-transfer QR, receipt-confirmation, Supplier registration, and production-flow tests; the frontend suite now contains 65 tests and performs no live relay or RPC calls.
 - Validated all 29 workspace pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, pagination, filters, dialogs, local access, and production denial.
 
 ## Current contract and SSI version
@@ -111,11 +118,11 @@
 
 - Select the database and replace process-local nonce and session storage.
 - Replace prototype filesystem issuance metadata and Veramo JSON key storage with production-managed database and key-management services.
-- Replace the remaining Distributor-to-Retailer, QR/history, stakeholder credential-card, receipt-evidence/reconciliation, and non-admin report fixtures with authenticated chain-backed workflows.
+- Replace the remaining QR/history, stakeholder credential-card, receipt-evidence/reconciliation, and non-admin report fixtures with authenticated chain-backed workflows.
 - Complete a clean Hardhat test run and deploy the suite to Sepolia when the deployment wallet is ready.
 - Add damaged/rejected quantity reconciliation and encrypted receipt evidence to receipt confirmation.
 - Add committed end-to-end browser tests and production deployment configuration.
 
 ## Important distinction
 
-The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are chain-backed. Supplier Ingredient Credential/batch registration and the Manufacturer evidence, product, Manufacturer-to-Distributor transfer, QR handoff, and recipient-confirmation flows use verified credentials, encrypted IPFS content, MetaMask, contract events, and authoritative reads. Distributor-to-Retailer writes, QR product history, stakeholder credential cards, receipt reconciliation/evidence, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.
+The Admin application, credential, access-control, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, and detail views are chain-backed. Supplier Ingredient Credential/batch registration and the Manufacturer evidence, product, Manufacturer-to-Distributor transfer, Distributor-to-Retailer transfer, QR handoff, and recipient-confirmation flows use verified credentials, encrypted IPFS content, MetaMask, contract events, and authoritative reads. QR product history, stakeholder credential cards, receipt reconciliation/evidence, and non-admin reports remain presentation fixtures until their transaction and encrypted-content integrations are completed.

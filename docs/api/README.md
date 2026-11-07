@@ -166,6 +166,9 @@ The following endpoints require a SIWE session and a fresh matching on-chain rol
 - `POST /api/production-flow/products/prepare` requires accepted evidence and sufficient available quantity for every ingredient, encrypts private product metadata, and returns unsigned `ProductRegistry.createProduct` calldata.
 - `GET /api/production-flow/distributors` lists currently authorized Distributor wallets discovered from registry events and refreshed through `roleOf`.
 - `POST /api/production-flow/transfers/prepare` validates the Manufacturer, product transferability, inventory, intended Distributor, quantity, and arrival date before returning unsigned `CustodyTransfer.createTransfer` calldata. Completion is reported only after `getTransfer` matches and reports `AwaitingReceipt`.
+- `GET /api/production-flow/distributor/inventory` returns only positive available product inventory previously received by the authenticated, authorized Distributor.
+- `GET /api/production-flow/retailers` returns active verified Retailer identities as company name, role, and wallet address; the wallet remains the transaction recipient.
+- `POST /api/production-flow/distributor/transfers/prepare` rechecks Distributor authorization, product transferability, inventory, Retailer role and permission, encrypts shipment details, and returns idempotent unsigned `CustodyTransfer.createTransfer` calldata. A retry reports completion only after the on-chain record matches and is `AwaitingReceipt`.
 
 Workflow retries reuse ignored metadata under `.tracechain/issuance/production-flow.json` and reject changed inputs. Complete credentials, VPs, private metadata, encryption keys, and pinning credentials are never returned to the browser. The current JWT VP contains the complete Ingredient Credential; selective disclosure is not supported or claimed.
 

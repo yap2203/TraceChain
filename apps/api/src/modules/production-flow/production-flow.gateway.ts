@@ -11,6 +11,7 @@ import type {
 const stakeholderAbi = [
   'event StakeholderRegistered(address indexed account,uint8 indexed role,bytes32 indexed credentialHash)',
   'function getStakeholder(address) view returns (tuple(uint8 role,uint8 status,bytes32 credentialHash,string credentialCid,uint64 credentialExpiresAt,uint64 updatedAt))',
+  'function hasPermission(address,bytes32) view returns (bool)',
   'function roleHasPermission(uint8,bytes32) view returns (bool)',
   'function roleOf(address) view returns (uint8)',
 ] as const;
@@ -78,12 +79,15 @@ export interface ProductionFlowGateway {
     batchId: string,
     holder: string,
   ): Promise<{ available: string; initialized: boolean; reserved: string }>;
+  hasPermission(wallet: string, permission: string): Promise<boolean>;
   getProduct(batchId: string): Promise<ChainProduct | null>;
   getProductLinks(batchId: string): Promise<Array<{ batchId: string; quantity: string }>>;
   getTransfer(transferId: string): Promise<ChainTransfer | null>;
   isTransferable(batchId: string): Promise<boolean>;
   isRoleAuthorized(wallet: string, role: number): Promise<boolean>;
   listActiveDistributors(): Promise<string[]>;
+  listActiveRetailers(): Promise<string[]>;
+  listReceivedProductBatchIds(holder: string): Promise<string[]>;
   listEvidenceRequestIds(wallet: string, role: 2 | 3): Promise<string[]>;
   listIngredients(): Promise<Array<ChainIngredientBatch & { batchId: string }>>;
   prepareAccept(requestId: string, credentialId: string): PreparedTransaction;
@@ -185,6 +189,10 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
 
   async isRoleAuthorized(wallet: string, role: number) {
     return Number(await this.stakeholders.roleOf(wallet)) === role;
+  }
+
+  async hasPermission(wallet: string, permission: string) {
+    return Boolean(await this.stakeholders.hasPermission(wallet, id(permission)));
   }
 
   async getCredential(credentialId: string) {
@@ -318,10 +326,17 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
       this.custody.getInventory(batchId, holder),
       this.custody.queryFilter(this.custody.filters.TransferCreated(null, batchId, holder)),
     ]);
+    const available = BigInt(r.available);
+    const reserved = BigInt(r.reserved);
     return {
-      available: BigInt(r.available).toString(),
-      initialized: events.length > 0,
-      reserved: BigInt(r.reserved).toString(),
+      available: available.toString(),
+      initialized:
+        events.length > 0 ||
+        available > 0n ||
+        reserved > 0n ||
+        BigInt(r.damaged) > 0n ||
+        BigInt(r.rejected) > 0n,
+      reserved: reserved.toString(),
     };
   }
 
@@ -346,8 +361,35 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
   }
 
   async listActiveDistributors() {
+    return this.listActiveStakeholders(4);
+  }
+
+  async listActiveRetailers() {
+    return this.listActiveStakeholders(5);
+  }
+
+  async listReceivedProductBatchIds(holder: string) {
+    const recipient = getAddress(holder);
+    const logs = await this.custody.queryFilter(this.custody.filters.TransferCreated());
+    return [
+      ...new Set(
+        logs
+          .filter(
+            (log) =>
+              getAddress(
+                String((log as unknown as { args: { recipient: string } }).args.recipient),
+              ) === recipient,
+          )
+          .map((log) =>
+            String((log as unknown as { args: { productBatchId: string } }).args.productBatchId),
+          ),
+      ),
+    ];
+  }
+
+  private async listActiveStakeholders(role: number) {
     const logs = await this.stakeholders.queryFilter(
-      this.stakeholders.filters.StakeholderRegistered(null, 4),
+      this.stakeholders.filters.StakeholderRegistered(null, role),
     );
     const accounts = [
       ...new Set(
@@ -358,7 +400,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
     ];
     const active = await Promise.all(
       accounts.map(async (account) =>
-        Number(await this.stakeholders.roleOf(account)) === 4 ? account : null,
+        Number(await this.stakeholders.roleOf(account)) === role ? account : null,
       ),
     );
     return active.filter((account): account is string => Boolean(account));
