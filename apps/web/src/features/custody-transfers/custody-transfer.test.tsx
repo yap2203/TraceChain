@@ -20,7 +20,9 @@ const TRANSFER: ResolvedCustodyTransfer = {
   productBatchId: `0x${'22'.repeat(32)}`,
   quantity: '250',
   recipient: '0x1000000000000000000000000000000000000001',
+  recipientName: 'Swift Distribution Sdn. Bhd.',
   sender: '0x3000000000000000000000000000000000000003',
+  senderName: 'CocoaCraft Manufacturing Sdn. Bhd.',
   status: 1,
   transferId: TRANSFER_ID,
 };
@@ -84,9 +86,9 @@ describe('custody-transfer QR frontend', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
 
     expect(await screen.findByText('Custody transfer found')).toBeTruthy();
-    expect(screen.getByText(TRANSFER.productBatchId)).toBeTruthy();
-    expect(screen.getByText(TRANSFER.sender)).toBeTruthy();
-    expect(screen.getByText(TRANSFER.recipient)).toBeTruthy();
+    expect(screen.getByText('CocoaCraft Manufacturing Sdn. Bhd.')).toBeTruthy();
+    expect(screen.getByText('Swift Distribution Sdn. Bhd.')).toBeTruthy();
+    expect(screen.getByText('Technical details')).toBeTruthy();
     expect(screen.getByText('250')).toBeTruthy();
     expect(screen.getByText('Awaiting Receipt')).toBeTruthy();
 

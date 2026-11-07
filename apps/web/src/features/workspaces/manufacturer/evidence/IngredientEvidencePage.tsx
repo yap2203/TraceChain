@@ -156,7 +156,7 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
                 .filter((item) => !item.accepted)
                 .map((item) => (
                   <option key={item.batchId} value={item.batchId}>
-                    {shortChainId(item.batchId)} · Supplier {shortChainId(item.supplier)} ·{' '}
+                    {item.supplierName ?? 'Verified Supplier'} · {shortChainId(item.batchId)} ·{' '}
                     {item.availableQuantity} available
                   </option>
                 ))}
@@ -184,14 +184,10 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
         />
       ) : (
         <Card padding="0">
-          <Table headers={['Request', 'Ingredient batch', 'Supplier', 'Due', 'Status', '']}>
+          <Table headers={['Supplier', 'Due', 'Status', '']}>
             {requests.map((request) => (
               <TR key={request.requestId}>
-                <TD mono>{shortChainId(request.requestId)}</TD>
-                <TD mono>{shortChainId(request.ingredientBatchId)}</TD>
-                <TD mono muted>
-                  {shortChainId(request.supplier)}
-                </TD>
+                <TD>{request.supplierName ?? 'Verified Supplier'}</TD>
                 <TD muted>{chainDate(request.dueAt)}</TD>
                 <TD>
                   <Badge

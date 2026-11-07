@@ -16,6 +16,7 @@ import type { SessionRecord } from '../auth/auth.types.js';
 import type { IngredientBatchWorkflowRepository } from '../ingredient-batches/ingredient-batch.repository.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { TraceChainAgentProvider } from '../ssi/ssi.service.js';
+import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import type { ProductionFlowGateway } from './production-flow.gateway.js';
 import type {
   EvidenceWorkflowRecord,
@@ -50,6 +51,7 @@ interface Dependencies {
   gateway: ProductionFlowGateway;
   ingredientRepository: IngredientBatchWorkflowRepository;
   repository: ProductionFlowRepository;
+  stakeholderDirectory?: StakeholderDirectory;
 }
 
 export class ProductionFlowService {
@@ -95,7 +97,14 @@ export class ProductionFlowService {
         };
       }),
     );
-    return { batches: batches.filter((batch) => batch !== null) };
+    const activeBatches = batches.filter((batch) => batch !== null);
+    const names = await this.identityNames(activeBatches.map((batch) => batch.supplier));
+    return {
+      batches: activeBatches.map((batch) => ({
+        ...batch,
+        supplierName: names.get(batch.supplier.toLowerCase()),
+      })),
+    };
   }
 
   async listEvidence(sessionId?: string) {
@@ -127,7 +136,17 @@ export class ProductionFlowService {
           : null;
       }),
     );
-    return { requests: requests.filter((request) => request !== null) };
+    const visibleRequests = requests.filter((request) => request !== null);
+    const names = await this.identityNames(
+      visibleRequests.flatMap((request) => [request.requester, request.supplier]),
+    );
+    return {
+      requests: visibleRequests.map((request) => ({
+        ...request,
+        manufacturerName: names.get(request.requester.toLowerCase()),
+        supplierName: names.get(request.supplier.toLowerCase()),
+      })),
+    };
   }
 
   async prepareEvidenceRequest(sessionId: string | undefined, input: EvidenceRequestInput) {
@@ -409,11 +428,33 @@ export class ProductionFlowService {
 
   async listDistributors(sessionId?: string) {
     await this.requireRole(sessionId, CompanyRole.MANUFACTURER, 'INITIATE_TRANSFER');
+    const wallets = await this.safeGateway(() =>
+      this.dependencies.gateway.listActiveDistributors(),
+    );
+    const identities = this.dependencies.stakeholderDirectory
+      ? await this.dependencies.stakeholderDirectory.resolveMany(wallets)
+      : wallets.map((walletAddress) => ({
+          active: true as const,
+          companyName: 'Verified Distributor',
+          role: CompanyRole.DISTRIBUTOR,
+          walletAddress: getAddress(walletAddress),
+        }));
+    const byWallet = new Map(
+      identities.map((identity) => [identity.walletAddress.toLowerCase(), identity]),
+    );
     return {
-      distributors: await this.safeGateway(() =>
-        this.dependencies.gateway.listActiveDistributors(),
-      ),
+      distributors: wallets
+        .map((walletAddress) => byWallet.get(walletAddress.toLowerCase()))
+        .filter((identity) => identity?.role === CompanyRole.DISTRIBUTOR),
     };
+  }
+
+  private async identityNames(wallets: string[]) {
+    if (!this.dependencies.stakeholderDirectory) return new Map<string, string>();
+    const identities = await this.dependencies.stakeholderDirectory.resolveMany(wallets);
+    return new Map(
+      identities.map((identity) => [identity.walletAddress.toLowerCase(), identity.companyName]),
+    );
   }
 
   async prepareTransfer(sessionId: string | undefined, input: TransferRequestInput) {

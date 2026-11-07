@@ -1,7 +1,7 @@
 import { PackageCheck, QrCode } from 'lucide-react';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
-import { chainDate, shortChainId, transferStatuses } from '../../shared/operational-format';
+import { chainDate, transferStatuses } from '../../shared/operational-format';
 export function ReceiveProductList({
   onSelect,
   onAccept,
@@ -30,26 +30,11 @@ export function ReceiveProductList({
         />
       ) : (
         <Card padding="0">
-          <Table
-            headers={[
-              'Transfer',
-              'Product Batch',
-              'Sender',
-              'Quantity',
-              'Dispatched',
-              'Status',
-              '',
-            ]}
-          >
+          <Table headers={['Shipment', 'Product', 'Quantity', 'Dispatched', 'Status', '']}>
             {rows.map((t) => (
               <TR key={t.transferId}>
-                <TD mono muted>
-                  {shortChainId(t.transferId)}
-                </TD>
-                <TD mono>{shortChainId(t.productBatchId)}</TD>
-                <TD mono muted>
-                  {shortChainId(t.sender)}
-                </TD>
+                <TD bold>From {t.senderName ?? 'Verified Distributor'}</TD>
+                <TD>Verified product batch</TD>
                 <TD>{t.quantity}</TD>
                 <TD muted>{chainDate(t.dispatchedAt)}</TD>
                 <TD>

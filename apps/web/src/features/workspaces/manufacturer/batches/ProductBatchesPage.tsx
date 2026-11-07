@@ -1,7 +1,7 @@
 import { Package } from 'lucide-react';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
-import { chainDate, recordStatuses, shortChainId } from '../../shared/operational-format';
+import { chainDate, recordStatuses } from '../../shared/operational-format';
 export function ProductBatches({
   onNew,
   onTransfer,
@@ -29,13 +29,11 @@ export function ProductBatches({
       ) : (
         <Card padding="0">
           <Table
-            headers={['Batch ID', 'Quantity', 'Ingredients', 'Produced', 'Expires', 'Status', '']}
+            headers={['Product', 'Quantity', 'Ingredients', 'Produced', 'Expires', 'Status', '']}
           >
             {data.productBatches.map((p) => (
               <TR key={p.batchId}>
-                <TD mono muted>
-                  {shortChainId(p.batchId)}
-                </TD>
+                <TD bold>Verified product batch</TD>
                 <TD>{p.totalQuantity}</TD>
                 <TD>{p.ingredients.length} linked</TD>
                 <TD muted>{chainDate(p.producedAt)}</TD>

@@ -45,6 +45,7 @@ export interface WalletAuthState {
   applicationSubmittedAt?: number;
   applicationUpdatedAt?: number;
   credentialId?: string;
+  companyName?: string;
   credentialVerified: boolean;
   locallyVerified: boolean;
   message: string;
@@ -80,6 +81,7 @@ function stateFromSession(session: AuthenticatedSession): WalletAuthState {
     applicationSubmittedAt: session.applicationSubmittedAt,
     applicationUpdatedAt: session.applicationUpdatedAt,
     credentialId: session.credentialId,
+    companyName: session.companyName,
     credentialVerified: session.credentialVerified,
     locallyVerified: session.locallyVerified,
     message: session.message,

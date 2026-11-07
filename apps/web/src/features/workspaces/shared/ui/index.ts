@@ -23,3 +23,4 @@ export { CustodyTimeline } from './CustodyTimeline';
 export { EmptyState } from './EmptyState';
 export { CompanyCard } from './CompanyCard';
 export { ClaimRow } from './ClaimRow';
+export { TechnicalDetails } from './TechnicalDetails';

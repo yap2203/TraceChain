@@ -14,7 +14,9 @@ export interface CustodyTransferSummary {
   productBatchId: string;
   quantity: string;
   recipient: string;
+  recipientName?: string;
   sender: string;
+  senderName?: string;
   status: number;
   transferId: string;
 }

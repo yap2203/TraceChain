@@ -8,7 +8,8 @@ export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
   const stock = data.transfers
     .filter(
       (transfer, index, all) =>
-        all.findIndex((candidate) => candidate.productBatchId === transfer.productBatchId) === index,
+        all.findIndex((candidate) => candidate.productBatchId === transfer.productBatchId) ===
+        index,
     )
     .reduce((sum, transfer) => sum + BigInt(transfer.inventory.available), 0n);
   return (
@@ -67,7 +68,7 @@ export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
               <div>
                 <b>{shortChainId(t.productBatchId)}</b>
                 <div style={{ fontSize: 12, color: T.text2 }}>
-                  {t.quantity} units · {shortChainId(t.sender)}
+                  {t.quantity} units · {t.senderName ?? 'Verified Distributor'}
                 </div>
               </div>
               <Badge label={transferStatuses[t.status]} variant="transfer-pending" />

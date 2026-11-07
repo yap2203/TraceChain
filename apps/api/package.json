@@ -15,6 +15,7 @@
     "test:custody-transfers": "vitest run src/modules/custody-transfers/custody-transfer.test.ts",
     "test:ingredient-batches": "vitest run src/modules/ingredient-batches/ingredient-batch.test.ts",
     "test:production-flow": "vitest run src/modules/production-flow/production-flow.test.ts",
+    "test:stakeholder-directory": "vitest run src/modules/stakeholder-directory/stakeholder-directory.test.ts",
     "test:ssi-api": "vitest run src/modules/ssi/ssi.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },

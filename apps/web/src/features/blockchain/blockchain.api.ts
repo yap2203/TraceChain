@@ -56,6 +56,7 @@ export function getCompanyCredentials() {
 export interface OperationalIngredientBatch {
   batchId: string;
   supplier: string;
+  supplierName?: string;
   metadataHash: string;
   encryptedCid: string;
   credentialId: string;
@@ -69,6 +70,7 @@ export interface OperationalIngredientBatch {
 export interface OperationalProductBatch {
   batchId: string;
   manufacturer: string;
+  manufacturerName?: string;
   metadataHash: string;
   publicCid: string;
   totalQuantity: string;
@@ -79,10 +81,15 @@ export interface OperationalProductBatch {
   ingredients: Array<{ batchId: string; quantity: string }>;
 }
 export interface OperationalTransfer {
+  distributorName?: string;
   transferId: string;
   productBatchId: string;
+  manufacturerName?: string;
   sender: string;
+  senderName?: string;
   recipient: string;
+  recipientName?: string;
+  retailerName?: string;
   quantity: string;
   shipmentHash: string;
   shipmentCid: string;
@@ -98,7 +105,9 @@ export interface OperationalTransfer {
 export interface OperationalEvidenceRequest {
   requestId: string;
   requester: string;
+  manufacturerName?: string;
   supplier: string;
+  supplierName?: string;
   ingredientBatchId: string;
   claimsHash: string;
   challengeHash: string;

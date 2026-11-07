@@ -17,6 +17,7 @@ The current version includes a responsive React application, five stakeholder wo
 | Company Role Credential presentation     | Separate diagnostic API retained; no VC upload is required during normal login        |
 | Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
 | Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status      |
+| Stakeholder identity presentation        | Issuance names are rechecked against current registries before display                |
 | SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
 | Supplier Ingredient Credentials          | Typed JWT VC issuance, encrypted IPFS storage, and sequential on-chain registration   |
 | Manufacturer production flow             | Real evidence VP, product creation, Distributor transfer, and transfer QR implemented |
@@ -219,6 +220,8 @@ The login page restores an existing HttpOnly-cookie session without requesting w
 
 The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It atomically consumes the nonce, creates a process-local HttpOnly-cookie session, and resolves current authorization from the configured registries. The constructor administrator is checked through `administrator()`. Company wallets must have an active stakeholder, matching active/unexpired Company Role credential record and reference, valid subject/type, and a nonzero effective `roleOf` result. No VC upload, vault password, VP, Snap, transaction, or gas is required for login.
 
+Authorized session responses also contain a safe company display name resolved from the existing Company Role issuance record. The stakeholder directory rechecks the wallet, role, credential ID, stakeholder lifecycle, and credential status through the live registry authorization rules before returning `companyName`, `role`, `walletAddress`, and `active`. Missing legacy names use a role-based fallback, duplicate names gain a shortened-wallet suffix, and stale or revoked identities are excluded. Names are presentation data only: authorization and transactions continue to use verified wallet addresses.
+
 SIWE authentication and registry authorization are distinct. Direct registry authorization does not claim that the off-chain VC signature was cryptographically verified. Manual Company Role VC verification remains available as a separate SSI capability, while protected APIs refresh authorization from chain state before use. A URL, frontend role, historical approval, fixture, environment allowlist, or browser value never grants access.
 
 Login displays connecting, challenge, signature, wallet verification, registry-check, authorized, application-status, denied, and unavailable states. Unregistered, pending, evidence-required, rejected, activation-pending, suspended, revoked, and expired wallets remain authenticated only for permitted status/onboarding operations. Active wallets are redirected to the workspace mapped from the authoritative role.
@@ -234,6 +237,8 @@ Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakehol
 The Admin overview, company-application, Company Credential, Access Control, and Registry Audit screens use authenticated blockchain gateway reads. Credential management lists authoritative `CredentialRegistry` records and prepares MetaMask-signed lifecycle transactions. Access Control displays contract-enforced role and stakeholder lifecycle data, and the Admin audit screen produces exportable current-state snapshots. Application rejection, approval, Company Role Credential issuance, encrypted IPFS storage, and sequential registry writes are backend-validated and MetaMask-signed, with restart-resumable workflow records under `.tracechain/issuance/`.
 
 The operational gateway reconstructs wallet-scoped ingredient, product, evidence-request, custody-transfer, and inventory lists from contract events, then refreshes each item through its current-state getter. Supplier, Manufacturer, Distributor, and Retailer primary dashboards and their batch, shipment, inventory, and detail screens therefore display current contract state.
+
+Authenticated operational responses enrich records with verified display fields such as `supplierName`, `manufacturerName`, `senderName`, and `recipientName`. Recipient lists return safe identity objects while preserving `walletAddress` as the select value and transaction recipient. Normal stakeholder screens show company names first; wallets, bytes32 IDs, CIDs, and hashes remain available under optional Technical details. Admin access-control and audit screens retain their technical identifiers.
 
 The Supplier ingredient screen issues a typed `IngredientCredential` whose subject is the authenticated Supplier wallet and whose issuer is a server-derived, Supplier-specific DID. The backend verifies the signed VC before hashing it, encrypts the complete credential and private batch metadata with AES-256-GCM, pins only the encrypted envelope to IPFS, and prepares `CredentialRegistry.registerCredential` followed by `IngredientRegistry.registerBatch`. MetaMask remains the signer, retries resume the first incomplete stage, and the authenticated Supplier receives enriched private metadata only through the narrower ingredient-batch API. This JWT VC implementation does not claim selective disclosure. The prototype server-managed KMS must be replaced by an organizational stakeholder key-custody design for production.
 
@@ -306,6 +311,8 @@ npm run test:blockchain
 npm run test:ssi
 npm run test:ssi-api
 npm run test:ingredient-batches
+npm run test:production-flow
+npm run test:stakeholder-directory
 npm run test:contracts
 npm run test:custody-transfers
 npm run test:ingredient-batches
@@ -317,7 +324,7 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 13 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 10 tests, and the custody-transfer API contains 16 tests. The frontend suite includes wallet-adapter, authentication-hook, credential, workspace-access, QR, and receipt-confirmation tests. Custody-transfer API tests inject the blockchain gateway and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 10 tests, and the custody-transfer API contains 16 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, QR, and receipt-confirmation tests. Custody-transfer API tests inject the blockchain gateway and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

@@ -1,5 +1,5 @@
 import { useOperationalData } from '../../../blockchain/useOperationalData';
-import { Alert, Badge, Btn, Card, EmptyState, T } from '../../shared/ui';
+import { Alert, Badge, Btn, Card, EmptyState, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate, shortChainId, transferStatuses } from '../../shared/operational-format';
 export function ReceiveProduct({
   shipmentId,
@@ -42,9 +42,8 @@ export function ReceiveProduct({
       <Card>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
           {[
-            ['Product batch', t.productBatchId],
-            ['Sender', t.sender],
-            ['Recipient', t.recipient],
+            ['Sender', t.senderName ?? 'Verified Distributor'],
+            ['Recipient', t.recipientName ?? 'Receiving company'],
             ['Quantity', t.quantity],
             ['Dispatched', chainDate(t.dispatchedAt)],
             ['Expected', chainDate(t.expectedAt)],
@@ -58,6 +57,14 @@ export function ReceiveProduct({
             </div>
           ))}
         </div>
+        <TechnicalDetails
+          fields={[
+            { label: 'Transfer ID', value: t.transferId },
+            { label: 'Product batch ID', value: t.productBatchId },
+            { label: 'Sender wallet', value: t.sender },
+            { label: 'Recipient wallet', value: t.recipient },
+          ]}
+        />
       </Card>
       <Alert
         type="info"

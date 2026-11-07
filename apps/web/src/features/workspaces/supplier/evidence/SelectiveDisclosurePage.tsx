@@ -5,8 +5,8 @@ import {
   type ProductionEvidenceRequest,
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
-import { Alert, Badge, Btn, Card, T } from '../../shared/ui';
-import { chainDate, shortChainId } from '../../shared/operational-format';
+import { Alert, Badge, Btn, Card, T, TechnicalDetails } from '../../shared/ui';
+import { chainDate } from '../../shared/operational-format';
 
 export function SelectiveDisclosure({
   request,
@@ -42,13 +42,7 @@ export function SelectiveDisclosure({
       <Card>
         <div style={{ display: 'grid', gap: 10 }}>
           <div>
-            <b>Request</b> · {shortChainId(request.requestId)}
-          </div>
-          <div>
-            <b>Manufacturer</b> · {shortChainId(request.requester)}
-          </div>
-          <div>
-            <b>Ingredient batch</b> · {shortChainId(request.ingredientBatchId)}
+            <b>Manufacturer</b> · {request.manufacturerName ?? 'Verified Manufacturer'}
           </div>
           <div>
             <b>Deadline</b> · {chainDate(request.dueAt)}
@@ -64,6 +58,13 @@ export function SelectiveDisclosure({
           <Btn disabled={busy} onClick={() => void respond()}>
             {busy ? 'Creating and confirming…' : 'Present full credential with MetaMask'}
           </Btn>
+          <TechnicalDetails
+            fields={[
+              { label: 'Request ID', value: request.requestId },
+              { label: 'Manufacturer wallet', value: request.requester },
+              { label: 'Ingredient batch ID', value: request.ingredientBatchId },
+            ]}
+          />
         </div>
       </Card>
     </div>

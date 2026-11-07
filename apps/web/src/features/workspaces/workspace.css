@@ -219,6 +219,55 @@
   color: var(--c-text2);
   font-size: 12px;
 }
+.workspace-company {
+  max-width: 220px;
+  overflow: hidden;
+  color: var(--c-navy);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workspace-account-details {
+  margin: 8px 0;
+  color: #cdd9e5;
+}
+.workspace-account-details summary {
+  color: #8fa3ba;
+  cursor: pointer;
+}
+.workspace-account-details dl {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+.workspace-account-details dl div {
+  display: grid;
+  gap: 2px;
+}
+.workspace-account-details dt {
+  color: #6f879e;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+.workspace-account-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.workspace-account-details dd:has(button) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workspace-account-details button {
+  padding: 2px 7px;
+  border: 1px solid #243d5a;
+  border-radius: 5px;
+  background: transparent;
+  color: #00e5ff;
+  cursor: pointer;
+}
 .workspace-theme,
 .workspace-menu {
   flex-shrink: 0;
@@ -389,6 +438,9 @@
   }
   .workspace-status {
     display: none;
+  }
+  .workspace-company {
+    margin-left: auto;
   }
   .workspace-theme {
     margin-left: auto;

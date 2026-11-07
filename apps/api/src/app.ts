@@ -73,6 +73,12 @@ import {
   createDefaultTraceChainAgentProvider,
   type TraceChainAgentProvider,
 } from './modules/ssi/ssi.service.js';
+import { StakeholderDirectoryController } from './modules/stakeholder-directory/stakeholder-directory.controller.js';
+import { createStakeholderDirectoryRouter } from './modules/stakeholder-directory/stakeholder-directory.routes.js';
+import {
+  VerifiedStakeholderDirectory,
+  type StakeholderDirectory,
+} from './modules/stakeholder-directory/stakeholder-directory.service.js';
 
 interface CreateAppOptions {
   applicationMetadataRepository?: ApplicationMetadataRepository;
@@ -100,15 +106,36 @@ export function createApp({
   const app = express();
   const sessionTtlMs = env.AUTH_SESSION_TTL_SECONDS * 1_000;
   let resolvedGateway = blockchainGateway;
+  const authorizationResolver = {
+    resolve: async (address: string) => {
+      resolvedGateway ??= createDefaultBlockchainGateway();
+      return new GatewayLoginAuthorizationResolver(resolvedGateway).resolve(address);
+    },
+  };
+  let issuanceRepository: CompanyRoleIssuanceRepository | undefined;
+  let credentialContentStore: CredentialContentStore | undefined;
+  const lazyIssuanceRepository: CompanyRoleIssuanceRepository = {
+    find: async (applicationId) => {
+      issuanceRepository ??= createIssuanceDependencies().repository;
+      return issuanceRepository.find(applicationId);
+    },
+    list: async () => {
+      issuanceRepository ??= createIssuanceDependencies().repository;
+      return issuanceRepository.list();
+    },
+    save: async (record) => {
+      issuanceRepository ??= createIssuanceDependencies().repository;
+      return issuanceRepository.save(record);
+    },
+  };
+  const stakeholderDirectory = new VerifiedStakeholderDirectory(
+    lazyIssuanceRepository,
+    authorizationResolver,
+  );
   const resolvedAuthService =
     authService ??
     new AuthService({
-      authorizationResolver: {
-        resolve: async (address) => {
-          resolvedGateway ??= createDefaultBlockchainGateway();
-          return new GatewayLoginAuthorizationResolver(resolvedGateway).resolve(address);
-        },
-      },
+      authorizationResolver,
       configuration: {
         chainId: env.CHAIN_ID,
         domain: env.SIWE_DOMAIN,
@@ -118,6 +145,7 @@ export function createApp({
       },
       nonceRepository: new InMemoryNonceRepository(),
       sessionRepository: new InMemorySessionRepository(),
+      stakeholderDirectory,
     });
   const authController = new AuthController(resolvedAuthService, {
     cookieName: env.AUTH_COOKIE_NAME,
@@ -125,7 +153,8 @@ export function createApp({
     sessionTtlMs,
   });
   const custodyTransferController = new CustodyTransferController(
-    custodyTransferService ?? createDefaultCustodyTransferService(resolvedAuthService),
+    custodyTransferService ??
+      createDefaultCustodyTransferService(resolvedAuthService, stakeholderDirectory),
     env.AUTH_COOKIE_NAME,
   );
   const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
@@ -225,22 +254,6 @@ export function createApp({
       return resolvedGateway.prepareRolePermission(input);
     },
   };
-  let issuanceRepository: CompanyRoleIssuanceRepository | undefined;
-  let credentialContentStore: CredentialContentStore | undefined;
-  const lazyIssuanceRepository: CompanyRoleIssuanceRepository = {
-    find: async (applicationId) => {
-      issuanceRepository ??= createIssuanceDependencies().repository;
-      return issuanceRepository.find(applicationId);
-    },
-    list: async () => {
-      issuanceRepository ??= createIssuanceDependencies().repository;
-      return issuanceRepository.list();
-    },
-    save: async (record) => {
-      issuanceRepository ??= createIssuanceDependencies().repository;
-      return issuanceRepository.save(record);
-    },
-  };
   const blockchainController = new BlockchainController(
     lazyGateway,
     resolvedAuthService,
@@ -252,6 +265,7 @@ export function createApp({
         ),
       ),
     lazyIssuanceRepository,
+    stakeholderDirectory,
   );
   const lazyCredentialContentStore: CredentialContentStore = {
     decrypt: async (payload) => {
@@ -292,6 +306,7 @@ export function createApp({
         resolvedAuthService,
         defaultSsi.agentProvider,
         lazyCredentialContentStore,
+        stakeholderDirectory,
       ),
     env.AUTH_COOKIE_NAME,
   );
@@ -326,6 +341,16 @@ export function createApp({
   });
 
   app.use('/api/auth', express.json({ limit: '10kb' }), createAuthRouter(authController));
+  app.use(
+    '/api/stakeholders',
+    createStakeholderDirectoryRouter(
+      new StakeholderDirectoryController(
+        resolvedAuthService,
+        stakeholderDirectory,
+        env.AUTH_COOKIE_NAME,
+      ),
+    ),
+  );
   app.use('/api/ssi', express.json({ limit: '256kb' }), createSsiRouter(ssiController));
   app.use(
     '/api/ingredient-batches',
@@ -392,7 +417,10 @@ function createDefaultBlockchainGateway() {
   );
 }
 
-function createDefaultCustodyTransferService(authService: AuthService) {
+function createDefaultCustodyTransferService(
+  authService: AuthService,
+  stakeholderDirectory: StakeholderDirectory,
+) {
   let blockchainEnvironment: ReturnType<typeof loadBlockchainEnvironment> | undefined;
   let gateway: CustodyTransferGateway | undefined;
   const configuration = () => {
@@ -428,6 +456,7 @@ function createDefaultCustodyTransferService(authService: AuthService) {
     authService,
     configuration,
     gateway: lazyGateway,
+    stakeholderDirectory,
   });
 }
 
@@ -486,6 +515,7 @@ function createDefaultProductionFlowService(
   authService: AuthService,
   agentProvider: TraceChainAgentProvider,
   contentStore: CredentialContentStore,
+  stakeholderDirectory: StakeholderDirectory,
 ) {
   let gateway: ProductionFlowGateway | undefined;
   let repository: ProductionFlowRepository | undefined;
@@ -552,6 +582,7 @@ function createDefaultProductionFlowService(
     gateway: lazyGateway,
     ingredientRepository: lazyIngredientRepository,
     repository: lazyRepository,
+    stakeholderDirectory,
   });
 }
 

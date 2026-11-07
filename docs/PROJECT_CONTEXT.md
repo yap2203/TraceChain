@@ -46,6 +46,7 @@
 - Authenticated Supplier ingredient batch list/detail/overview data reconstructed from `IngredientBatchRegistered` events, contract reads, and authorized encrypted metadata
 - Real Manufacturer-to-Distributor production workflow: encrypted evidence requests, Supplier challenge-bound full-credential VPs, cryptographic acceptance, accepted-ingredient product creation, transfer preparation, and QR generation from the verified transfer ID
 - Direct SIWE-to-registry login authorization with fresh stakeholder, role, and Company Role credential-record checks; manual VC verification remains separate from login
+- Verified stakeholder identity presentation from existing Company Role issuance records, with current registry cross-checks, safe legacy fallbacks, and company-name enrichment for authenticated operational responses
 - On-chain Company Role credential linkage for every company role plus an Admin bootstrap-to-registry workflow; complete credentials remain encrypted off-chain
 - Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
 

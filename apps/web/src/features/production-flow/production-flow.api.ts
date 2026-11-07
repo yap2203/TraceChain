@@ -1,3 +1,5 @@
+import type { CompanyRole } from '@tracechain/shared';
+
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
@@ -28,6 +30,7 @@ export interface ProductionIngredient {
   batchId: string;
   expiresAt: number;
   supplier: string;
+  supplierName?: string;
   unit: string;
 }
 
@@ -38,8 +41,10 @@ export interface ProductionEvidenceRequest {
   presentationExpiresAt: number;
   requestId: string;
   requester: string;
+  manufacturerName?: string;
   status: number;
   supplier: string;
+  supplierName?: string;
   updatedAt: number;
 }
 
@@ -57,7 +62,15 @@ export const listProductionIngredients = () =>
   request<{ batches: ProductionIngredient[] }>('/ingredients');
 export const listEvidenceRequests = () =>
   request<{ requests: ProductionEvidenceRequest[] }>('/evidence-requests');
-export const listDistributors = () => request<{ distributors: string[] }>('/distributors');
+export interface StakeholderRecipient {
+  active: boolean;
+  companyName: string;
+  role: CompanyRole;
+  walletAddress: string;
+}
+
+export const listDistributors = () =>
+  request<{ distributors: StakeholderRecipient[] }>('/distributors');
 
 export const prepareEvidenceRequest = (input: {
   batchId: string;

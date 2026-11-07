@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
 import { Menu, Moon, Sun, X } from 'lucide-react';
+import type { CompanyRole } from '@tracechain/shared';
 
 import { Brand } from '../../components/brand/Brand';
 import { workspaces } from './workspace-config';
@@ -14,6 +15,12 @@ interface WorkspaceLayoutProps {
   pathForPage: (page: string) => string;
   status: string;
   accountAction?: ReactNode;
+  identity?: {
+    companyName: string;
+    credentialStatus: string;
+    role: CompanyRole | WorkspaceRole;
+    walletAddress: string;
+  };
 }
 
 export function WorkspaceLayout({
@@ -23,6 +30,7 @@ export function WorkspaceLayout({
   pathForPage,
   status,
   accountAction,
+  identity,
 }: WorkspaceLayoutProps) {
   const [light, setLight] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -55,7 +63,8 @@ export function WorkspaceLayout({
           </button>
           <div className="workspace-role">
             <span>Workspace</span>
-            <strong>{workspaces[role].roleLabel}</strong>
+            <strong>{identity?.companyName ?? workspaces[role].roleLabel}</strong>
+            <span>{workspaces[role].roleLabel}</span>
           </div>
           <nav aria-label={`${workspaces[role].roleLabel} navigation`}>
             {workspaceNavigation[role].map(([id, label, Icon]) => (
@@ -66,8 +75,10 @@ export function WorkspaceLayout({
             ))}
           </nav>
           <div className="workspace-sidebar-footer">
-            <strong>{workspaces[role].roleLabel}</strong>
+            <strong>{identity?.companyName ?? workspaces[role].roleLabel}</strong>
+            <span>{workspaces[role].roleLabel}</span>
             <span>{status}</span>
+            {identity && <AccountDetails identity={identity} />}
             {accountAction}
           </div>
         </aside>
@@ -93,6 +104,7 @@ export function WorkspaceLayout({
               {current?.[1] ?? 'Page not found'}
             </h1>
             <span className="workspace-status">{status}</span>
+            {identity && <span className="workspace-company">{identity.companyName}</span>}
             <button
               className="workspace-theme"
               aria-label={light ? 'Use dark theme' : 'Use light theme'}
@@ -107,5 +119,40 @@ export function WorkspaceLayout({
         </div>
       </div>
     </div>
+  );
+}
+
+function AccountDetails({ identity }: { identity: NonNullable<WorkspaceLayoutProps['identity']> }) {
+  const shortWallet = `${identity.walletAddress.slice(0, 6)}...${identity.walletAddress.slice(-4)}`;
+  return (
+    <details className="workspace-account-details">
+      <summary>Account details</summary>
+      <dl>
+        <div>
+          <dt>Company</dt>
+          <dd>{identity.companyName}</dd>
+        </div>
+        <div>
+          <dt>Role</dt>
+          <dd>{String(identity.role).replaceAll('_', ' ')}</dd>
+        </div>
+        <div>
+          <dt>Wallet</dt>
+          <dd>
+            <code>{shortWallet}</code>
+            <button
+              type="button"
+              onClick={() => void navigator.clipboard.writeText(identity.walletAddress)}
+            >
+              Copy
+            </button>
+          </dd>
+        </div>
+        <div>
+          <dt>Credential</dt>
+          <dd>{identity.credentialStatus}</dd>
+        </div>
+      </dl>
+    </details>
   );
 }

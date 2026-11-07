@@ -1,5 +1,16 @@
 import { useOperationalData } from '../../../blockchain/useOperationalData';
-import { Alert, Badge, Btn, Card, EmptyState, T, Table, TD, TR } from '../../shared/ui';
+import {
+  Alert,
+  Badge,
+  Btn,
+  Card,
+  EmptyState,
+  T,
+  Table,
+  TD,
+  TechnicalDetails,
+  TR,
+} from '../../shared/ui';
 import { chainDate, recordStatuses, shortChainId } from '../../shared/operational-format';
 export function ProductBatchDetail({
   batchId,
@@ -28,7 +39,7 @@ export function ProductBatchDetail({
         <Btn variant="ghost" size="sm" onClick={onBack}>
           Back
         </Btn>
-        <h2 style={{ margin: 0, color: T.navy, flex: 1 }}>Product · {shortChainId(p.batchId)}</h2>
+        <h2 style={{ margin: 0, color: T.navy, flex: 1 }}>Product batch</h2>
         <Badge
           label={recordStatuses[p.status] ?? 'Unknown'}
           variant={p.status === 1 ? 'active' : 'pending'}
@@ -38,13 +49,10 @@ export function ProductBatchDetail({
       <Card>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
           {[
-            ['Batch ID', p.batchId],
-            ['Manufacturer', p.manufacturer],
+            ['Manufacturer', p.manufacturerName ?? 'Verified Manufacturer'],
             ['Quantity', p.totalQuantity],
             ['Produced', chainDate(p.producedAt)],
             ['Expires', chainDate(p.expiresAt)],
-            ['Metadata hash', p.metadataHash],
-            ['Public CID', p.publicCid || '—'],
           ].map(([l, v]) => (
             <div key={l} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}>
               <div style={{ fontSize: 11, color: T.text2 }}>{l}</div>
@@ -52,6 +60,14 @@ export function ProductBatchDetail({
             </div>
           ))}
         </div>
+        <TechnicalDetails
+          fields={[
+            { label: 'Product batch ID', value: p.batchId },
+            { label: 'Manufacturer wallet', value: p.manufacturer },
+            { label: 'Metadata hash', value: p.metadataHash },
+            { label: 'Public CID', value: p.publicCid },
+          ]}
+        />
       </Card>
       <Card>
         <b>Linked ingredients</b>
