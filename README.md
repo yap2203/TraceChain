@@ -13,7 +13,7 @@ path.
 
 TraceChain is a blockchain-based supply-chain traceability system with Self-Sovereign Identity credential verification. It is a TypeScript npm monorepo developed as a final-year project.
 
-The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, detail, and company-identity views use authenticated services. Admin workflows, Supplier Ingredient Credential registration, Manufacturer production transfers, Distributor-to-Retailer transfers, and custody receipt confirmation are connected to authenticated services; remaining QR-history, receipt-evidence, and report screens still require migration from fixtures.
+The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, detail, and company-identity views use authenticated services. Admin workflows, Supplier Ingredient Credential registration, Manufacturer production transfers, Distributor-to-Retailer transfers, custody receipt reconciliation, discrepancy management, and public product traceability history are connected to authenticated services; remaining non-admin report screens still require migration from fixtures.
 
 ## Current implementation status
 
@@ -36,7 +36,8 @@ The current version includes a responsive React application, five stakeholder wo
 | Distributor transfer flow                | Real inventory, verified Retailer transfer, MetaMask signing, and QR implemented      |
 | Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
 | Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
-| Custody-transfer QR workflow             | Verified scanning and recipient-signed local receipt confirmation implemented         |
+| Custody-transfer QR workflow             | Reconciliation, encrypted evidence, discrepancies, and MetaMask writes implemented    |
+| Product traceability QR                  | Permanent public locator, safe resolver, and custody timeline implemented             |
 | Business persistence                     | Not implemented                                                                       |
 
 ## Repository structure
@@ -46,7 +47,7 @@ apps/
   web/             React 19, Vite 8, React Router, ethers, and MetaMask Connect
   api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
-  shared/          Shared company-role definitions and custody-transfer QR locator codec
+  shared/          Shared role definitions plus custody-transfer and product QR codecs
   ssi/             Veramo agent, did:ethr, JWT VC/VP, encrypted JSON storage, and verification
   contracts/       Hardhat 3 starter, Solidity example, tests, and deployment module
 docs/
@@ -145,7 +146,7 @@ The registration review screen submits a real `StakeholderRegistry.submitApplica
 
 ### Environment variables
 
-The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL`, the public `CHAIN_*` network values, and `CUSTODY_TRANSFER_ADDRESS`; server secrets remain backend-only:
+The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL`, `VITE_PUBLIC_APP_URL`, the public `CHAIN_*` network values, and the ProductRegistry and CustodyTransfer addresses; server secrets remain backend-only:
 
 ```text
 PORT=3000
@@ -175,6 +176,7 @@ IPFS_PINNING_TOKEN=replace-with-a-scoped-pinning-token
 IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
 
 VITE_API_BASE_URL=http://localhost:3000
+VITE_PUBLIC_APP_URL=http://localhost:5173
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
@@ -213,7 +215,7 @@ The root route redirects to `/login`. Unknown routes also return to the login pa
 | Role         | Canonical pages                                                                                                                                                                 |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Public       | `/login`, `/register-company`                                                                                                                                                   |
-| Admin        | `/admin/overview`, `/admin/applications`, `/admin/credentials`, `/admin/stakeholders`, `/admin/reports`                                                                         |
+| Admin        | `/admin/overview`, `/admin/applications`, `/admin/credentials`, `/admin/stakeholders`, `/admin/discrepancies`, `/admin/reports`                                                 |
 | Supplier     | `/supplier/overview`, `/supplier/ingredients`, `/supplier/evidence-requests`, `/supplier/credentials`, `/supplier/reports`                                                      |
 | Manufacturer | `/manufacturer/overview`, `/manufacturer/ingredient-evidence`, `/manufacturer/product-batches`, `/manufacturer/transfers`, `/manufacturer/credentials`, `/manufacturer/reports` |
 | Distributor  | `/distributor/overview`, `/distributor/incoming-shipments`, `/distributor/inventory`, `/distributor/transfers`, `/distributor/credentials`, `/distributor/reports`              |
@@ -265,7 +267,7 @@ The Manufacturer production flow now uses real contract records. A Manufacturer 
 
 The Distributor transfer screen lists only positive on-chain inventory previously received by the authenticated Distributor and resolves active Retailers through the verified stakeholder directory. The API rechecks the Distributor credential, role, `INITIATE_TRANSFER` permission, product transferability, inventory, Retailer role, and `RECEIVE_TRANSFER` permission. Shipment references and handling notes are encrypted through the existing IPFS abstraction; the browser receives only unsigned `createTransfer` calldata. After MetaMask mines the transaction, the API verifies its sender, recipient, product, quantity, and `AwaitingReceipt` state before the real bytes32 ID reaches the QR renderer. The existing Retailer scanner and recipient-only MetaMask receipt confirmation complete the custody handoff.
 
-QR product-history, receipt reconciliation/evidence, and non-admin report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative.
+Remaining non-admin report screens still contain fixture data or simulation handlers and must be migrated before they are authoritative.
 
 Access Control also provides live role counts and a configurable on-chain permission matrix. Every grant or removal is prepared by the API, signed by the System Admin in MetaMask, recorded by `StakeholderRegistry`, and enforced by the affected contracts. System Admin authority and structural custody routes remain fixed safety constraints. This contract upgrade requires a fresh deployment.
 
@@ -311,14 +313,71 @@ contract deployment, `AwaitingReceipt` status, and intended recipient before ret
 transfer summary. The frontend displays that summary only after this response succeeds. Scanning
 never prepares or sends a transaction.
 
-After resolution, `POST /api/custody-transfers/transactions/confirm-receipt` repeats the session,
-credential authorization, transfer-status, and recipient checks before returning unsigned
-`confirmReceipt` calldata. The frontend verifies the destination and chain, requires the connected
-MetaMask account to equal the recipient, submits the transaction from that wallet, waits for its
-receipt, and refreshes the authoritative transfer through `GET /api/custody-transfers/:transferId`.
-The backend never signs or broadcasts the transaction. This local phase confirms the complete
-quantity as usable with zero damaged/rejected units; quantity reconciliation and encrypted receipt
-evidence remain future work.
+After resolution, the intended recipient records actual, damaged, and rejected quantities; usable
+quantity is calculated as `actual - damaged - rejected`. Receipt notes and optional PNG, JPEG,
+WebP, or PDF evidence are deterministically serialized, AES-256-GCM encrypted, and pinned through
+the existing injectable IPFS content store before any transaction is prepared. Identical retries
+reuse the encrypted workflow record, while changed details are rejected as a conflict.
+
+When actual quantity matches the transfer, `POST
+/api/custody-transfers/transactions/confirm-receipt` returns unsigned `confirmReceipt` calldata
+containing only required quantities, the deterministic receipt hash, and encrypted CID. A shortage
+or excess instead returns unsigned `reportDiscrepancy` calldata and leaves the transfer awaiting
+System Admin review. Complete and wrong-product rejection use the separate unsigned `reject`
+transaction. The frontend validates the destination, network, and recipient wallet, asks MetaMask
+to sign, waits for mining, then refreshes `GET /api/custody-transfers/:transferId` and operational
+inventory.
+
+Encrypted receipt preparations are versioned, content-hash-addressed drafts. An identical retry
+reuses its existing draft, while corrected quantities, notes, arrival time, or evidence create a new
+draft without overwriting the earlier one as long as the transfer remains `AwaitingReceipt`. After
+the contract action is finalized, private retrieval selects only the draft matching the
+authoritative receipt hash/CID, discrepancy hash/CID, or rejection reason hash. Superseded drafts
+are never returned as finalized evidence. Existing single-record JSON receipt repositories remain
+readable as schema version 1; new records use schema version 2.
+
+Confirmed transfers show the private recorded actual-arrival time to the authorized sender,
+recipient, and System Admin. If the recipient omitted it, the UI says **Not recorded**. Actual
+arrival is not included in public product traceability.
+
+The Admin **Receipt discrepancies** screen reads real discrepancy events and current contract
+records. An authorized System Admin can prepare `resolveDiscrepancy` to accept the reported actual
+quantity or cancel the transfer. Acceptance returns the transfer to `AwaitingReceipt`; the intended
+recipient must then confirm separately. Cancellation releases the sender reservation according to
+the contract. All APIs return unsigned transactions only; the backend never signs or broadcasts.
+
+The deployed contract's direct `reject` method stores a reason hash but has no CID parameter.
+TraceChain therefore keeps encrypted rejection evidence in its authorized off-chain receipt
+repository and places only the deterministic reason hash on-chain. Public product traceability
+shows safe receipt/discrepancy lifecycle wording and never returns private notes, files, hashes, or
+encrypted CIDs.
+
+## Product traceability QR
+
+Each real product batch can expose a separate permanent Product Traceability QR:
+
+```text
+https://tracechain.example/trace/product?v=1&chainId={chainId}&registry={productRegistryAddress}&batchId={batchId}
+```
+
+The QR is a read-only locator containing only its version, configured chain, ProductRegistry
+deployment, and real `bytes32` product batch ID. Manufacturers can display it after product
+creation, download a PNG, print a name-first label containing the readable product name and batch
+reference, or copy the link. The readable values are display data resolved outside the QR payload.
+It is distinct from the custody-transfer QR and can never confirm receipt or change custody.
+
+The public `/trace/product` page and `POST /api/product-traceability/resolve` reject malformed,
+duplicate, missing, unknown, wrong-chain, and wrong-registry parameters before resolving configured
+contract records. Public visitors receive a privacy-minimized product, ingredient-verification,
+company-name, current-custodian, and chronological custody summary. An authorized session may also
+receive technical IDs, wallets, quantities, and transaction hashes in collapsed Technical details;
+complete credentials, private claims, CIDs, encrypted content, keys, and documents are never
+returned. A verified blockchain traceability record does not by itself prove the physical item is
+genuine.
+
+Set `VITE_PUBLIC_APP_URL` to the externally reachable HTTPS application origin when generating
+production labels. A normal phone camera can open that HTTPS link. Another phone cannot open a
+developer machine's `localhost`; local phone testing needs a reachable LAN/HTTPS configuration.
 
 ## Ingredient selective disclosure
 
@@ -342,6 +401,7 @@ npm run test:production-flow
 npm run test:stakeholder-directory
 npm run test:contracts
 npm run test:custody-transfers
+npm run test:product-traceability
 npm run test:ingredient-batches
 npm run test:qr
 npm run test:content --workspace @tracechain/api
@@ -351,8 +411,8 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, and the custody-transfer API contains 16 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, QR, and receipt-confirmation tests. Custody-transfer API tests inject the blockchain gateway and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, the custody-transfer API contains 36 tests, and the product-traceability API contains 11 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite contains 93 tests and includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, both QR workflows, reconciliation validation, corrected MetaMask-cancellation retries, Admin discrepancy decisions, public traceability states, and receipt transaction errors. Product-traceability and custody-transfer API tests inject blockchain and encrypted-content gateways and do not require Hardhat, Pinata, or an RPC endpoint. Frontend tests use fixed chain-31337 public test values from Vite test mode and do not require a private root `.env`; non-test builds retain normal environment validation. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
-The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
+The root `test:auth`, `test:ssi-api`, and `test:custody-transfers` commands build their required shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 
 See [project context](docs/PROJECT_CONTEXT.md), [decisions](docs/DECISIONS.md), and [progress](docs/PROGRESS.md) for the project source of truth.

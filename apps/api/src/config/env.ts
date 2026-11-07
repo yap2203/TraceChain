@@ -9,6 +9,11 @@ const environmentSchema = z.object({
     .url()
     .transform((value) => value.replace(/\/$/, ''))
     .default('http://localhost:5173'),
+  VITE_PUBLIC_APP_URL: z
+    .string()
+    .url()
+    .transform((value) => value.replace(/\/$/, ''))
+    .default('http://localhost:5173'),
   SIWE_DOMAIN: z.string().min(1).default('localhost:5173'),
   SIWE_URI: z
     .string()

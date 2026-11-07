@@ -8,6 +8,7 @@ import { CustodyTransferResolutionError } from './custody-transfer.api';
 import type { ResolvedCustodyTransfer } from './custody-transfer.types';
 import type { TransferQrReader } from './qr-reader';
 import { ReceiptConfirmationError } from './receipt-confirmation';
+import { ResolvedTransferCard } from './ResolvedTransferCard';
 import { createTransferQrModel, createTransferQrPayload } from './transfer-qr';
 import { TransferQrScanner } from './TransferQrScanner';
 
@@ -15,16 +16,21 @@ const TRANSFER_ID = `0x${'11'.repeat(32)}`;
 const CONTRACT_ADDRESS = '0x4000000000000000000000000000000000000004';
 const QR_PAYLOAD = `tracechain://transfer/v1?chainId=31337&contract=${CONTRACT_ADDRESS}&transferId=${TRANSFER_ID}`;
 const TRANSFER: ResolvedCustodyTransfer = {
+  damaged: '0',
   dispatchedAt: 1_762_416_000,
   expectedAt: 1_762_502_400,
   productBatchId: `0x${'22'.repeat(32)}`,
+  productName: 'Chocolate Bars',
+  productReference: 'PB-2026-001',
   quantity: '250',
   recipient: '0x1000000000000000000000000000000000000001',
   recipientName: 'Swift Distribution Sdn. Bhd.',
   sender: '0x3000000000000000000000000000000000000003',
   senderName: 'CocoaCraft Manufacturing Sdn. Bhd.',
+  rejected: '0',
   status: 1,
   transferId: TRANSFER_ID,
+  usable: '0',
 };
 
 function reader(overrides: Partial<TransferQrReader> = {}): TransferQrReader {
@@ -89,7 +95,7 @@ describe('custody-transfer QR frontend', () => {
     expect(screen.getByText('CocoaCraft Manufacturing Sdn. Bhd.')).toBeTruthy();
     expect(screen.getByText('Swift Distribution Sdn. Bhd.')).toBeTruthy();
     expect(screen.getByText('Technical details')).toBeTruthy();
-    expect(screen.getByText('250')).toBeTruthy();
+    expect(screen.getAllByText('250')).toHaveLength(2);
     expect(screen.getByText('Awaiting Receipt')).toBeTruthy();
 
     expect(fetchMock).toHaveBeenCalledOnce();
@@ -217,7 +223,12 @@ describe('custody-transfer QR frontend', () => {
 
   it('prepares, submits, waits for, and refreshes a receipt confirmation once', async () => {
     let finishPreparation:
-      ((value: { chainId: number; data: string; to: string; value: string }) => void) | undefined;
+      | ((value: {
+          action: 'CONFIRM_RECEIPT';
+          transaction: { chainId: number; data: string; to: string; value: string };
+          usableQuantity: string;
+        }) => void)
+      | undefined;
     const prepared = {
       chainId: 31_337,
       data: '0x1234',
@@ -226,12 +237,20 @@ describe('custody-transfer QR frontend', () => {
     };
     const prepareConfirmation = vi.fn(
       () =>
-        new Promise<typeof prepared>((resolve) => {
+        new Promise<{
+          action: 'CONFIRM_RECEIPT';
+          transaction: typeof prepared;
+          usableQuantity: string;
+        }>((resolve) => {
           finishPreparation = resolve;
         }),
     );
     const submitConfirmation = vi.fn().mockResolvedValue(undefined);
-    const received = { ...TRANSFER, status: 2 as const };
+    const received = {
+      ...TRANSFER,
+      actualArrivalAt: '2026-11-06T09:30:00.000Z',
+      status: 2 as const,
+    };
     const refreshTransfer = vi.fn().mockResolvedValue(received);
     render(
       <TransferQrScanner
@@ -244,19 +263,171 @@ describe('custody-transfer QR frontend', () => {
     );
     enterManualPayload();
     fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
-    const confirm = await screen.findByRole('button', { name: 'Confirm receipt' });
+    const confirm = await screen.findByRole('button', { name: 'Confirm reconciled receipt' });
 
     fireEvent.click(confirm);
     fireEvent.click(confirm);
     expect(prepareConfirmation).toHaveBeenCalledOnce();
     expect((confirm as HTMLButtonElement).disabled).toBe(true);
 
-    finishPreparation?.(prepared);
+    finishPreparation?.({
+      action: 'CONFIRM_RECEIPT',
+      transaction: prepared,
+      usableQuantity: '250',
+    });
     expect(await screen.findByText('Receipt confirmed on-chain')).toBeTruthy();
     expect(screen.getByText('Received')).toBeTruthy();
+    expect(screen.getByText('Actual arrival')).toBeTruthy();
+    expect(screen.queryByText('Not recorded')).toBeNull();
     expect(submitConfirmation).toHaveBeenCalledOnce();
+    expect(prepareConfirmation).toHaveBeenCalledWith({
+      actualArrivalAt: undefined,
+      actualQuantity: '250',
+      damagedQuantity: '0',
+      evidence: [],
+      notes: '',
+      rejectedQuantity: '0',
+      transferId: TRANSFER_ID,
+    });
     expect(submitConfirmation).toHaveBeenCalledWith(prepared, TRANSFER);
     expect(refreshTransfer).toHaveBeenCalledWith(TRANSFER_ID);
+  });
+
+  it('calculates usable inventory from damaged and rejected quantities', async () => {
+    const prepareConfirmation = vi.fn().mockResolvedValue({
+      action: 'CONFIRM_RECEIPT',
+      transaction: { chainId: 31_337, data: '0x1234', to: CONTRACT_ADDRESS, value: '0x0' },
+      usableQuantity: '235',
+    });
+    const onResolved = vi.fn();
+    const received = {
+      ...TRANSFER,
+      damaged: '10',
+      rejected: '5',
+      status: 2 as const,
+      usable: '235',
+    };
+    render(
+      <TransferQrScanner
+        onResolved={onResolved}
+        prepareConfirmation={prepareConfirmation}
+        reader={reader()}
+        refreshTransfer={vi.fn().mockResolvedValue(received)}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.change(await screen.findByLabelText('Damaged quantity'), {
+      target: { value: '10' },
+    });
+    fireEvent.change(screen.getByLabelText('Rejected quantity'), { target: { value: '5' } });
+
+    expect(screen.getByText('235')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reconciled receipt' }));
+
+    expect(await screen.findByText('Receipt confirmed on-chain')).toBeTruthy();
+    expect(prepareConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ damagedQuantity: '10', rejectedQuantity: '5' }),
+    );
+    expect(onResolved).toHaveBeenLastCalledWith(received);
+  });
+
+  it('blocks invalid overlapping quantities before transaction preparation', async () => {
+    const prepareConfirmation = vi.fn();
+    render(
+      <TransferQrScanner
+        prepareConfirmation={prepareConfirmation}
+        reader={reader()}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.change(await screen.findByLabelText('Actual quantity received'), {
+      target: { value: '10' },
+    });
+    fireEvent.change(screen.getByLabelText('Damaged quantity'), { target: { value: '8' } });
+    fireEvent.change(screen.getByLabelText('Rejected quantity'), { target: { value: '3' } });
+
+    expect(screen.getByText('Damaged plus rejected cannot exceed actual received.')).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Report quantity discrepancy' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(prepareConfirmation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['200', 'Shortage'],
+    ['300', 'Excess'],
+  ])('reports a %s mismatch and waits for administrator review', async (actual, label) => {
+    const prepareConfirmation = vi.fn().mockResolvedValue({
+      action: 'REPORT_DISCREPANCY',
+      discrepancyType: label.toUpperCase(),
+      transaction: { chainId: 31_337, data: '0x5678', to: CONTRACT_ADDRESS, value: '0x0' },
+      usableQuantity: actual,
+    });
+    render(
+      <TransferQrScanner
+        prepareConfirmation={prepareConfirmation}
+        reader={reader()}
+        refreshTransfer={vi.fn().mockResolvedValue({ ...TRANSFER, status: 5 as const })}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.change(await screen.findByLabelText('Actual quantity received'), {
+      target: { value: actual },
+    });
+    fireEvent.change(screen.getByLabelText(/Receipt notes/), {
+      target: { value: 'Count differs from dispatch.' },
+    });
+
+    expect(screen.getByText(new RegExp(`${label} detected`))).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Report quantity discrepancy' }));
+
+    expect(await screen.findByText('Discrepancy recorded for administrator review')).toBeTruthy();
+    expect(prepareConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ actualQuantity: actual, notes: 'Count differs from dispatch.' }),
+    );
+  });
+
+  it('prepares complete wrong-product rejection separately from normal receipt', async () => {
+    const prepareRejection = vi.fn().mockResolvedValue({
+      action: 'REJECT_TRANSFER',
+      transaction: { chainId: 31_337, data: '0xabcd', to: CONTRACT_ADDRESS, value: '0x0' },
+    });
+    render(
+      <TransferQrScanner
+        prepareRejection={prepareRejection}
+        reader={reader()}
+        refreshTransfer={vi.fn().mockResolvedValue({ ...TRANSFER, status: 3 as const })}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Reject or wrong product' }));
+    fireEvent.change(screen.getByLabelText('Rejection type'), {
+      target: { value: 'WRONG_PRODUCT' },
+    });
+    fireEvent.change(screen.getByLabelText('Reason'), {
+      target: { value: 'Product does not match the manifest.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Submit rejection through MetaMask' }));
+
+    expect(await screen.findByText('Transfer rejected on-chain')).toBeTruthy();
+    expect(prepareRejection).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Product does not match the manifest.',
+        reasonType: 'WRONG_PRODUCT',
+      }),
+    );
   });
 
   it('shows a cancelled MetaMask transaction without changing the verified transfer', async () => {
@@ -271,10 +442,14 @@ describe('custody-transfer QR frontend', () => {
     render(
       <TransferQrScanner
         prepareConfirmation={vi.fn().mockResolvedValue({
-          chainId: 31_337,
-          data: '0x1234',
-          to: CONTRACT_ADDRESS,
-          value: '0x0',
+          action: 'CONFIRM_RECEIPT',
+          transaction: {
+            chainId: 31_337,
+            data: '0x1234',
+            to: CONTRACT_ADDRESS,
+            value: '0x0',
+          },
+          usableQuantity: '250',
         })}
         reader={reader()}
         refreshTransfer={vi.fn()}
@@ -284,7 +459,7 @@ describe('custody-transfer QR frontend', () => {
     );
     enterManualPayload();
     fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm receipt' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
 
     expect(
       await screen.findByText(
@@ -292,15 +467,79 @@ describe('custody-transfer QR frontend', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText('Awaiting Receipt')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Confirm receipt' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Confirm reconciled receipt' })).toBeTruthy();
+  });
+
+  it('keeps the form editable for a corrected retry after MetaMask cancellation', async () => {
+    const prepareConfirmation = vi.fn().mockResolvedValue({
+      action: 'CONFIRM_RECEIPT',
+      transaction: {
+        chainId: 31_337,
+        data: '0x1234',
+        to: CONTRACT_ADDRESS,
+        value: '0x0',
+      },
+      usableQuantity: '250',
+    });
+    const submitConfirmation = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ReceiptConfirmationError(
+          'REJECTED',
+          'The MetaMask transaction was cancelled. The transfer remains awaiting receipt.',
+        ),
+      )
+      .mockResolvedValueOnce(undefined);
+    render(
+      <TransferQrScanner
+        prepareConfirmation={prepareConfirmation}
+        reader={reader()}
+        refreshTransfer={vi.fn().mockResolvedValue({ ...TRANSFER, status: 2 as const })}
+        resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
+        submitConfirmation={submitConfirmation}
+      />,
+    );
+    enterManualPayload();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
+    await screen.findByText(
+      'The MetaMask transaction was cancelled. The transfer remains awaiting receipt.',
+    );
+
+    fireEvent.change(screen.getByLabelText('Damaged quantity'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText(/Receipt notes/), {
+      target: { value: 'Corrected after reviewing the delivery.' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm reconciled receipt' }));
+
+    expect(await screen.findByText('Receipt confirmed on-chain')).toBeTruthy();
+    expect(prepareConfirmation).toHaveBeenCalledTimes(2);
+    expect(prepareConfirmation).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        damagedQuantity: '2',
+        notes: 'Corrected after reviewing the delivery.',
+      }),
+    );
+    expect(submitConfirmation).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows an honest actual-arrival fallback when no time was recorded', async () => {
+    render(<ResolvedTransferCard transfer={{ ...TRANSFER, status: 2, usable: '250' }} />);
+
+    expect(screen.getByText('Actual arrival')).toBeTruthy();
+    expect(screen.getByText('Not recorded')).toBeTruthy();
   });
 
   it('does not submit a second transaction when post-receipt refresh fails', async () => {
     const prepareConfirmation = vi.fn().mockResolvedValue({
-      chainId: 31_337,
-      data: '0x1234',
-      to: CONTRACT_ADDRESS,
-      value: '0x0',
+      action: 'CONFIRM_RECEIPT',
+      transaction: {
+        chainId: 31_337,
+        data: '0x1234',
+        to: CONTRACT_ADDRESS,
+        value: '0x0',
+      },
+      usableQuantity: '250',
     });
     const submitConfirmation = vi.fn().mockResolvedValue(undefined);
     const refreshTransfer = vi.fn().mockRejectedValue(new Error('RPC unavailable'));
@@ -315,7 +554,7 @@ describe('custody-transfer QR frontend', () => {
     );
     enterManualPayload();
     fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm receipt' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
 
     const refresh = await screen.findByRole('button', { name: 'Refresh status' });
     fireEvent.click(refresh);
@@ -332,10 +571,14 @@ describe('custody-transfer QR frontend', () => {
     render(
       <TransferQrScanner
         prepareConfirmation={vi.fn().mockResolvedValue({
-          chainId: 31_337,
-          data: '0x1234',
-          to: CONTRACT_ADDRESS,
-          value: '0x0',
+          action: 'CONFIRM_RECEIPT',
+          transaction: {
+            chainId: 31_337,
+            data: '0x1234',
+            to: CONTRACT_ADDRESS,
+            value: '0x0',
+          },
+          usableQuantity: '250',
         })}
         reader={reader()}
         refreshTransfer={vi.fn()}
@@ -345,7 +588,7 @@ describe('custody-transfer QR frontend', () => {
     );
     enterManualPayload();
     fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Confirm receipt' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
 
     expect(await screen.findByText(message)).toBeTruthy();
     expect(screen.getByText('Awaiting Receipt')).toBeTruthy();

@@ -2,7 +2,7 @@ import { useState, type ComponentProps } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { workspacePath } from './workspace-paths';
 import type { WorkspaceRole } from './workspace-navigation';
-import { AdminOverview, Applications, CompanyCredentials } from './admin';
+import { AdminOverview, Applications, CompanyCredentials, DiscrepancyManagement } from './admin';
 import AccessControlScreen from './admin/access-control/AccessControlPage';
 import AdminAuditReport from './admin/audit/AdminAuditReport';
 import {
@@ -63,6 +63,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     if (tab === 'applications') return <Applications />;
     if (tab === 'credentials') return <CompanyCredentials />;
     if (tab === 'accesscontrol') return <AccessControlScreen />;
+    if (tab === 'discrepancies') return <DiscrepancyManagement />;
     if (tab === 'audit') return <AdminAuditReport />;
   }
 

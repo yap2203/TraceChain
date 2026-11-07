@@ -14,16 +14,28 @@ function formatTimestamp(timestamp: number) {
 export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTransfer }) {
   const received = transfer.status === 2;
   const fields = [
-    { icon: PackageCheck, label: 'Product batch', value: 'Verified product batch' },
+    { icon: PackageCheck, label: 'Product', value: transfer.productName },
+    { icon: PackageCheck, label: 'Batch reference', value: transfer.productReference },
     { icon: WalletCards, label: 'Sender', value: transfer.senderName ?? 'Verified sender' },
     {
       icon: WalletCards,
       label: 'Recipient',
       value: transfer.recipientName ?? 'Verified recipient',
     },
-    { icon: Route, label: 'Quantity', value: transfer.quantity },
+    { icon: Route, label: 'Expected quantity', value: transfer.quantity },
     { icon: Clock3, label: 'Dispatch time', value: formatTimestamp(transfer.dispatchedAt) },
     { icon: Clock3, label: 'Expected arrival', value: formatTimestamp(transfer.expectedAt) },
+    ...(received
+      ? [
+          {
+            icon: Clock3,
+            label: 'Actual arrival',
+            value: transfer.actualArrivalAt
+              ? formatDateTime(transfer.actualArrivalAt)
+              : 'Not recorded',
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -31,14 +43,19 @@ export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTr
       <div className="resolved-transfer-heading">
         <div>
           <span>API verified</span>
-          <h3 id="resolved-transfer-title">
-            {received ? 'Custody transfer received' : 'Custody transfer found'}
-          </h3>
+          <h3 id="resolved-transfer-title">{heading(transfer.status)}</h3>
         </div>
         <strong className={received ? 'resolved-transfer-status-received' : undefined}>
-          {received ? 'Received' : 'Awaiting Receipt'}
+          {statusLabel(transfer.status)}
         </strong>
       </div>
+      {received && (
+        <div className="resolved-transfer-totals">
+          <span>Usable: {transfer.usable}</span>
+          <span>Damaged: {transfer.damaged}</span>
+          <span>Rejected: {transfer.rejected}</span>
+        </div>
+      )}
       <div className="resolved-transfer-grid">
         {fields.map(({ icon: Icon, label, value }) => (
           <div key={label} className="resolved-transfer-field">
@@ -58,11 +75,39 @@ export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTr
           { label: 'Recipient wallet', value: transfer.recipient },
         ]}
       />
-      <p className="resolved-transfer-readonly">
-        {received
-          ? 'The recipient confirmed this custody transfer on-chain.'
-          : 'QR verification was read-only. Confirmation requires a separate MetaMask transaction.'}
-      </p>
+      <p className="resolved-transfer-readonly">{statusDescription(transfer.status)}</p>
     </section>
   );
+}
+
+function formatDateTime(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
+function statusLabel(status: number) {
+  return (
+    ['Unknown', 'Awaiting Receipt', 'Received', 'Rejected', 'Cancelled', 'Discrepancy Reported'][
+      status
+    ] ?? 'Unknown'
+  );
+}
+
+function heading(status: number) {
+  if (status === 2) return 'Custody transfer received';
+  if (status === 3) return 'Custody transfer rejected';
+  if (status === 4) return 'Custody transfer cancelled';
+  if (status === 5) return 'Receipt discrepancy reported';
+  return 'Custody transfer found';
+}
+
+function statusDescription(status: number) {
+  if (status === 2) return 'The recipient confirmed this custody transfer on-chain.';
+  if (status === 3) return 'The intended recipient rejected this shipment on-chain.';
+  if (status === 4) return 'This transfer was cancelled and is no longer open for receipt.';
+  if (status === 5)
+    return 'Administrator review is required before the recipient can complete confirmation.';
+  return 'QR verification was read-only. Confirmation requires a separate MetaMask transaction.';
 }

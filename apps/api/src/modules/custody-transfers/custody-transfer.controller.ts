@@ -27,6 +27,34 @@ export class CustodyTransferController {
     );
   };
 
+  prepareRejection = async (request: Request, response: Response, next: NextFunction) => {
+    await this.respond(request, response, next, () =>
+      this.service.prepareRejection(this.session(request), request.body),
+    );
+  };
+
+  listDiscrepancies = async (request: Request, response: Response, next: NextFunction) => {
+    await this.respond(request, response, next, () =>
+      this.service.listDiscrepancies(this.session(request)),
+    );
+  };
+
+  prepareDiscrepancyResolution = async (
+    request: Request,
+    response: Response,
+    next: NextFunction,
+  ) => {
+    await this.respond(request, response, next, () =>
+      this.service.prepareDiscrepancyResolution(this.session(request), request.body),
+    );
+  };
+
+  getPrivateEvidence = async (request: Request, response: Response, next: NextFunction) => {
+    await this.respond(request, response, next, () =>
+      this.service.getPrivateEvidence(this.session(request), request.params),
+    );
+  };
+
   private session(request: Request) {
     return request.cookies?.[this.sessionCookieName] as string | undefined;
   }

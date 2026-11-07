@@ -1,4 +1,7 @@
 import { CompanyRole, encodeTransferQrPayload } from '@tracechain/shared';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Interface, getAddress } from 'ethers';
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,29 +14,40 @@ import {
   type CustodyTransferGateway,
 } from './custody-transfer.gateway.js';
 import { CustodyTransferService } from './custody-transfer.service.js';
+import {
+  InMemoryReceiptWorkflowRepository,
+  JsonReceiptWorkflowRepository,
+} from './custody-transfer.repository.js';
 import type { CustodyTransferRecord } from './custody-transfer.types.js';
 
 const CHAIN_ID = 31_337;
 const COOKIE_NAME = 'tracechain_session';
 const SESSION_ID = 'authorized-session';
 const WALLET_ONLY_SESSION_ID = 'wallet-only-session';
+const INACTIVE_SESSION_ID = 'inactive-session';
+const ADMIN_SESSION_ID = 'admin-session';
+const SENDER_SESSION_ID = 'sender-session';
 const NOW = new Date('2026-11-06T08:00:00.000Z');
 const RECIPIENT = getAddress('0x1000000000000000000000000000000000000001');
 const OTHER_WALLET = getAddress('0x2000000000000000000000000000000000000002');
 const SENDER = getAddress('0x3000000000000000000000000000000000000003');
+const ADMIN = getAddress('0x6000000000000000000000000000000000000006');
 const CUSTODY_TRANSFER_ADDRESS = getAddress('0x4000000000000000000000000000000000000004');
 const OTHER_CONTRACT_ADDRESS = getAddress('0x5000000000000000000000000000000000000005');
 const TRANSFER_ID = `0x${'11'.repeat(32)}` as const;
 const PRODUCT_BATCH_ID = `0x${'22'.repeat(32)}`;
 
 const awaitingTransfer: CustodyTransferRecord = {
+  damaged: 0n,
   dispatchedAt: 1_762_416_000n,
   expectedAt: 1_762_502_400n,
   productBatchId: PRODUCT_BATCH_ID,
   quantity: 250n,
   recipient: RECIPIENT,
+  rejected: 0n,
   sender: SENDER,
   status: 1,
+  usable: 0n,
 };
 
 describe('custody-transfer QR resolution API', () => {
@@ -42,7 +56,25 @@ describe('custody-transfer QR resolution API', () => {
   let prepareReceiptConfirmation: ReturnType<
     typeof vi.fn<CustodyTransferGateway['prepareReceiptConfirmation']>
   >;
+  let prepareDiscrepancyReport: ReturnType<
+    typeof vi.fn<CustodyTransferGateway['prepareDiscrepancyReport']>
+  >;
+  let prepareDiscrepancyResolution: ReturnType<
+    typeof vi.fn<CustodyTransferGateway['prepareDiscrepancyResolution']>
+  >;
+  let prepareRejection: ReturnType<typeof vi.fn<CustodyTransferGateway['prepareRejection']>>;
+  let getDiscrepancy: ReturnType<typeof vi.fn<CustodyTransferGateway['getDiscrepancy']>>;
+  let getReceiptEvidenceReference: ReturnType<
+    typeof vi.fn<CustodyTransferGateway['getReceiptEvidenceReference']>
+  >;
+  let getRejectionEvidenceReference: ReturnType<
+    typeof vi.fn<CustodyTransferGateway['getRejectionEvidenceReference']>
+  >;
+  let listDiscrepancies: ReturnType<typeof vi.fn<CustodyTransferGateway['listDiscrepancies']>>;
+  let encryptAndStore: ReturnType<typeof vi.fn>;
+  let decrypt: ReturnType<typeof vi.fn>;
   let sessionRepository: InMemorySessionRepository;
+  let receiptRepository: InMemoryReceiptWorkflowRepository;
 
   beforeEach(async () => {
     sessionRepository = new InMemorySessionRepository();
@@ -89,6 +121,39 @@ describe('custody-transfer QR resolution API', () => {
       expiresAt: new Date(NOW.getTime() + 28_800_000),
       id: WALLET_ONLY_SESSION_ID,
     });
+    await sessionRepository.save({
+      address: RECIPIENT,
+      createdAt: NOW,
+      expiresAt: new Date(NOW.getTime() + 28_800_000),
+      id: INACTIVE_SESSION_ID,
+      onChainAuthorization: {
+        checkedAt: NOW,
+        role: CompanyRole.DISTRIBUTOR,
+        status: 'REVOKED',
+      },
+    });
+    await sessionRepository.save({
+      address: ADMIN,
+      createdAt: NOW,
+      expiresAt: new Date(NOW.getTime() + 28_800_000),
+      id: ADMIN_SESSION_ID,
+      onChainAuthorization: {
+        checkedAt: NOW,
+        role: CompanyRole.SYSTEM_ADMIN,
+        status: 'AUTHORIZED',
+      },
+    });
+    await sessionRepository.save({
+      address: SENDER,
+      createdAt: NOW,
+      expiresAt: new Date(NOW.getTime() + 28_800_000),
+      id: SENDER_SESSION_ID,
+      onChainAuthorization: {
+        checkedAt: NOW,
+        role: CompanyRole.MANUFACTURER,
+        status: 'AUTHORIZED',
+      },
+    });
 
     getTransfer = vi.fn().mockResolvedValue(awaitingTransfer);
     prepareReceiptConfirmation = vi.fn().mockReturnValue({
@@ -97,10 +162,55 @@ describe('custody-transfer QR resolution API', () => {
       to: CUSTODY_TRANSFER_ADDRESS,
       value: '0x0',
     });
+    prepareDiscrepancyReport = vi.fn().mockReturnValue({
+      chainId: CHAIN_ID,
+      data: '0x5678',
+      to: CUSTODY_TRANSFER_ADDRESS,
+      value: '0x0',
+    });
+    prepareDiscrepancyResolution = vi.fn().mockReturnValue({
+      chainId: CHAIN_ID,
+      data: '0x9876',
+      to: CUSTODY_TRANSFER_ADDRESS,
+      value: '0x0',
+    });
+    prepareRejection = vi.fn().mockReturnValue({
+      chainId: CHAIN_ID,
+      data: '0xabcd',
+      to: CUSTODY_TRANSFER_ADDRESS,
+      value: '0x0',
+    });
+    getDiscrepancy = vi.fn().mockResolvedValue(null);
+    listDiscrepancies = vi.fn().mockResolvedValue([]);
+    decrypt = vi
+      .fn()
+      .mockImplementation(async (payload: { ciphertext: string }) =>
+        Buffer.from(payload.ciphertext, 'base64').toString('utf8'),
+      );
+    encryptAndStore = vi.fn().mockImplementation(async (serialized: string) => ({
+      cid: 'bafy-encrypted-receipt',
+      payload: {
+        algorithm: 'aes-256-gcm',
+        authTag: 'tag',
+        ciphertext: Buffer.from(serialized, 'utf8').toString('base64'),
+        iv: 'iv',
+        version: 1,
+      },
+    }));
+    getReceiptEvidenceReference = vi.fn().mockResolvedValue(null);
+    getRejectionEvidenceReference = vi.fn().mockResolvedValue(null);
     const gateway: CustodyTransferGateway = {
+      getDiscrepancy,
+      getReceiptEvidenceReference,
+      getRejectionEvidenceReference,
       getTransfer,
+      listDiscrepancies,
+      prepareDiscrepancyReport,
+      prepareDiscrepancyResolution,
       prepareReceiptConfirmation,
+      prepareRejection,
     };
+    receiptRepository = new InMemoryReceiptWorkflowRepository();
     const service = new CustodyTransferService({
       authService,
       configuration: () => ({
@@ -108,6 +218,17 @@ describe('custody-transfer QR resolution API', () => {
         contractAddress: CUSTODY_TRANSFER_ADDRESS,
       }),
       gateway,
+      contentStore: {
+        decrypt,
+        encryptAndStore,
+      },
+      productMetadata: {
+        product: vi.fn().mockResolvedValue({
+          name: 'Dark Chocolate Bar',
+          reference: 'CHOCOLATE-2026-050',
+        }),
+      },
+      receiptRepository,
     });
 
     app = createApp({ authService, custodyTransferService: service });
@@ -135,7 +256,14 @@ describe('custody-transfer QR resolution API', () => {
     return request(app)
       .post('/api/custody-transfers/transactions/confirm-receipt')
       .set('Cookie', `${COOKIE_NAME}=${sessionId}`)
-      .send({ transferId: TRANSFER_ID });
+      .send({
+        actualQuantity: '250',
+        damagedQuantity: '0',
+        evidence: [],
+        notes: '',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      });
   }
 
   it('rejects an unauthenticated request before resolving the QR', async () => {
@@ -150,6 +278,13 @@ describe('custody-transfer QR resolution API', () => {
 
   it('keeps existing credential and on-chain authorization rules enforced', async () => {
     const response = await resolve(qrPayload(), WALLET_ONLY_SESSION_ID).expect(403);
+
+    expect(response.body.error.code).toBe('ON_CHAIN_AUTHORIZATION_REQUIRED');
+    expect(getTransfer).not.toHaveBeenCalled();
+  });
+
+  it('rejects a recipient whose on-chain credential authorization is revoked', async () => {
+    const response = await prepare(INACTIVE_SESSION_ID).expect(403);
 
     expect(response.body.error.code).toBe('ON_CHAIN_AUTHORIZATION_REQUIRED');
     expect(getTransfer).not.toHaveBeenCalled();
@@ -207,13 +342,18 @@ describe('custody-transfer QR resolution API', () => {
 
     expect(response.body).toEqual({
       dispatchedAt: Number(awaitingTransfer.dispatchedAt),
+      damaged: '0',
       expectedAt: Number(awaitingTransfer.expectedAt),
       productBatchId: PRODUCT_BATCH_ID,
+      productName: 'Dark Chocolate Bar',
+      productReference: 'CHOCOLATE-2026-050',
       quantity: '250',
       recipient: RECIPIENT,
+      rejected: '0',
       sender: SENDER,
       status: 1,
       transferId: TRANSFER_ID,
+      usable: '0',
     });
     expect(getTransfer).toHaveBeenCalledOnce();
     expect(getTransfer).toHaveBeenCalledWith(TRANSFER_ID);
@@ -263,24 +403,26 @@ describe('custody-transfer QR resolution API', () => {
   it('returns an unsigned full-quantity receipt transaction without broadcasting it', async () => {
     const response = await prepare().expect(200);
 
-    expect(response.body).toEqual({
-      chainId: CHAIN_ID,
-      data: '0x1234',
-      to: CUSTODY_TRANSFER_ADDRESS,
-      value: '0x0',
+    expect(response.body).toMatchObject({
+      action: 'CONFIRM_RECEIPT',
+      usableQuantity: '250',
+      transaction: { chainId: CHAIN_ID, data: '0x1234', to: CUSTODY_TRANSFER_ADDRESS },
     });
     expect(prepareReceiptConfirmation).toHaveBeenCalledOnce();
     expect(prepareReceiptConfirmation).toHaveBeenCalledWith(
       expect.objectContaining({
         chainId: CHAIN_ID,
         contractAddress: CUSTODY_TRANSFER_ADDRESS,
+        damaged: 0n,
         quantity: awaitingTransfer.quantity,
+        receiptCid: 'bafy-encrypted-receipt',
+        rejected: 0n,
         transferId: TRANSFER_ID,
       }),
     );
   });
 
-  it('encodes confirmReceipt with the transfer quantity and no damage or receipt document', () => {
+  it('encodes the exact confirmReceipt transaction parameters', () => {
     const gateway = new EthersCustodyTransferGateway(
       CHAIN_ID,
       'http://127.0.0.1:8545',
@@ -290,8 +432,11 @@ describe('custody-transfer QR resolution API', () => {
     const prepared = gateway.prepareReceiptConfirmation({
       chainId: CHAIN_ID,
       contractAddress: CUSTODY_TRANSFER_ADDRESS,
+      damaged: 5n,
       quantity: awaitingTransfer.quantity,
+      receiptCid: 'bafy-receipt',
       receiptHash,
+      rejected: 3n,
       transferId: TRANSFER_ID,
     });
     const contractInterface = new Interface([
@@ -299,7 +444,7 @@ describe('custody-transfer QR resolution API', () => {
     ]);
     const decoded = contractInterface.decodeFunctionData('confirmReceipt', prepared.data);
 
-    expect([...decoded]).toEqual([TRANSFER_ID, 250n, 0n, 0n, receiptHash, '']);
+    expect([...decoded]).toEqual([TRANSFER_ID, 250n, 5n, 3n, receiptHash, 'bafy-receipt']);
     expect(prepared).toMatchObject({
       chainId: CHAIN_ID,
       to: CUSTODY_TRANSFER_ADDRESS,
@@ -317,5 +462,557 @@ describe('custody-transfer QR resolution API', () => {
 
     expect(response.body.status).toBe(2);
     expect(response.body.transferId).toBe(TRANSFER_ID);
+  });
+
+  it('prepares damaged and rejected receipt quantities with system-calculated usable inventory', async () => {
+    const response = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '250',
+        damagedQuantity: '10',
+        evidence: [],
+        notes: 'Ten cartons crushed',
+        rejectedQuantity: '5',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+
+    expect(response.body.usableQuantity).toBe('235');
+    expect(prepareReceiptConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ damaged: 10n, quantity: 250n, rejected: 5n }),
+    );
+    expect(encryptAndStore).toHaveBeenCalledOnce();
+    expect(encryptAndStore.mock.calls[0]?.[0]).toContain('Ten cartons crushed');
+    expect(encryptAndStore.mock.calls[0]?.[1]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    const persisted = await receiptRepository.list();
+    expect(persisted[0]?.payload).toEqual(expect.objectContaining({ algorithm: 'aes-256-gcm' }));
+    expect(persisted[0]?.schemaVersion).toBe(2);
+    expect(JSON.stringify(persisted)).not.toContain('Ten cartons crushed');
+  });
+
+  it('rejects negative or overlapping quantities', async () => {
+    const negative = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '-1',
+        damagedQuantity: '0',
+        evidence: [],
+        notes: '',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(400);
+    expect(negative.body.error.code).toBe('INVALID_RECEIPT');
+
+    const unsafe = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '9007199254740992',
+        damagedQuantity: '0',
+        evidence: [],
+        notes: '',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(400);
+    expect(unsafe.body.error.code).toBe('INVALID_RECEIPT');
+
+    const overlapping = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '10',
+        damagedQuantity: '8',
+        evidence: [],
+        notes: 'Checked',
+        rejectedQuantity: '3',
+        transferId: TRANSFER_ID,
+      })
+      .expect(400);
+    expect(overlapping.body.error.code).toBe('INVALID_RECEIPT_QUANTITIES');
+    expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['200', 'SHORTAGE', 1],
+    ['300', 'EXCESS', 2],
+  ])(
+    'reports an encrypted %s quantity mismatch instead of confirming receipt',
+    async (actualQuantity, discrepancyType, kind) => {
+      const response = await request(app)
+        .post('/api/custody-transfers/transactions/confirm-receipt')
+        .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+        .send({
+          actualQuantity,
+          damagedQuantity: '0',
+          evidence: [],
+          notes: 'Count differs from dispatch',
+          rejectedQuantity: '0',
+          transferId: TRANSFER_ID,
+        })
+        .expect(200);
+      expect(response.body).toMatchObject({ action: 'REPORT_DISCREPANCY', discrepancyType });
+      expect(prepareDiscrepancyReport).toHaveBeenCalledWith(
+        expect.objectContaining({ actualQuantity: BigInt(actualQuantity), kind }),
+      );
+      expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
+    },
+  );
+
+  it('does not prepare a transaction when encrypted evidence storage fails', async () => {
+    encryptAndStore.mockRejectedValueOnce(new Error('pinning unavailable'));
+    const response = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '250',
+        damagedQuantity: '0',
+        evidence: [{ dataBase64: 'aW1hZ2U=', mediaType: 'image/png' }],
+        notes: '',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(503);
+    expect(response.body.error.code).toBe('RECEIPT_STORAGE_UNAVAILABLE');
+    expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
+  });
+
+  it('encodes the exact reportDiscrepancy transaction parameters', () => {
+    const gateway = new EthersCustodyTransferGateway(
+      CHAIN_ID,
+      'http://127.0.0.1:8545',
+      CUSTODY_TRANSFER_ADDRESS,
+    );
+    const detailsHash = `0x${'66'.repeat(32)}`;
+    const prepared = gateway.prepareDiscrepancyReport({
+      actualQuantity: 200n,
+      chainId: CHAIN_ID,
+      contractAddress: CUSTODY_TRANSFER_ADDRESS,
+      detailsHash,
+      evidenceCid: 'bafy-encrypted-discrepancy',
+      kind: 1,
+      transferId: TRANSFER_ID,
+    });
+    const contractInterface = new Interface([
+      'function reportDiscrepancy(bytes32,uint8,uint256,bytes32,string)',
+    ]);
+
+    expect([...contractInterface.decodeFunctionData('reportDiscrepancy', prepared.data)]).toEqual([
+      TRANSFER_ID,
+      1n,
+      200n,
+      detailsHash,
+      'bafy-encrypted-discrepancy',
+    ]);
+  });
+
+  it('makes identical receipt retries idempotent and preserves corrected drafts', async () => {
+    const [first, second] = await Promise.all([prepare(), prepare()]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(encryptAndStore).toHaveBeenCalledOnce();
+
+    const corrected = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '250',
+        damagedQuantity: '1',
+        evidence: [],
+        notes: 'Changed after preparation',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+
+    expect(corrected.body.action).toBe('CONFIRM_RECEIPT');
+    expect(encryptAndStore).toHaveBeenCalledTimes(2);
+    const drafts = await receiptRepository.list();
+    expect(drafts).toHaveLength(2);
+    expect(new Set(drafts.map((draft) => draft.contentHash)).size).toBe(2);
+  });
+
+  it('matches a confirmed receipt to its authoritative hash and CID', async () => {
+    const firstArrival = '2026-11-06T09:00:00.000Z';
+    const correctedArrival = '2026-11-06T09:30:00.000Z';
+    for (const [actualArrivalAt, notes] of [
+      [firstArrival, 'First draft'],
+      [correctedArrival, 'Corrected after MetaMask cancellation'],
+    ]) {
+      await request(app)
+        .post('/api/custody-transfers/transactions/confirm-receipt')
+        .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+        .send({
+          actualArrivalAt,
+          actualQuantity: '250',
+          damagedQuantity: '0',
+          evidence: [],
+          notes,
+          rejectedQuantity: '0',
+          transferId: TRANSFER_ID,
+        })
+        .expect(200);
+    }
+    const drafts = await receiptRepository.list();
+    const corrected = drafts.find((draft) =>
+      Buffer.from(draft.payload.ciphertext, 'base64')
+        .toString('utf8')
+        .includes('Corrected after MetaMask cancellation'),
+    )!;
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 2 });
+    getReceiptEvidenceReference.mockResolvedValue({
+      cid: corrected.cid,
+      contentHash: corrected.contentHash,
+    });
+
+    for (const sessionId of [SESSION_ID, SENDER_SESSION_ID, ADMIN_SESSION_ID]) {
+      const summary = await request(app)
+        .get(`/api/custody-transfers/${TRANSFER_ID}`)
+        .set('Cookie', `${COOKIE_NAME}=${sessionId}`)
+        .expect(200);
+      expect(summary.body.actualArrivalAt).toBe(correctedArrival);
+    }
+    const evidence = await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(200);
+    expect(evidence.body.privateDetails.notes).toBe('Corrected after MetaMask cancellation');
+
+    getReceiptEvidenceReference.mockResolvedValue({
+      cid: 'bafy-unrelated',
+      contentHash: corrected.contentHash,
+    });
+    await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(404);
+  });
+
+  it('returns an honest missing actual-arrival state after confirmation', async () => {
+    await prepare().expect(200);
+    const receipt = (await receiptRepository.list())[0]!;
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 2 });
+    getReceiptEvidenceReference.mockResolvedValue({
+      cid: receipt.cid,
+      contentHash: receipt.contentHash,
+    });
+
+    const response = await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}`)
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(200);
+
+    expect(response.body.actualArrivalAt).toBeNull();
+  });
+
+  it('matches discrepancy evidence to the authoritative discrepancy hash and CID', async () => {
+    for (const [actualQuantity, notes] of [
+      ['200', 'Initial shortage count'],
+      ['190', 'Corrected shortage count'],
+    ]) {
+      await request(app)
+        .post('/api/custody-transfers/transactions/confirm-receipt')
+        .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+        .send({
+          actualQuantity,
+          damagedQuantity: '0',
+          evidence: [],
+          notes,
+          rejectedQuantity: '0',
+          transferId: TRANSFER_ID,
+        })
+        .expect(200);
+    }
+    const drafts = await receiptRepository.list();
+    const corrected = drafts.find((draft) =>
+      Buffer.from(draft.payload.ciphertext, 'base64')
+        .toString('utf8')
+        .includes('Corrected shortage count'),
+    )!;
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 5 });
+    getDiscrepancy.mockResolvedValue({
+      actualQuantity: 190n,
+      detailsHash: corrected.contentHash,
+      evidenceCid: corrected.cid,
+      expectedQuantity: 250n,
+      kind: 1,
+      reportedAt: 1_762_416_500,
+      resolved: false,
+      transferId: TRANSFER_ID,
+    });
+
+    const response = await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(200);
+
+    expect(response.body.privateDetails.notes).toBe('Corrected shortage count');
+  });
+
+  it('matches rejected-shipment evidence to the authoritative reason hash', async () => {
+    for (const reason of ['Initial rejection reason', 'Corrected rejection reason']) {
+      await request(app)
+        .post('/api/custody-transfers/transactions/reject')
+        .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+        .send({
+          evidence: [],
+          reason,
+          reasonType: 'WRONG_PRODUCT',
+          transferId: TRANSFER_ID,
+        })
+        .expect(200);
+    }
+    const drafts = await receiptRepository.list();
+    const corrected = drafts.find((draft) =>
+      Buffer.from(draft.payload.ciphertext, 'base64')
+        .toString('utf8')
+        .includes('Corrected rejection reason'),
+    )!;
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 3 });
+    getRejectionEvidenceReference.mockResolvedValue({ contentHash: corrected.contentHash });
+
+    const response = await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(200);
+
+    expect(response.body.privateDetails.reason).toBe('Corrected rejection reason');
+  });
+
+  it('prevents corrected preparation after the transfer is finalized', async () => {
+    await prepare().expect(200);
+    const storedDrafts = await receiptRepository.list();
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 2 });
+
+    const response = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '250',
+        damagedQuantity: '1',
+        evidence: [],
+        notes: 'Too late to correct',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(409);
+
+    expect(response.body.error.code).toBe('TRANSFER_NOT_AWAITING_RECEIPT');
+    expect(await receiptRepository.list()).toEqual(storedDrafts);
+    expect(encryptAndStore).toHaveBeenCalledOnce();
+  });
+
+  it('reads legacy single-record JSON and preserves it when adding a versioned draft', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tracechain-receipts-'));
+    const filePath = join(directory, 'custody-receipts.json');
+    const legacy = {
+      actor: RECIPIENT,
+      cid: 'bafy-legacy',
+      contentHash: `0x${'88'.repeat(32)}`,
+      createdAt: NOW.toISOString(),
+      kind: 'RECEIPT' as const,
+      payload: {
+        algorithm: 'aes-256-gcm' as const,
+        authTag: 'tag',
+        ciphertext: 'ciphertext',
+        iv: 'iv',
+        version: 1 as const,
+      },
+      transferId: TRANSFER_ID,
+    };
+    await writeFile(filePath, JSON.stringify({ [TRANSFER_ID.toLowerCase()]: legacy }));
+    try {
+      const repository = new JsonReceiptWorkflowRepository(filePath);
+      expect((await repository.list())[0]?.schemaVersion).toBe(1);
+      await repository.save({
+        ...legacy,
+        cid: 'bafy-version-two',
+        contentHash: `0x${'99'.repeat(32)}`,
+        schemaVersion: 2,
+      });
+      const stored = JSON.parse(await readFile(filePath, 'utf8')) as Record<string, unknown>;
+      expect(Object.keys(stored)).toHaveLength(2);
+      expect(await repository.list()).toHaveLength(2);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it('prepares a complete rejection without recording usable inventory', async () => {
+    const response = await request(app)
+      .post('/api/custody-transfers/transactions/reject')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        evidence: [],
+        reason: 'The delivered product does not match the manifest.',
+        reasonType: 'WRONG_PRODUCT',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+
+    expect(response.body.action).toBe('REJECT_TRANSFER');
+    expect(prepareRejection).toHaveBeenCalledOnce();
+    expect(prepareReceiptConfirmation).not.toHaveBeenCalled();
+  });
+
+  it('restricts decrypted receipt evidence to transfer participants and System Admin', async () => {
+    await prepare().expect(200);
+    const receipt = (await receiptRepository.list())[0]!;
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 2 });
+    getReceiptEvidenceReference.mockResolvedValue({
+      cid: receipt.cid,
+      contentHash: receipt.contentHash,
+    });
+
+    await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(200);
+    await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=${ADMIN_SESSION_ID}`)
+      .expect(200);
+    await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=${SENDER_SESSION_ID}`)
+      .expect(200);
+
+    await sessionRepository.save({
+      address: OTHER_WALLET,
+      createdAt: NOW,
+      expiresAt: new Date(NOW.getTime() + 28_800_000),
+      id: 'authorized-outsider',
+      onChainAuthorization: {
+        checkedAt: NOW,
+        role: CompanyRole.RETAILER,
+        status: 'AUTHORIZED',
+      },
+    });
+    const outsider = await request(app)
+      .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+      .set('Cookie', `${COOKIE_NAME}=authorized-outsider`)
+      .expect(403);
+
+    expect(outsider.body.error.code).toBe('TRANSFER_PARTICIPANT_REQUIRED');
+  });
+
+  it('lists real discrepancy records only for an authorized System Admin', async () => {
+    await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '200',
+        damagedQuantity: '0',
+        evidence: [],
+        notes: 'Counted at receiving bay.',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+    const discrepancyDraft = (await receiptRepository.list()).find(
+      (record) => record.kind === 'DISCREPANCY',
+    )!;
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 5 });
+    listDiscrepancies.mockResolvedValue([
+      {
+        actualQuantity: 200n,
+        detailsHash: discrepancyDraft.contentHash,
+        evidenceCid: discrepancyDraft.cid,
+        expectedQuantity: 250n,
+        kind: 1,
+        reportedAt: 1_762_416_500,
+        resolved: false,
+        transferId: TRANSFER_ID,
+      },
+    ]);
+
+    await request(app)
+      .get('/api/custody-transfers/discrepancies')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .expect(403);
+    const response = await request(app)
+      .get('/api/custody-transfers/discrepancies')
+      .set('Cookie', `${COOKIE_NAME}=${ADMIN_SESSION_ID}`)
+      .expect(200);
+
+    expect(response.body.discrepancies[0]).toMatchObject({
+      actualQuantity: '200',
+      discrepancyType: 'SHORTAGE',
+      expectedQuantity: '250',
+      privateDetails: { notes: 'Counted at receiving bay.' },
+      status: 5,
+    });
+  });
+
+  it.each([
+    [true, 'ACCEPT_ACTUAL'],
+    [false, 'CANCEL_TRANSFER'],
+  ])('prepares an unsigned administrator resolution (%s)', async (acceptActual, decision) => {
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 5 });
+    getDiscrepancy.mockResolvedValue({
+      actualQuantity: 200n,
+      detailsHash: `0x${'77'.repeat(32)}`,
+      evidenceCid: 'bafy-encrypted-discrepancy',
+      expectedQuantity: 250n,
+      kind: 1,
+      reportedAt: 1_762_416_500,
+      resolved: false,
+      transferId: TRANSFER_ID,
+    });
+
+    const response = await request(app)
+      .post('/api/custody-transfers/transactions/resolve-discrepancy')
+      .set('Cookie', `${COOKIE_NAME}=${ADMIN_SESSION_ID}`)
+      .send({
+        acceptActual,
+        reason: 'Verified against warehouse receiving records.',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ actorWallet: ADMIN, decision });
+    expect(prepareDiscrepancyResolution).toHaveBeenCalledWith(
+      expect.objectContaining({ acceptActual, transferId: TRANSFER_ID }),
+    );
+  });
+
+  it('allows a separate recipient confirmation after an accepted discrepancy', async () => {
+    await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '200',
+        damagedQuantity: '0',
+        evidence: [],
+        notes: 'Shortage confirmed.',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, quantity: 200n, status: 1 });
+
+    const response = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '200',
+        damagedQuantity: '5',
+        evidence: [],
+        notes: 'Adjusted quantity accepted by administrator.',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+
+    expect(response.body).toMatchObject({ action: 'CONFIRM_RECEIPT', usableQuantity: '195' });
+    expect(encryptAndStore).toHaveBeenCalledTimes(2);
+    expect(prepareReceiptConfirmation).toHaveBeenCalledWith(
+      expect.objectContaining({ damaged: 5n, quantity: 200n, rejected: 0n }),
+    );
   });
 });

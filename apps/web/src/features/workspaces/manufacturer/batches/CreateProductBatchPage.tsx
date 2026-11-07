@@ -6,6 +6,7 @@ import {
   type ProductionIngredient,
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import { ProductQrDisplay } from '../../../product-traceability';
 import { Alert, Badge, Btn, Card, Input, T } from '../../shared/ui';
 import { shortChainId } from '../../shared/operational-format';
 
@@ -21,6 +22,11 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [expiresAt, setExpiresAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [createdProduct, setCreatedProduct] = useState<{
+    batchId: string;
+    batchReference: string;
+    productName: string;
+  }>();
 
   useEffect(() => {
     void listProductionIngredients()
@@ -34,29 +40,58 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     .filter(([, amount]) => /^[1-9]\d*$/.test(amount))
     .map(([batchId, amount]) => ({ batchId, quantity: amount }));
   const submit = async () => {
+    const submittedProductName = productName.trim();
+    const submittedBatchReference = batchReference.trim();
     setBusy(true);
     setError('');
     try {
-      await completePreparedWorkflow(() =>
+      const result = await completePreparedWorkflow(() =>
         prepareProduct({
-          batchReference,
+          batchReference: submittedBatchReference,
           category,
           expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
           ingredientLinks: links,
-          privateMetadata: { productName, category },
+          privateMetadata: { productName: submittedProductName, category },
           producedAt: new Date(`${producedAt}T00:00:00`).toISOString(),
-          productName,
+          productName: submittedProductName,
           quantity,
           unit,
         }),
       );
-      onBack();
+      if ('batchId' in result && typeof result.batchId === 'string') {
+        setCreatedProduct({
+          batchId: result.batchId,
+          batchReference: submittedBatchReference,
+          productName: submittedProductName,
+        });
+      } else {
+        throw new Error('The confirmed product did not include its on-chain batch ID.');
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Product creation failed.');
     } finally {
       setBusy(false);
     }
   };
+
+  if (createdProduct) {
+    return (
+      <div style={{ maxWidth: 820 }}>
+        <Alert
+          type="success"
+          message="Product creation was verified on chain. Its permanent traceability QR is ready."
+        />
+        <Card>
+          <ProductQrDisplay
+            batchId={createdProduct.batchId}
+            batchReference={createdProduct.batchReference}
+            productName={createdProduct.productName}
+          />
+        </Card>
+        <Btn onClick={onBack}>Done</Btn>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 820 }}>

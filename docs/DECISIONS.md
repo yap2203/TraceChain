@@ -144,12 +144,23 @@ packages/contracts/contracts/
 - For local custody testing, seed only already-deployed chain-31337 contracts with unlocked Hardhat accounts; require the recipient Distributor to be independently onboarded and credential-authorized, and never load a private key in the seed command.
 - Revalidate the authorized SIWE recipient and current transfer state before returning unsigned `confirmReceipt` calldata. Keep signing and broadcasting exclusively in the recipient's MetaMask, wait for its receipt, and refresh the authoritative contract record before showing `Received`.
 
+## Product traceability QR locator
+
+- Keep the permanent product QR separate from the one-time custody-transfer receipt QR. Use the canonical HTTPS path `{publicAppUrl}/trace/product?v=1&chainId={chainId}&registry={productRegistryAddress}&batchId={batchId}` so a normal phone camera can open the deployed application.
+- Limit the QR to version, configured chain ID, configured ProductRegistry address, and an existing `bytes32` product batch ID. Reject missing, duplicated, unknown, malformed, wrong-chain, and wrong-registry values; QR input must never select an RPC endpoint.
+- Resolve product state, ingredient links, credential status, custody events, and company display names through configured read-only services. Public responses are privacy-minimized; only an authenticated authorized session receives additional technical identifiers, wallets, quantities, and transaction hashes.
+- Never return complete credentials, confidential claims, encrypted content, CIDs, keys, or private documents from product tracing. Product scanning is read-only and must not call or prepare receipt confirmation.
+- Describe a successful result as a verified blockchain traceability record, not proof that the physical product is genuine.
+
 ## Credential and evidence storage
 
 - Use the existing issued Ingredient Credential repository as the only source for Supplier evidence responses; never accept a browser-submitted credential ID or credential body for evidence acceptance.
 - Bind every evidence presentation to a cryptographically random server-generated request challenge, encrypt the complete VP before IPFS upload, and verify the presentation, nested credential, batch, issuer, credential ID/hash, dates, on-chain credential state, and Supplier authorization before preparing acceptance calldata.
 - Present the complete JWT Ingredient Credential in Phase 6. JWT selective disclosure is not supported and must not be claimed in the UI or documentation.
 - Persist only ignored recovery metadata for evidence/product/transfer preparation so rejected or interrupted MetaMask writes can resume without generating different content or calldata inputs.
+- Store receipt preparations as versioned, content-hash-addressed encrypted drafts. Reuse exact retries, preserve corrected drafts without overwriting earlier encrypted content while the transfer is still `AwaitingReceipt`, and reject further preparation after finalization.
+- Resolve finalized private receipt content only by the authoritative contract reference: receipt hash plus CID for `ReceiptConfirmed`, details hash plus CID for discrepancies, and reason hash for direct rejection. Never select a draft merely because it is newest.
+- Keep recorded actual-arrival time inside matched private receipt metadata. Return it only to a currently authorized sender, recipient, or System Admin, and never through public product traceability.
 - Prepare evidence, product, and transfer writes in the API, but keep every transaction signature and broadcast in the authenticated stakeholder's MetaMask.
 - For Distributor-to-Retailer custody, derive selectable products from positive received `CustodyTransfer` inventory, resolve recipients through the verified stakeholder directory, retain the Retailer wallet only as the internal transaction recipient, encrypt shipment references and handling notes, and expose the real QR only after `getTransfer` verifies the mined `AwaitingReceipt` record.
 
@@ -185,6 +196,7 @@ Record CID, integrity hash, and status on Ethereum
 - Present Browser extension and Mobile QR tabs so the user explicitly selects the transport. Clear only MetaMask Connect's persisted transport-choice marker before a mobile connection so an earlier extension choice cannot override the QR tab, while preserving the existing SIWE proof flow.
 - Access nonce and session storage through repository interfaces.
 - Use development-only, in-memory nonce and session repository implementations for the current demonstration.
+- Use fixed, non-secret chain-31337 public defaults only in Vite `test` mode so frontend tests do not depend on a developer's ignored `.env`; production and development modes continue using validated repository configuration.
 - Keep authentication state short-lived.
 - Recheck on-chain role and revocation state before sensitive operations.
 - Document that in-memory state disappears after an API restart and cannot support multiple API instances without shared transient storage or a different token design.

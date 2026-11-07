@@ -1,4 +1,12 @@
+import { useEffect, useState } from 'react';
+
 import { useOperationalData } from '../../../blockchain/useOperationalData';
+import {
+  createProductQrPayload,
+  ProductQrDisplay,
+  resolveProductTraceability,
+  type ProductTraceabilityResponse,
+} from '../../../product-traceability';
 import {
   Alert,
   Badge,
@@ -23,6 +31,25 @@ export function ProductBatchDetail({
 }) {
   const { data, error, loading } = useOperationalData();
   const p = data.productBatches.find((x) => x.batchId === batchId);
+  const productBatchId = p?.batchId;
+  const [traceability, setTraceability] = useState<ProductTraceabilityResponse>();
+
+  useEffect(() => {
+    let active = true;
+    setTraceability(undefined);
+    if (!productBatchId) return () => undefined;
+    void resolveProductTraceability(createProductQrPayload(productBatchId))
+      .then((result) => {
+        if (active) setTraceability(result);
+      })
+      .catch(() => {
+        // The contract record remains usable when optional readable metadata is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, [productBatchId]);
+
   if (error) return <Alert type="error" message={error} />;
   if (loading) return <div>Reading ProductRegistry…</div>;
   if (!p)
@@ -33,13 +60,18 @@ export function ProductBatchDetail({
         sub="This product is not available to the authenticated wallet."
       />
     );
+  const productName = traceability?.product.name ?? 'Registered product';
+  const batchReference = traceability?.product.reference ?? 'Batch reference unavailable';
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
         <Btn variant="ghost" size="sm" onClick={onBack}>
           Back
         </Btn>
-        <h2 style={{ margin: 0, color: T.navy, flex: 1 }}>Product batch</h2>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, color: T.navy }}>{productName}</h2>
+          <div style={{ color: T.text2, fontSize: 12, marginTop: 3 }}>{batchReference}</div>
+        </div>
         <Badge
           label={recordStatuses[p.status] ?? 'Unknown'}
           variant={p.status === 1 ? 'active' : 'pending'}
@@ -67,6 +99,13 @@ export function ProductBatchDetail({
             { label: 'Metadata hash', value: p.metadataHash },
             { label: 'Public CID', value: p.publicCid },
           ]}
+        />
+      </Card>
+      <Card>
+        <ProductQrDisplay
+          batchId={p.batchId}
+          batchReference={batchReference}
+          productName={productName}
         />
       </Card>
       <Card>

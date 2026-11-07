@@ -67,6 +67,7 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 | `EVIDENCE_REGISTRY_ADDRESS`      | Address placeholder      | Deployed evidence registry            |
 | `PRODUCT_REGISTRY_ADDRESS`       | Address placeholder      | Deployed product registry             |
 | `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract    |
+| `VITE_PUBLIC_APP_URL`            | `http://localhost:5173`  | Canonical public product-QR origin    |
 | `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                   |
 | `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds           |
 | `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider    |
@@ -81,6 +82,9 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 
 The root template also contains `DEV_DISTRIBUTOR_WALLET` for the chain-31337 seed command. It is a
 public unlocked Hardhat address consumed by the CLI, not an API runtime secret.
+
+For deployed product labels, `VITE_PUBLIC_APP_URL` must be the externally reachable HTTPS
+application origin. Its URL parameters never choose the API's RPC endpoint.
 
 SSI variables are loaded lazily when an SSI operation needs them. Blockchain RPC and registry configuration are required for direct login authorization, although injected SIWE unit tests do not require a live chain. The API and frontend both use `CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. The example KMS value and zero addresses intentionally fail SSI operations or command validation. Never provide or store the Admin wallet private key.
 
@@ -207,26 +211,84 @@ Requires a SIWE session currently authorized against the blockchain registries. 
 
 The API verifies the configured chain and `CUSTODY_TRANSFER_ADDRESS`, reads
 `getTransfer(transferId)`, requires status `1` (`AwaitingReceipt`), and requires the SIWE wallet to
-equal the on-chain recipient. A successful response contains only `transferId`, `productBatchId`,
-`sender`, `recipient`, string `quantity`, `dispatchedAt`, `expectedAt`, and numeric `status`.
+equal the on-chain recipient. A successful response contains the safe transfer fields plus readable
+product/company presentation and current usable, damaged, and rejected totals. Technical IDs and
+wallets are kept in the frontend's collapsed Technical details.
 
 Resolution is read-only. It does not call `confirmReceipt`, prepare a transaction, or change
 custody. The frontend supports canonical QR generation plus camera, image-file, and manual-paste
 scanning.
 
+### `POST /api/product-traceability/resolve`
+
+Accepts a canonical product link in `{ "qrPayload": "https://.../trace/product?..." }`. It is a
+safely public, read-only endpoint and always resolves through the server-configured chain,
+ProductRegistry, IngredientRegistry, CredentialRegistry, and CustodyTransfer gateways. It rejects
+malformed or non-canonical parameters, a different application origin, chain, or ProductRegistry,
+and unknown products.
+
+The public response contains readable product and ingredient references, lifecycle and credential
+verification summaries, verified stakeholder company names, current custody organisation, and a
+chronological custody timeline. It excludes quantities, credential IDs, wallets, transaction hashes,
+complete credentials, private claims, CIDs, encrypted content, keys, and private documents. If the
+request includes an existing fully authorized session cookie, the response may add those permitted
+technical IDs, wallets, quantities, and transaction hashes under a separate `technical` object.
+Resolution never prepares or submits a transaction and never confirms receipt.
+
 ### `POST /api/custody-transfers/transactions/confirm-receipt`
 
-Requires the same fully authorized SIWE session and accepts a `bytes32` transfer ID. The service
-re-reads the transfer and rechecks `AwaitingReceipt` plus the intended-recipient wallet before
-returning unsigned `confirmReceipt` calldata. It never signs or broadcasts a transaction. The
-current local workflow confirms the full transfer quantity with zero damaged/rejected units and no
-receipt CID.
+Requires the fully authorized intended-recipient SIWE session. The request includes `transferId`,
+`actualQuantity`, `damagedQuantity`, `rejectedQuantity`, optional ISO `actualArrivalAt`, receipt
+`notes`, and up to three optional PNG/JPEG/WebP/PDF evidence envelopes. Quantities are non-negative
+safe-integer strings and damaged plus rejected cannot exceed actual.
+
+The service re-reads the transfer, rechecks current authorization and `AwaitingReceipt`, calculates
+usable quantity, deterministically serializes the private metadata, encrypts it through the
+injectable content store, and persists only its encrypted envelope and CID in ignored workflow
+metadata. Drafts are keyed by transfer, action kind, and deterministic content hash; exact retries
+reuse a draft and corrected input creates a new schema-version-2 draft without overwriting earlier
+content. Storage must succeed before a transaction is prepared. If actual equals expected, the
+response contains action `CONFIRM_RECEIPT`, usable quantity, and unsigned `confirmReceipt` calldata.
+If actual differs, notes are required and the response contains action `REPORT_DISCREPANCY`,
+`SHORTAGE` or `EXCESS`, usable quantity, and unsigned `reportDiscrepancy` calldata. The API never
+signs or broadcasts.
+
+### `POST /api/custody-transfers/transactions/reject`
+
+Requires the authorized intended recipient and an `AwaitingReceipt` transfer. It encrypts the
+rejection reason/type and optional evidence before returning unsigned `reject` calldata. The
+current contract accepts a reason hash but not an evidence CID, so encrypted rejection evidence is
+resolved through the authorized off-chain repository and is not placed on-chain.
+
+### `GET /api/custody-transfers/discrepancies`
+
+Requires current System Admin authorization. It combines real `DiscrepancyReported` events,
+`getDiscrepancy`, `getTransfer`, product metadata, stakeholder display names, and decrypted private
+details available to that Admin. Wallets, hashes, CIDs, and transfer IDs are returned in a separate
+`technical` object for collapsed presentation.
+
+### `POST /api/custody-transfers/transactions/resolve-discrepancy`
+
+Requires current System Admin authorization, an unresolved discrepancy, a decision, and a reason.
+It returns unsigned `resolveDiscrepancy` calldata. Accepting the actual quantity returns the contract
+to `AwaitingReceipt`; it does not confirm receipt. Rejecting the discrepancy cancels the transfer
+and releases reserved sender inventory according to the contract.
+
+### `GET /api/custody-transfers/:transferId/evidence`
+
+Requires current authorization and restricts access to the transfer sender, recipient, or System
+Admin. It decrypts only the workflow record matching the authoritative on-chain receipt hash/CID,
+discrepancy hash/CID, or rejection reason hash. It never returns a superseded draft, an encryption
+key, or plaintext content to public product traceability.
 
 ### `GET /api/custody-transfers/:transferId`
 
 Requires the authorized intended-recipient session and returns the same minimal safe transfer
-summary. The frontend uses this endpoint after the MetaMask transaction receipt to confirm that the
-contract now reports status `2` (`Received`).
+summary. The frontend uses this endpoint after MetaMask mining to confirm `Received`, `Rejected`,
+or `DiscrepancyReported`, and reloads operational inventory. After an Admin accepts a discrepancy,
+the recipient uses the same endpoint and performs a separate final confirmation. For a confirmed
+transfer, a currently authorized sender, recipient, or System Admin also receives the actual-arrival
+time from the private record matching `ReceiptConfirmed`; a missing value is returned as `null`.
 
 ## Authentication boundary
 

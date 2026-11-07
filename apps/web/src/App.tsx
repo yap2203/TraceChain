@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 
 import LoginPage from './features/auth/LoginPage';
 import { RegisterCompanyPage } from './features/registration/RegisterCompanyPage';
+import { ProductTraceabilityPage } from './features/product-traceability';
 
 const WorkspaceApp = lazy(() => import('./features/workspaces/WorkspaceApp'));
 
@@ -13,6 +14,7 @@ function App() {
       <Route path="/" element={<Navigate replace to="/login" />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register-company" element={<RegisterCompanyPage />} />
+      <Route path="/trace/product" element={<ProductTraceabilityPage />} />
 
       {(['admin', 'supplier', 'manufacturer', 'distributor', 'retailer'] as const).map((role) => (
         <Route
