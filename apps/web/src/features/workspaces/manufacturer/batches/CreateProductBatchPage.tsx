@@ -22,7 +22,11 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [expiresAt, setExpiresAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [createdBatchId, setCreatedBatchId] = useState('');
+  const [createdProduct, setCreatedProduct] = useState<{
+    batchId: string;
+    batchReference: string;
+    productName: string;
+  }>();
 
   useEffect(() => {
     void listProductionIngredients()
@@ -36,24 +40,30 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     .filter(([, amount]) => /^[1-9]\d*$/.test(amount))
     .map(([batchId, amount]) => ({ batchId, quantity: amount }));
   const submit = async () => {
+    const submittedProductName = productName.trim();
+    const submittedBatchReference = batchReference.trim();
     setBusy(true);
     setError('');
     try {
       const result = await completePreparedWorkflow(() =>
         prepareProduct({
-          batchReference,
+          batchReference: submittedBatchReference,
           category,
           expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
           ingredientLinks: links,
-          privateMetadata: { productName, category },
+          privateMetadata: { productName: submittedProductName, category },
           producedAt: new Date(`${producedAt}T00:00:00`).toISOString(),
-          productName,
+          productName: submittedProductName,
           quantity,
           unit,
         }),
       );
       if ('batchId' in result && typeof result.batchId === 'string') {
-        setCreatedBatchId(result.batchId);
+        setCreatedProduct({
+          batchId: result.batchId,
+          batchReference: submittedBatchReference,
+          productName: submittedProductName,
+        });
       } else {
         throw new Error('The confirmed product did not include its on-chain batch ID.');
       }
@@ -64,7 +74,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     }
   };
 
-  if (createdBatchId) {
+  if (createdProduct) {
     return (
       <div style={{ maxWidth: 820 }}>
         <Alert
@@ -72,7 +82,11 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           message="Product creation was verified on chain. Its permanent traceability QR is ready."
         />
         <Card>
-          <ProductQrDisplay batchId={createdBatchId} />
+          <ProductQrDisplay
+            batchId={createdProduct.batchId}
+            batchReference={createdProduct.batchReference}
+            productName={createdProduct.productName}
+          />
         </Card>
         <Btn onClick={onBack}>Done</Btn>
       </div>

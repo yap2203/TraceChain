@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ resolve: vi.fn() }));
@@ -10,6 +10,7 @@ vi.mock('./product-traceability.api', async (importOriginal) => {
 });
 
 import type { TransferQrReader } from '../custody-transfers/qr-reader';
+import { ProductQrDisplay } from './ProductQrDisplay';
 import { ProductTraceabilityPage } from './ProductTraceabilityPage';
 import { createProductQrModel, createProductQrPayload, productQrPngFilename } from './product-qr';
 import { ProductTraceabilityApiError } from './product-traceability.api';
@@ -77,7 +78,31 @@ describe('product traceability QR and page', () => {
     const model = createProductQrModel(BATCH_ID, configuration);
     expect(model.payload).toBe(PAYLOAD);
     expect(model.modules.length).toBeGreaterThan(20);
-    expect(productQrPngFilename(BATCH_ID)).toBe('tracechain-product-11111111.png');
+    expect(productQrPngFilename('CHOCOLATE-2026-050')).toBe(
+      'tracechain-product-CHOCOLATE-2026-050.png',
+    );
+    expect(model.payload).not.toContain('Dark Chocolate Bar');
+    expect(model.payload).not.toContain('CHOCOLATE-2026-050');
+  });
+
+  it('renders a printable name-first label without presenting the technical batch ID', () => {
+    render(
+      <ProductQrDisplay
+        batchId={BATCH_ID}
+        batchReference="CHOCOLATE-2026-050"
+        configuration={{
+          chainId: 31_337,
+          productRegistryAddress: REGISTRY,
+          publicAppUrl: 'https://tracechain.example',
+        }}
+        productName="Dark Chocolate Bar"
+      />,
+    );
+    const label = screen.getByRole('region', { name: 'Product Traceability QR' });
+    expect(within(label).getByText('Dark Chocolate Bar')).toBeTruthy();
+    expect(within(label).getByText('CHOCOLATE-2026-050')).toBeTruthy();
+    expect(within(label).getByText(/scan with a phone camera/i)).toBeTruthy();
+    expect(label.textContent).not.toContain(BATCH_ID);
   });
 
   it('submits a manual product link and displays verified real data and technical details', async () => {
@@ -90,9 +115,29 @@ describe('product traceability QR and page', () => {
     expect(screen.getByText('FreshMart Retail Sdn. Bhd.')).toBeTruthy();
     expect(screen.getByText('ABC Ingredients Sdn. Bhd.')).toBeTruthy();
     expect(screen.getByText('Technical details')).toBeTruthy();
+    const technicalDetails = screen.getByText('Technical details').closest('details');
+    expect(technicalDetails?.open).toBe(false);
+    expect(technicalDetails?.textContent).toContain(BATCH_ID);
     expect(mocks.resolve).toHaveBeenCalledOnce();
     expect(mocks.resolve).toHaveBeenCalledWith(PAYLOAD);
     expect(JSON.stringify(mocks.resolve.mock.calls)).not.toContain('confirmReceipt');
+  });
+
+  it('shows a loading state before displaying the verified record', async () => {
+    let finish: ((value: typeof response) => void) | undefined;
+    mocks.resolve.mockReturnValueOnce(
+      new Promise<typeof response>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    render(<ProductTraceabilityPage reader={reader()} />);
+    fireEvent.change(screen.getByLabelText('Product traceability link'), {
+      target: { value: PAYLOAD },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify product' }));
+    expect(screen.getByText(/verifying blockchain traceability record/i)).toBeTruthy();
+    finish?.(response);
+    expect(await screen.findByText('Dark Chocolate Bar')).toBeTruthy();
   });
 
   it('supports product QR image upload as a fallback', async () => {

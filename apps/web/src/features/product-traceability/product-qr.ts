@@ -60,6 +60,11 @@ export function createProductQrModel(
   };
 }
 
-export function productQrPngFilename(batchId: string) {
-  return `tracechain-product-${batchId.slice(2, 10)}.png`;
+export function productQrPngFilename(batchReference: string) {
+  const safeReference = batchReference
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+  return `tracechain-product-${safeReference || 'registered-product'}.png`;
 }

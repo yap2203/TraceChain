@@ -221,6 +221,19 @@
 .product-qr-label h3 {
   margin: 3px 0;
 }
+.product-qr-identity {
+  display: grid;
+  gap: 3px;
+  margin-top: 14px;
+}
+.product-qr-identity strong {
+  color: #fff;
+  font-size: 20px;
+}
+.product-qr-identity span {
+  color: #91a8bf;
+  font-size: 13px;
+}
 .product-qr-label p,
 .product-qr-label small {
   color: #91a8bf;

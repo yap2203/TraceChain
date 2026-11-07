@@ -320,8 +320,9 @@ https://tracechain.example/trace/product?v=1&chainId={chainId}&registry={product
 
 The QR is a read-only locator containing only its version, configured chain, ProductRegistry
 deployment, and real `bytes32` product batch ID. Manufacturers can display it after product
-creation, download a PNG, print a label, or copy the link. It is distinct from the custody-transfer
-QR and can never confirm receipt or change custody.
+creation, download a PNG, print a name-first label containing the readable product name and batch
+reference, or copy the link. The readable values are display data resolved outside the QR payload.
+It is distinct from the custody-transfer QR and can never confirm receipt or change custody.
 
 The public `/trace/product` page and `POST /api/product-traceability/resolve` reject malformed,
 duplicate, missing, unknown, wrong-chain, and wrong-registry parameters before resolving configured
@@ -362,7 +363,7 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, the custody-transfer API contains 16 tests, and the product-traceability API contains 9 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite contains 81 tests and includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, both QR workflows, public traceability states, and receipt-confirmation coverage. Product-traceability and custody-transfer API tests inject read-only blockchain gateways and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, the custody-transfer API contains 16 tests, and the product-traceability API contains 10 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite contains 83 tests and includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, both QR workflows, name-first product labels, public traceability states, and receipt-confirmation coverage. Product-traceability and custody-transfer API tests inject read-only blockchain gateways and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

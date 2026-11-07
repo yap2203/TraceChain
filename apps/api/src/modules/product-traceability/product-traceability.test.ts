@@ -21,10 +21,15 @@ describe('product traceability service', () => {
   let service: ProductTraceabilityService;
   let authenticated = false;
   let ingredientReference: ReturnType<typeof vi.fn>;
+  let productMetadata: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     authenticated = false;
     ingredientReference = vi.fn().mockResolvedValue('COCOA-2026-001');
+    productMetadata = vi.fn().mockResolvedValue({
+      name: 'Dark Chocolate Bar',
+      reference: 'CHOCOLATE-2026-050',
+    });
     gateway = {
       getProduct: vi.fn().mockResolvedValue({
         expiresAt: 1_900_000_000,
@@ -101,10 +106,7 @@ describe('product traceability service', () => {
       gateway,
       metadata: {
         ingredientReference,
-        product: vi.fn().mockResolvedValue({
-          name: 'Dark Chocolate Bar',
-          reference: 'CHOCOLATE-2026-050',
-        }),
+        product: productMetadata,
       },
       stakeholderDirectory: directory(),
     });
@@ -136,10 +138,30 @@ describe('product traceability service', () => {
       'TRANSFER_DISPATCHED',
       'TRANSFER_RECEIVED',
     ]);
+    expect(result.timeline.map((event) => event.timestamp)).toEqual([
+      1_790_000_000, 1_790_100_000, 1_790_200_000, 1_790_300_000, 1_790_400_000,
+    ]);
+    expect(result.timeline.map((event) => event.organizationName)).toEqual([
+      'CocoaCraft Manufacturing Sdn. Bhd.',
+      'CocoaCraft Manufacturing Sdn. Bhd.',
+      'Swift Distribution Sdn. Bhd.',
+      'Swift Distribution Sdn. Bhd.',
+      'FreshMart Retail Sdn. Bhd.',
+    ]);
     expect(result).not.toHaveProperty('technical');
     expect(JSON.stringify(result)).not.toContain(CREDENTIAL);
     expect(result.ingredients[0]?.reference).toMatch(/^Ingredient 0x/);
     expect(ingredientReference).not.toHaveBeenCalled();
+  });
+
+  it('uses readable fallbacks without exposing the product hash when metadata is unavailable', async () => {
+    productMetadata.mockResolvedValueOnce(undefined);
+    const result = await service.resolve(undefined, { qrPayload: qr() });
+    expect(result.product).toMatchObject({
+      name: 'Registered product',
+      reference: 'Batch reference unavailable',
+    });
+    expect(JSON.stringify(result)).not.toContain(PRODUCT);
   });
 
   it('returns additional technical details only to an authorized stakeholder', async () => {

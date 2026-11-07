@@ -170,7 +170,7 @@ export class ProductTraceabilityService {
             manufacturerIdentity?.companyName ?? 'Verified Manufacturer record unavailable',
           name: metadata?.name ?? 'Registered product',
           producedAt: product.producedAt,
-          reference: metadata?.reference ?? shortIdentifier(qr.batchId),
+          reference: metadata?.reference ?? 'Batch reference unavailable',
           status: state,
         },
         ingredients,

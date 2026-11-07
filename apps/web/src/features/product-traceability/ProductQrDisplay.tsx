@@ -11,10 +11,14 @@ import './product-traceability.css';
 
 export function ProductQrDisplay({
   batchId,
+  batchReference,
   configuration,
+  productName,
 }: {
   batchId: string;
+  batchReference: string;
   configuration?: ProductQrConfiguration;
+  productName: string;
 }) {
   const [copied, setCopied] = useState(false);
   const result = useMemo(() => {
@@ -38,11 +42,15 @@ export function ProductQrDisplay({
       <div>
         <span className="product-trace-eyebrow">TraceChain</span>
         <h3>Product Traceability QR</h3>
-        <p>Open with a phone camera to view the blockchain traceability record.</p>
+        <div className="product-qr-identity">
+          <strong>{productName || 'Registered product'}</strong>
+          <span>{batchReference || 'Batch reference unavailable'}</span>
+        </div>
       </div>
       <QrSvg model={model} />
+      <p>Scan with a phone camera to view the blockchain traceability record.</p>
       <div className="product-qr-actions">
-        <button type="button" onClick={() => downloadPng(model, batchId)}>
+        <button type="button" onClick={() => downloadPng(model, batchReference)}>
           <Download size={15} /> Download PNG
         </button>
         <button
@@ -91,7 +99,7 @@ function QrSvg({ model }: { model: ProductQrModel }) {
   );
 }
 
-function downloadPng(model: ProductQrModel, batchId: string) {
+function downloadPng(model: ProductQrModel, batchReference: string) {
   const quiet = 4;
   const scale = 10;
   const canvas = document.createElement('canvas');
@@ -109,7 +117,7 @@ function downloadPng(model: ProductQrModel, batchId: string) {
     }),
   );
   const link = document.createElement('a');
-  link.download = productQrPngFilename(batchId);
+  link.download = productQrPngFilename(batchReference);
   link.href = canvas.toDataURL('image/png');
   link.click();
 }

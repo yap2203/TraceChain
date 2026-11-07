@@ -38,7 +38,7 @@
 - Shared `CompanyRole` enum
 - Versioned HTTPS product-traceability QR encoding with strict untrusted-locator decoding
 - Safely public product, ingredient-verification, current-custodian, and chronological custody resolution from configured contracts
-- Permanent product QR display, PNG download, printable label, copied link, phone route, image upload, and manual-paste fallback
+- Permanent product QR display, PNG download, name-first printable label, copied link, phone route, image upload, and manual-paste fallback; readable product names and batch references remain presentation data outside the locator payload
 - Versioned custody-transfer QR locator encoding and strict untrusted-payload decoding
 - Authenticated, credential-authorized custody-transfer resolution with intended-recipient checks
 - Canonical custody-transfer QR rendering, PNG download, camera/image/manual scanning, and API-verified transfer summaries
