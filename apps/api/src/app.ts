@@ -58,6 +58,11 @@ import {
 } from './modules/production-flow/production-flow.repository.js';
 import { createProductionFlowRouter } from './modules/production-flow/production-flow.routes.js';
 import { ProductionFlowService } from './modules/production-flow/production-flow.service.js';
+import { ProductTraceabilityController } from './modules/product-traceability/product-traceability.controller.js';
+import { EthersProductTraceabilityGateway } from './modules/product-traceability/product-traceability.gateway.js';
+import { RepositoryTraceabilityMetadataReader } from './modules/product-traceability/product-traceability.metadata.js';
+import { createProductTraceabilityRouter } from './modules/product-traceability/product-traceability.routes.js';
+import { ProductTraceabilityService } from './modules/product-traceability/product-traceability.service.js';
 import { SsiController } from './modules/ssi/ssi.controller.js';
 import {
   IpfsEncryptedCredentialStore,
@@ -87,6 +92,7 @@ interface CreateAppOptions {
   custodyTransferService?: CustodyTransferService;
   ingredientBatchService?: IngredientBatchService;
   productionFlowService?: ProductionFlowService;
+  productTraceabilityService?: ProductTraceabilityService;
   ssi?: {
     agentProvider: TraceChainAgentProvider;
     authorityDidAlias: string;
@@ -101,6 +107,7 @@ export function createApp({
   custodyTransferService,
   ingredientBatchService,
   productionFlowService,
+  productTraceabilityService,
   ssi,
 }: CreateAppOptions = {}) {
   const app = express();
@@ -185,10 +192,12 @@ export function createApp({
   const lazyGateway: BlockchainGateway = {
     getRegistryReferences: () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
-      return resolvedGateway.getRegistryReferences?.() ?? {
-        credentialRegistry: '',
-        stakeholderRegistry: '',
-      };
+      return (
+        resolvedGateway.getRegistryReferences?.() ?? {
+          credentialRegistry: '',
+          stakeholderRegistry: '',
+        }
+      );
     },
     listOperationalData: async (account) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
@@ -317,6 +326,15 @@ export function createApp({
       ),
     env.AUTH_COOKIE_NAME,
   );
+  const productTraceabilityController = new ProductTraceabilityController(
+    productTraceabilityService ??
+      createDefaultProductTraceabilityService(
+        resolvedAuthService,
+        stakeholderDirectory,
+        lazyCredentialContentStore,
+      ),
+    env.AUTH_COOKIE_NAME,
+  );
 
   app.use(
     cors({
@@ -379,6 +397,11 @@ export function createApp({
     express.json({ limit: '64kb' }),
     createProductionFlowRouter(productionFlowController),
   );
+  app.use(
+    '/api/product-traceability',
+    express.json({ limit: '4kb' }),
+    createProductTraceabilityRouter(productTraceabilityController),
+  );
 
   app.use(
     (
@@ -422,6 +445,56 @@ function createDefaultBlockchainGateway() {
     blockchain.CUSTODY_TRANSFER_ADDRESS,
     blockchain.EVIDENCE_REGISTRY_ADDRESS,
   );
+}
+
+function createDefaultProductTraceabilityService(
+  authService: AuthService,
+  stakeholderDirectory: StakeholderDirectory,
+  contentStore: CredentialContentStore,
+) {
+  let blockchain: ReturnType<typeof loadBlockchainEnvironment> | undefined;
+  let gateway: EthersProductTraceabilityGateway | undefined;
+  const configuration = () => {
+    blockchain ??= loadBlockchainEnvironment();
+    return {
+      chainId: env.CHAIN_ID,
+      productRegistryAddress: blockchain.PRODUCT_REGISTRY_ADDRESS,
+      publicAppUrl: env.VITE_PUBLIC_APP_URL,
+    };
+  };
+  const resolveGateway = () => {
+    const resolved = configuration();
+    gateway ??= new EthersProductTraceabilityGateway(env.CHAIN_ID, blockchain!.CHAIN_RPC_URL, {
+      credential: blockchain!.CREDENTIAL_REGISTRY_ADDRESS,
+      custody: blockchain!.CUSTODY_TRANSFER_ADDRESS,
+      ingredient: blockchain!.INGREDIENT_REGISTRY_ADDRESS,
+      product: resolved.productRegistryAddress,
+    });
+    return gateway;
+  };
+  const repositoryRoot = new URL('../../../.tracechain/issuance/', import.meta.url);
+  const metadata = new RepositoryTraceabilityMetadataReader(
+    new JsonProductionFlowRepository(
+      fileURLToPath(new URL('production-flow.json', repositoryRoot)),
+    ),
+    new JsonIngredientBatchWorkflowRepository(
+      fileURLToPath(new URL('ingredient-batches.json', repositoryRoot)),
+    ),
+    contentStore,
+  );
+  return new ProductTraceabilityService({
+    authService,
+    configuration,
+    gateway: {
+      getCredential: (id) => resolveGateway().getCredential(id),
+      getIngredient: (id) => resolveGateway().getIngredient(id),
+      getIngredientLinks: (id) => resolveGateway().getIngredientLinks(id),
+      getProduct: (id) => resolveGateway().getProduct(id),
+      listTransfers: (id) => resolveGateway().listTransfers(id),
+    },
+    metadata,
+    stakeholderDirectory,
+  });
 }
 
 function createDefaultCustodyTransferService(

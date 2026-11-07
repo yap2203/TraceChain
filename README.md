@@ -2,7 +2,7 @@
 
 TraceChain is a blockchain-based supply-chain traceability system with Self-Sovereign Identity credential verification. It is a TypeScript npm monorepo developed as a final-year project.
 
-The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, detail, and company-identity views use authenticated services. Admin workflows, Supplier Ingredient Credential registration, Manufacturer production transfers, Distributor-to-Retailer transfers, and custody receipt confirmation are connected to authenticated services; remaining QR-history, receipt-evidence, and report screens still require migration from fixtures.
+The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, detail, and company-identity views use authenticated services. Admin workflows, Supplier Ingredient Credential registration, Manufacturer production transfers, Distributor-to-Retailer transfers, custody receipt confirmation, and public product traceability history are connected to authenticated services; receipt-evidence and remaining non-admin report screens still require migration from fixtures.
 
 ## Current implementation status
 
@@ -25,6 +25,7 @@ The current version includes a responsive React application, five stakeholder wo
 | Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
 | Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
 | Custody-transfer QR workflow             | Verified scanning and recipient-signed local receipt confirmation implemented         |
+| Product traceability QR                  | Permanent public locator, safe resolver, and custody timeline implemented             |
 | Business persistence                     | Not implemented                                                                       |
 
 ## Repository structure
@@ -34,7 +35,7 @@ apps/
   web/             React 19, Vite 8, React Router, ethers, and MetaMask Connect
   api/             Express 5, SIWE authentication, and in-memory repositories
 packages/
-  shared/          Shared company-role definitions and custody-transfer QR locator codec
+  shared/          Shared role definitions plus custody-transfer and product QR codecs
   ssi/             Veramo agent, did:ethr, JWT VC/VP, encrypted JSON storage, and verification
   contracts/       Hardhat 3 starter, Solidity example, tests, and deployment module
 docs/
@@ -133,7 +134,7 @@ The registration review screen submits a real `StakeholderRegistry.submitApplica
 
 ### Environment variables
 
-The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL`, the public `CHAIN_*` network values, and `CUSTODY_TRANSFER_ADDRESS`; server secrets remain backend-only:
+The root `.env` is shared by the API and Vite. Vite explicitly exposes `VITE_API_BASE_URL`, `VITE_PUBLIC_APP_URL`, the public `CHAIN_*` network values, and the ProductRegistry and CustodyTransfer addresses; server secrets remain backend-only:
 
 ```text
 PORT=3000
@@ -163,6 +164,7 @@ IPFS_PINNING_TOKEN=replace-with-a-scoped-pinning-token
 IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
 
 VITE_API_BASE_URL=http://localhost:3000
+VITE_PUBLIC_APP_URL=http://localhost:5173
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
@@ -308,6 +310,32 @@ The backend never signs or broadcasts the transaction. This local phase confirms
 quantity as usable with zero damaged/rejected units; quantity reconciliation and encrypted receipt
 evidence remain future work.
 
+## Product traceability QR
+
+Each real product batch can expose a separate permanent Product Traceability QR:
+
+```text
+https://tracechain.example/trace/product?v=1&chainId={chainId}&registry={productRegistryAddress}&batchId={batchId}
+```
+
+The QR is a read-only locator containing only its version, configured chain, ProductRegistry
+deployment, and real `bytes32` product batch ID. Manufacturers can display it after product
+creation, download a PNG, print a label, or copy the link. It is distinct from the custody-transfer
+QR and can never confirm receipt or change custody.
+
+The public `/trace/product` page and `POST /api/product-traceability/resolve` reject malformed,
+duplicate, missing, unknown, wrong-chain, and wrong-registry parameters before resolving configured
+contract records. Public visitors receive a privacy-minimized product, ingredient-verification,
+company-name, current-custodian, and chronological custody summary. An authorized session may also
+receive technical IDs, wallets, quantities, and transaction hashes in collapsed Technical details;
+complete credentials, private claims, CIDs, encrypted content, keys, and documents are never
+returned. A verified blockchain traceability record does not by itself prove the physical item is
+genuine.
+
+Set `VITE_PUBLIC_APP_URL` to the externally reachable HTTPS application origin when generating
+production labels. A normal phone camera can open that HTTPS link. Another phone cannot open a
+developer machine's `localhost`; local phone testing needs a reachable LAN/HTTPS configuration.
+
 ## Validation
 
 From the repository root:
@@ -324,6 +352,7 @@ npm run test:production-flow
 npm run test:stakeholder-directory
 npm run test:contracts
 npm run test:custody-transfers
+npm run test:product-traceability
 npm run test:ingredient-batches
 npm run test:qr
 npm run test:content --workspace @tracechain/api
@@ -333,7 +362,7 @@ npm run format:check
 npm audit --omit=dev
 ```
 
-The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, and the custody-transfer API contains 16 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, QR, and receipt-confirmation tests. Custody-transfer API tests inject the blockchain gateway and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
+The authentication suite contains 18 tests, the SSI package contains 15 offline tests, the SSI presentation API contains 12 tests, the custody-transfer API contains 16 tests, and the product-traceability API contains 9 tests. The stakeholder-directory suite covers verified resolution, revoked exclusion, legacy fallback, and duplicate-name disambiguation. The frontend suite contains 81 tests and includes wallet-adapter, authentication-hook, credential, workspace-access, identity presentation, both QR workflows, public traceability states, and receipt-confirmation coverage. Product-traceability and custody-transfer API tests inject read-only blockchain gateways and do not require Hardhat or an RPC endpoint. Frontend QR tests inject the camera reader, API resolver, and transaction boundary; frontend wallet tests use mocked MetaMask clients and EIP-1193 providers. Neither suite contacts a relay or RPC endpoint. SSI tests use temporary files and a controlled local did:ethr resolver; they do not call Sepolia, spend test ETH, or depend on MetaMask.
 
 The root `test:auth` and `test:ssi-api` commands build their internal shared and SSI workspace dependencies first, so they can run directly after a clean `npm ci`.
 

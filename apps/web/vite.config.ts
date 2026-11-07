@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
       'import.meta.env.VITE_CUSTODY_TRANSFER_ADDRESS': JSON.stringify(
         environment.CUSTODY_TRANSFER_ADDRESS,
       ),
+      'import.meta.env.VITE_PRODUCT_REGISTRY_ADDRESS': JSON.stringify(
+        environment.PRODUCT_REGISTRY_ADDRESS,
+      ),
+      'import.meta.env.VITE_PUBLIC_APP_URL': JSON.stringify(environment.VITE_PUBLIC_APP_URL),
     },
     envDir: '../..',
     plugins: [react()],

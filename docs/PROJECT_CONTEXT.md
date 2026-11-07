@@ -36,6 +36,9 @@
 - State-safe MetaMask extension reuse and Mobile QR connection with bounded attempts and listener cleanup
 - In-memory nonce and session repository interfaces and development implementations
 - Shared `CompanyRole` enum
+- Versioned HTTPS product-traceability QR encoding with strict untrusted-locator decoding
+- Safely public product, ingredient-verification, current-custodian, and chronological custody resolution from configured contracts
+- Permanent product QR display, PNG download, printable label, copied link, phone route, image upload, and manual-paste fallback
 - Versioned custody-transfer QR locator encoding and strict untrusted-payload decoding
 - Authenticated, credential-authorized custody-transfer resolution with intended-recipient checks
 - Canonical custody-transfer QR rendering, PNG download, camera/image/manual scanning, and API-verified transfer summaries
@@ -90,7 +93,7 @@ Role VC, although issuance and manual verification remain available separately.
 - Nonce and session repositories remain development-only and in memory; issuance recovery currently uses ignored atomic JSON files rather than a production shared database
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
 - No damaged/rejected quantity reconciliation or encrypted receipt-evidence workflow yet; QR scanning itself remains read-only
-- QR product history, receipt evidence/reconciliation, and non-admin reports remain presentation fixtures and are not authoritative
+- Receipt evidence/reconciliation and remaining non-admin reports remain presentation fixtures and are not authoritative
 
 ## Important system qualities
 

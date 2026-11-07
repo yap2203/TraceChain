@@ -1,142 +1,129 @@
-import { useState } from 'react';
-import { CheckCircle, History, Package, Clock, Search } from 'lucide-react';
-import { T, UI, Btn, Card, StatCard, Badge, Table, TR, TD } from '../../shared/ui';
-import { HISTORY_LIST } from './fixtures';
+import { useEffect, useMemo, useState } from 'react';
+import { Search } from 'lucide-react';
+
+import { useOperationalData } from '../../../blockchain/useOperationalData';
+import {
+  createProductQrPayload,
+  resolveProductTraceability,
+  type ProductTraceabilityResponse,
+} from '../../../product-traceability';
+import { Alert, Badge, Btn, Card, EmptyState, T, Table, TD, TR } from '../../shared/ui';
+
+interface HistoryRecord {
+  batchId: string;
+  trace: ProductTraceabilityResponse;
+}
 
 export function ProductHistory({ onView }: { onView: (batch: string) => void }) {
+  const { data, error: operationalError, loading: operationalLoading } = useOperationalData();
+  const [records, setRecords] = useState<HistoryRecord[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const filtered = HISTORY_LIST.filter((p) => {
-    const q = search.toLowerCase();
-    return (
-      !q ||
-      p.name.toLowerCase().includes(q) ||
-      p.batch.toLowerCase().includes(q) ||
-      p.manufacturer.toLowerCase().includes(q)
+
+  useEffect(() => {
+    let active = true;
+    const batchIds = [...new Set(data.productBatches.map((product) => product.batchId))];
+    if (operationalLoading) return;
+    if (!batchIds.length) {
+      setRecords([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    void Promise.all(
+      batchIds.map(async (batchId) => ({
+        batchId,
+        trace: await resolveProductTraceability(createProductQrPayload(batchId)),
+      })),
+    )
+      .then((resolved) => {
+        if (active) setRecords(resolved);
+      })
+      .catch((cause) => {
+        if (active)
+          setError(cause instanceof Error ? cause.message : 'Product history could not be loaded.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [data.productBatches, operationalLoading]);
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return records.filter(
+      ({ trace }) =>
+        !query ||
+        trace.product.name.toLowerCase().includes(query) ||
+        trace.product.reference.toLowerCase().includes(query) ||
+        trace.product.manufacturerName.toLowerCase().includes(query),
     );
-  });
+  }, [records, search]);
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 14 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, color: T.navy, margin: '0 0 4px' }}>
-            Product History
-          </h1>
+          <h1 style={{ fontSize: 20, color: T.navy, margin: '0 0 4px' }}>Product History</h1>
           <p style={{ fontSize: 13, color: T.text2, margin: 0 }}>
-            All products received with full traceability records.
+            Blockchain traceability records for products linked to this Retailer.
           </p>
         </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            padding: '7px 12px',
-            background: T.surface,
-            border: `1px solid ${T.border}`,
-            borderRadius: 8,
-            width: 260,
-          }}
-        >
-          <Search size={14} color={T.text3} />
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Search size={15} />
           <input
+            aria-label="Search product history"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search product or batch…"
-            style={{
-              border: 'none',
-              background: 'none',
-              color: T.text,
-              fontSize: 13,
-              outline: 'none',
-              flex: 1,
-              fontFamily: UI,
-            }}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search product, reference, company…"
+            style={{ padding: 9, minWidth: 260 }}
           />
-        </div>
+        </label>
       </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
-        <StatCard label="Total Products" value="3" color={T.navy} icon={<History size={22} />} />
-        <StatCard
-          label="Verified"
-          value="3"
-          color={T.green}
-          icon={<CheckCircle size={22} />}
-          delta="All credentials valid"
+      {(error || operationalError) && <Alert type="error" message={error || operationalError} />}
+      {loading ? (
+        <Card>Resolving blockchain custody history…</Card>
+      ) : !filtered.length ? (
+        <EmptyState
+          icon={<Search size={22} />}
+          title="No traceable products found"
+          sub="Received product records will appear after their on-chain transfer is available."
         />
-        <StatCard
-          label="Total Units Received"
-          value="1,090"
-          color={T.teal}
-          icon={<Package size={22} />}
-        />
-        <StatCard label="Expiring in 90 days" value="0" color={T.grey} icon={<Clock size={22} />} />
-      </div>
-
-      <Card padding="0">
-        <Table
-          headers={[
-            'Batch ID',
-            'Product Name',
-            'Manufacturer',
-            'Date Received',
-            'Qty',
-            'Expiry',
-            'Custody',
-            'Ingredients',
-            'Status',
-            '',
-          ]}
-        >
-          {filtered.map((p) => (
-            <TR key={p.batch} onClick={() => onView(p.batch)}>
-              <TD mono muted>
-                {p.batch}
-              </TD>
-              <TD bold>{p.name}</TD>
-              <TD muted>{p.manufacturer}</TD>
-              <TD muted>{p.received}</TD>
-              <TD>{p.qty} units</TD>
-              <TD muted>{p.expiry}</TD>
-              <TD>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <div style={{ display: 'flex', gap: 2 }}>
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: i < p.custodyStages ? T.teal : T.border,
-                        }}
-                      />
-                    ))}
-                  </div>
-                  <span style={{ fontSize: 11, color: T.text2 }}>{p.custodyStages}/4</span>
-                </div>
-              </TD>
-              <TD>
-                <Badge label={`${p.ingredientCreds} verified`} variant="verified" />
-              </TD>
-              <TD>
-                <Badge label={p.status} variant={p.status} />
-              </TD>
-              <TD>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn onClick={() => onView(p.batch)} variant="outline" size="xs">
-                    History
+      ) : (
+        <Card padding="0">
+          <Table
+            headers={['Product', 'Manufacturer', 'Current custody', 'Ingredients', 'Status', '']}
+          >
+            {filtered.map(({ batchId, trace }) => (
+              <TR key={batchId} onClick={() => onView(batchId)}>
+                <TD>
+                  <b>{trace.product.name}</b>
+                  <div style={{ color: T.text2, fontSize: 11 }}>{trace.product.reference}</div>
+                </TD>
+                <TD muted>{trace.product.manufacturerName}</TD>
+                <TD muted>{trace.currentCustodianName}</TD>
+                <TD>
+                  {trace.credentialSummary.active}/{trace.credentialSummary.total} active
+                </TD>
+                <TD>
+                  <Badge
+                    label={trace.product.status}
+                    variant={trace.product.status === 'ACTIVE' ? 'active' : 'pending'}
+                  />
+                </TD>
+                <TD>
+                  <Btn size="xs" variant="outline" onClick={() => onView(batchId)}>
+                    View history
                   </Btn>
-                  <Btn onClick={() => onView(p.batch)} variant="secondary" size="xs">
-                    Verify
-                  </Btn>
-                </div>
-              </TD>
-            </TR>
-          ))}
-        </Table>
-      </Card>
+                </TD>
+              </TR>
+            ))}
+          </Table>
+        </Card>
+      )}
     </div>
   );
 }

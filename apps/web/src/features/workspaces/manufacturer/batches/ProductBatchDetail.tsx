@@ -1,4 +1,5 @@
 import { useOperationalData } from '../../../blockchain/useOperationalData';
+import { ProductQrDisplay } from '../../../product-traceability';
 import {
   Alert,
   Badge,
@@ -68,6 +69,9 @@ export function ProductBatchDetail({
             { label: 'Public CID', value: p.publicCid },
           ]}
         />
+      </Card>
+      <Card>
+        <ProductQrDisplay batchId={p.batchId} />
       </Card>
       <Card>
         <b>Linked ingredients</b>

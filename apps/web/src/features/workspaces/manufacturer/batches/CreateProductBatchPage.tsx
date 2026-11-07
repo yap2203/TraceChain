@@ -6,6 +6,7 @@ import {
   type ProductionIngredient,
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import { ProductQrDisplay } from '../../../product-traceability';
 import { Alert, Badge, Btn, Card, Input, T } from '../../shared/ui';
 import { shortChainId } from '../../shared/operational-format';
 
@@ -21,6 +22,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [expiresAt, setExpiresAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [createdBatchId, setCreatedBatchId] = useState('');
 
   useEffect(() => {
     void listProductionIngredients()
@@ -37,7 +39,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     setBusy(true);
     setError('');
     try {
-      await completePreparedWorkflow(() =>
+      const result = await completePreparedWorkflow(() =>
         prepareProduct({
           batchReference,
           category,
@@ -50,13 +52,32 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           unit,
         }),
       );
-      onBack();
+      if ('batchId' in result && typeof result.batchId === 'string') {
+        setCreatedBatchId(result.batchId);
+      } else {
+        throw new Error('The confirmed product did not include its on-chain batch ID.');
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Product creation failed.');
     } finally {
       setBusy(false);
     }
   };
+
+  if (createdBatchId) {
+    return (
+      <div style={{ maxWidth: 820 }}>
+        <Alert
+          type="success"
+          message="Product creation was verified on chain. Its permanent traceability QR is ready."
+        />
+        <Card>
+          <ProductQrDisplay batchId={createdBatchId} />
+        </Card>
+        <Btn onClick={onBack}>Done</Btn>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 820 }}>

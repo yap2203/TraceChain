@@ -144,6 +144,14 @@ packages/contracts/contracts/
 - For local custody testing, seed only already-deployed chain-31337 contracts with unlocked Hardhat accounts; require the recipient Distributor to be independently onboarded and credential-authorized, and never load a private key in the seed command.
 - Revalidate the authorized SIWE recipient and current transfer state before returning unsigned `confirmReceipt` calldata. Keep signing and broadcasting exclusively in the recipient's MetaMask, wait for its receipt, and refresh the authoritative contract record before showing `Received`.
 
+## Product traceability QR locator
+
+- Keep the permanent product QR separate from the one-time custody-transfer receipt QR. Use the canonical HTTPS path `{publicAppUrl}/trace/product?v=1&chainId={chainId}&registry={productRegistryAddress}&batchId={batchId}` so a normal phone camera can open the deployed application.
+- Limit the QR to version, configured chain ID, configured ProductRegistry address, and an existing `bytes32` product batch ID. Reject missing, duplicated, unknown, malformed, wrong-chain, and wrong-registry values; QR input must never select an RPC endpoint.
+- Resolve product state, ingredient links, credential status, custody events, and company display names through configured read-only services. Public responses are privacy-minimized; only an authenticated authorized session receives additional technical identifiers, wallets, quantities, and transaction hashes.
+- Never return complete credentials, confidential claims, encrypted content, CIDs, keys, or private documents from product tracing. Product scanning is read-only and must not call or prepare receipt confirmation.
+- Describe a successful result as a verified blockchain traceability record, not proof that the physical product is genuine.
+
 ## Credential and evidence storage
 
 - Use the existing issued Ingredient Credential repository as the only source for Supplier evidence responses; never accept a browser-submitted credential ID or credential body for evidence acceptance.

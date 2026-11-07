@@ -42,6 +42,7 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 | `EVIDENCE_REGISTRY_ADDRESS`      | Address placeholder      | Deployed evidence registry            |
 | `PRODUCT_REGISTRY_ADDRESS`       | Address placeholder      | Deployed product registry             |
 | `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract    |
+| `VITE_PUBLIC_APP_URL`            | `http://localhost:5173`  | Canonical public product-QR origin    |
 | `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                   |
 | `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds           |
 | `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider    |
@@ -56,6 +57,9 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 
 The root template also contains `DEV_DISTRIBUTOR_WALLET` for the chain-31337 seed command. It is a
 public unlocked Hardhat address consumed by the CLI, not an API runtime secret.
+
+For deployed product labels, `VITE_PUBLIC_APP_URL` must be the externally reachable HTTPS
+application origin. Its URL parameters never choose the API's RPC endpoint.
 
 SSI variables are loaded lazily when an SSI operation needs them. Blockchain RPC and registry configuration are required for direct login authorization, although injected SIWE unit tests do not require a live chain. The API and frontend both use `CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. The example KMS value and zero addresses intentionally fail SSI operations or command validation. Never provide or store the Admin wallet private key.
 
@@ -188,6 +192,22 @@ equal the on-chain recipient. A successful response contains only `transferId`, 
 Resolution is read-only. It does not call `confirmReceipt`, prepare a transaction, or change
 custody. The frontend supports canonical QR generation plus camera, image-file, and manual-paste
 scanning.
+
+### `POST /api/product-traceability/resolve`
+
+Accepts a canonical product link in `{ "qrPayload": "https://.../trace/product?..." }`. It is a
+safely public, read-only endpoint and always resolves through the server-configured chain,
+ProductRegistry, IngredientRegistry, CredentialRegistry, and CustodyTransfer gateways. It rejects
+malformed or non-canonical parameters, a different application origin, chain, or ProductRegistry,
+and unknown products.
+
+The public response contains readable product and ingredient references, lifecycle and credential
+verification summaries, verified stakeholder company names, current custody organisation, and a
+chronological custody timeline. It excludes quantities, credential IDs, wallets, transaction hashes,
+complete credentials, private claims, CIDs, encrypted content, keys, and private documents. If the
+request includes an existing fully authorized session cookie, the response may add those permitted
+technical IDs, wallets, quantities, and transaction hashes under a separate `technical` object.
+Resolution never prepares or submits a transaction and never confirms receipt.
 
 ### `POST /api/custody-transfers/transactions/confirm-receipt`
 
