@@ -1,5 +1,11 @@
 # Project Progress
 
+## 2026-11-07 — Stakeholder audit reports connected to chain
+
+- Replaced the fabricated stakeholder product-history report with an authenticated, wallet-scoped snapshot from the configured ingredient, product, custody-transfer, and evidence registries.
+- Added current lifecycle states, quantities, resolved company names, integrity hashes, refresh, print, CSV export, service-error handling, and honest empty states without inventing transaction hashes or verification outcomes.
+- Added regression coverage proving that on-chain records render and former sample product data does not.
+
 ## 2026-11-07 — Company Digital Identity Card
 
 - Added authenticated retrieval of selected claims from the current wallet's actual server-managed encrypted Company Role VC.
