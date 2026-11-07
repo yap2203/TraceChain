@@ -79,6 +79,7 @@ export interface ChainApplicationRecord {
 }
 
 export interface BlockchainGateway {
+  getRegistryReferences?(): { credentialRegistry: string; stakeholderRegistry: string };
   listOperationalData?(account: string): Promise<OperationalData>;
   getAdministrator(): Promise<string>;
   getApplicationForIssuance(applicationId: string): Promise<{
@@ -315,6 +316,13 @@ export class BlockchainGatewayService implements BlockchainGateway {
       evidenceRequests: evidenceRequests.filter(
         (r) => r.requester.toLowerCase() === normalized || r.supplier.toLowerCase() === normalized,
       ),
+    };
+  }
+
+  getRegistryReferences() {
+    return {
+      credentialRegistry: this.credentialRegistryAddress,
+      stakeholderRegistry: this.registryAddress,
     };
   }
 

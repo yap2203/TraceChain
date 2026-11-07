@@ -41,6 +41,14 @@ export class SsiController {
     }
   };
 
+  getMyCompanyIdentity = async (request: Request, response: Response, next: NextFunction) => {
+    await this.handleIdentityRequest(request, response, next, false);
+  };
+
+  verifyMyCompanyIdentity = async (request: Request, response: Response, next: NextFunction) => {
+    await this.handleIdentityRequest(request, response, next, true);
+  };
+
   prepareAdministratorCredential = async (
     request: Request,
     response: Response,
@@ -80,4 +88,26 @@ export class SsiController {
       next(error);
     }
   };
+
+  private async handleIdentityRequest(
+    request: Request,
+    response: Response,
+    next: NextFunction,
+    verify: boolean,
+  ) {
+    try {
+      const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
+      response.json(
+        verify
+          ? await this.service.verifyMyCompanyIdentity(sessionId)
+          : await this.service.getMyCompanyIdentity(sessionId),
+      );
+    } catch (error) {
+      if (error instanceof AuthError || error instanceof SsiApiError) {
+        response.status(error.status).json({ error: { code: error.code, message: error.message } });
+        return;
+      }
+      next(error);
+    }
+  }
 }

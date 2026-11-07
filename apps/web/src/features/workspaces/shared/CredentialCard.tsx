@@ -1,20 +1,30 @@
-import { BadgeCheck } from 'lucide-react';
-import { T, MONO } from './ui';
-export function CredentialCard({
-  role,
-  org,
-  did,
-  credId,
-  issue,
-  expiry,
-}: {
-  role: string;
-  org: string;
-  did: string;
-  credId: string;
-  issue: string;
+import { BadgeCheck, Copy } from 'lucide-react';
+
+import { MONO, T } from './ui';
+
+export interface CredentialCardProps {
+  credentialId: string;
   expiry: string;
-}) {
+  issue: string;
+  issuer: string;
+  org: string;
+  registrationNumber: string;
+  role: string;
+  status: string;
+  subjectDid: string;
+  wallet: string;
+  onCopy?: (label: string, value: string) => void;
+}
+
+export function CredentialCard(props: CredentialCardProps) {
+  const fields = [
+    { label: 'Registration number', value: props.registrationNumber },
+    { label: 'Approved role', value: props.role },
+    { label: 'Issuer', value: props.issuer },
+    { label: 'Issue date', value: props.issue },
+    { label: 'Expiry date', value: props.expiry },
+    { label: 'Credential ID', value: props.credentialId, copy: true },
+  ];
   return (
     <div
       style={{
@@ -43,7 +53,9 @@ export function CredentialCard({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'flex-start',
+            gap: 16,
             marginBottom: 24,
+            flexWrap: 'wrap',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -70,16 +82,16 @@ export function CredentialCard({
                   marginBottom: 2,
                 }}
               >
-                TraceChain · SSI Credential
+                TraceChain · Company Digital Identity
               </div>
               <div style={{ fontWeight: 700, fontSize: 16, color: '#fff' }}>
-                {role} Role Credential
+                {props.role} Company Role Credential
               </div>
             </div>
           </div>
           <div
             style={{
-              background: T.teal,
+              background: statusColor(props.status),
               borderRadius: 20,
               padding: '4px 12px',
               fontSize: 11,
@@ -87,28 +99,24 @@ export function CredentialCard({
               color: '#fff',
             }}
           >
-            Active
+            {titleCase(props.status)}
           </div>
         </div>
-        <div style={{ fontWeight: 700, fontSize: 18, color: '#fff', marginBottom: 4 }}>{org}</div>
+        <div style={{ fontWeight: 700, fontSize: 20, color: '#fff', marginBottom: 4 }}>
+          {props.org}
+        </div>
+        <CopyValue label="Associated wallet" value={props.wallet} onCopy={props.onCopy} />
+        <CopyValue label="Company / subject DID" value={props.subjectDid} onCopy={props.onCopy} />
         <div
           style={{
-            fontFamily: MONO,
-            fontSize: 11,
-            color: 'rgba(255,255,255,0.5)',
-            marginBottom: 20,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+            gap: 16,
+            marginTop: 20,
           }}
         >
-          {did}
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          {[
-            { label: 'Credential ID', value: credId },
-            { label: 'Issuer', value: 'Product Traceability Authority' },
-            { label: 'Issue Date', value: issue },
-            { label: 'Expiry Date', value: expiry },
-          ].map((r) => (
-            <div key={r.label}>
+          {fields.map((field) => (
+            <div key={field.label}>
               <div
                 style={{
                   fontSize: 10,
@@ -118,17 +126,18 @@ export function CredentialCard({
                   marginBottom: 3,
                 }}
               >
-                {r.label}
+                {field.label}
               </div>
               <div
                 style={{
                   fontSize: 12,
                   fontWeight: 600,
                   color: '#fff',
-                  fontFamily: r.label === 'Credential ID' ? MONO : undefined,
+                  fontFamily: field.copy ? MONO : undefined,
+                  overflowWrap: 'anywhere',
                 }}
               >
-                {r.value}
+                {field.copy ? short(field.value) : field.value}
               </div>
             </div>
           ))}
@@ -136,4 +145,64 @@ export function CredentialCard({
       </div>
     </div>
   );
+}
+
+function CopyValue({
+  label,
+  value,
+  onCopy,
+}: {
+  label: string;
+  value: string;
+  onCopy?: (label: string, value: string) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, minWidth: 0 }}>
+      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase' }}>
+        {label}
+      </span>
+      <code
+        style={{
+          color: '#fff',
+          fontFamily: MONO,
+          fontSize: 11,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {short(value)}
+      </code>
+      <button
+        type="button"
+        aria-label={`Copy full ${label}`}
+        title={`Copy full ${label}`}
+        onClick={() => onCopy?.(label, value)}
+        style={{
+          background: 'transparent',
+          border: 0,
+          color: '#fff',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          padding: 3,
+        }}
+      >
+        <Copy size={14} />
+      </button>
+    </div>
+  );
+}
+function short(value: string) {
+  return value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
+}
+function titleCase(value: string) {
+  return value.toLowerCase().replace(/^./, (letter) => letter.toUpperCase());
+}
+function statusColor(status: string) {
+  return status === 'ACTIVE'
+    ? T.teal
+    : status === 'SUSPENDED'
+      ? T.amber
+      : status === 'UNKNOWN'
+        ? T.grey
+        : T.red;
 }

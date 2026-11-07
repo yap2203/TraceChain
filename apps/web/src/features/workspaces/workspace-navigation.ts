@@ -34,7 +34,7 @@ export const workspaceNavigation = {
     ['overview', 'Overview', LayoutDashboard],
     ['batches', 'Ingredient batches', Layers],
     ['requests', 'Information requests', Inbox],
-    ['mycredential', 'My credential', ContactRound],
+    ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit history', ChartNoAxesCombined],
   ],
   manufacturer: [
@@ -42,7 +42,7 @@ export const workspaceNavigation = {
     ['evidence', 'Ingredient evidence', FlaskConical],
     ['products', 'Product batches', Package],
     ['transfers', 'Transfers', ArrowRightLeft],
-    ['mycredential', 'My credential', ContactRound],
+    ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit reports', ChartNoAxesCombined],
   ],
   distributor: [
@@ -50,7 +50,7 @@ export const workspaceNavigation = {
     ['incoming', 'Incoming shipments', Truck],
     ['inventory', 'Custody inventory', Warehouse],
     ['transfers', 'Transfers', ArrowRightLeft],
-    ['mycredential', 'My credential', ContactRound],
+    ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit reports', ChartNoAxesCombined],
   ],
   retailer: [
@@ -59,7 +59,7 @@ export const workspaceNavigation = {
     ['scan', 'Scan & verify', ScanQrCode],
     ['history', 'Product history', History],
     ['evidence', 'Evidence requests', FileSearch],
-    ['mycredential', 'My credential', ContactRound],
+    ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit reports', ChartNoAxesCombined],
   ],
 } as const satisfies Record<WorkspaceRole, readonly (readonly [string, string, LucideIcon])[]>;

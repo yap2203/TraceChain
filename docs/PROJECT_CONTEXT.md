@@ -47,6 +47,8 @@
 - Real Manufacturer-to-Distributor production workflow: encrypted evidence requests, Supplier challenge-bound full-credential VPs, cryptographic acceptance, accepted-ingredient product creation, transfer preparation, and QR generation from the verified transfer ID
 - Direct SIWE-to-registry login authorization with fresh stakeholder, role, and Company Role credential-record checks; manual VC verification remains separate from login
 - On-chain Company Role credential linkage for every company role plus an Admin bootstrap-to-registry workflow; complete credentials remain encrypted off-chain
+- Wallet-scoped on-chain credential pages for Supplier, Manufacturer, Distributor, and Retailer, with optional private issuance metadata and no presentation fixtures
+- Readable Company Digital Identity cards backed by the actual encrypted Company Role VC, explicit Veramo/on-chain verification, copyable technical details, and PDF summaries
 - Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
 
 Several non-admin stakeholder screens still use presentation fixtures. Workspace access requires a
@@ -86,7 +88,7 @@ Role VC, although issuance and manual verification remain available separately.
 - Nonce and session repositories remain development-only and in memory; issuance recovery currently uses ignored atomic JSON files rather than a production shared database
 - No finalized production SSI storage/key-custody design, hosting platform, or production topology
 - No damaged/rejected quantity reconciliation or encrypted receipt-evidence workflow yet; QR scanning itself remains read-only
-- Distributor-to-Retailer writes, QR product history, stakeholder credential cards, receipt evidence/reconciliation, and non-admin reports remain presentation fixtures and are not authoritative
+- Distributor-to-Retailer writes, QR product history, receipt evidence/reconciliation, and non-admin reports remain presentation fixtures and are not authoritative
 
 ## Important system qualities
 

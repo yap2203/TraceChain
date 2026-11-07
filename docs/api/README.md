@@ -189,6 +189,9 @@ SIWE proves control of a wallet address only. Workspace authorization comes from
 
 - `GET /api/blockchain/applications` returns authoritative application records and requires an authorized System Admin session.
 - `GET /api/blockchain/credentials` returns safe Company Role Credential metadata merged with authoritative registry lifecycle state and requires an authorized System Admin session.
+- `GET /api/blockchain/credentials/me` returns the authenticated stakeholder's current linked Company Role credential and stakeholder lifecycle data. It never accepts a wallet parameter and does not expose or decrypt the complete VC.
+- `GET /api/ssi/company-role/me` returns selected signed Company Role VC claims for the authenticated wallet together with current registry lifecycle state. The API decrypts its server-managed encrypted issuance record but never returns raw VC JSON.
+- `POST /api/ssi/company-role/me/verify` retrieves the same current credential and explicitly verifies its signature, issuer, wallet/DID, role, dates, deterministic hash, replacement/lifecycle state, and current authorization. It does not modify login permissions.
 - `POST /api/blockchain/transactions/company-application` validates public company-application arguments and returns an unsigned transaction.
 - `POST /api/blockchain/transactions/application-rejection` requires an authorized System Admin session and returns an unsigned rejection transaction.
 - `POST /api/blockchain/transactions/credential-lifecycle` validates a suspend, reactivate, or revoke transition and returns the unsigned CredentialRegistry transaction.

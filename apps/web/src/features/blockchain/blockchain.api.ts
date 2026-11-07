@@ -53,6 +53,26 @@ export function getCompanyCredentials() {
   return blockchainRequest<{ credentials: ChainCredential[] }>('/credentials');
 }
 
+export interface MyChainCredential {
+  companyName?: string;
+  companyRegistrationNumber?: string;
+  credentialHash: string;
+  credentialId: string;
+  encryptedCredentialCid: string;
+  expiresAt: number;
+  issuedAt: number;
+  issuer: string;
+  role: string;
+  status: 'active' | 'expired' | 'revoked' | 'suspended' | 'unknown';
+  stakeholderStatus: 'active' | 'revoked' | 'suspended' | 'unknown';
+  subject: string;
+  updatedAt: number;
+}
+
+export function getMyCompanyCredential() {
+  return blockchainRequest<{ credential: MyChainCredential }>('/credentials/me');
+}
+
 export interface OperationalIngredientBatch {
   batchId: string;
   supplier: string;

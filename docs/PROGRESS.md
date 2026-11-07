@@ -1,5 +1,18 @@
 # Project Progress
 
+## 2026-11-07 — Company Digital Identity Card
+
+- Added authenticated retrieval of selected claims from the current wallet's actual server-managed encrypted Company Role VC.
+- Added explicit user-triggered Veramo and registry verification with individual signature, issuer, wallet/DID, role, date, hash, lifecycle/replacement, and authorization results.
+- Reworked the shared stakeholder credential view into a responsive Company Digital Identity Card with accessible copy actions, separate lifecycle/cryptographic states, collapsed technical details, and a generated PDF identity summary.
+- Added cross-wallet isolation, lifecycle-state, identity rendering/copying, verification failure, missing-service, and summary-content tests without changing SIWE login or contracts.
+
+## 2026-11-07 — Stakeholder credential pages connected to chain
+
+- Replaced the Supplier, Manufacturer, Distributor, and Retailer credential-page fixtures with a shared authenticated page backed by `GET /api/blockchain/credentials/me`.
+- Added current-wallet credential and stakeholder reads without accepting a caller-selected address.
+- Removed fake DIDs, transaction hashes, block numbers, company identities, and always-valid verification labels; the UI now distinguishes authoritative registry state from optional private issuance metadata and off-chain cryptographic verification.
+
 ## 2026-11-07 — Administrator credential on-chain linkage
 
 - Added an authenticated Admin workflow that retrieves the cryptographically verified bootstrap Company Role VC, encrypts and pins it off-chain, and prepares separate MetaMask transactions for `CredentialRegistry` registration and `StakeholderRegistry` reference linkage.
