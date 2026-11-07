@@ -45,6 +45,7 @@ export interface OnChainAuthorizationSummary {
   checkedAt: Date;
   credentialHash?: string;
   credentialId?: string;
+  companyName?: string;
   role?: CompanyRole;
   status: OnChainAuthorizationStatus;
 }
@@ -72,6 +73,7 @@ interface AuthenticatedSessionBase {
   applicationSubmittedAt?: number;
   applicationUpdatedAt?: number;
   credentialId?: string;
+  companyName?: string;
   role?: CompanyRole;
   verifiedAt?: string;
 }

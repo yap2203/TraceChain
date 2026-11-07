@@ -2,9 +2,10 @@ import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { lazy, Suspense } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { shortenAddress, useWalletAuthentication } from '../auth/useWalletAuthentication';
+import { useWalletAuthentication } from '../auth/useWalletAuthentication';
 import { WorkspaceAccessGate } from './WorkspaceAccessGate';
 import { WorkspaceLayout } from './WorkspaceLayout';
+import { workspaces } from './workspace-config';
 import { workspaceNavigation, type WorkspaceRole } from './workspace-navigation';
 import { workspacePage, workspacePath } from './workspace-paths';
 
@@ -54,10 +55,20 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
       page={page}
       pathForPage={(id) => workspacePath(role, id)}
       status={status}
+      identity={
+        authenticated && state.authorizationReady && state.address && state.role
+          ? {
+              companyName: state.companyName ?? workspaces[role].roleLabel,
+              credentialStatus: state.authorizationStatus ?? 'UNAVAILABLE',
+              role: state.role,
+              walletAddress: state.address,
+            }
+          : undefined
+      }
       accountAction={
         authenticated ? (
           <button className="workspace-account-action" onClick={() => void authentication.logout()}>
-            Sign out {state.address ? shortenAddress(state.address) : ''}
+            Sign out
           </button>
         ) : (
           <Link to="/login#sign-in">Wallet sign-in</Link>

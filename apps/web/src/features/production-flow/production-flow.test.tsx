@@ -87,7 +87,16 @@ beforeEach(() => {
   mocks.sendPreparedTransaction.mockResolvedValue({
     wait: vi.fn().mockResolvedValue({ status: 1 }),
   });
-  mocks.listDistributors.mockResolvedValue({ distributors: [DISTRIBUTOR] });
+  mocks.listDistributors.mockResolvedValue({
+    distributors: [
+      {
+        active: true,
+        companyName: 'Swift Distribution Sdn. Bhd.',
+        role: 'DISTRIBUTOR',
+        walletAddress: DISTRIBUTOR,
+      },
+    ],
+  });
 });
 
 afterEach(() => {
@@ -149,6 +158,11 @@ describe('production transaction workflow', () => {
       });
     render(<TransferToDistributor onBack={vi.fn()} />);
     await waitFor(() => expect(mocks.listDistributors).toHaveBeenCalledOnce());
+    expect(
+      screen
+        .getByRole('option', { name: 'Swift Distribution Sdn. Bhd. — Distributor' })
+        .getAttribute('value'),
+    ).toBe(DISTRIBUTOR);
     const [product, distributor] = screen.getAllByRole('combobox');
     fireEvent.change(product, { target: { value: `0x${'22'.repeat(32)}` } });
     fireEvent.change(distributor, { target: { value: DISTRIBUTOR } });
@@ -165,6 +179,9 @@ describe('production transaction workflow', () => {
 
     expect((await screen.findByTestId('qr-transfer-id')).textContent).toBe(TRANSFER_ID);
     expect(mocks.prepareTransfer).toHaveBeenCalledTimes(2);
+    expect(mocks.prepareTransfer).toHaveBeenCalledWith(
+      expect.objectContaining({ recipient: DISTRIBUTOR }),
+    );
     expect(mocks.sendPreparedTransaction).toHaveBeenCalledOnce();
     expect(JSON.stringify(mocks.prepareTransfer.mock.calls)).not.toContain('confirmReceipt');
   });

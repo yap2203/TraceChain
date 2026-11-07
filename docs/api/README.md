@@ -2,6 +2,25 @@
 
 The Express API defaults to `http://localhost:3000`. It accepts credentialed browser requests only from the configured `FRONTEND_URL` origin. All authentication responses set `Cache-Control: no-store`, and authentication request bodies are limited to 10 KB.
 
+## Verified stakeholder directory
+
+`GET /api/stakeholders` requires an authorized HttpOnly-cookie session and returns only active, currently registry-validated stakeholder display records:
+
+```json
+{
+  "stakeholders": [
+    {
+      "companyName": "Swift Distribution Sdn. Bhd.",
+      "role": "DISTRIBUTOR",
+      "walletAddress": "0x...",
+      "active": true
+    }
+  ]
+}
+```
+
+Company registration numbers, raw credentials, encrypted payloads, private profile data, and keys are never returned by this endpoint. Wallet addresses remain the authoritative identifiers for authorization and transactions; company names are verified presentation data.
+
 ## Environment
 
 Copy the repository-root `.env.example` to the repository-root `.env`. The API loads this file using a repository-relative absolute path, independent of the terminal working directory. Available API values are:

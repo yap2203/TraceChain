@@ -1,5 +1,6 @@
 import { Clock3, PackageCheck, Route, WalletCards } from 'lucide-react';
 
+import { TechnicalDetails } from '../workspaces/shared/ui';
 import type { ResolvedCustodyTransfer } from './custody-transfer.types';
 import './custody-transfer.css';
 
@@ -13,9 +14,13 @@ function formatTimestamp(timestamp: number) {
 export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTransfer }) {
   const received = transfer.status === 2;
   const fields = [
-    { icon: PackageCheck, label: 'Product batch ID', value: transfer.productBatchId },
-    { icon: WalletCards, label: 'Sender', value: transfer.sender },
-    { icon: WalletCards, label: 'Recipient', value: transfer.recipient },
+    { icon: PackageCheck, label: 'Product batch', value: 'Verified product batch' },
+    { icon: WalletCards, label: 'Sender', value: transfer.senderName ?? 'Verified sender' },
+    {
+      icon: WalletCards,
+      label: 'Recipient',
+      value: transfer.recipientName ?? 'Verified recipient',
+    },
     { icon: Route, label: 'Quantity', value: transfer.quantity },
     { icon: Clock3, label: 'Dispatch time', value: formatTimestamp(transfer.dispatchedAt) },
     { icon: Clock3, label: 'Expected arrival', value: formatTimestamp(transfer.expectedAt) },
@@ -40,12 +45,19 @@ export function ResolvedTransferCard({ transfer }: { transfer: ResolvedCustodyTr
             <Icon aria-hidden="true" size={17} />
             <div>
               <span>{label}</span>
-              <code>{value}</code>
+              <strong>{value}</strong>
             </div>
           </div>
         ))}
       </div>
-      <p className="resolved-transfer-reference">Transfer ID: {transfer.transferId}</p>
+      <TechnicalDetails
+        fields={[
+          { label: 'Transfer ID', value: transfer.transferId },
+          { label: 'Product batch ID', value: transfer.productBatchId },
+          { label: 'Sender wallet', value: transfer.sender },
+          { label: 'Recipient wallet', value: transfer.recipient },
+        ]}
+      />
       <p className="resolved-transfer-readonly">
         {received
           ? 'The recipient confirmed this custody transfer on-chain.'

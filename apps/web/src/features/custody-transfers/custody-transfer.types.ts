@@ -4,7 +4,9 @@ export interface ResolvedCustodyTransfer {
   productBatchId: string;
   quantity: string;
   recipient: string;
+  recipientName?: string;
   sender: string;
+  senderName?: string;
   status: 1 | 2;
   transferId: string;
 }

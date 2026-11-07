@@ -4,6 +4,7 @@ import { getAddress } from 'ethers';
 import { SiweMessage } from 'siwe';
 
 import type { LoginAuthorizationResolver } from '../blockchain/login-authorization.service.js';
+import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import type { NonceRepository, SessionRepository } from './auth.repository.js';
 import { walletAddressSchema } from './auth.schema.js';
 import type {
@@ -31,6 +32,7 @@ export class AuthError extends Error {
 
 interface AuthServiceDependencies {
   authorizationResolver?: LoginAuthorizationResolver;
+  stakeholderDirectory?: Pick<StakeholderDirectory, 'resolve'>;
   clock?: () => Date;
   configuration: AuthConfiguration;
   nonceRepository: NonceRepository;
@@ -43,10 +45,12 @@ export class AuthService {
   private readonly nonceRepository: NonceRepository;
   private readonly sessionRepository: SessionRepository;
   private readonly authorizationResolver?: LoginAuthorizationResolver;
+  private readonly stakeholderDirectory?: Pick<StakeholderDirectory, 'resolve'>;
   private readonly attempts = new Map<string, number[]>();
 
   constructor({
     authorizationResolver,
+    stakeholderDirectory,
     clock = () => new Date(),
     configuration,
     nonceRepository,
@@ -54,6 +58,7 @@ export class AuthService {
   }: AuthServiceDependencies) {
     this.clock = clock;
     this.authorizationResolver = authorizationResolver;
+    this.stakeholderDirectory = stakeholderDirectory;
     this.configuration = configuration;
     this.nonceRepository = nonceRepository;
     this.sessionRepository = sessionRepository;
@@ -230,6 +235,7 @@ export class AuthService {
       authorizationReady,
       authorizationStatus: authorization?.status ?? 'UNAVAILABLE',
       credentialId: authorization?.credentialId,
+      companyName: authorizationReady ? authorization.companyName : undefined,
       expiresAt: session.expiresAt.toISOString(),
       onChainStatusChecked: authorization?.status !== 'UNAVAILABLE',
       role: authorizationReady ? authorization.role : undefined,
@@ -257,12 +263,28 @@ export class AuthService {
   }
 
   private async refreshAuthorization(session: SessionRecord): Promise<SessionRecord> {
-    const onChainAuthorization = this.authorizationResolver
+    let onChainAuthorization = this.authorizationResolver
       ? await this.authorizationResolver.resolve(session.address)
       : (session.onChainAuthorization ?? {
           checkedAt: this.clock(),
           status: 'UNAVAILABLE' as const,
         });
+    if (onChainAuthorization.status === 'AUTHORIZED' && this.stakeholderDirectory) {
+      try {
+        const identity = await this.stakeholderDirectory.resolve(
+          session.address,
+          onChainAuthorization,
+        );
+        if (identity) {
+          onChainAuthorization = {
+            ...onChainAuthorization,
+            companyName: identity.companyName,
+          };
+        }
+      } catch {
+        // Presentation metadata must not alter an otherwise valid authorization decision.
+      }
+    }
     return { ...session, onChainAuthorization };
   }
 

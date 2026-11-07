@@ -352,4 +352,42 @@ describe('SIWE authentication', () => {
     });
     expect(restored.body.role).toBeUndefined();
   });
+
+  it('returns a chain-validated company name in an authorized session', async () => {
+    const authService = new AuthService({
+      authorizationResolver: {
+        resolve: async () => ({
+          checkedAt: new Date(now),
+          credentialId: `0x${'34'.repeat(32)}`,
+          role: CompanyRole.MANUFACTURER,
+          status: 'AUTHORIZED',
+        }),
+      },
+      stakeholderDirectory: {
+        resolve: async (walletAddress) => ({
+          active: true,
+          companyName: 'CocoaCraft Manufacturing Sdn. Bhd.',
+          role: CompanyRole.MANUFACTURER,
+          walletAddress,
+        }),
+      },
+      clock: () => new Date(now),
+      configuration: {
+        chainId: CHAIN_ID,
+        domain: DOMAIN,
+        nonceTtlMs: NONCE_TTL_MS,
+        sessionTtlMs: 8 * 60 * 60 * 1_000,
+        uri: URI,
+      },
+      nonceRepository: new InMemoryNonceRepository(),
+      sessionRepository: new InMemorySessionRepository(),
+    });
+    app = createApp({ authService });
+    const response = await authenticate(request.agent(app), Wallet.createRandom());
+    expect(response.body).toMatchObject({
+      authorizationReady: true,
+      companyName: 'CocoaCraft Manufacturing Sdn. Bhd.',
+      role: CompanyRole.MANUFACTURER,
+    });
+  });
 });

@@ -7,6 +7,7 @@ import type { AuthService } from '../auth/auth.service.js';
 import type { BlockchainGateway } from './blockchain-gateway.service.js';
 import type { ApplicationMetadataRepository } from './application-metadata.repository.js';
 import type { CompanyRoleIssuanceRepository } from '../ssi/issuance.repository.js';
+import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import {
   applicationTransactionSchema,
   credentialLifecycleTransactionSchema,
@@ -22,6 +23,7 @@ export class BlockchainController {
     private readonly sessionCookieName: string,
     private readonly applicationMetadata: ApplicationMetadataRepository,
     private readonly issuanceRepository: CompanyRoleIssuanceRepository,
+    private readonly stakeholderDirectory?: StakeholderDirectory,
   ) {}
 
   listApplications = async (request: Request, response: Response, next: NextFunction) => {
@@ -182,7 +184,12 @@ export class BlockchainController {
           'Operational blockchain reads are unavailable.',
           503,
         );
-      response.json(await this.gateway.listOperationalData(session.address));
+      const data = await this.gateway.listOperationalData(session.address);
+      response.json(
+        this.stakeholderDirectory
+          ? await enrichOperationalData(data, this.stakeholderDirectory)
+          : data,
+      );
     } catch (error) {
       this.handleError(error, response, next);
     }
@@ -337,6 +344,59 @@ export class BlockchainController {
     }
     next(error);
   }
+}
+
+async function enrichOperationalData(
+  data: Awaited<ReturnType<NonNullable<BlockchainGateway['listOperationalData']>>>,
+  directory: StakeholderDirectory,
+) {
+  const addresses = new Set<string>();
+  const addressFields = ['supplier', 'manufacturer', 'sender', 'recipient', 'requester'] as const;
+  for (const collection of Object.values(data)) {
+    for (const record of collection) {
+      for (const field of addressFields) {
+        const value = record[field];
+        if (typeof value === 'string' && value) addresses.add(value);
+      }
+    }
+  }
+  const identities = await directory.resolveMany([...addresses]);
+  const identitiesByWallet = new Map(
+    identities.map((identity) => [identity.walletAddress.toLowerCase(), identity]),
+  );
+  const identity = (wallet: unknown) =>
+    typeof wallet === 'string' ? identitiesByWallet.get(wallet.toLowerCase()) : undefined;
+  const name = (wallet: unknown) => identity(wallet)?.companyName;
+  return {
+    ingredientBatches: data.ingredientBatches.map((record) => ({
+      ...record,
+      supplierName: name(record.supplier),
+    })),
+    productBatches: data.productBatches.map((record) => ({
+      ...record,
+      manufacturerName: name(record.manufacturer),
+    })),
+    transfers: data.transfers.map((record) => {
+      const sender = identity(record.sender);
+      const recipient = identity(record.recipient);
+      const parties = [sender, recipient];
+      return {
+        ...record,
+        distributorName: parties.find((party) => party?.role === CompanyRole.DISTRIBUTOR)
+          ?.companyName,
+        manufacturerName: parties.find((party) => party?.role === CompanyRole.MANUFACTURER)
+          ?.companyName,
+        recipientName: recipient?.companyName,
+        retailerName: parties.find((party) => party?.role === CompanyRole.RETAILER)?.companyName,
+        senderName: sender?.companyName,
+      };
+    }),
+    evidenceRequests: data.evidenceRequests.map((record) => ({
+      ...record,
+      manufacturerName: name(record.requester),
+      supplierName: name(record.supplier),
+    })),
+  };
 }
 
 class BlockchainApiError extends Error {

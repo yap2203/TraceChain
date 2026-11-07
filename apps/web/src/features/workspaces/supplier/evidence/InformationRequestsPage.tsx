@@ -6,7 +6,7 @@ import {
   type ProductionEvidenceRequest,
 } from '../../../production-flow/production-flow.api';
 import { Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
-import { chainDate, shortChainId } from '../../shared/operational-format';
+import { chainDate } from '../../shared/operational-format';
 
 const statuses = [
   'Unknown',
@@ -41,14 +41,10 @@ export function InformationRequests({
             sub="Manufacturer requests for your on-chain ingredient batches will appear here."
           />
         ) : (
-          <Table headers={['Request', 'Manufacturer', 'Ingredient batch', 'Due', 'Status', '']}>
+          <Table headers={['Manufacturer', 'Due', 'Status', '']}>
             {requests.map((request) => (
               <TR key={request.requestId}>
-                <TD mono>{shortChainId(request.requestId)}</TD>
-                <TD mono muted>
-                  {shortChainId(request.requester)}
-                </TD>
-                <TD mono>{shortChainId(request.ingredientBatchId)}</TD>
+                <TD>{request.manufacturerName ?? 'Verified Manufacturer'}</TD>
                 <TD muted>{chainDate(request.dueAt)}</TD>
                 <TD>
                   <Badge

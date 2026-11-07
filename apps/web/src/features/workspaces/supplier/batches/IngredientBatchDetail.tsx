@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { Alert, Badge, Btn, Card, EmptyState, MONO, T } from '../../shared/ui';
-import { shortChainId } from '../../shared/operational-format';
+import { Alert, Badge, Btn, Card, EmptyState, T, TechnicalDetails } from '../../shared/ui';
 import { getIngredientBatches, type RegisteredIngredientBatch } from './ingredient-batch.api';
 
 export function IngredientBatchDetail({
@@ -74,7 +73,7 @@ export function IngredientBatchDetail({
           Back to Batches
         </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
-          {batch.ingredientName} · {shortChainId(batch.batchId)}
+          {batch.ingredientName} · {batch.batchReference}
         </h2>
         <Badge
           label={batch.status === 1 ? 'Active' : 'Unavailable'}
@@ -96,31 +95,20 @@ export function IngredientBatchDetail({
           </div>
         </Card>
         <Card>
-          <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
-            On-chain record
-          </div>
-          <TechnicalRow label="Batch ID" value={batch.batchId} />
-          <TechnicalRow label="Supplier" value={batch.supplier} />
-          <TechnicalRow label="Credential ID" value={batch.credentialId} />
-          <TechnicalRow label="Metadata hash" value={batch.metadataHash} />
-          <TechnicalRow label="Encrypted CID" value={batch.encryptedCid || '—'} />
-          <TechnicalRow label="Status" value={batch.status === 1 ? 'Active' : 'Unavailable'} />
           <p style={{ fontSize: 12, color: T.text2, lineHeight: 1.55, marginBottom: 0 }}>
             The complete Ingredient Credential and private metadata remain encrypted off-chain.
             Private fields are returned only to the authenticated, currently authorized Supplier.
           </p>
+          <TechnicalDetails
+            fields={[
+              { label: 'Batch ID', value: batch.batchId },
+              { label: 'Supplier wallet', value: batch.supplier },
+              { label: 'Credential ID', value: batch.credentialId },
+              { label: 'Metadata hash', value: batch.metadataHash },
+              { label: 'Encrypted CID', value: batch.encryptedCid },
+            ]}
+          />
         </Card>
-      </div>
-    </div>
-  );
-}
-
-function TechnicalRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ padding: '8px 0', borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
-      <div style={{ fontFamily: MONO, fontSize: 11, color: T.teal, overflowWrap: 'anywhere' }}>
-        {value}
       </div>
     </div>
   );

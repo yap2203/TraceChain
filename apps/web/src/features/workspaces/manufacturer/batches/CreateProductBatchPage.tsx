@@ -125,8 +125,8 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
                 <div>
                   <b>{shortChainId(ingredient.batchId)}</b>
                   <div style={{ fontSize: 11, color: T.text2 }}>
-                    Supplier {shortChainId(ingredient.supplier)} · {ingredient.availableQuantity}{' '}
-                    available
+                    {ingredient.supplierName ?? 'Verified Supplier'} ·{' '}
+                    {ingredient.availableQuantity} available
                   </div>
                 </div>
                 <Input

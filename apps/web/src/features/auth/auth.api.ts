@@ -23,6 +23,7 @@ export interface AuthenticatedSession {
   applicationSubmittedAt?: number;
   applicationUpdatedAt?: number;
   credentialId?: string;
+  companyName?: string;
   credentialVerified: boolean;
   expiresAt: string;
   locallyVerified: boolean;

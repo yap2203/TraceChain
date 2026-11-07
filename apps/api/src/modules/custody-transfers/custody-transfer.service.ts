@@ -2,6 +2,7 @@ import { TransferQrError, decodeTransferQrPayload } from '@tracechain/shared';
 import { getAddress, id } from 'ethers';
 
 import type { AuthService } from '../auth/auth.service.js';
+import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import type { CustodyTransferGateway } from './custody-transfer.gateway.js';
 import {
   prepareReceiptConfirmationRequestSchema,
@@ -31,6 +32,7 @@ interface CustodyTransferServiceDependencies {
   authService: AuthService;
   configuration: () => CustodyTransferConfiguration;
   gateway: CustodyTransferGateway;
+  stakeholderDirectory?: StakeholderDirectory;
 }
 
 export class CustodyTransferService {
@@ -98,7 +100,7 @@ export class CustodyTransferService {
       );
     }
 
-    return safeSummary(qr.transferId, transfer);
+    return this.safeSummary(qr.transferId, transfer);
   }
 
   async getTransfer(
@@ -113,7 +115,7 @@ export class CustodyTransferService {
 
     const transfer = await this.lookupTransfer(inputResult.data.transferId);
     this.requireRecipient(session.address, transfer.recipient);
-    return safeSummary(inputResult.data.transferId, transfer);
+    return this.safeSummary(inputResult.data.transferId, transfer);
   }
 
   async prepareReceiptConfirmation(
@@ -193,6 +195,26 @@ export class CustodyTransferService {
         403,
       );
     }
+  }
+
+  private async safeSummary(
+    transferId: string,
+    transfer: CustodyTransferRecord,
+  ): Promise<CustodyTransferSummary> {
+    const summary = safeSummary(transferId, transfer);
+    if (!this.dependencies.stakeholderDirectory) return summary;
+    const identities = await this.dependencies.stakeholderDirectory.resolveMany([
+      transfer.sender,
+      transfer.recipient,
+    ]);
+    const names = new Map(
+      identities.map((identity) => [identity.walletAddress.toLowerCase(), identity.companyName]),
+    );
+    return {
+      ...summary,
+      recipientName: names.get(summary.recipient.toLowerCase()),
+      senderName: names.get(summary.sender.toLowerCase()),
+    };
   }
 }
 

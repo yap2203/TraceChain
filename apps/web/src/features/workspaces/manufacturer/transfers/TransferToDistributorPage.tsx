@@ -2,14 +2,18 @@ import { useEffect, useState } from 'react';
 
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import { TransferQrDisplay } from '../../../custody-transfers';
-import { listDistributors, prepareTransfer } from '../../../production-flow/production-flow.api';
+import {
+  listDistributors,
+  prepareTransfer,
+  type StakeholderRecipient,
+} from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { Alert, Btn, Card, Input, T } from '../../shared/ui';
 import { shortChainId } from '../../shared/operational-format';
 
 export function TransferToDistributor({ onBack }: { onBack: () => void }) {
   const { data, error: readError } = useOperationalData();
-  const [distributors, setDistributors] = useState<string[]>([]);
+  const [distributors, setDistributors] = useState<StakeholderRecipient[]>([]);
   const [productBatchId, setProductBatchId] = useState('');
   const [recipient, setRecipient] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -85,10 +89,10 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
                 onChange={(event) => setRecipient(event.target.value)}
                 style={{ display: 'block', width: '100%', padding: 10, marginTop: 6 }}
               >
-                <option value="">Select recipient wallet</option>
-                {distributors.map((wallet) => (
-                  <option key={wallet} value={wallet}>
-                    {shortChainId(wallet)}
+                <option value="">Select a Distributor</option>
+                {distributors.map((distributor) => (
+                  <option key={distributor.walletAddress} value={distributor.walletAddress}>
+                    {distributor.companyName} — Distributor
                   </option>
                 ))}
               </select>

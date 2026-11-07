@@ -1,5 +1,5 @@
 import { useOperationalData } from '../../../blockchain/useOperationalData';
-import { Alert, Badge, Btn, Card, EmptyState, T } from '../../shared/ui';
+import { Alert, Badge, Btn, Card, EmptyState, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate, shortChainId, transferStatuses } from '../../shared/operational-format';
 export function IncomingShipment({
   shipmentId,
@@ -37,14 +37,11 @@ export function IncomingShipment({
       <Card>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
           {[
-            ['Product batch', t.productBatchId],
-            ['Sender', t.sender],
-            ['Recipient', t.recipient],
+            ['Sender', t.senderName ?? 'Verified Manufacturer'],
+            ['Recipient', t.recipientName ?? 'Receiving company'],
             ['Quantity', t.quantity],
             ['Dispatched', chainDate(t.dispatchedAt)],
             ['Expected', chainDate(t.expectedAt)],
-            ['Shipment hash', t.shipmentHash],
-            ['Shipment CID', t.shipmentCid || '—'],
           ].map(([l, v]) => (
             <div key={l} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}>
               <div style={{ fontSize: 11, color: T.text2 }}>{l}</div>
@@ -52,6 +49,16 @@ export function IncomingShipment({
             </div>
           ))}
         </div>
+        <TechnicalDetails
+          fields={[
+            { label: 'Transfer ID', value: t.transferId },
+            { label: 'Product batch ID', value: t.productBatchId },
+            { label: 'Sender wallet', value: t.sender },
+            { label: 'Recipient wallet', value: t.recipient },
+            { label: 'Shipment hash', value: t.shipmentHash },
+            { label: 'Shipment CID', value: t.shipmentCid },
+          ]}
+        />
       </Card>
       <Alert
         type="info"

@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
-import { shortChainId } from '../../shared/operational-format';
 import { getIngredientBatches, type RegisteredIngredientBatch } from './ingredient-batch.api';
 
 export function IngredientBatches({
@@ -64,7 +63,6 @@ export function IngredientBatches({
             headers={[
               'Batch reference',
               'Ingredient',
-              'On-chain ID',
               'Origin',
               'Available',
               'Produced',
@@ -76,9 +74,6 @@ export function IngredientBatches({
               <TR key={batch.batchId} onClick={() => onDetail(batch.batchId)}>
                 <TD bold>{batch.batchReference}</TD>
                 <TD>{batch.ingredientName}</TD>
-                <TD mono muted>
-                  {shortChainId(batch.batchId)}
-                </TD>
                 <TD muted>{batch.origin || 'Private'}</TD>
                 <TD>
                   {batch.availableQuantity} {batch.unit}
