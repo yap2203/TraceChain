@@ -2,6 +2,7 @@
 pragma solidity ^0.8.34;
 import {IStakeholderRegistry} from '../interfaces/IStakeholderRegistry.sol';
 import {ICredentialRegistry} from '../interfaces/ICredentialRegistry.sol';
+import {IIngredientRegistry} from '../interfaces/IIngredientRegistry.sol';
 
 contract EvidenceRegistry {
     enum RequestStatus {
@@ -32,6 +33,7 @@ contract EvidenceRegistry {
     error InvalidState();
     IStakeholderRegistry public immutable stakeholders;
     ICredentialRegistry public immutable credentials;
+    IIngredientRegistry public ingredients;
     mapping(bytes32 => Request) private requests;
     mapping(bytes32 => mapping(address => bool)) public acceptedForManufacturer;
     mapping(bytes32 => bool) public consumedChallenge;
@@ -62,6 +64,14 @@ contract EvidenceRegistry {
         stakeholders = IStakeholderRegistry(stakeholderRegistry);
         credentials = ICredentialRegistry(credentialRegistry);
     }
+    function configureIngredientRegistry(address registry) external {
+        if (
+            !stakeholders.isAuthorized(msg.sender, 1) ||
+            registry.code.length == 0 ||
+            address(ingredients) != address(0)
+        ) revert Unauthorized(msg.sender);
+        ingredients = IIngredientRegistry(registry);
+    }
     function requestEvidence(
         bytes32 requestId,
         address supplier,
@@ -73,8 +83,12 @@ contract EvidenceRegistry {
     ) external {
         if (!stakeholders.hasPermission(msg.sender, keccak256('REQUEST_EVIDENCE')))
             revert Unauthorized(msg.sender);
+        if (address(ingredients) == address(0)) revert InvalidState();
+        (address batchSupplier,, bool validSource) = ingredients.evidenceDetails(ingredientBatchId);
         if (
             !stakeholders.isAuthorized(supplier, 2) ||
+            batchSupplier != supplier ||
+            !validSource ||
             requestId == bytes32(0) ||
             ingredientBatchId == bytes32(0) ||
             claimsHash == bytes32(0) ||
@@ -133,14 +147,27 @@ contract EvidenceRegistry {
     function accept(bytes32 requestId, bytes32 ingredientCredentialId) external {
         Request storage request = _request(requestId);
         if (msg.sender != request.requester) revert Unauthorized(msg.sender);
+        if (address(ingredients) == address(0)) revert InvalidState();
+        (address batchSupplier, bytes32 registeredCredentialId, bool validSource) =
+            ingredients.evidenceDetails(request.ingredientBatchId);
         if (
             request.status != RequestStatus.EvidenceReceived ||
             request.presentationExpiresAt <= block.timestamp ||
-            !credentials.isCredentialValid(ingredientCredentialId)
+            !credentials.isCredentialValid(ingredientCredentialId) ||
+            !validSource ||
+            batchSupplier != request.supplier ||
+            registeredCredentialId != ingredientCredentialId ||
+            credentials.credentialSubject(ingredientCredentialId) != request.supplier ||
+            credentials.credentialTypeOf(ingredientCredentialId) != 2
         ) revert InvalidState();
+        uint8 requesterRole = uint8(stakeholders.roleOf(request.requester));
+        if (requesterRole != 3 && requesterRole != 5) revert InvalidState();
         request.status = RequestStatus.Accepted;
         request.updatedAt = uint64(block.timestamp);
-        acceptedForManufacturer[request.ingredientBatchId][request.requester] = true;
+        // Retailer review records satisfaction only. It must never grant the
+        // Manufacturer-only ingredient-consumption authorization.
+        if (requesterRole == 3)
+            acceptedForManufacturer[request.ingredientBatchId][request.requester] = true;
         emit EvidenceStatusChanged(requestId, request.status, bytes32(0));
     }
     function close(bytes32 requestId, RequestStatus status, bytes32 reasonHash) external {

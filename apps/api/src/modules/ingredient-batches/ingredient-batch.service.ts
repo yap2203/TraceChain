@@ -1,11 +1,13 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   canonicalIngredientMetadata,
   createOrGetSupplierIssuerDid,
   ingredientCredentialSchema,
   issueIngredientCredential,
+  issueIngredientSdJwt,
   verifyIngredientCredential,
+  verifyIssuedIngredientSdJwt,
   type TraceChainAgent,
 } from '@tracechain/ssi';
 import { CompanyRole } from '@tracechain/shared';
@@ -38,6 +40,9 @@ interface Dependencies {
   contentStore: CredentialContentStore;
   gateway: IngredientBatchGateway;
   repository: IngredientBatchWorkflowRepository;
+  messagingIdentityResolver?: {
+    findIdentityByWallet(wallet: string): Promise<{ did: string } | undefined>;
+  };
 }
 
 export class IngredientBatchService {
@@ -197,6 +202,77 @@ export class IngredientBatchService {
     canonicalMetadata: string,
   ) {
     const issuer = await createOrGetSupplierIssuerDid(agent, input.supplierWallet);
+    const messagingIdentity =
+      await this.dependencies.messagingIdentityResolver?.findIdentityByWallet(input.supplierWallet);
+    if (this.dependencies.messagingIdentityResolver && !messagingIdentity)
+      throw new IngredientBatchApiError(
+        'HOLDER_KEY_BINDING_REQUIRED',
+        'Create and bind the Supplier messaging identity before issuing a selectively disclosable Ingredient Credential.',
+        409,
+      );
+    if (messagingIdentity) {
+      const credentialUrn = `urn:uuid:${randomUUID()}`;
+      const sdJwt = await issueIngredientSdJwt(agent, {
+        claims: {
+          allergenDeclaration: input.allergenInformation || undefined,
+          batchId,
+          batchReference: input.batchId,
+          certificationDetails: input.certifications.length ? input.certifications : undefined,
+          countryOfOrigin: input.origin,
+          credentialId: credentialUrn,
+          expiryDate: input.expiryDate.toISOString(),
+          ingredientName: input.ingredientName,
+          productionDate: input.productionDate.toISOString(),
+          supplierWallet: input.supplierWallet,
+        },
+        expiresAt: Math.floor(input.expiryDate.getTime() / 1_000),
+        holderDid: messagingIdentity.did,
+        issuerDid: issuer.identifier.did,
+        issuedAt: Math.floor(this.clock().getTime() / 1_000),
+      });
+      await verifyIssuedIngredientSdJwt(agent, sdJwt, {
+        now: Math.floor(this.clock().getTime() / 1_000),
+        supplierWallet: input.supplierWallet,
+      });
+      const credentialId = id(credentialUrn);
+      const credentialHash = `0x${createHash('sha256').update(sdJwt).digest('hex')}`;
+      let stored;
+      try {
+        stored = await this.dependencies.contentStore.encryptAndStore(
+          JSON.stringify({
+            credentialFormat: 'SD_JWT_VC',
+            metadata: JSON.parse(canonicalMetadata),
+            sdJwt,
+            version: 2,
+          }),
+          credentialId,
+        );
+      } catch {
+        throw new IngredientBatchApiError(
+          'ENCRYPTED_STORAGE_UNAVAILABLE',
+          'The encrypted Ingredient Credential could not be stored. No blockchain transaction was prepared.',
+          503,
+        );
+      }
+      const record: IngredientBatchWorkflowRecord = {
+        batchId,
+        credentialFormat: 'SD_JWT_VC',
+        credentialHash,
+        credentialId,
+        encryptedCid: stored.cid,
+        encryptedPayload: stored.payload,
+        expiresAt: Math.floor(input.expiryDate.getTime() / 1_000),
+        holderDid: messagingIdentity.did,
+        issuerDid: issuer.identifier.did,
+        metadataHash,
+        producedAt: Math.floor(input.productionDate.getTime() / 1_000),
+        quantity: input.quantity,
+        supplierWallet: input.supplierWallet,
+        unit: input.unit,
+      };
+      await this.dependencies.repository.save(record);
+      return record;
+    }
     const issued = await issueIngredientCredential(agent, {
       ...input,
       issuanceDate: this.clock(),
@@ -248,6 +324,7 @@ export class IngredientBatchService {
       quantity: input.quantity,
       supplierWallet: input.supplierWallet,
       unit: input.unit,
+      credentialFormat: 'JWT_VC',
     };
     await this.dependencies.repository.save(record);
     return record;
@@ -259,7 +336,22 @@ export class IngredientBatchService {
   ) {
     const envelope = JSON.parse(
       await this.dependencies.contentStore.decrypt(record.encryptedPayload),
-    ) as { credential?: unknown };
+    ) as { credential?: unknown; sdJwt?: string };
+    if (record.credentialFormat === 'SD_JWT_VC') {
+      if (!envelope.sdJwt) throw new Error('The stored SD-JWT credential is missing.');
+      await verifyIssuedIngredientSdJwt(agent, envelope.sdJwt, {
+        now: Math.floor(this.clock().getTime() / 1_000),
+        supplierWallet: record.supplierWallet,
+      });
+      const hash = `0x${createHash('sha256').update(envelope.sdJwt).digest('hex')}`;
+      if (hash.toLowerCase() !== record.credentialHash.toLowerCase())
+        throw new IngredientBatchApiError(
+          'PERSISTED_CREDENTIAL_INVALID',
+          'The persisted Ingredient Credential hash does not match.',
+          500,
+        );
+      return;
+    }
     const credential = ingredientCredentialSchema.parse(envelope.credential);
     const verification = await verifyIngredientCredential(
       agent,

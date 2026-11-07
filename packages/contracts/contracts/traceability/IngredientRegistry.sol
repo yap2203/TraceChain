@@ -127,6 +127,16 @@ contract IngredientRegistry is IIngredientRegistry {
         Batch storage batch = batches[batchId];
         return batch.availableQuantity > 0 && isValidTraceabilitySource(batchId);
     }
+    function evidenceDetails(bytes32 batchId)
+        external
+        view
+        override
+        returns (address supplier, bytes32 credentialId, bool validTraceabilitySource)
+    {
+        Batch storage batch = batches[batchId];
+        if (batch.status == Status.None) revert InvalidInput();
+        return (batch.supplier, batch.credentialId, isValidTraceabilitySource(batchId));
+    }
     function isValidTraceabilitySource(bytes32 batchId) public view override returns (bool) {
         Batch storage batch = batches[batchId];
         return

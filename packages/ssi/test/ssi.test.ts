@@ -180,6 +180,13 @@ describe('TraceChain SSI foundation', () => {
       expect(credential.credentialSubject.role).toBe(CompanyRole.SUPPLIER);
     });
 
+    it('binds company claims to the SIWE wallet but has no separate holder-key binding', () => {
+      expect(credential.credentialSubject.id).toBe(walletAddressToDid(ADMIN_WALLET));
+      expect(credential.credentialSubject.walletAddress).toBe(ADMIN_WALLET);
+      expect(credential).not.toHaveProperty('cnf');
+      expect(credential.credentialSubject).not.toHaveProperty('cnf');
+    });
+
     it('verifies a valid credential while keeping authorization disabled', async () => {
       const result = await verifyCompanyRoleCredential(
         agent,
@@ -375,44 +382,69 @@ describe('TraceChain SSI foundation', () => {
     it('creates and verifies a challenge-bound presentation containing the complete credential', async () => {
       const challenge = 'manufacturer-request-challenge';
       const presentation = await createIngredientEvidencePresentation(agent, {
+        batchId: `0x${'11'.repeat(32)}`,
         challenge,
         credential,
+        domain: 'tracechain.local',
         expirationDate: new Date('2026-11-08T00:00:00.000Z'),
         holderDid: issuerDid,
+        purpose: 'Verify ingredient provenance',
+        requestId: `0x${'22'.repeat(32)}`,
+        verifier: '0x3000000000000000000000000000000000000003',
       });
       expect(presentation.verifiableCredential).toHaveLength(1);
       expect(presentation.verifiableCredential?.[0]).toEqual(credential);
       const result = await verifyIngredientEvidencePresentation(agent, presentation, {
+        batchId: `0x${'11'.repeat(32)}`,
         challenge,
+        domain: 'tracechain.local',
         expectedIssuerDid: issuerDid,
-        now: new Date('2026-11-06T23:00:00.000Z'),
+        now: new Date(),
+        purpose: 'Verify ingredient provenance',
+        requestId: `0x${'22'.repeat(32)}`,
         supplierWallet,
+        verifier: '0x3000000000000000000000000000000000000003',
       });
       expect(result).toMatchObject({ reasons: [], verified: true });
     });
 
     it('rejects a challenge mismatch and invalid presentation signature', async () => {
       const presentation = await createIngredientEvidencePresentation(agent, {
+        batchId: `0x${'11'.repeat(32)}`,
         challenge: 'correct-challenge',
         credential,
+        domain: 'tracechain.local',
         expirationDate: new Date('2026-11-08T00:00:00.000Z'),
         holderDid: issuerDid,
+        purpose: 'Verify ingredient provenance',
+        requestId: `0x${'22'.repeat(32)}`,
+        verifier: '0x3000000000000000000000000000000000000003',
       });
       const wrongChallenge = await verifyIngredientEvidencePresentation(agent, presentation, {
+        batchId: `0x${'11'.repeat(32)}`,
         challenge: 'different-challenge',
+        domain: 'tracechain.local',
         expectedIssuerDid: issuerDid,
-        now: new Date('2026-11-06T23:00:00.000Z'),
+        now: new Date(),
+        purpose: 'Verify ingredient provenance',
+        requestId: `0x${'22'.repeat(32)}`,
         supplierWallet,
+        verifier: '0x3000000000000000000000000000000000000003',
       });
       expect(wrongChallenge.reasons).toContain('INVALID_PRESENTATION_SIGNATURE');
 
       const tampered = structuredClone(presentation);
       tampered.proof.jwt = `${tampered.proof.jwt.slice(0, -1)}x`;
       const invalidSignature = await verifyIngredientEvidencePresentation(agent, tampered, {
+        batchId: `0x${'11'.repeat(32)}`,
         challenge: 'correct-challenge',
+        domain: 'tracechain.local',
         expectedIssuerDid: issuerDid,
-        now: new Date('2026-11-06T23:00:00.000Z'),
+        now: new Date(),
+        purpose: 'Verify ingredient provenance',
+        requestId: `0x${'22'.repeat(32)}`,
         supplierWallet,
+        verifier: '0x3000000000000000000000000000000000000003',
       });
       expect(invalidSignature.reasons).toContain('INVALID_PRESENTATION_SIGNATURE');
     });

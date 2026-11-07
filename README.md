@@ -1,5 +1,16 @@
 # TraceChain
 
+> Stage 1 secure messaging: authenticated Manufacturer and Supplier workspaces include a browser-held DIDComm proof of concept under **Secure messages**. MetaMask + SIWE remains the login. OpenID4VP is deferred. See [`docs/DIDCOMM_STAGE1.md`](docs/DIDCOMM_STAGE1.md) for protocol, key ownership, recovery and security boundaries.
+
+The real Manufacturer/Retailer–Supplier Ingredient Evidence workflow now uses this channel for
+encrypted request and full-credential VP delivery. Suppliers can separately request a fresh,
+challenge-bound Company Role VP from the requesting Manufacturer or Retailer before deciding
+whether to disclose ingredient evidence. Identity presentation, evidence verification, and
+business acceptance remain separate actions. VP signing uses the server-managed Supplier Veramo
+issuer key; DIDComm keys remain participant-controlled in the browser. The EvidenceRegistry
+hardening changes contract bytecode and requires redeployment before using the updated acceptance
+path.
+
 TraceChain is a blockchain-based supply-chain traceability system with Self-Sovereign Identity credential verification. It is a TypeScript npm monorepo developed as a final-year project.
 
 The current version includes a responsive React application, five stakeholder workspaces, Sign-In with Ethereum wallet authentication, an Express API, server-side Veramo SSI services, encrypted IPFS content storage, shared role types, and the TraceChain Solidity contract suite. Primary operational dashboards and their batch, shipment, inventory, detail, and company-identity views use authenticated services. Admin workflows, Supplier Ingredient Credential registration, Manufacturer production transfers, Distributor-to-Retailer transfers, and custody receipt confirmation are connected to authenticated services; remaining QR-history, receipt-evidence, and report screens still require migration from fixtures.
@@ -21,6 +32,7 @@ The current version includes a responsive React application, five stakeholder wo
 | SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
 | Supplier Ingredient Credentials          | Typed JWT VC issuance, encrypted IPFS storage, and sequential on-chain registration   |
 | Manufacturer production flow             | Real evidence VP, product creation, Distributor transfer, and transfer QR implemented |
+| Company identity proof for evidence       | DIDComm-linked challenge, preview/approve/decline, VP verification, expiry and replay guards |
 | Distributor transfer flow                | Real inventory, verified Retailer transfer, MetaMask signing, and QR implemented      |
 | Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
 | Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
@@ -307,6 +319,12 @@ receipt, and refreshes the authoritative transfer through `GET /api/custody-tran
 The backend never signs or broadcasts the transaction. This local phase confirms the complete
 quantity as usable with zero damaged/rejected units; quantity reconciliation and encrypted receipt
 evidence remain future work.
+
+## Ingredient selective disclosure
+
+New Ingredient Credentials use RFC 9901 SD-JWT through `@sd-jwt/core` 0.24.3 when the Supplier has a wallet-bound browser messaging identity. The issuer signs the credential while its `cnf.jwk` binds presentations to the participant-controlled Ed25519 key. Manufacturers select Required and Optional claims; Suppliers preview the values and explicitly approve optional disclosures before their browser creates the audience- and challenge-bound presentation. The private key never enters the API. Legacy JWT Ingredient Credentials remain supported as clearly labelled full disclosure.
+
+OpenID4VP remains deferred. Key loss currently requires the original encrypted recovery kit; automated key rotation and replacement issuance are remaining work. See [the selective-disclosure design and limitations](docs/INGREDIENT_SELECTIVE_DISCLOSURE.md).
 
 ## Validation
 

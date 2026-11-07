@@ -1,5 +1,30 @@
 # TraceChain API
 
+## DIDComm ciphertext relay
+
+Authenticated, currently authorized Manufacturer and Supplier sessions use `/api/didcomm` for the Stage 1 secure-message proof of concept:
+
+- `POST /binding/challenge` issues a short-lived wallet-bound challenge.
+- `POST /binding` verifies a `did:key` DID-JWT control proof and saves the public SIWE-wallet association.
+- `GET /directory` returns verified public messaging recipients.
+- `GET /mailbox` returns only envelopes involving the authenticated company's bound DID.
+- `POST /relay` accepts only the Manufacturer request and Supplier acknowledgement message types with role, recipient, expiry, duplicate and thread checks.
+
+The API stores encrypted DIDComm envelopes and routing metadata only. Participant private keys and decrypted message bodies are never accepted by these endpoints.
+
+The integrated production evidence flow also provides participant-scoped retrieval and separate
+verification/decision operations:
+
+- `GET /api/production-flow/evidence-requests/:requestId`
+- `GET /api/production-flow/evidence-requests/:requestId/review`
+- `POST /api/production-flow/evidence-requests/:requestId/verify`
+- `POST /api/production-flow/evidence-requests/:requestId/accept/prepare`
+- `POST /api/production-flow/evidence-requests/:requestId/close/prepare`
+
+Private details are restricted to the exact Supplier and Manufacturer wallets recorded for the
+request. The authenticated API returns the existing backend-signed VP so the Supplier browser can
+encrypt it for the verified DIDComm recipient; plaintext is not written to relay logs or URLs.
+
 The Express API defaults to `http://localhost:3000`. It accepts credentialed browser requests only from the configured `FRONTEND_URL` origin. All authentication responses set `Cache-Control: no-store`, and authentication request bodies are limited to 10 KB.
 
 ## Verified stakeholder directory

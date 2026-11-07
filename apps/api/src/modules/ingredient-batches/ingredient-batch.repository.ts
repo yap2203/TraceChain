@@ -17,6 +17,8 @@ export interface IngredientBatchWorkflowRecord {
   quantity: string;
   supplierWallet: string;
   unit: string;
+  credentialFormat?: 'JWT_VC' | 'SD_JWT_VC';
+  holderDid?: string;
 }
 
 export interface IngredientBatchWorkflowRepository {

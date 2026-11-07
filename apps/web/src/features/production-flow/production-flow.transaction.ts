@@ -85,9 +85,9 @@ export async function submitProductionTransaction(
   }
 }
 
-export async function completePreparedWorkflow(
-  prepare: () => Promise<{ actorWallet: string; state: string; transaction?: PreparedTransaction }>,
-) {
+export async function completePreparedWorkflow<
+  T extends { actorWallet: string; state: string; transaction?: PreparedTransaction },
+>(prepare: () => Promise<T>): Promise<T> {
   const first = await prepare();
   if (first.state === 'COMPLETE') return first;
   if (!first.transaction) throw new Error('The API did not return the required transaction.');

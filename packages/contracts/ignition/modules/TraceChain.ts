@@ -7,6 +7,7 @@ export default buildModule('TraceChain', (module) => {
   module.call(stakeholders, 'configureCredentialRegistry', [credentials]);
   const evidence = module.contract('EvidenceRegistry', [stakeholders, credentials]);
   const ingredients = module.contract('IngredientRegistry', [stakeholders, credentials]);
+  module.call(evidence, 'configureIngredientRegistry', [ingredients]);
   const products = module.contract('ProductRegistry', [stakeholders, ingredients, evidence]);
   module.call(ingredients, 'configureProductRegistry', [products]);
   const custody = module.contract('CustodyTransfer', [stakeholders, products]);

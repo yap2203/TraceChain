@@ -36,6 +36,12 @@ import {
 } from './modules/custody-transfers/custody-transfer.gateway.js';
 import { createCustodyTransferRouter } from './modules/custody-transfers/custody-transfer.routes.js';
 import { CustodyTransferService } from './modules/custody-transfers/custody-transfer.service.js';
+import {
+  JsonDidCommRepository,
+  type DidCommRepository,
+} from './modules/didcomm/didcomm.repository.js';
+import { createDidCommRouter } from './modules/didcomm/didcomm.routes.js';
+import { DidCommService } from './modules/didcomm/didcomm.service.js';
 import { IngredientBatchController } from './modules/ingredient-batches/ingredient-batch.controller.js';
 import {
   EthersIngredientBatchGateway,
@@ -158,6 +164,9 @@ export function createApp({
     env.AUTH_COOKIE_NAME,
   );
   const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
+  const didCommRepository = new JsonDidCommRepository(
+    fileURLToPath(new URL('../../../.tracechain/didcomm/state.json', import.meta.url)),
+  );
   let blockchainService: BlockchainAuthorizationService | undefined;
   const blockchainAuthorization: BlockchainAuthorizationService | undefined = ssi
     ? undefined
@@ -185,10 +194,12 @@ export function createApp({
   const lazyGateway: BlockchainGateway = {
     getRegistryReferences: () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
-      return resolvedGateway.getRegistryReferences?.() ?? {
-        credentialRegistry: '',
-        stakeholderRegistry: '',
-      };
+      return (
+        resolvedGateway.getRegistryReferences?.() ?? {
+          credentialRegistry: '',
+          stakeholderRegistry: '',
+        }
+      );
     },
     listOperationalData: async (account) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
@@ -304,6 +315,7 @@ export function createApp({
         resolvedAuthService,
         defaultSsi.agentProvider,
         lazyCredentialContentStore,
+        didCommRepository,
       ),
     env.AUTH_COOKIE_NAME,
   );
@@ -314,8 +326,17 @@ export function createApp({
         defaultSsi.agentProvider,
         lazyCredentialContentStore,
         stakeholderDirectory,
+        didCommRepository,
+        lazyIssuanceRepository,
       ),
     env.AUTH_COOKIE_NAME,
+  );
+  const didCommService = new DidCommService(
+    resolvedAuthService,
+    didCommRepository,
+    env.SIWE_DOMAIN,
+    env.CHAIN_ID,
+    stakeholderDirectory,
   );
 
   app.use(
@@ -348,6 +369,11 @@ export function createApp({
   });
 
   app.use('/api/auth', express.json({ limit: '10kb' }), createAuthRouter(authController));
+  app.use(
+    '/api/didcomm',
+    express.json({ limit: '300kb' }),
+    createDidCommRouter(didCommService, env.AUTH_COOKIE_NAME),
+  );
   app.use(
     '/api/stakeholders',
     createStakeholderDirectoryRouter(
@@ -400,6 +426,12 @@ export function createApp({
         });
         return;
       }
+
+      console.error('Unhandled API error', {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      });
 
       response.status(500).json({
         error: { code: 'INTERNAL_ERROR', message: 'An unexpected server error occurred.' },
@@ -471,6 +503,7 @@ function createDefaultIngredientBatchService(
   authService: AuthService,
   agentProvider: TraceChainAgentProvider,
   contentStore: CredentialContentStore,
+  messagingIdentityResolver: Pick<JsonDidCommRepository, 'findIdentityByWallet'>,
 ) {
   let gateway: IngredientBatchGateway | undefined;
   let repository: IngredientBatchWorkflowRepository | undefined;
@@ -514,6 +547,7 @@ function createDefaultIngredientBatchService(
     authService,
     contentStore,
     gateway: lazyGateway,
+    messagingIdentityResolver,
     repository: lazyRepository,
   });
 }
@@ -523,6 +557,8 @@ function createDefaultProductionFlowService(
   agentProvider: TraceChainAgentProvider,
   contentStore: CredentialContentStore,
   stakeholderDirectory: StakeholderDirectory,
+  messagingIdentityRepository: DidCommRepository,
+  companyRoleRepository: CompanyRoleIssuanceRepository,
 ) {
   let gateway: ProductionFlowGateway | undefined;
   let repository: ProductionFlowRepository | undefined;
@@ -562,6 +598,7 @@ function createDefaultProductionFlowService(
     listEvidenceRequestIds: (...input) => resolveGateway().listEvidenceRequestIds(...input),
     listIngredients: () => resolveGateway().listIngredients(),
     prepareAccept: (...input) => resolveGateway().prepareAccept(...input),
+    prepareClose: (...input) => resolveGateway().prepareClose(...input),
     prepareEvidenceRequest: (input) => resolveGateway().prepareEvidenceRequest(input),
     prepareEvidenceResponse: (input) => resolveGateway().prepareEvidenceResponse(input),
     prepareProduct: (input) => resolveGateway().prepareProduct(input),
@@ -588,9 +625,12 @@ function createDefaultProductionFlowService(
   return new ProductionFlowService({
     agentProvider,
     authService,
+    companyRoleRepository,
     contentStore,
     gateway: lazyGateway,
     ingredientRepository: lazyIngredientRepository,
+    messagingIdentityRepository,
+    presentationDomain: env.SIWE_DOMAIN,
     repository: lazyRepository,
     stakeholderDirectory,
   });

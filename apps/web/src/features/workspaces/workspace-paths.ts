@@ -6,11 +6,13 @@ const paths: Record<WorkspaceRole, Record<string, string>> = {
   supplier: {
     batches: 'ingredients',
     requests: 'evidence-requests',
+    securemessages: 'secure-messages',
     mycredential: 'credentials',
     audit: 'reports',
   },
   manufacturer: {
     evidence: 'ingredient-evidence',
+    securemessages: 'secure-messages',
     products: 'product-batches',
     mycredential: 'credentials',
     audit: 'reports',

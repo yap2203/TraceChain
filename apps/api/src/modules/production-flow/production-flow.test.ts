@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const ssiMocks = vi.hoisted(() => ({
   createPresentation: vi.fn(),
   parseCredential: vi.fn(),
+  safeParseCredential: vi.fn(),
   verifyCredential: vi.fn(),
   verifyPresentation: vi.fn(),
 }));
@@ -13,7 +14,10 @@ vi.mock('@tracechain/ssi', async (importOriginal) => {
   return {
     ...original,
     createIngredientEvidencePresentation: ssiMocks.createPresentation,
-    ingredientCredentialSchema: { parse: ssiMocks.parseCredential },
+    ingredientCredentialSchema: {
+      parse: ssiMocks.parseCredential,
+      safeParse: ssiMocks.safeParseCredential,
+    },
     verifyIngredientCredential: ssiMocks.verifyCredential,
     verifyIngredientEvidencePresentation: ssiMocks.verifyPresentation,
   };
@@ -74,6 +78,7 @@ describe('production flow service', () => {
       verifiableCredential: [],
     });
     ssiMocks.parseCredential.mockImplementation((value) => value);
+    ssiMocks.safeParseCredential.mockImplementation((value) => ({ data: value, success: true }));
     ssiMocks.verifyCredential.mockResolvedValue({
       credentialHash: 'aa'.repeat(32),
       reasons: [],
@@ -286,6 +291,29 @@ describe('production flow service', () => {
       ingredientRepository,
       repository,
     });
+    ssiMocks.createPresentation.mockResolvedValueOnce({
+      expirationDate: '2026-11-08T00:00:00.000Z',
+      holder: ingredientRecord.issuerDid,
+      proof: { jwt: 'presentation.jwt.value' },
+      verifiableCredential: [
+        {
+          credentialSubject: {
+            allergenInformation: 'May contain soy',
+            batchId: 'COCOA-001',
+            category: 'Cocoa',
+            certifications: ['Organic'],
+            expiryDate: '2027-01-01T00:00:00.000Z',
+            ingredientName: 'Cocoa powder',
+            origin: 'Malaysia',
+            productionDate: '2026-10-01T00:00:00.000Z',
+            quantity: '500',
+            unit: 'kg',
+          },
+          expirationDate: '2027-01-01T00:00:00.000Z',
+          id: 'urn:credential:1',
+        },
+      ],
+    });
     const response = await supplierService.prepareEvidenceResponse('session', requestId);
     expect(response.state).toBe('TRANSACTION_REQUIRED');
     const saved = evidence.get(requestId.toLowerCase())!;
@@ -321,6 +349,17 @@ describe('production flow service', () => {
       gateway,
       ingredientRepository,
       repository,
+    });
+    const review = await manufacturerService.reviewEvidence('session', requestId);
+    expect(review).toMatchObject({
+      disclosure: 'FULL_INGREDIENT_CREDENTIAL',
+      sharedClaims: { ingredientName: 'Cocoa powder', origin: 'Malaysia' },
+      verification: { state: 'NOT_VERIFIED' },
+    });
+    const verification = await manufacturerService.verifyEvidence('session', requestId);
+    expect(verification.checks.every((check) => check.passed)).toBe(true);
+    await expect(manufacturerService.reviewEvidence('session', requestId)).resolves.toMatchObject({
+      verification: { state: 'PASSED', verifiedAt: NOW.toISOString() },
     });
     const acceptance = await manufacturerService.prepareEvidenceAcceptance('session', requestId);
     expect(acceptance.state).toBe('TRANSACTION_REQUIRED');

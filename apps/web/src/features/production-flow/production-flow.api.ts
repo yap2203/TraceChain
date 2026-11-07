@@ -41,18 +41,30 @@ export interface ProductionEvidenceRequest {
   presentationExpiresAt: number;
   requestId: string;
   requester: string;
+  requesterRole?: CompanyRole;
   manufacturerName?: string;
+  requesterName?: string;
   status: number;
   supplier: string;
   supplierName?: string;
   updatedAt: number;
+  verification?: { state: 'NOT_VERIFIED' | 'PASSED'; verifiedAt?: string };
 }
 
 export interface WorkflowResponse {
   actorWallet: string;
   batchId?: string;
   requestId?: string;
-  state: 'COMPLETE' | 'TRANSACTION_REQUIRED';
+  holderSigning?: {
+    audience: string;
+    claims: string[];
+    credential: string;
+    holderDid: string;
+    nonce: string;
+    purpose: string;
+    requiredClaims: string[];
+  };
+  state: 'COMPLETE' | 'HOLDER_SIGNATURE_REQUIRED' | 'TRANSACTION_REQUIRED';
   status?: number;
   transaction?: PreparedTransaction;
   transferId?: string;
@@ -62,6 +74,45 @@ export const listProductionIngredients = () =>
   request<{ batches: ProductionIngredient[] }>('/ingredients');
 export const listEvidenceRequests = () =>
   request<{ requests: ProductionEvidenceRequest[] }>('/evidence-requests');
+export interface RetailerEvidenceOption {
+  ingredientBatchId: string;
+  productBatchId: string;
+  quantity: string;
+  supplier: string;
+  supplierName?: string;
+}
+export const listRetailerEvidenceOptions = () =>
+  request<{ options: RetailerEvidenceOption[] }>('/retailer/evidence-options');
+export interface EvidenceDetails {
+  batchId: string;
+  claims: string[];
+  requiredClaims: string[];
+  dueAt: number;
+  presentation?: unknown;
+  presentationExpiresAt: number;
+  reason: string;
+  requestId: string;
+  requester: string;
+  status: number;
+  supplier: string;
+}
+export const getEvidenceDetails = (requestId: string) =>
+  request<EvidenceDetails>(`/evidence-requests/${requestId}`);
+export interface EvidenceReview {
+  batchId: string;
+  credentialExpiry: string;
+  credentialId: string;
+  disclosure: 'FULL_INGREDIENT_CREDENTIAL' | 'SELECTIVE_SD_JWT';
+  presentationExpiry: string;
+  requestId: string;
+  sharedClaims: Record<string, unknown>;
+  supplier: string;
+  supplierName?: string;
+  status: number;
+  verification: { state: 'NOT_VERIFIED' | 'PASSED'; verifiedAt?: string };
+}
+export const reviewEvidence = (requestId: string) =>
+  request<EvidenceReview>(`/evidence-requests/${requestId}/review`);
 export interface StakeholderRecipient {
   active: boolean;
   companyName: string;
@@ -88,18 +139,103 @@ export const listRetailers = () => request<{ retailers: StakeholderRecipient[] }
 export const prepareEvidenceRequest = (input: {
   batchId: string;
   claims: string[];
+  requiredClaims: string[];
   dueAt: string;
   operationId: string;
+  productBatchId?: string;
   reason: string;
 }) =>
   request<WorkflowResponse>('/evidence-requests/prepare', {
     body: JSON.stringify(input),
     method: 'POST',
   });
-export const prepareEvidenceResponse = (requestId: string) =>
-  request<WorkflowResponse>(`/evidence-requests/${requestId}/respond/prepare`, { method: 'POST' });
+export const prepareEvidenceResponse = (requestId: string, presentation?: string) =>
+  request<WorkflowResponse>(`/evidence-requests/${requestId}/respond/prepare`, {
+    body: presentation ? JSON.stringify({ presentation }) : undefined,
+    method: 'POST',
+  });
 export const prepareEvidenceAcceptance = (requestId: string) =>
   request<WorkflowResponse>(`/evidence-requests/${requestId}/accept/prepare`, { method: 'POST' });
+export const prepareEvidenceClose = (
+  requestId: string,
+  input: { reason: string; status: 'DECLINED' | 'REJECTED' | 'CANCELLED' },
+) =>
+  request<WorkflowResponse>(`/evidence-requests/${requestId}/close/prepare`, {
+    body: JSON.stringify(input),
+    method: 'POST',
+  });
+export interface EvidenceVerificationResult {
+  checks: Array<{ code: string; passed: boolean }>;
+  credentialId: string;
+  requestId: string;
+  verifiedAt: string;
+}
+export const verifyEvidence = (requestId: string) =>
+  request<EvidenceVerificationResult>(`/evidence-requests/${requestId}/verify`, {
+    method: 'POST',
+  });
+export interface CompanyIdentityProofStatus {
+  expiresAt?: number;
+  presenterRole?: string;
+  presenterWallet?: string;
+  purpose?: string;
+  requestId: string;
+  status: 'NOT_REQUESTED' | 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED' | 'EXPIRED';
+  verifiedAt?: string;
+  checks?: string[];
+  credential?: {
+    credentialHash: string;
+    credentialId: string;
+    credentialStatus: string;
+    expirationDate: string;
+    issuanceDate: string;
+    issuer: string;
+    issuerName?: string;
+    subject: {
+      companyId: string;
+      companyName: string;
+      companyRegistrationNumber: string;
+      id: string;
+      role: string;
+      walletAddress: string;
+    };
+  };
+}
+export interface CompanyIdentityProofMaterial {
+  audience: string;
+  challenge: string;
+  credential: Record<string, unknown>;
+  credentialHash: string;
+  expiresAt: number;
+  holderDid: string;
+  presenterRole: string;
+  presenterWallet: string;
+  purpose: string;
+  requestId: string;
+}
+export const requestCompanyIdentityProof = (requestId: string) =>
+  request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/request`, {
+    method: 'POST',
+  });
+export const getCompanyIdentityProofStatus = (requestId: string) =>
+  request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity`);
+export const getCompanyIdentityProofMaterial = (requestId: string) =>
+  request<CompanyIdentityProofMaterial>(
+    `/evidence-requests/${requestId}/company-identity/material`,
+  );
+export const presentCompanyIdentityProof = (requestId: string, presentation: string) =>
+  request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/present`, {
+    body: JSON.stringify({ presentation }),
+    method: 'POST',
+  });
+export const declineCompanyIdentityProof = (requestId: string) =>
+  request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/decline`, {
+    method: 'POST',
+  });
+export const verifyCompanyIdentityProof = (requestId: string) =>
+  request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/verify`, {
+    method: 'POST',
+  });
 export const prepareProduct = (input: {
   batchReference: string;
   category: string;

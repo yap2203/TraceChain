@@ -4,6 +4,9 @@ import { ZodError } from 'zod';
 import { AuthError } from '../auth/auth.service.js';
 import {
   distributorTransferRequestSchema,
+  companyIdentityPresentationSchema,
+  evidenceCloseSchema,
+  evidencePresentationSchema,
   evidenceRequestSchema,
   productRequestSchema,
   requestIdSchema,
@@ -19,6 +22,21 @@ export class ProductionFlowController {
 
   listIngredients = this.action((request) => this.service.listIngredients(this.session(request)));
   listEvidence = this.action((request) => this.service.listEvidence(this.session(request)));
+  listRetailerEvidenceOptions = this.action((request) =>
+    this.service.listRetailerEvidenceOptions(this.session(request)),
+  );
+  getEvidenceDetails = this.action((request) =>
+    this.service.getEvidenceDetails(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  reviewEvidence = this.action((request) =>
+    this.service.reviewEvidence(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+    ),
+  );
   listDistributors = this.action((request) => this.service.listDistributors(this.session(request)));
   listDistributorInventory = this.action((request) =>
     this.service.listDistributorInventory(this.session(request)),
@@ -34,12 +52,63 @@ export class ProductionFlowController {
     this.service.prepareEvidenceResponse(
       this.session(request),
       requestIdSchema.parse(request.params).requestId,
+      evidencePresentationSchema.parse(request.body),
+    ),
+  );
+  requestCompanyIdentityProof = this.action((request) =>
+    this.service.requestCompanyIdentityProof(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  getCompanyIdentityProofMaterial = this.action((request) =>
+    this.service.getCompanyIdentityProofMaterial(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  presentCompanyIdentityProof = this.action((request) =>
+    this.service.presentCompanyIdentityProof(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+      companyIdentityPresentationSchema.parse(request.body).presentation,
+    ),
+  );
+  verifyCompanyIdentityProof = this.action((request) =>
+    this.service.verifyCompanyIdentityProof(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  declineCompanyIdentityProof = this.action((request) =>
+    this.service.declineCompanyIdentityProof(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  getCompanyIdentityProofStatus = this.action((request) =>
+    this.service.getCompanyIdentityProofStatus(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
     ),
   );
   prepareEvidenceAcceptance = this.action((request) =>
     this.service.prepareEvidenceAcceptance(
       this.session(request),
       requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  verifyEvidence = this.action((request) =>
+    this.service.verifyEvidence(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  prepareEvidenceClose = this.action((request) =>
+    this.service.prepareEvidenceClose(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+      evidenceCloseSchema.parse(request.body),
     ),
   );
   prepareProduct = this.action((request) =>

@@ -5,10 +5,15 @@ import type { IngredientCredential } from '../credentials/ingredient-credential.
 import { verifyIngredientCredential } from '../credentials/ingredient-credential.service.js';
 
 export interface CreateIngredientEvidencePresentationInput {
+  batchId: string;
   challenge: string;
   credential: IngredientCredential;
+  domain: string;
   expirationDate: Date;
   holderDid: string;
+  purpose: string;
+  requestId: string;
+  verifier: string;
 }
 
 export async function createIngredientEvidencePresentation(
@@ -31,10 +36,15 @@ export async function verifyIngredientEvidencePresentation(
   agent: TraceChainAgent,
   presentationInput: unknown,
   input: {
+    batchId: string;
     challenge: string;
+    domain: string;
     expectedIssuerDid: string;
     now?: Date;
+    purpose: string;
+    requestId: string;
     supplierWallet: string;
+    verifier: string;
   },
 ) {
   const presentation = presentationInput as Partial<VerifiablePresentation> & {
@@ -49,7 +59,6 @@ export async function verifyIngredientEvidencePresentation(
   ) {
     return { reasons: ['MALFORMED_PRESENTATION'] as const, verified: false };
   }
-
   const now = input.now ?? new Date();
   if (
     !presentation.expirationDate ||

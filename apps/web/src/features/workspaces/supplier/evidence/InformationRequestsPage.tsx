@@ -41,10 +41,11 @@ export function InformationRequests({
             sub="Manufacturer requests for your on-chain ingredient batches will appear here."
           />
         ) : (
-          <Table headers={['Manufacturer', 'Due', 'Status', '']}>
+          <Table headers={['Requester', 'Role', 'Due', 'Status', '']}>
             {requests.map((request) => (
               <TR key={request.requestId}>
-                <TD>{request.manufacturerName ?? 'Verified Manufacturer'}</TD>
+                <TD>{request.requesterName ?? request.manufacturerName ?? 'Verified requester'}</TD>
+                <TD>{request.requesterRole ?? 'Manufacturer'}</TD>
                 <TD muted>{chainDate(request.dueAt)}</TD>
                 <TD>
                   <Badge

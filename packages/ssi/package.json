@@ -20,6 +20,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
+    "@sd-jwt/core": "^0.24.3",
     "@tracechain/shared": "^0.1.0",
     "@veramo/core": "^7.0.2",
     "@veramo/credential-jwt": "^7.0.2",

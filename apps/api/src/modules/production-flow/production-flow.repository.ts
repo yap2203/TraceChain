@@ -15,12 +15,27 @@ export interface EvidenceWorkflowRecord {
   requestPayload: EncryptedCredentialPayload;
   requester: string;
   supplier: string;
+  identityProof?: {
+    audience: string;
+    challenge: string;
+    expiresAt: number;
+    presenterRole: string;
+    presenterWallet: string;
+    purpose: string;
+    status: 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED';
+    presentationPayload?: EncryptedCredentialPayload;
+    verifiedAt?: string;
+  };
   response?: {
     credentialId: string;
     presentationCid: string;
     presentationExpiresAt: number;
     presentationHash: string;
     presentationPayload: EncryptedCredentialPayload;
+    verification?: {
+      state: 'PASSED';
+      verifiedAt: string;
+    };
   };
 }
 

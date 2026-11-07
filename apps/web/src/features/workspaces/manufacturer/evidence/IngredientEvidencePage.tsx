@@ -2,14 +2,21 @@ import { useEffect, useState } from 'react';
 import { CheckCircle2, Clock, FileCheck } from 'lucide-react';
 
 import {
+  getEvidenceDetails,
   listEvidenceRequests,
   listProductionIngredients,
   prepareEvidenceAcceptance,
+  prepareEvidenceClose,
   prepareEvidenceRequest,
+  reviewEvidence,
+  verifyEvidence,
+  type EvidenceReview,
   type ProductionEvidenceRequest,
   type ProductionIngredient,
 } from '../../../production-flow/production-flow.api';
+import { sendEvidenceRequestMessage } from '../../../production-flow/evidence-didcomm';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import { CompanyIdentityProofAction } from '../../../production-flow/CompanyIdentityProofAction';
 import {
   Alert,
   Badge,
@@ -36,6 +43,17 @@ const statuses = [
   'Cancelled',
 ];
 
+const selectableClaims = [
+  ['countryOfOrigin', 'Country of origin'],
+  ['exactSourceFacility', 'Exact source facility'],
+  ['productionDate', 'Production date'],
+  ['expiryDate', 'Expiry date'],
+  ['allergenDeclaration', 'Allergen declaration'],
+  ['certificationDetails', 'Certification details'],
+  ['qualityTestSummary', 'Quality test summary'],
+  ['internalQualityRemarks', 'Internal quality remarks'],
+] as const;
+
 export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) => void }) {
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
   const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
@@ -45,6 +63,16 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [verified, setVerified] = useState<Record<string, string>>({});
+  const [review, setReview] = useState<EvidenceReview>();
+  const [rejectReason, setRejectReason] = useState('');
+  const [claimChoices, setClaimChoices] = useState<
+    Record<string, 'required' | 'optional' | 'none'>
+  >({
+    countryOfOrigin: 'required',
+    productionDate: 'optional',
+    expiryDate: 'required',
+  });
 
   const load = async () => {
     const [ingredientResult, requestResult] = await Promise.all([
@@ -66,20 +94,32 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
     setNotice('');
     try {
       const operationId = crypto.randomUUID();
-      await completePreparedWorkflow(() =>
+      const claims = selectableClaims
+        .map(([name]) => name)
+        .filter((name) => (claimChoices[name] ?? 'none') !== 'none');
+      const requiredClaims = claims.filter((name) => claimChoices[name] === 'required');
+      const completed = await completePreparedWorkflow(() =>
         prepareEvidenceRequest({
           batchId,
-          claims: [
-            'Full Ingredient Credential',
-            'Ingredient batch identity',
-            'Credential validity',
-          ],
+          claims,
+          requiredClaims,
           dueAt: new Date(`${dueAt}T23:59:59`).toISOString(),
           operationId,
           reason,
         }),
       );
-      setNotice('The evidence request is confirmed on chain.');
+      if (!completed.requestId) throw new Error('The confirmed request ID is unavailable.');
+      try {
+        await sendEvidenceRequestMessage(await getEvidenceDetails(completed.requestId));
+        setNotice('The request is confirmed on chain and its encrypted DIDComm message was sent.');
+      } catch (deliveryError) {
+        setNotice('The request is confirmed on chain.');
+        setError(
+          deliveryError instanceof Error
+            ? deliveryError.message
+            : 'Encrypted DIDComm delivery is pending.',
+        );
+      }
       setBatchId('');
       await load();
     } catch (cause) {
@@ -99,6 +139,55 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Evidence acceptance failed.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const verify = async (requestId: string) => {
+    setBusy(requestId);
+    setError('');
+    setNotice('');
+    try {
+      const result = await verifyEvidence(requestId);
+      setVerified((current) => ({ ...current, [requestId]: result.verifiedAt }));
+      setReview(await reviewEvidence(requestId));
+      setNotice(
+        'The presentation and credential checks passed. Review the result before separately accepting it.',
+      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Evidence verification failed.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const view = async (requestId: string) => {
+    setBusy(`view:${requestId}`);
+    setError('');
+    try {
+      setReview(await reviewEvidence(requestId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load received evidence.');
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const reject = async () => {
+    if (!review) return;
+    setBusy(`reject:${review.requestId}`);
+    setError('');
+    try {
+      await completePreparedWorkflow(() =>
+        prepareEvidenceClose(review.requestId, { reason: rejectReason, status: 'REJECTED' }),
+      );
+      setNotice('The received evidence was rejected on chain.');
+      setReview(undefined);
+      setRejectReason('');
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Evidence rejection failed.');
     } finally {
       setBusy('');
     }
@@ -164,12 +253,49 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
           </label>
           <Input label="Reason" value={reason} onChange={setReason} required />
           <Input label="Response deadline" type="date" value={dueAt} onChange={setDueAt} required />
+          <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
+            <legend style={{ color: T.navy, fontWeight: 700 }}>Requested claims</legend>
+            <div style={{ fontSize: 12, color: T.text2, marginBottom: 10 }}>
+              Batch identity, ingredient name, Supplier wallet and credential ID are always shared.
+              Choose whether each additional claim is required or optional for the Supplier.
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {selectableClaims.map(([name, label]) => (
+                <label
+                  key={name}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 12 }}
+                >
+                  <span>{label}</span>
+                  <select
+                    aria-label={`${label} requirement`}
+                    value={claimChoices[name] ?? 'none'}
+                    onChange={(event) =>
+                      setClaimChoices((current) => ({
+                        ...current,
+                        [name]: event.target.value as 'required' | 'optional' | 'none',
+                      }))
+                    }
+                  >
+                    <option value="none">Not requested</option>
+                    <option value="optional">Optional</option>
+                    <option value="required">Required</option>
+                  </select>
+                </label>
+              ))}
+            </div>
+          </fieldset>
           <Alert
             type="info"
             message="The request details and random challenge are encrypted before upload. Only their hashes and encrypted content reference are recorded on chain."
           />
           <Btn
-            disabled={!batchId || !reason.trim() || !dueAt || Boolean(busy)}
+            disabled={
+              !batchId ||
+              !reason.trim() ||
+              !dueAt ||
+              !Object.values(claimChoices).some((value) => value !== 'none') ||
+              Boolean(busy)
+            }
             onClick={() => void requestEvidence()}
           >
             {busy === 'request' ? 'Confirming…' : 'Request evidence with MetaMask'}
@@ -202,19 +328,124 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
                   />
                 </TD>
                 <TD>
+                  <CompanyIdentityProofAction requestId={request.requestId} />
+                  {request.status >= 2 && (
+                    <Btn
+                      size="xs"
+                      variant="outline"
+                      disabled={Boolean(busy)}
+                      onClick={() => void view(request.requestId)}
+                    >
+                      {busy === `view:${request.requestId}` ? 'Loading…' : 'View evidence'}
+                    </Btn>
+                  )}
                   {request.status === 2 && (
                     <Btn
                       size="xs"
                       disabled={Boolean(busy)}
-                      onClick={() => void accept(request.requestId)}
+                      onClick={() => void verify(request.requestId)}
                     >
-                      {busy === request.requestId ? 'Verifying…' : 'Verify & accept'}
+                      {busy === request.requestId ? 'Verifying…' : 'Verify evidence'}
                     </Btn>
                   )}
                 </TD>
               </TR>
             ))}
           </Table>
+        </Card>
+      )}
+      {review && (
+        <Card>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              alignItems: 'start',
+              marginBottom: 14,
+            }}
+          >
+            <div>
+              <h3 style={{ margin: 0, color: T.navy }}>Received ingredient evidence</h3>
+              <div style={{ color: T.text2, fontSize: 13, marginTop: 4 }}>
+                {review.supplierName ?? 'Verified Supplier'} · {shortChainId(review.batchId)}
+              </div>
+            </div>
+            <Badge
+              label={review.verification.state === 'PASSED' ? 'Verification passed' : 'Unverified'}
+              variant={review.verification.state === 'PASSED' ? 'verified' : 'pending'}
+            />
+          </div>
+          <Alert
+            type="warning"
+            message={
+              review.verification.state === 'PASSED'
+                ? `${review.disclosure === 'SELECTIVE_SD_JWT' ? 'Selective disclosure' : 'Full disclosure'}: the displayed claims passed the cryptographic, holder-binding, challenge, and on-chain checks.`
+                : `${review.disclosure === 'SELECTIVE_SD_JWT' ? 'Selective disclosure' : 'Full disclosure'}: these visible claim values remain unverified until you select Verify evidence.`
+            }
+          />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))',
+              gap: 12,
+              marginTop: 14,
+            }}
+          >
+            {[
+              ['Supplier', review.supplierName ?? review.supplier],
+              ...Object.entries(review.sharedClaims).map(([label, value]) => [
+                label,
+                Array.isArray(value) ? value.join(', ') : String(value ?? 'Unavailable'),
+              ]),
+              ['Presentation expiry', new Date(review.presentationExpiry).toLocaleString()],
+              [
+                'Credential expiry',
+                review.credentialExpiry === 'Unavailable'
+                  ? 'Unavailable'
+                  : new Date(review.credentialExpiry).toLocaleString(),
+              ],
+            ].map(([label, value]) => (
+              <div key={label} style={{ padding: 10, background: T.surface2, borderRadius: 8 }}>
+                <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
+                <div style={{ marginTop: 4, overflowWrap: 'anywhere' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+          {review.verification.verifiedAt && (
+            <div style={{ marginTop: 12, fontSize: 12, color: T.text2 }}>
+              Last verified: {new Date(review.verification.verifiedAt).toLocaleString()}
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+            <Btn disabled={Boolean(busy)} onClick={() => void verify(review.requestId)}>
+              Verify evidence
+            </Btn>
+            <Btn
+              disabled={
+                review.status !== 2 || review.verification.state !== 'PASSED' || Boolean(busy)
+              }
+              onClick={() => void accept(review.requestId)}
+            >
+              Accept evidence
+            </Btn>
+            <Input
+              label="Rejection reason"
+              value={rejectReason}
+              onChange={setRejectReason}
+              placeholder="Required to reject"
+            />
+            <Btn
+              variant="outline"
+              disabled={review.status !== 2 || !rejectReason.trim() || Boolean(busy)}
+              onClick={() => void reject()}
+            >
+              Reject evidence
+            </Btn>
+            <Btn variant="ghost" onClick={() => setReview(undefined)}>
+              Close review
+            </Btn>
+          </div>
         </Card>
       )}
     </div>

@@ -42,6 +42,7 @@ import {
 } from './retailer';
 import AuditReport from './reports/AuditReportPage';
 import { ScanReceiptFlow, ReceiptGatedFlow } from './receipts';
+import { SecureMessagingPage } from '../didcomm/SecureMessagingPage';
 
 export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page: string }) {
   const navigate = useNavigate();
@@ -88,6 +89,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
       if (discReq) return <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />;
       return <InformationRequests onRespond={(req) => setDiscReq(req)} />;
     }
+    if (tab === 'securemessages') return <SecureMessagingPage role="supplier" />;
     if (tab === 'mycredential') return <SupplierCredential />;
     if (tab === 'audit') return <AuditReport />;
   }
@@ -95,6 +97,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
   if (role === 'manufacturer') {
     if (tab === 'overview') return <ManufacturerOverview onNav={nav} />;
     if (tab === 'evidence') return <IngredientEvidence onNav={(t) => nav(t)} />;
+    if (tab === 'securemessages') return <SecureMessagingPage role="manufacturer" />;
     if (tab === 'products') {
       if (subView === 'products-new')
         return <CreateProductBatch onBack={() => setSearchParams({})} />;

@@ -8,8 +8,10 @@ export const evidenceRequestSchema = z
   .object({
     batchId: bytes32,
     claims: z.array(z.string().trim().min(1).max(80)).min(1).max(20),
+    requiredClaims: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
     dueAt: z.coerce.date(),
     operationId: z.string().uuid(),
+    productBatchId: bytes32.optional(),
     reason: z.string().trim().min(1).max(500),
   })
   .strict();
@@ -64,8 +66,22 @@ export const distributorTransferRequestSchema = z
   .strict();
 
 export const requestIdSchema = z.object({ requestId: bytes32 }).strict();
+export const evidencePresentationSchema = z
+  .object({ presentation: z.string().min(100).max(200_000) })
+  .strict()
+  .optional();
+export const companyIdentityPresentationSchema = z
+  .object({ presentation: z.string().min(100).max(300_000) })
+  .strict();
+export const evidenceCloseSchema = z
+  .object({
+    reason: z.string().trim().min(1).max(500),
+    status: z.enum(['DECLINED', 'REJECTED', 'CANCELLED']),
+  })
+  .strict();
 
 export type EvidenceRequestInput = z.infer<typeof evidenceRequestSchema>;
+export type EvidenceCloseInput = z.infer<typeof evidenceCloseSchema>;
 export type ProductRequestInput = z.infer<typeof productRequestSchema>;
 export type TransferRequestInput = z.infer<typeof transferRequestSchema>;
 export type DistributorTransferRequestInput = z.infer<typeof distributorTransferRequestSchema>;

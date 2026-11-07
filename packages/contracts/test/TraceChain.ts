@@ -20,6 +20,7 @@ describe('TraceChain integration', function () {
       stakeholders,
       credentials,
     ]);
+    await evidence.getFunction('configureIngredientRegistry')(ingredients);
     const products = await ethers.deployContract('ProductRegistry', [
       stakeholders,
       ingredients,
@@ -261,6 +262,68 @@ describe('TraceChain integration', function () {
       await system.ingredients.getFunction('isValidTraceabilitySource')(system.ingredientId),
     ).to.equal(false);
     expect(await system.products.isTransferable(system.productId)).to.equal(false);
+  });
+
+  it('rejects a valid but unrelated Ingredient Credential during evidence acceptance', async function () {
+    const system = await networkHelpers.loadFixture(ingredientFixture);
+    const unrelatedCredentialId = ethers.id('unrelated-ingredient-credential');
+    await asSigner(system.credentials, system.supplier).registerCredential(
+      unrelatedCredentialId,
+      ethers.id('unrelated-ingredient-jwt'),
+      'encrypted-unrelated-ingredient-cid',
+      system.supplier.address,
+      2,
+      system.now + 86_400,
+    );
+    const requestId = ethers.id('UNRELATED-CREDENTIAL-REQUEST');
+    await asSigner(system.evidence, system.manufacturer).requestEvidence(
+      requestId,
+      system.supplier.address,
+      system.ingredientId,
+      ethers.id('claims'),
+      ethers.id('unrelated-challenge'),
+      'encrypted-request-cid',
+      system.now + 3_600,
+    );
+    await asSigner(system.evidence, system.supplier).respond(
+      requestId,
+      ethers.id('presentation'),
+      'encrypted-presentation-cid',
+      system.now + 1_800,
+    );
+
+    await expect(
+      asSigner(system.evidence, system.manufacturer).accept(requestId, unrelatedCredentialId),
+    ).to.be.revertedWithCustomError(system.evidence, 'InvalidState');
+  });
+
+  it('records Retailer evidence satisfaction without granting Manufacturer consumption rights', async function () {
+    const system = await networkHelpers.loadFixture(ingredientFixture);
+    await onboard(system, system.retailer, 5);
+    const requestId = ethers.id('RETAILER-EVIDENCE-REQUEST');
+    await asSigner(system.evidence, system.retailer).requestEvidence(
+      requestId,
+      system.supplier.address,
+      system.ingredientId,
+      ethers.id('retailer-claims'),
+      ethers.id('retailer-challenge'),
+      'encrypted-retailer-request-cid',
+      system.now + 3_600,
+    );
+    await asSigner(system.evidence, system.supplier).respond(
+      requestId,
+      ethers.id('retailer-presentation'),
+      'encrypted-retailer-presentation-cid',
+      system.now + 1_800,
+    );
+    await asSigner(system.evidence, system.retailer).accept(
+      requestId,
+      system.ingredientCredentialId,
+    );
+    expect(
+      await system.evidence.acceptedForManufacturer(system.ingredientId, system.retailer),
+    ).to.equal(false);
+    expect((await system.evidence.getRequest(requestId)).status).to.equal(3n);
   });
 
   it('reserves split inventory and settles receipt quantities exactly once', async function () {

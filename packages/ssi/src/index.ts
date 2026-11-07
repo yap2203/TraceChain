@@ -51,3 +51,15 @@ export {
   verifyIngredientEvidencePresentation,
 } from './presentations/ingredient-evidence-presentation.js';
 export type { CreateIngredientEvidencePresentationInput } from './presentations/ingredient-evidence-presentation.js';
+export {
+  INGREDIENT_SD_JWT_VCT,
+  issueIngredientSdJwt,
+  readIngredientSdJwtClaims,
+  selectivePresentationFrame,
+  verifyIngredientSdJwtPresentation,
+  verifyIssuedIngredientSdJwt,
+} from './credentials/ingredient-sd-jwt.js';
+export type {
+  IngredientSdJwtClaims,
+  IssueIngredientSdJwtInput,
+} from './credentials/ingredient-sd-jwt.js';

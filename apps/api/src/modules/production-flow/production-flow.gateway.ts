@@ -34,6 +34,7 @@ const evidenceAbi = [
   'function requestEvidence(bytes32,address,bytes32,bytes32,bytes32,string,uint64)',
   'function respond(bytes32,bytes32,string,uint64)',
   'function accept(bytes32,bytes32)',
+  'function close(bytes32,uint8,bytes32)',
 ] as const;
 const productAbi = [
   'error InvalidInput()',
@@ -88,9 +89,10 @@ export interface ProductionFlowGateway {
   listActiveDistributors(): Promise<string[]>;
   listActiveRetailers(): Promise<string[]>;
   listReceivedProductBatchIds(holder: string): Promise<string[]>;
-  listEvidenceRequestIds(wallet: string, role: 2 | 3): Promise<string[]>;
+  listEvidenceRequestIds(wallet: string, role: 2 | 3 | 5): Promise<string[]>;
   listIngredients(): Promise<Array<ChainIngredientBatch & { batchId: string }>>;
   prepareAccept(requestId: string, credentialId: string): PreparedTransaction;
+  prepareClose(requestId: string, status: number, reasonHash: string): PreparedTransaction;
   prepareEvidenceRequest(input: {
     requestId: string;
     supplier: string;
@@ -276,7 +278,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
     );
   }
 
-  async listEvidenceRequestIds(wallet: string, role: 2 | 3) {
+  async listEvidenceRequestIds(wallet: string, role: 2 | 3 | 5) {
     const filter =
       role === 2
         ? this.evidence.filters.EvidenceRequested(null, null, wallet)
@@ -448,6 +450,12 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
     return this.tx(
       this.addresses.evidence,
       evidenceInterface.encodeFunctionData('accept', [requestId, credentialId]),
+    );
+  }
+  prepareClose(requestId: string, status: number, reasonHash: string) {
+    return this.tx(
+      this.addresses.evidence,
+      evidenceInterface.encodeFunctionData('close', [requestId, status, reasonHash]),
     );
   }
   prepareProduct(input: {
