@@ -26,6 +26,8 @@ import type {
   CompanyRoleIssuanceRepository,
 } from './issuance.repository.js';
 import type {
+  CompanyIdentityCheck,
+  CompanyIdentityResponse,
   CompanyRoleVerificationApiResponse,
   CredentialExpirationStatus,
 } from './ssi.types.js';
@@ -59,6 +61,218 @@ export class CompanyRoleSsiService {
 
   constructor(private readonly dependencies: CompanyRoleSsiServiceDependencies) {
     this.clock = dependencies.clock ?? (() => new Date());
+  }
+
+  async getMyCompanyIdentity(sessionId: string | undefined): Promise<CompanyIdentityResponse> {
+    return this.resolveMyCompanyIdentity(sessionId, false);
+  }
+
+  async verifyMyCompanyIdentity(sessionId: string | undefined): Promise<CompanyIdentityResponse> {
+    return this.resolveMyCompanyIdentity(sessionId, true);
+  }
+
+  private async resolveMyCompanyIdentity(
+    sessionId: string | undefined,
+    performVerification: boolean,
+  ): Promise<CompanyIdentityResponse> {
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    const gateway = this.dependencies.blockchainGateway;
+    const repository = this.dependencies.issuanceRepository;
+    const contentStore = this.dependencies.credentialContentStore;
+    if (!gateway || !repository || !contentStore || !this.dependencies.chainId) {
+      throw new SsiApiError(
+        'IDENTITY_SERVICE_UNAVAILABLE',
+        'The company identity service is not configured.',
+        503,
+      );
+    }
+
+    let stakeholder;
+    try {
+      stakeholder = await gateway.getStakeholder(session.address);
+    } catch {
+      throw new SsiApiError(
+        'BLOCKCHAIN_UNAVAILABLE',
+        'The stakeholder registry could not be read.',
+        503,
+      );
+    }
+    if (/^0x0{64}$/i.test(stakeholder.credentialHash)) {
+      throw new SsiApiError(
+        'CREDENTIAL_NOT_LINKED',
+        'No Company Role Credential is linked to this wallet yet.',
+        404,
+      );
+    }
+
+    const walletRecords = (await repository.list())
+      .filter((record) => getAddress(record.applicantWallet) === getAddress(session.address))
+      .sort((left, right) => Date.parse(right.issuedAt) - Date.parse(left.issuedAt));
+    const issuance =
+      walletRecords.find(
+        (record) =>
+          record.credentialHash.toLowerCase() === stakeholder.credentialHash.toLowerCase(),
+      ) ?? walletRecords[0];
+    if (!issuance) {
+      throw new SsiApiError(
+        'CREDENTIAL_CONTENT_UNAVAILABLE',
+        'The encrypted credential for this wallet is unavailable in this API instance.',
+        404,
+      );
+    }
+
+    let credential;
+    try {
+      credential = companyRoleCredentialSchema.parse(
+        JSON.parse(await contentStore.decrypt(issuance.encryptedPayload)),
+      );
+    } catch {
+      throw new SsiApiError(
+        'CREDENTIAL_RETRIEVAL_FAILED',
+        'The encrypted credential could not be retrieved or decoded.',
+        503,
+      );
+    }
+
+    let credentialState;
+    let chainCredential;
+    let administrator;
+    try {
+      administrator = await gateway.getAdministrator();
+      credentialState = await gateway.getCredentialState(stakeholder.credentialHash);
+      if (!/^0x0{64}$/i.test(credentialState.credentialId)) {
+        chainCredential = await gateway.getCredential(credentialState.credentialId);
+      }
+    } catch {
+      throw new SsiApiError(
+        'BLOCKCHAIN_UNAVAILABLE',
+        'The credential registry could not be read.',
+        503,
+      );
+    }
+
+    const now = this.clock();
+    const replaced =
+      !chainCredential ||
+      chainCredential.credentialHash.toLowerCase() !== issuance.credentialHash.toLowerCase() ||
+      chainCredential.encryptedCid !== issuance.encryptedCredentialCid;
+    const lifecycleStatus = resolveLifecycleStatus(
+      chainCredential?.status,
+      credential.expirationDate,
+      replaced,
+      now,
+    );
+    const issuerDid =
+      typeof credential.issuer === 'string' ? credential.issuer : credential.issuer.id;
+    const issuerName =
+      typeof credential.issuer === 'string' ? 'Unavailable' : credential.issuer.name;
+    const response: CompanyIdentityResponse = {
+      identity: {
+        applicationReference: credential.credentialSubject.applicationReference,
+        associatedWallet: credential.credentialSubject.walletAddress,
+        chainId: this.dependencies.chainId,
+        companyName: credential.credentialSubject.companyName,
+        companyRegistrationNumber: credential.credentialSubject.companyRegistrationNumber,
+        credentialHash: stakeholder.credentialHash,
+        credentialId: credential.id,
+        encryptedCredentialCid: stakeholder.credentialCid,
+        expiresAt: credential.expirationDate,
+        issuerDid,
+        issuerName,
+        issuedAt: credential.issuanceDate,
+        lifecycleStatus,
+        registryCredentialId: credentialState.credentialId,
+        registryReferences: gateway.getRegistryReferences?.() ?? {
+          credentialRegistry: '',
+          stakeholderRegistry: '',
+        },
+        role: credential.credentialSubject.role,
+        subjectDid: credential.credentialSubject.id,
+        updatedAt: new Date(stakeholder.updatedAt * 1_000).toISOString(),
+      },
+    };
+    if (!performVerification) return response;
+
+    const agent = await this.dependencies.agentProvider();
+    const authorityDid = await this.authorityDid(agent);
+    const local = await verifyCompanyRoleCredential(
+      agent,
+      credential,
+      session.address,
+      authorityDid,
+      now,
+    );
+    const computedHash = local.credentialHash ? `0x${local.credentialHash}` : undefined;
+    const expectedRole = roleFromContractForIdentity(stakeholder.role);
+    const checks: CompanyIdentityCheck[] = [
+      identityCheck(
+        'Credential structure and type',
+        !local.reasons.includes('MALFORMED_CREDENTIAL'),
+        'Supported Company Role Credential structure.',
+      ),
+      identityCheck(
+        'Cryptographic signature',
+        !local.reasons.includes('INVALID_SIGNATURE'),
+        'Veramo verified the signed JWT proof.',
+      ),
+      identityCheck(
+        'Trusted issuer',
+        !local.reasons.includes('UNTRUSTED_ISSUER'),
+        'Issuer matches the configured TraceChain authority.',
+      ),
+      identityCheck(
+        'Wallet and subject binding',
+        !local.reasons.includes('WRONG_WALLET') &&
+          getAddress(credential.credentialSubject.walletAddress) === getAddress(session.address),
+        'Credential subject is bound to the authenticated SIWE wallet.',
+      ),
+      identityCheck(
+        'Approved role consistency',
+        expectedRole !== undefined && credential.credentialSubject.role === expectedRole,
+        expectedRole
+          ? 'Signed role matches the stakeholder registry role.'
+          : 'The stakeholder no longer has an active assigned role.',
+      ),
+      identityCheck(
+        'Issue and expiry validity',
+        !local.reasons.includes('EXPIRED') && !local.reasons.includes('NOT_YET_VALID'),
+        'Credential dates are currently valid.',
+      ),
+      identityCheck(
+        'Deterministic hash',
+        computedHash?.toLowerCase() === stakeholder.credentialHash.toLowerCase() &&
+          chainCredential?.credentialHash.toLowerCase() ===
+            stakeholder.credentialHash.toLowerCase(),
+        'Signed credential hash matches both registries.',
+      ),
+      identityCheck(
+        'Registry subject and issuer binding',
+        Boolean(chainCredential) &&
+          chainCredential?.credentialType === 1 &&
+          getAddress(chainCredential.subject) === getAddress(session.address) &&
+          getAddress(chainCredential.issuer) === getAddress(administrator) &&
+          chainCredential.encryptedCid === stakeholder.credentialCid,
+        'CredentialRegistry subject, issuer, type, and encrypted reference match the stakeholder record.',
+      ),
+      identityCheck(
+        'Credential lifecycle',
+        lifecycleStatus === 'ACTIVE',
+        `Current lifecycle status: ${lifecycleStatus}.`,
+      ),
+      identityCheck(
+        'Current stakeholder authorization',
+        session.onChainAuthorization?.status === 'AUTHORIZED',
+        `Registry authorization status: ${session.onChainAuthorization?.status ?? 'UNAVAILABLE'}.`,
+      ),
+    ];
+    response.verification = {
+      checks,
+      outcome: checks.every((check) => check.status === 'PASSED')
+        ? 'CHECKS_PASSED'
+        : 'CHECKS_FAILED',
+      verifiedAt: now.toISOString(),
+    };
+    return response;
   }
 
   async prepareAdministratorCredentialOnChain(sessionId: string | undefined) {
@@ -506,6 +720,34 @@ function roleFromContract(role: number) {
   if (!resolved)
     throw new SsiApiError('UNSUPPORTED_ROLE', 'The requested company role is invalid.', 409);
   return resolved;
+}
+
+function roleFromContractForIdentity(role: number) {
+  const roles: Partial<Record<number, CompanyRole>> = {
+    1: CompanyRole.SYSTEM_ADMIN,
+    2: CompanyRole.SUPPLIER,
+    3: CompanyRole.MANUFACTURER,
+    4: CompanyRole.DISTRIBUTOR,
+    5: CompanyRole.RETAILER,
+  };
+  return roles[role];
+}
+
+function identityCheck(label: string, passed: boolean, detail: string): CompanyIdentityCheck {
+  return { detail, label, status: passed ? 'PASSED' : 'FAILED' };
+}
+
+export function resolveLifecycleStatus(
+  status: number | undefined,
+  expirationDate: string,
+  replaced: boolean,
+  now: Date,
+): CompanyIdentityResponse['identity']['lifecycleStatus'] {
+  if (replaced) return 'REPLACED';
+  if (status === 2) return 'SUSPENDED';
+  if (status === 3) return 'REVOKED';
+  if (new Date(expirationDate).getTime() <= now.getTime()) return 'EXPIRED';
+  return status === 1 ? 'ACTIVE' : 'UNKNOWN';
 }
 
 function expirationStatusFrom(reasons: readonly string[]): CredentialExpirationStatus {

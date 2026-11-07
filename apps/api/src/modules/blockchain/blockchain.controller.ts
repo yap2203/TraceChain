@@ -90,6 +90,60 @@ export class BlockchainController {
     }
   };
 
+  getMyCredential = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const session = await this.requireAuthorizedStakeholder(request);
+      const stakeholder = await this.gateway.getStakeholder(session.address);
+      if (/^0x0{64}$/i.test(stakeholder.credentialHash)) {
+        throw new BlockchainApiError(
+          'CREDENTIAL_NOT_LINKED',
+          'No Company Role Credential is linked to this wallet on-chain.',
+          404,
+        );
+      }
+      const state = await this.gateway.getCredentialState(stakeholder.credentialHash);
+      if (/^0x0{64}$/i.test(state.credentialId)) {
+        throw new BlockchainApiError(
+          'CREDENTIAL_NOT_REGISTERED',
+          'The linked Company Role Credential is not registered on-chain.',
+          404,
+        );
+      }
+      const credential = await this.gateway.getCredential(state.credentialId);
+      const issuance = (await this.issuanceRepository.list()).find(
+        (record) =>
+          record.applicantWallet.toLowerCase() === session.address.toLowerCase() &&
+          record.credentialHash.toLowerCase() === credential.credentialHash.toLowerCase(),
+      );
+      const expired = credential.expiresAt * 1_000 <= Date.now();
+      response.json({
+        credential: {
+          companyName: issuance?.companyName,
+          companyRegistrationNumber: issuance?.companyRegistrationNumber,
+          credentialHash: credential.credentialHash,
+          credentialId: state.credentialId,
+          encryptedCredentialCid: credential.encryptedCid,
+          expiresAt: credential.expiresAt,
+          issuedAt: credential.issuedAt,
+          issuer: credential.issuer,
+          role: session.role,
+          status:
+            expired && credential.status === 1
+              ? 'expired'
+              : (({ 1: 'active', 2: 'suspended', 3: 'revoked' } as const)[credential.status] ??
+                'unknown'),
+          stakeholderStatus:
+            ({ 1: 'active', 2: 'suspended', 3: 'revoked' } as const)[stakeholder.status] ??
+            'unknown',
+          subject: credential.subject,
+          updatedAt: Math.max(credential.updatedAt, stakeholder.updatedAt),
+        },
+      });
+    } catch (error) {
+      this.handleError(error, response, next);
+    }
+  };
+
   listRolePermissions = async (request: Request, response: Response, next: NextFunction) => {
     try {
       await this.requireAdministrator(request);

@@ -29,7 +29,7 @@ import type {
   CompanyRoleIssuanceRecord,
   CompanyRoleIssuanceRepository,
 } from './issuance.repository.js';
-import { CompanyRoleSsiService } from './ssi.service.js';
+import { CompanyRoleSsiService, resolveLifecycleStatus } from './ssi.service.js';
 
 const DOMAIN = 'localhost:5173';
 const URI = 'http://localhost:5173';
@@ -118,6 +118,15 @@ describe('Company Role Credential presentation API', () => {
 
   afterAll(async () => {
     await rm(directory, { force: true, recursive: true });
+  });
+
+  it('distinguishes suspended, revoked, expired, and replaced lifecycle states', () => {
+    const future = new Date(NOW.getTime() + 86_400_000).toISOString();
+    const past = new Date(NOW.getTime() - 1).toISOString();
+    expect(resolveLifecycleStatus(2, future, false, NOW)).toBe('SUSPENDED');
+    expect(resolveLifecycleStatus(3, future, false, NOW)).toBe('REVOKED');
+    expect(resolveLifecycleStatus(1, past, false, NOW)).toBe('EXPIRED');
+    expect(resolveLifecycleStatus(1, future, true, NOW)).toBe('REPLACED');
   });
 
   async function authenticate(client: ReturnType<typeof request.agent>, wallet: Wallet) {
@@ -309,6 +318,133 @@ describe('Company Role Credential presentation API', () => {
     expect(active.issuanceState).toBe('CREDENTIAL_ACTIVE');
     expect(active.approvalTransaction).toBeUndefined();
     expect(active.credentialRegistrationTransaction).toBeUndefined();
+  });
+
+  it('returns and verifies only the authenticated wallet company identity', async () => {
+    const administrator = Wallet.createRandom();
+    const company = Wallet.createRandom();
+    const issued = await issueCompanyRoleCredential(agent, {
+      applicationReference: `0x${'8'.repeat(64)}`,
+      companyId: 'COMPANY-IDENTITY-TEST',
+      companyName: 'Identity Test Company',
+      companyRegistrationNumber: 'IDENTITY-001',
+      approvedRole: 2,
+      expirationDate: new Date(NOW.getTime() + 86_400_000),
+      issuanceDate: NOW,
+      issuerDid: authorityDid,
+      issuerOperatorChainId: CHAIN_ID,
+      issuerOperatorWallet: administrator.address,
+      role: CompanyRole.SUPPLIER,
+      subjectDid: walletAddressToDid(company.address),
+      walletAddress: company.address,
+    });
+    const credentialHash = `0x${issued.credentialHash}`;
+    const credentialId = `0x${'9'.repeat(64)}`;
+    const expiresAt = Math.floor(new Date(issued.credential.expirationDate).getTime() / 1_000);
+    const record: CompanyRoleIssuanceRecord = {
+      applicantWallet: company.address,
+      applicationId: issued.credential.credentialSubject.applicationReference,
+      companyName: issued.credential.credentialSubject.companyName,
+      companyRegistrationNumber: issued.credential.credentialSubject.companyRegistrationNumber,
+      credentialHash,
+      credentialId,
+      encryptedCredentialCid: 'bafy-identity-test',
+      encryptedPayload: {
+        algorithm: 'aes-256-gcm',
+        authTag: 'tag',
+        ciphertext: 'ciphertext',
+        iv: 'iv',
+        version: 1,
+      },
+      expiresAt,
+      issuedAt: issued.credential.issuanceDate,
+      role: CompanyRole.SUPPLIER,
+    };
+    const gateway = {
+      getAdministrator: async () => administrator.address,
+      getCredential: async () => ({
+        credentialHash,
+        credentialType: 1,
+        encryptedCid: record.encryptedCredentialCid,
+        expiresAt,
+        issuedAt: Math.floor(NOW.getTime() / 1_000),
+        issuer: administrator.address,
+        status: 1,
+        subject: company.address,
+        updatedAt: Math.floor(NOW.getTime() / 1_000),
+      }),
+      getCredentialState: async () => ({ credentialId, status: 1 }),
+      getStakeholder: async () => ({
+        credentialCid: record.encryptedCredentialCid,
+        credentialExpiresAt: expiresAt,
+        credentialHash,
+        role: 2,
+        status: 1,
+        updatedAt: Math.floor(NOW.getTime() / 1_000),
+      }),
+    } as unknown as BlockchainGateway;
+    const authService = {
+      requireSession: async () => ({
+        address: company.address,
+        id: 'company-session',
+        onChainAuthorization: {
+          checkedAt: NOW,
+          credentialHash,
+          credentialId,
+          role: CompanyRole.SUPPLIER,
+          status: 'AUTHORIZED',
+        },
+      }),
+    } as unknown as AuthService;
+    const service = new CompanyRoleSsiService({
+      agentProvider: async () => agent,
+      authService,
+      authorityDidAlias: AUTHORITY_ALIAS,
+      blockchainGateway: gateway,
+      chainId: CHAIN_ID,
+      clock: () => new Date(NOW),
+      credentialContentStore: {
+        decrypt: async () => JSON.stringify(issued.credential),
+        encryptAndStore: async () => {
+          throw new Error('not used');
+        },
+      },
+      issuanceRepository: {
+        find: async () => record,
+        list: async () => [record],
+        save: async () => undefined,
+      },
+    });
+
+    const displayed = await service.getMyCompanyIdentity('company-session');
+    expect(displayed.identity).toMatchObject({
+      associatedWallet: company.address,
+      companyName: 'Identity Test Company',
+      companyRegistrationNumber: 'IDENTITY-001',
+      lifecycleStatus: 'ACTIVE',
+      role: CompanyRole.SUPPLIER,
+      subjectDid: walletAddressToDid(company.address),
+    });
+    expect(displayed.verification).toBeUndefined();
+
+    const verified = await service.verifyMyCompanyIdentity('company-session');
+    expect(verified.verification).toMatchObject({ outcome: 'CHECKS_PASSED' });
+    expect(verified.verification?.checks.every((check) => check.status === 'PASSED')).toBe(true);
+
+    const otherWalletService = new CompanyRoleSsiService({
+      ...service['dependencies'],
+      authService: {
+        requireSession: async () => ({
+          address: Wallet.createRandom().address,
+          id: 'other-session',
+          onChainAuthorization: { checkedAt: NOW, status: 'UNAUTHORIZED' },
+        }),
+      } as unknown as AuthService,
+    });
+    await expect(otherWalletService.getMyCompanyIdentity('other-session')).rejects.toMatchObject({
+      code: 'CREDENTIAL_CONTENT_UNAVAILABLE',
+      status: 404,
+    });
   });
 
   it('locally verifies a trusted credential but keeps authorization locked', async () => {

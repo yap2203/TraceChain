@@ -183,6 +183,13 @@ export function createApp({
         },
       };
   const lazyGateway: BlockchainGateway = {
+    getRegistryReferences: () => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      return resolvedGateway.getRegistryReferences?.() ?? {
+        credentialRegistry: '',
+        stakeholderRegistry: '',
+      };
+    },
     listOperationalData: async (account) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       if (!resolvedGateway.listOperationalData)

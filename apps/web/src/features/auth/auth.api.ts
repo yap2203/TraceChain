@@ -134,6 +134,51 @@ export function verifyCompanyRoleCredential(credential: Record<string, unknown>)
   });
 }
 
+export interface CompanyIdentityCheck {
+  detail: string;
+  label: string;
+  status: 'FAILED' | 'PASSED' | 'UNAVAILABLE';
+}
+
+export interface CompanyIdentityResponse {
+  identity: {
+    applicationReference: string;
+    associatedWallet: string;
+    chainId: number;
+    companyName: string;
+    companyRegistrationNumber: string;
+    credentialHash: string;
+    credentialId: string;
+    encryptedCredentialCid: string;
+    expiresAt: string;
+    issuerDid: string;
+    issuerName: string;
+    issuedAt: string;
+    lifecycleStatus: 'ACTIVE' | 'EXPIRED' | 'REPLACED' | 'REVOKED' | 'SUSPENDED' | 'UNKNOWN';
+    registryCredentialId: string;
+    registryReferences: {
+      credentialRegistry: string;
+      stakeholderRegistry: string;
+    };
+    role: CompanyRole;
+    subjectDid: string;
+    updatedAt: string;
+  };
+  verification?: {
+    checks: CompanyIdentityCheck[];
+    outcome: 'CHECKS_FAILED' | 'CHECKS_PASSED' | 'SERVICE_UNAVAILABLE';
+    verifiedAt: string;
+  };
+}
+
+export function getMyCompanyIdentity() {
+  return apiRequest<CompanyIdentityResponse>('/api/ssi/company-role/me');
+}
+
+export function verifyMyCompanyIdentity() {
+  return apiRequest<CompanyIdentityResponse>('/api/ssi/company-role/me/verify', { method: 'POST' });
+}
+
 export interface CompanyRoleIssuanceResponse {
   approvalTransaction?: PreparedTransaction;
   applicationStatus: number;
