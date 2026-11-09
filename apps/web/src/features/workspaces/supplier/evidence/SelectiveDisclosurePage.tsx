@@ -24,6 +24,7 @@ import {
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { Alert, Badge, Btn, Card, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
+import { HolderSigningKeyPanel } from '../../../didcomm/HolderSigningKeyPanel';
 
 export function SelectiveDisclosure({
   request,
@@ -40,6 +41,7 @@ export function SelectiveDisclosure({
   const [optionalClaims, setOptionalClaims] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown>>();
   const [identityProof, setIdentityProof] = useState<CompanyIdentityProofStatus>();
+  const [holderDid, setHolderDid] = useState('');
   useEffect(() => {
     void getEvidenceDetails(request.requestId)
       .then(setDetails)
@@ -82,12 +84,13 @@ export function SelectiveDisclosure({
       const signing = await prepareEvidenceResponse(request.requestId);
       if (signing.state !== 'HOLDER_SIGNATURE_REQUIRED' || !signing.holderSigning)
         throw new Error('The API did not return holder-controlled signing material.');
+      setHolderDid(signing.holderSigning.holderDid);
       const holder = getActiveMessagingAgent();
       if (!holder)
-        throw new Error('Create or restore your participant messaging key before responding.');
+        throw new Error('Restore the holder presentation signing key before responding.');
       if (holder.did !== signing.holderSigning.holderDid)
         throw new Error(
-          'The active participant key is not the key bound to this credential. Restore the correct recovery kit.',
+          'The active presentation key is not bound to this credential. Restore the correct signing-key backup.',
         );
       const selected = [...new Set([...signing.holderSigning.requiredClaims, ...optionalClaims])];
       const presentation = await createSelectiveIngredientPresentation(
@@ -117,6 +120,7 @@ export function SelectiveDisclosure({
       const signing = await prepareEvidenceResponse(request.requestId);
       if (signing.state !== 'HOLDER_SIGNATURE_REQUIRED' || !signing.holderSigning)
         throw new Error('Selective-disclosure signing material is unavailable.');
+      setHolderDid(signing.holderSigning.holderDid);
       setPreview(await readSelectiveIngredientClaims(signing.holderSigning.credential));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not preview the credential claims.');
@@ -199,9 +203,15 @@ export function SelectiveDisclosure({
                     <div>Company: {identityProof.credential.subject.companyName}</div>
                     <div>Role: {identityProof.credential.subject.role}</div>
                     <div>Wallet: {identityProof.credential.subject.walletAddress}</div>
-                    <div>Issuer: {identityProof.credential.issuerName ?? identityProof.credential.issuer}</div>
+                    <div>
+                      Issuer:{' '}
+                      {identityProof.credential.issuerName ?? identityProof.credential.issuer}
+                    </div>
                     <div>Credential status: {identityProof.credential.credentialStatus}</div>
-                    <div>Expires: {chainDate(Date.parse(identityProof.credential.expirationDate) / 1000)}</div>
+                    <div>
+                      Expires:{' '}
+                      {chainDate(Date.parse(identityProof.credential.expirationDate) / 1000)}
+                    </div>
                   </div>
                   {identityProof.checks && (
                     <div style={{ marginTop: 8, fontSize: 12 }}>
@@ -215,6 +225,7 @@ export function SelectiveDisclosure({
           <Btn variant="outline" disabled={busy || !details} onClick={() => void loadPreview()}>
             Preview available claim values
           </Btn>
+          {holderDid && <HolderSigningKeyPanel expectedDid={holderDid} />}
           {details?.claims.map((claim) => {
             const required = details.requiredClaims.includes(claim);
             return (

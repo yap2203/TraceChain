@@ -1,13 +1,15 @@
 # TraceChain
 
-> Stage 1 secure messaging: authenticated Manufacturer and Supplier workspaces include a browser-held DIDComm proof of concept under **Secure messages**. MetaMask + SIWE remains the login. OpenID4VP is deferred. See [`docs/DIDCOMM_STAGE1.md`](docs/DIDCOMM_STAGE1.md) for protocol, key ownership, recovery and security boundaries.
+> Evidence messaging uses backend-managed DIDComm company agents beneath the existing business screens. MetaMask + SIWE remains the login, holder presentation-signing keys remain client-controlled, and OpenID4VP is deferred. See [`docs/DIDCOMM_STAGE1.md`](docs/DIDCOMM_STAGE1.md) for protocol, custody, migration and security boundaries.
 
 The real Manufacturer/Retailer–Supplier Ingredient Evidence workflow now uses this channel for
 encrypted request and full-credential VP delivery. Suppliers can separately request a fresh,
 challenge-bound Company Role VP from the requesting Manufacturer or Retailer before deciding
 whether to disclose ingredient evidence. Identity presentation, evidence verification, and
-business acceptance remain separate actions. VP signing uses the server-managed Supplier Veramo
-issuer key; DIDComm keys remain participant-controlled in the browser. The EvidenceRegistry
+business acceptance remain separate actions. Ingredient credential issuer proofs use Supplier
+Veramo keys, holder presentations use browser-controlled keys, and separate DIDComm encryption
+keys are protected by the TraceChain API. TraceChain can therefore decrypt messages; this is not
+confidential from the TraceChain operator. The EvidenceRegistry
 hardening changes contract bytecode and requires redeployment before using the updated acceptance
 path.
 
@@ -17,28 +19,28 @@ The current version includes a responsive React application, five stakeholder wo
 
 ## Current implementation status
 
-| Area                                     | Status                                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected           |
-| MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target    |
-| Nonce and session storage                | Implemented in process memory for development                                         |
-| Stakeholder workspace UI                 | Admin, custody receipt, and Supplier batch registration use authenticated services    |
-| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                   |
-| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                       |
-| Company Role Credential presentation     | Separate diagnostic API retained; no VC upload is required during normal login        |
-| Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented      |
-| Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status      |
-| Stakeholder identity presentation        | Issuance names are rechecked against current registries before display                |
-| SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap |
-| Supplier Ingredient Credentials          | Typed JWT VC issuance, encrypted IPFS storage, and sequential on-chain registration   |
-| Manufacturer production flow             | Real evidence VP, product creation, Distributor transfer, and transfer QR implemented |
-| Company identity proof for evidence       | DIDComm-linked challenge, preview/approve/decline, VP verification, expiry and replay guards |
-| Distributor transfer flow                | Real inventory, verified Retailer transfer, MetaMask signing, and QR implemented      |
-| Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                   |
-| Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                  |
-| Custody-transfer QR workflow             | Reconciliation, encrypted evidence, discrepancies, and MetaMask writes implemented    |
-| Product traceability QR                  | Permanent public locator, safe resolver, and custody timeline implemented             |
-| Business persistence                     | Not implemented                                                                       |
+| Area                                     | Status                                                                                       |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected                  |
+| MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target           |
+| Nonce and session storage                | Implemented in process memory for development                                                |
+| Stakeholder workspace UI                 | Admin, custody receipt, and Supplier batch registration use authenticated services           |
+| Responsive UI                            | Implemented for mobile, tablet, and desktop layouts                                          |
+| Loading and table pagination             | Implemented; tables support 5, 10, 25, 50, or 100 rows per page                              |
+| Company Role Credential presentation     | Separate diagnostic API retained; no VC upload is required during normal login               |
+| Company Role Credential verification     | JWT signature, issuer, wallet binding, role, dates, and local status implemented             |
+| Credential-based RBAC                    | Local/API verification checks wallet role, lifecycle, credential hash and status             |
+| Stakeholder identity presentation        | Issuance names are rechecked against current registries before display                       |
+| SSI and Veramo services                  | did:ethr Sepolia agent, encrypted JSON storage, issuance, verification, and bootstrap        |
+| Supplier Ingredient Credentials          | Typed JWT VC issuance, encrypted IPFS storage, and sequential on-chain registration          |
+| Manufacturer production flow             | Real evidence VP, product creation, Distributor transfer, and transfer QR implemented        |
+| Company identity proof for evidence      | DIDComm-linked challenge, preview/approve/decline, VP verification, expiry and replay guards |
+| Distributor transfer flow                | Real inventory, verified Retailer transfer, MetaMask signing, and QR implemented             |
+| Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                          |
+| Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                         |
+| Custody-transfer QR workflow             | Reconciliation, encrypted evidence, discrepancies, and MetaMask writes implemented           |
+| Product traceability QR                  | Permanent public locator, safe resolver, and custody timeline implemented                    |
+| Business persistence                     | Not implemented                                                                              |
 
 ## Repository structure
 

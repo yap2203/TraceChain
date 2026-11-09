@@ -17,6 +17,7 @@ import {
   sendCompanyIdentityPresentationMessage,
 } from './evidence-didcomm';
 import { Alert, Btn } from '../workspaces/shared/ui';
+import { HolderSigningKeyPanel } from '../didcomm/HolderSigningKeyPanel';
 
 export function CompanyIdentityProofAction({ requestId }: { requestId: string }) {
   const [status, setStatus] = useState<CompanyIdentityProofStatus>();
@@ -48,7 +49,7 @@ export function CompanyIdentityProofAction({ requestId }: { requestId: string })
       const holder = getActiveMessagingAgent();
       if (!holder || holder.did !== material.holderDid)
         throw new Error(
-          'Restore the wallet-bound participant recovery kit before presenting identity.',
+          'Restore the wallet-bound holder presentation signing-key backup before presenting identity.',
         );
       const presentation = await createCompanyIdentityPresentation(holder, material);
       await sendCompanyIdentityPresentationMessage(requestId, presentation);
@@ -86,6 +87,7 @@ export function CompanyIdentityProofAction({ requestId }: { requestId: string })
       )}
       {material && status.status === 'REQUESTED' && (
         <div style={{ display: 'grid', gap: 8 }}>
+          <HolderSigningKeyPanel expectedDid={material.holderDid} />
           <div>
             <b>{material.presenterRole}</b> · {material.credentialHash}
           </div>

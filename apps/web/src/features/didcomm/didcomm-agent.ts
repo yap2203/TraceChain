@@ -1,6 +1,5 @@
 import { createAgent, type IDIDManager, type IKeyManager, type IResolver } from '@veramo/core';
 import { SDJwtInstance } from '@sd-jwt/core';
-import { DIDComm, type IDIDComm, type IDIDCommMessage } from '@veramo/did-comm';
 import { DIDManager, MemoryDIDStore } from '@veramo/did-manager';
 import { KeyDIDProvider } from '@veramo/did-provider-key';
 import { DIDResolverPlugin } from '@veramo/did-resolver';
@@ -10,9 +9,7 @@ import { Resolver } from 'did-resolver';
 import { createJWT, EdDSASigner } from 'did-jwt';
 import { getResolver } from 'key-did-resolver';
 
-type MessagingAgent = ReturnType<
-  typeof createAgent<IResolver & IKeyManager & IDIDManager & IDIDComm>
->;
+type MessagingAgent = ReturnType<typeof createAgent<IResolver & IKeyManager & IDIDManager>>;
 export interface HolderMessagingAgent {
   agent: MessagingAgent;
   did: string;
@@ -30,7 +27,7 @@ export function setActiveMessagingAgent(holder: HolderMessagingAgent) {
 export async function createMessagingAgent(
   privateKey = crypto.getRandomValues(new Uint8Array(32)),
 ): Promise<HolderMessagingAgent> {
-  const agent = createAgent<IResolver & IKeyManager & IDIDManager & IDIDComm>({
+  const agent = createAgent<IResolver & IKeyManager & IDIDManager>({
     plugins: [
       new KeyManager({
         store: new MemoryKeyStore(),
@@ -42,7 +39,6 @@ export async function createMessagingAgent(
         store: new MemoryDIDStore(),
       }),
       new DIDResolverPlugin({ resolver: new Resolver(getResolver()) }),
-      new DIDComm(),
     ],
   });
   const identifier = await agent.didManagerCreate({
@@ -104,14 +100,6 @@ export async function createCompanyIdentityPresentation(
     { alg: 'EdDSA', issuer: holder.did, signer: EdDSASigner(holder.privateKey) },
   );
 }
-export async function packMessage(holder: HolderMessagingAgent, message: IDIDCommMessage) {
-  const packed = await holder.agent.packDIDCommMessage({
-    message,
-    packing: 'authcrypt',
-    options: { alg: 'ECDH-1PU+A256KW', enc: 'A256GCM' },
-  });
-  return packed.message;
-}
 export async function createSelectiveIngredientPresentation(
   holder: HolderMessagingAgent,
   credential: string,
@@ -159,13 +147,6 @@ export async function readSelectiveIngredientClaims(credential: string) {
   });
   return instance.getClaims(credential);
 }
-export async function unpackMessage(holder: HolderMessagingAgent, envelope: string) {
-  const unpacked = await holder.agent.unpackDIDCommMessage({ message: envelope });
-  if (unpacked.metaData.packing !== 'authcrypt')
-    throw new Error('The envelope is not DIDComm authenticated encryption.');
-  return unpacked.message;
-}
-
 export async function exportRecoveryKit(holder: HolderMessagingAgent, password: string) {
   if (password.length < 10) throw new Error('Use a recovery password of at least 10 characters.');
   const salt = crypto.getRandomValues(new Uint8Array(16));
@@ -183,7 +164,8 @@ export async function exportRecoveryKit(holder: HolderMessagingAgent, password: 
       salt: base64(salt),
       iv: base64(iv),
       ciphertext: base64(new Uint8Array(ciphertext)),
-      warning: 'TraceChain DIDComm recovery kit. Keep private and separate from the password.',
+      warning:
+        'TraceChain holder presentation signing-key backup. Keep private and separate from the password.',
     },
     null,
     2,
@@ -209,7 +191,7 @@ export async function importRecoveryKit(serialized: string, password: string) {
     typeof kit.iv !== 'string' ||
     typeof kit.ciphertext !== 'string'
   )
-    throw new Error('Unsupported recovery kit.');
+    throw new Error('Unsupported presentation signing-key backup.');
   let privateKey: Uint8Array;
   try {
     const key = await recoveryKey(password, unbase64(kit.salt), ['decrypt']);
@@ -222,13 +204,14 @@ export async function importRecoveryKit(serialized: string, password: string) {
     );
   } catch {
     throw new Error(
-      'The recovery password is incorrect or the encrypted recovery kit is damaged. Use the exact password entered when this kit was downloaded.',
+      'The backup password is incorrect or the encrypted signing-key backup is damaged. Use the exact password entered when it was downloaded.',
     );
   }
   if (privateKey.length !== 32)
-    throw new Error('The recovery kit contains an invalid messaging private key.');
+    throw new Error('The backup contains an invalid presentation private key.');
   const holder = await createMessagingAgent(Uint8Array.from(privateKey));
-  if (holder.did !== kit.did) throw new Error('Recovery kit DID does not match its key.');
+  if (holder.did !== kit.did)
+    throw new Error('Presentation-key backup DID does not match its key.');
   return holder;
 }
 async function recoveryKey(password: string, salt: Uint8Array, usages: KeyUsage[]) {

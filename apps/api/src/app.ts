@@ -43,6 +43,7 @@ import {
 } from './modules/didcomm/didcomm.repository.js';
 import { createDidCommRouter } from './modules/didcomm/didcomm.routes.js';
 import { DidCommService } from './modules/didcomm/didcomm.service.js';
+import { BackendDidCommAgentService } from './modules/didcomm/backend-agent.service.js';
 import { IngredientBatchController } from './modules/ingredient-batches/ingredient-batch.controller.js';
 import {
   EthersIngredientBatchGateway,
@@ -170,30 +171,35 @@ export function createApp({
   const didCommRepository = new JsonDidCommRepository(
     fileURLToPath(new URL('../../../.tracechain/didcomm/state.json', import.meta.url)),
   );
+  const didCommStorage = loadCredentialStorageEnvironment();
+  const backendDidCommAgents = new BackendDidCommAgentService(
+    fileURLToPath(new URL('../../../.tracechain/didcomm/backend-agents.json', import.meta.url)),
+    didCommStorage.encryptionKey,
+  );
   let blockchainService: BlockchainAuthorizationService | undefined;
   const blockchainAuthorization: BlockchainAuthorizationService | undefined = ssi
     ? undefined
     : {
-      authorize: async (input) => {
-        try {
-          if (!blockchainService) {
-            const blockchain = loadBlockchainEnvironment();
-            blockchainService = new EthersBlockchainAuthorizationService(
-              blockchain.CHAIN_RPC_URL,
-              blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
-              blockchain.CREDENTIAL_REGISTRY_ADDRESS,
-              env.CHAIN_ID,
+        authorize: async (input) => {
+          try {
+            if (!blockchainService) {
+              const blockchain = loadBlockchainEnvironment();
+              blockchainService = new EthersBlockchainAuthorizationService(
+                blockchain.CHAIN_RPC_URL,
+                blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
+                blockchain.CREDENTIAL_REGISTRY_ADDRESS,
+                env.CHAIN_ID,
+              );
+            }
+            return blockchainService.authorize(input);
+          } catch (error) {
+            if (error instanceof BlockchainAuthorizationUnavailableError) throw error;
+            throw new BlockchainAuthorizationUnavailableError(
+              'Blockchain authorization is not configured correctly.',
             );
           }
-          return blockchainService.authorize(input);
-        } catch (error) {
-          if (error instanceof BlockchainAuthorizationUnavailableError) throw error;
-          throw new BlockchainAuthorizationUnavailableError(
-            'Blockchain authorization is not configured correctly.',
-          );
-        }
-      },
-    };
+        },
+      };
   const lazyGateway: BlockchainGateway = {
     getRegistryReferences: () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
@@ -280,11 +286,11 @@ export function createApp({
     resolvedAuthService,
     env.AUTH_COOKIE_NAME,
     applicationMetadataRepository ??
-    new JsonApplicationMetadataRepository(
-      fileURLToPath(
-        new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url),
+      new JsonApplicationMetadataRepository(
+        fileURLToPath(
+          new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url),
+        ),
       ),
-    ),
     lazyIssuanceRepository,
     stakeholderDirectory,
   );
@@ -300,11 +306,11 @@ export function createApp({
   };
   const custodyTransferController = new CustodyTransferController(
     custodyTransferService ??
-    createDefaultCustodyTransferService(
-      resolvedAuthService,
-      stakeholderDirectory,
-      lazyCredentialContentStore,
-    ),
+      createDefaultCustodyTransferService(
+        resolvedAuthService,
+        stakeholderDirectory,
+        lazyCredentialContentStore,
+      ),
     env.AUTH_COOKIE_NAME,
   );
   const ssiController = new SsiController(
@@ -323,24 +329,24 @@ export function createApp({
   );
   const ingredientBatchController = new IngredientBatchController(
     ingredientBatchService ??
-    createDefaultIngredientBatchService(
-      resolvedAuthService,
-      defaultSsi.agentProvider,
-      lazyCredentialContentStore,
-      didCommRepository,
-    ),
+      createDefaultIngredientBatchService(
+        resolvedAuthService,
+        defaultSsi.agentProvider,
+        lazyCredentialContentStore,
+        didCommRepository,
+      ),
     env.AUTH_COOKIE_NAME,
   );
   const productionFlowController = new ProductionFlowController(
     productionFlowService ??
-    createDefaultProductionFlowService(
-      resolvedAuthService,
-      defaultSsi.agentProvider,
-      lazyCredentialContentStore,
-      stakeholderDirectory,
-      didCommRepository,
-      lazyIssuanceRepository,
-    ),
+      createDefaultProductionFlowService(
+        resolvedAuthService,
+        defaultSsi.agentProvider,
+        lazyCredentialContentStore,
+        stakeholderDirectory,
+        didCommRepository,
+        lazyIssuanceRepository,
+      ),
     env.AUTH_COOKIE_NAME,
   );
   const didCommService = new DidCommService(
@@ -349,14 +355,22 @@ export function createApp({
     env.SIWE_DOMAIN,
     env.CHAIN_ID,
     stakeholderDirectory,
+    undefined,
+    backendDidCommAgents,
+    async (reference) => {
+      const record = await new JsonProductionFlowRepository(
+        didCommStorage.productionWorkflowStorePath,
+      ).findEvidence(reference);
+      return record ? { requester: record.requester, supplier: record.supplier } : undefined;
+    },
   );
   const productTraceabilityController = new ProductTraceabilityController(
     productTraceabilityService ??
-    createDefaultProductTraceabilityService(
-      resolvedAuthService,
-      stakeholderDirectory,
-      lazyCredentialContentStore,
-    ),
+      createDefaultProductTraceabilityService(
+        resolvedAuthService,
+        stakeholderDirectory,
+        lazyCredentialContentStore,
+      ),
     env.AUTH_COOKIE_NAME,
   );
 
@@ -770,9 +784,9 @@ function createDefaultProductionFlowService(
     savePrivate: (...input) => resolveRepository().savePrivate(...input),
   };
   const resolveIngredientRepository = () =>
-  (ingredientRepository ??= new JsonIngredientBatchWorkflowRepository(
-    storage().ingredientWorkflowStorePath,
-  ));
+    (ingredientRepository ??= new JsonIngredientBatchWorkflowRepository(
+      storage().ingredientWorkflowStorePath,
+    ));
   const lazyIngredientRepository: IngredientBatchWorkflowRepository = {
     find: (input) => resolveIngredientRepository().find(input),
     listForSupplier: (input) => resolveIngredientRepository().listForSupplier(input),

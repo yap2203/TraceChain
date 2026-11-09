@@ -16,6 +16,16 @@ const envelopeSchema = z.object({
   threadId: z.union([z.string().uuid(), z.string().regex(/^0x[0-9a-fA-F]{64}$/)]),
   toDid: z.string().startsWith('did:key:'),
 });
+const automaticMessageSchema = z.object({
+  body: z.record(z.string(), z.unknown()),
+  businessReference: z.string().min(1).max(200),
+  expiresAt: z.string().datetime(),
+  ingredientBatchReference: z.string().max(200).optional(),
+  messageType: z.string().min(1).max(200),
+  parentThreadId: z.string().uuid().optional(),
+  recipientWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+  threadId: z.union([z.string().uuid(), z.string().regex(/^0x[0-9a-fA-F]{64}$/)]),
+});
 export function createDidCommRouter(service: DidCommService, cookieName: string) {
   const router = Router();
   const run =
@@ -61,6 +71,10 @@ export function createDidCommRouter(service: DidCommService, cookieName: string)
   router.post(
     '/relay',
     run((session, body) => service.relay(session, envelopeSchema.parse(body))),
+  );
+  router.post(
+    '/send',
+    run((session, body) => service.send(session, automaticMessageSchema.parse(body))),
   );
   return router;
 }

@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { CompanyRole } from '@tracechain/shared';
 import { Resolver } from 'did-resolver';
 import { getResolver } from 'key-did-resolver';
@@ -6,6 +6,7 @@ import { verifyJWT } from 'did-jwt';
 import type { AuthService } from '../auth/auth.service.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import type { DidCommRepository, RelayEnvelope } from './didcomm.repository.js';
+import type { BackendDidCommAgentService } from './backend-agent.service.js';
 
 const resolver = new Resolver(getResolver());
 const REQUEST = 'https://tracechain.local/didcomm/ingredient-evidence-request/1.0';
@@ -41,6 +42,10 @@ export class DidCommService {
     private readonly chainId: number,
     private readonly participants?: Pick<StakeholderDirectory, 'resolve'>,
     private readonly clock = () => new Date(),
+    private readonly backendAgents?: BackendDidCommAgentService,
+    private readonly businessParticipants?: (
+      reference: string,
+    ) => Promise<{ requester: string; supplier: string } | undefined>,
   ) {}
   async challenge(sessionId?: string) {
     const session = await this.session(sessionId);
@@ -110,7 +115,9 @@ export class DidCommService {
   }
   async directory(sessionId?: string) {
     await this.session(sessionId);
-    let identities = await this.repository.listIdentities();
+    let identities = this.backendAgents
+      ? await this.backendAgents.list()
+      : await this.repository.listIdentities();
     if (this.participants) {
       const current = await Promise.all(
         identities.map(async (identity) => {
@@ -136,15 +143,167 @@ export class DidCommService {
   }
   async mailbox(sessionId?: string) {
     const session = await this.session(sessionId);
+    const identity = this.backendAgents
+      ? await this.backendAgents.findByWallet(session.address)
+      : await this.repository.findIdentityByWallet(session.address);
+    const envelopes = identity
+      ? ((await this.repository.listEnvelopesByDid?.(identity.did)) ??
+        (await this.repository.listEnvelopes(session.address)))
+      : [];
     return {
-      envelopes: await this.repository.listEnvelopes(session.address),
-      identity: await this.repository.findIdentityByWallet(session.address),
+      envelopes,
+      identity,
     };
+  }
+
+  async send(
+    sessionId: string | undefined,
+    input: {
+      body: Record<string, unknown>;
+      businessReference: string;
+      expiresAt: string;
+      ingredientBatchReference?: string;
+      messageType: string;
+      parentThreadId?: string;
+      recipientWallet: string;
+      threadId: string;
+    },
+  ) {
+    if (!this.backendAgents)
+      throw new DidCommError(
+        'BACKEND_MESSAGING_UNAVAILABLE',
+        'Backend-managed secure delivery is not configured.',
+        503,
+      );
+    const session = await this.session(sessionId);
+    if (this.businessParticipants) {
+      const participants = await this.businessParticipants(input.businessReference);
+      if (!participants)
+        throw new DidCommError(
+          'BUSINESS_REQUEST_NOT_FOUND',
+          'The evidence request was not found.',
+          404,
+        );
+      const actor = session.address.toLowerCase();
+      const supplier = participants.supplier.toLowerCase();
+      const requester = participants.requester.toLowerCase();
+      const expectedRecipient =
+        actor === supplier ? requester : actor === requester ? supplier : '';
+      if (!expectedRecipient || input.recipientWallet.toLowerCase() !== expectedRecipient)
+        throw new DidCommError(
+          'RECIPIENT_SUBSTITUTION_REJECTED',
+          'The recipient does not match the authorized evidence-request participants.',
+          403,
+        );
+    }
+    const recipientParticipant = this.participants
+      ? await this.participants.resolve(input.recipientWallet)
+      : undefined;
+    if (this.participants && !recipientParticipant)
+      throw new DidCommError('RECIPIENT_NOT_AUTHORIZED', 'The recipient is not authorized.', 403);
+    const sender = await this.backendAgents.ensureIdentity({
+      companyName: session.companyName ?? 'Unavailable',
+      role: session.role!,
+      wallet: session.address,
+    });
+    const recipient = await this.backendAgents.ensureIdentity({
+      companyName: recipientParticipant?.companyName ?? 'Unavailable',
+      role: recipientParticipant?.role ?? '',
+      wallet: input.recipientWallet,
+    });
+    const existingDelivery = (await this.envelopesFor(session.address, sender.did)).find(
+      (item) =>
+        item.businessReference.toLowerCase() === input.businessReference.toLowerCase() &&
+        item.messageType === input.messageType &&
+        item.fromDid === sender.did &&
+        item.toDid === recipient.did &&
+        item.deliveryState === 'RECEIVED_DECRYPTED',
+    );
+    if (existingDelivery) return { accepted: true as const, id: existingDelivery.id };
+    let parentThreadId = input.parentThreadId;
+    if (!parentThreadId && input.messageType !== REQUEST) {
+      const expectedParentTypes = [ACK, PRESENTATION, DECLINED].includes(input.messageType)
+        ? [REQUEST, FOLLOW_UP]
+        : input.messageType === IDENTITY_REQUEST
+          ? [REQUEST]
+          : [IDENTITY_PRESENTATION, IDENTITY_DECLINED].includes(input.messageType)
+            ? [IDENTITY_REQUEST]
+            : [ACK, PRESENTATION, DECLINED];
+      parentThreadId = (await this.envelopesFor(session.address, sender.did)).find(
+        (item) =>
+          item.businessReference.toLowerCase() === input.businessReference.toLowerCase() &&
+          item.threadId === input.threadId &&
+          item.fromDid === recipient.did &&
+          item.toDid === sender.did &&
+          expectedParentTypes.includes(item.messageType),
+      )?.id;
+      if (!parentThreadId)
+        throw new DidCommError(
+          'THREAD_MISMATCH',
+          'The linked secure business-message thread is unavailable.',
+          409,
+        );
+    }
+    const id = randomUUID();
+    const now = this.clock();
+    const message = {
+      id,
+      type: input.messageType,
+      from: sender.did,
+      to: [recipient.did],
+      thid: input.threadId,
+      ...(parentThreadId ? { pthid: parentThreadId } : {}),
+      created_time: Math.floor(now.getTime() / 1_000),
+      expires_time: Math.floor(Date.parse(input.expiresAt) / 1_000),
+      body: input.body,
+    };
+    const envelope = await this.backendAgents.pack(sender.did, message);
+    let unpacked;
+    try {
+      unpacked = await this.backendAgents.unpack(recipient.did, envelope);
+    } catch {
+      throw new DidCommError(
+        'DELIVERY_DECRYPTION_FAILED',
+        'The intended recipient company agent could not decrypt the secure message.',
+        503,
+      );
+    }
+    if (
+      unpacked.id !== id ||
+      unpacked.type !== input.messageType ||
+      unpacked.from !== sender.did ||
+      !unpacked.to?.includes(recipient.did)
+    )
+      throw new DidCommError(
+        'DELIVERY_VALIDATION_FAILED',
+        'The decrypted secure message did not match its authenticated routing metadata.',
+        400,
+      );
+    const record: RelayEnvelope = {
+      businessReference: input.businessReference,
+      createdAt: now.toISOString(),
+      deliveryState: 'RECEIVED_DECRYPTED',
+      envelope,
+      expiresAt: input.expiresAt,
+      fromDid: sender.did,
+      id,
+      ingredientBatchReference: input.ingredientBatchReference,
+      messageType: input.messageType,
+      parentThreadId,
+      threadId: input.threadId,
+      toDid: recipient.did,
+      receivedAt: this.clock().toISOString(),
+    };
+    return this.relay(sessionId, record);
   }
   async relay(sessionId: string | undefined, input: RelayEnvelope) {
     const session = await this.session(sessionId);
-    const sender = await this.repository.findIdentityByWallet(session.address);
-    const recipient = await this.repository.findIdentityByDid(input.toDid);
+    const sender = this.backendAgents
+      ? await this.backendAgents.findByWallet(session.address)
+      : await this.repository.findIdentityByWallet(session.address);
+    const recipient = this.backendAgents
+      ? await this.backendAgents.findByDid(input.toDid)
+      : await this.repository.findIdentityByDid(input.toDid);
     if (!sender || sender.did !== input.fromDid || sender.role !== session.role)
       throw new DidCommError(
         'SENDER_BINDING_REQUIRED',
@@ -196,7 +355,7 @@ export class DidCommService {
           'Only the recipient Supplier can respond to the requesting Manufacturer or Retailer.',
           403,
         );
-      const thread = (await this.repository.listEnvelopes(session.address)).find(
+      const thread = (await this.envelopesFor(session.address, sender.did)).find(
         (item) =>
           item.id === input.parentThreadId &&
           item.toDid === sender.did &&
@@ -221,7 +380,7 @@ export class DidCommService {
           'Invalid company identity request flow.',
           403,
         );
-      const thread = (await this.repository.listEnvelopes(session.address)).find(
+      const thread = (await this.envelopesFor(session.address, sender.did)).find(
         (item) =>
           item.id === input.parentThreadId &&
           item.toDid === sender.did &&
@@ -245,7 +404,7 @@ export class DidCommService {
           'Invalid company identity presentation flow.',
           403,
         );
-      const thread = (await this.repository.listEnvelopes(session.address)).find(
+      const thread = (await this.envelopesFor(session.address, sender.did)).find(
         (item) =>
           item.id === input.parentThreadId &&
           item.toDid === sender.did &&
@@ -259,7 +418,7 @@ export class DidCommService {
           403,
         );
       if (
-        (await this.repository.listEnvelopes(session.address)).some(
+        (await this.envelopesFor(session.address, sender.did)).some(
           (item) =>
             item.parentThreadId === input.parentThreadId &&
             item.fromDid === sender.did &&
@@ -282,7 +441,7 @@ export class DidCommService {
           'Only the requesting Manufacturer or Retailer can send a decision or follow-up.',
           403,
         );
-      const thread = (await this.repository.listEnvelopes(session.address)).find(
+      const thread = (await this.envelopesFor(session.address, sender.did)).find(
         (item) =>
           item.id === input.parentThreadId &&
           item.toDid === sender.did &&
@@ -320,6 +479,11 @@ export class DidCommService {
         403,
       );
     return session;
+  }
+  private async envelopesFor(wallet: string, did: string) {
+    return this.backendAgents && this.repository.listEnvelopesByDid
+      ? this.repository.listEnvelopesByDid(did)
+      : this.repository.listEnvelopes(wallet);
   }
 }
 export const DIDCOMM_EVIDENCE_REQUEST_TYPE = REQUEST;

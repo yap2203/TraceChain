@@ -16,17 +16,15 @@ import {
   createMessagingAgent,
   exportRecoveryKit,
   importRecoveryKit,
-  packMessage,
-  unpackMessage,
 } from './didcomm-agent';
 
-describe('browser-held DIDComm authenticated encryption', () => {
+describe('browser-held presentation signing key', () => {
   it('exports and restores an encrypted participant-controlled recovery kit', async () => {
     const holder = await createMessagingAgent();
     const kit = await exportRecoveryKit(holder, 'correct horse battery staple');
     expect(kit).not.toContain(btoa(String.fromCharCode(...holder.privateKey)));
     await expect(importRecoveryKit(kit, 'wrong password')).rejects.toThrow(
-      'The recovery password is incorrect or the encrypted recovery kit is damaged.',
+      'The backup password is incorrect or the encrypted signing-key backup is damaged.',
     );
     const restored = await importRecoveryKit(kit, 'correct horse battery staple');
     expect(restored.did).toBe(holder.did);
@@ -54,42 +52,6 @@ describe('browser-held DIDComm authenticated encryption', () => {
       purpose: 'tracechain-didcomm-messaging-key-binding',
       sub: '0x1000000000000000000000000000000000000001',
     });
-  });
-
-  it('packs and unpacks between separate participant keys', async () => {
-    const manufacturer = await createMessagingAgent();
-    const supplier = await createMessagingAgent();
-    const message = {
-      body: { businessReference: 'REQ-1', reason: 'Verify origin' },
-      created_time: Math.floor(Date.now() / 1000),
-      expires_time: Math.floor(Date.now() / 1000) + 300,
-      from: manufacturer.did,
-      id: crypto.randomUUID(),
-      thid: crypto.randomUUID(),
-      to: [supplier.did],
-      type: 'https://tracechain.local/didcomm/ingredient-evidence-request/1.0',
-    };
-    const envelope = await packMessage(manufacturer, message);
-    expect(envelope).not.toContain('Verify origin');
-    const unpacked = await unpackMessage(supplier, envelope);
-    expect(unpacked).toEqual(message);
-  });
-
-  it('rejects a wrong recipient and a tampered envelope', async () => {
-    const manufacturer = await createMessagingAgent();
-    const supplier = await createMessagingAgent();
-    const attacker = await createMessagingAgent();
-    const envelope = await packMessage(manufacturer, {
-      body: { reason: 'Confidential' },
-      from: manufacturer.did,
-      id: crypto.randomUUID(),
-      to: [supplier.did],
-      type: 'test',
-    });
-    await expect(unpackMessage(attacker, envelope)).rejects.toThrow();
-    const parsed = JSON.parse(envelope) as { ciphertext: string };
-    parsed.ciphertext = `${parsed.ciphertext.slice(0, -2)}aa`;
-    await expect(unpackMessage(supplier, JSON.stringify(parsed))).rejects.toThrow();
   });
 
   it('creates holder-bound presentations with genuinely different selective disclosures', async () => {

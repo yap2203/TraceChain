@@ -7,6 +7,7 @@ import {
   type IngredientBatchWorkflow,
 } from './ingredient-batch.api';
 import { submitIngredientBatchTransaction } from './ingredient-batch-transaction';
+import { HolderSigningKeyPanel } from '../../../didcomm/HolderSigningKeyPanel';
 
 type WorkflowStep = 'waiting' | 'active' | 'complete';
 
@@ -221,6 +222,7 @@ export function RegisterBatch({
 
         {step === 1 && (
           <div style={{ display: 'grid', gap: 16 }}>
+            <HolderSigningKeyPanel />
             <Card>
               <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
                 Review batch

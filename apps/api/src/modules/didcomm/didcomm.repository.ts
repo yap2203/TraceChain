@@ -20,6 +20,8 @@ export interface RelayEnvelope {
   parentThreadId?: string;
   threadId: string;
   toDid: string;
+  deliveryState?: 'SENT' | 'RECEIVED_DECRYPTED';
+  receivedAt?: string;
 }
 interface State {
   identities: MessagingIdentity[];
@@ -31,6 +33,7 @@ export interface DidCommRepository {
   findIdentityByWallet(wallet: string): Promise<MessagingIdentity | undefined>;
   listIdentities(): Promise<MessagingIdentity[]>;
   listEnvelopes(wallet: string): Promise<RelayEnvelope[]>;
+  listEnvelopesByDid?(did: string): Promise<RelayEnvelope[]>;
   saveEnvelope(record: RelayEnvelope): Promise<void>;
   saveIdentity(record: MessagingIdentity): Promise<void>;
 }
@@ -55,6 +58,11 @@ export class JsonDidCommRepository implements DidCommRepository {
     return did
       ? (await this.read()).envelopes.filter((item) => item.fromDid === did || item.toDid === did)
       : [];
+  }
+  async listEnvelopesByDid(did: string) {
+    return (await this.read()).envelopes.filter(
+      (item) => item.fromDid === did || item.toDid === did,
+    );
   }
   async saveEnvelope(record: RelayEnvelope) {
     await this.update((state) => {

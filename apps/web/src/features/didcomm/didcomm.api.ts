@@ -29,6 +29,8 @@ export interface RelayEnvelope {
   parentThreadId?: string;
   threadId: string;
   toDid: string;
+  deliveryState?: 'SENT' | 'RECEIVED_DECRYPTED';
+  receivedAt?: string;
 }
 export const didCommApi = {
   bind: (proof: string) =>
@@ -48,6 +50,20 @@ export const didCommApi = {
     request<{ accepted: true; id: string }>('/relay', {
       method: 'POST',
       body: JSON.stringify(envelope),
+    }),
+  send: (message: {
+    body: Record<string, unknown>;
+    businessReference: string;
+    expiresAt: string;
+    ingredientBatchReference?: string;
+    messageType: string;
+    parentThreadId?: string;
+    recipientWallet: string;
+    threadId: string;
+  }) =>
+    request<{ accepted: true; id: string }>('/send', {
+      method: 'POST',
+      body: JSON.stringify(message),
     }),
 };
 export const EVIDENCE_REQUEST_TYPE =

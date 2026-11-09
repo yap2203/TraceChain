@@ -16,7 +16,6 @@ import {
   ScanQrCode,
   History,
   FlaskConical,
-  MessageSquareLock,
   AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
@@ -37,14 +36,12 @@ export const workspaceNavigation = {
     ['overview', 'Overview', LayoutDashboard],
     ['batches', 'Ingredient batches', Layers],
     ['requests', 'Information requests', Inbox],
-    ['securemessages', 'Secure messages', MessageSquareLock],
     ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit history', ChartNoAxesCombined],
   ],
   manufacturer: [
     ['overview', 'Overview', LayoutDashboard],
     ['evidence', 'Ingredient evidence', FlaskConical],
-    ['securemessages', 'Secure messages', MessageSquareLock],
     ['products', 'Product batches', Package],
     ['transfers', 'Transfers', ArrowRightLeft],
     ['mycredential', 'My company credential', ContactRound],
