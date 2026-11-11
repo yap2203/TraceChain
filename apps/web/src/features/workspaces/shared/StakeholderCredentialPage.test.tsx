@@ -65,6 +65,10 @@ describe('My Company Identity', () => {
   it('renders actual API identity fields and copies the complete wallet', async () => {
     render(<StakeholderCredentialPage expectedRole="MANUFACTURER" />);
     expect(await screen.findByText('Verified Cocoa Company')).toBeTruthy();
+    const settings = screen.getByText('Presentation signing settings').closest('details');
+    expect(settings?.open).toBe(false);
+    expect(screen.queryByRole('textbox', { name: 'Presentation key backup password' })).toBeNull();
+    expect(screen.queryByText(/Secure DIDComm delivery/)).toBeNull();
     expect(screen.getByText('REG-2026-001')).toBeTruthy();
     expect(screen.getByText('Manufacturer')).toBeTruthy();
     expect(screen.getByText('TraceChain Demo Authority')).toBeTruthy();

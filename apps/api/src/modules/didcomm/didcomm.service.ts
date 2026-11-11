@@ -18,6 +18,10 @@ const FOLLOW_UP = 'https://tracechain.local/didcomm/ingredient-evidence-follow-u
 const IDENTITY_REQUEST = 'https://tracechain.local/didcomm/company-identity-request/1.0';
 const IDENTITY_PRESENTATION = 'https://tracechain.local/didcomm/company-identity-presentation/1.0';
 const IDENTITY_DECLINED = 'https://tracechain.local/didcomm/company-identity-declined/1.0';
+const ORDER_IDENTITY_REQUEST = 'https://tracechain.local/didcomm/order-identity-request/1.0';
+const ORDER_IDENTITY_PRESENTATION =
+  'https://tracechain.local/didcomm/order-identity-presentation/1.0';
+const ORDER_IDENTITY_DECLINED = 'https://tracechain.local/didcomm/order-identity-declined/1.0';
 interface Challenge {
   expiresAt: number;
   nonce: string;
@@ -45,7 +49,7 @@ export class DidCommService {
     private readonly backendAgents?: BackendDidCommAgentService,
     private readonly businessParticipants?: (
       reference: string,
-    ) => Promise<{ requester: string; supplier: string } | undefined>,
+    ) => Promise<{ requester: string; supplier: string; order?: boolean } | undefined>,
   ) {}
   async challenge(sessionId?: string) {
     const session = await this.session(sessionId);
@@ -215,20 +219,48 @@ export class DidCommService {
       (item) =>
         item.businessReference.toLowerCase() === input.businessReference.toLowerCase() &&
         item.messageType === input.messageType &&
+        item.threadId === input.threadId &&
         item.fromDid === sender.did &&
         item.toDid === recipient.did &&
         item.deliveryState === 'RECEIVED_DECRYPTED',
     );
-    if (existingDelivery) return { accepted: true as const, id: existingDelivery.id };
+    if (existingDelivery) {
+      const previous = await this.backendAgents.unpack(recipient.did, existingDelivery.envelope);
+      const canonical = (value: unknown): string => {
+        if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+        if (value && typeof value === 'object')
+          return `{${Object.entries(value)
+            .filter(([, entry]) => entry !== undefined)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key, entry]) => `${JSON.stringify(key)}:${canonical(entry)}`)
+            .join(',')}}`;
+        return JSON.stringify(value);
+      };
+      if (canonical(previous.body) !== canonical(input.body))
+        throw new DidCommError(
+          'DELIVERY_REPLAY_CONFLICT',
+          'This secure message thread already contains different contents for this action.',
+          409,
+        );
+      return { accepted: true as const, id: existingDelivery.id };
+    }
     let parentThreadId = input.parentThreadId;
-    if (!parentThreadId && input.messageType !== REQUEST) {
-      const expectedParentTypes = [ACK, PRESENTATION, DECLINED].includes(input.messageType)
-        ? [REQUEST, FOLLOW_UP]
-        : input.messageType === IDENTITY_REQUEST
-          ? [REQUEST]
-          : [IDENTITY_PRESENTATION, IDENTITY_DECLINED].includes(input.messageType)
-            ? [IDENTITY_REQUEST]
-            : [ACK, PRESENTATION, DECLINED];
+    if (
+      !parentThreadId &&
+      input.messageType !== REQUEST &&
+      input.messageType !== ORDER_IDENTITY_REQUEST
+    ) {
+      const expectedParentTypes = [ORDER_IDENTITY_PRESENTATION, ORDER_IDENTITY_DECLINED].includes(
+        input.messageType,
+      )
+        ? [ORDER_IDENTITY_REQUEST]
+        : [ACK, PRESENTATION, DECLINED].includes(input.messageType)
+          ? [REQUEST, FOLLOW_UP]
+          : input.messageType === IDENTITY_REQUEST
+            ? [REQUEST]
+            : [IDENTITY_PRESENTATION, IDENTITY_DECLINED].includes(input.messageType)
+              ? [IDENTITY_REQUEST]
+              : [ACK, PRESENTATION, DECLINED];
       parentThreadId = (await this.envelopesFor(session.address, sender.did)).find(
         (item) =>
           item.businessReference.toLowerCase() === input.businessReference.toLowerCase() &&
@@ -333,7 +365,54 @@ export class DidCommService {
         'The encrypted message is expired or has an invalid lifetime.',
         400,
       );
-    if (input.messageType === REQUEST) {
+    if (
+      [ORDER_IDENTITY_REQUEST, ORDER_IDENTITY_PRESENTATION, ORDER_IDENTITY_DECLINED].includes(
+        input.messageType,
+      )
+    ) {
+      const context = await this.businessParticipants?.(input.businessReference);
+      const requesting = input.messageType === ORDER_IDENTITY_REQUEST;
+      if (
+        !context?.order ||
+        session.address.toLowerCase() !==
+          (requesting ? context.supplier : context.requester).toLowerCase() ||
+        recipient.wallet.toLowerCase() !==
+          (requesting ? context.requester : context.supplier).toLowerCase()
+      )
+        throw new DidCommError(
+          'UNAUTHORIZED_MESSAGE_FLOW',
+          'Order identity messages require the exact current buyer and seller.',
+          403,
+        );
+      if (!requesting) {
+        const envelopes = await this.envelopesFor(session.address, sender.did);
+        const parent = envelopes.find(
+          (item) =>
+            item.id === input.parentThreadId &&
+            item.messageType === ORDER_IDENTITY_REQUEST &&
+            item.threadId === input.threadId &&
+            item.businessReference === input.businessReference &&
+            item.fromDid === recipient.did &&
+            item.toDid === sender.did,
+        );
+        if (!parent)
+          throw new DidCommError(
+            'THREAD_MISMATCH',
+            'Order identity response does not match its request.',
+            403,
+          );
+        if (
+          envelopes.some(
+            (item) => item.parentThreadId === input.parentThreadId && item.fromDid === sender.did,
+          )
+        )
+          throw new DidCommError(
+            'IDENTITY_RESPONSE_REPLAY',
+            'This order identity challenge was already answered.',
+            409,
+          );
+      }
+    } else if (input.messageType === REQUEST) {
       if (
         (session.role !== CompanyRole.MANUFACTURER && session.role !== CompanyRole.RETAILER) ||
         recipient.role !== CompanyRole.SUPPLIER ||

@@ -311,7 +311,7 @@ export function RetailerEvidenceRequests() {
                   />
                 </TD>
                 <TD>
-                  <CompanyIdentityProofAction requestId={request.requestId} />
+                  <CompanyIdentityProofAction requestId={request.requestId} role="retailer" />
                   {request.status >= 2 && (
                     <Btn
                       size="xs"

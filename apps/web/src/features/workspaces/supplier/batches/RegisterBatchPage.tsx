@@ -7,7 +7,7 @@ import {
   type IngredientBatchWorkflow,
 } from './ingredient-batch.api';
 import { submitIngredientBatchTransaction } from './ingredient-batch-transaction';
-import { HolderSigningKeyPanel } from '../../../didcomm/HolderSigningKeyPanel';
+import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
 import {
   textError,
   quantityError,
@@ -38,7 +38,9 @@ export function RegisterBatch({
   const [producedAt, setProducedAt] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [unit, setUnit] = useState('kg');
+  const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState('MYR');
+  const [unit, setUnit] = useState('g');
   const [allergen, setAllergen] = useState('');
   const [certifications, setCertifications] = useState('');
   const [busy, setBusy] = useState(false);
@@ -62,9 +64,14 @@ export function RegisterBatch({
     productionDate: producedAt,
     quantity,
     unit,
+    ...(price ? { price, currency } : {}),
   });
 
   const validationError =
+    (price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(price)
+      ? 'Enter a non-negative unit price with at most two decimal places.'
+      : '') ||
+    (price && !/^[A-Z]{3}$/.test(currency) ? 'Enter a three-letter currency code.' : '') ||
     textError(name, 'Ingredient name', 160) ||
     referenceError(batchReference) ||
     textError(origin, 'Origin', 160) ||
@@ -213,13 +220,28 @@ export function RegisterBatch({
                   onChange={setQuantity}
                   required
                 />
+                <Input
+                  label={`Price per ${unit} (optional)`}
+                  value={price}
+                  onChange={setPrice}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                />
+                <Input
+                  label="Currency code"
+                  value={currency}
+                  onChange={(value) => setCurrency(value.toUpperCase())}
+                  maxLength={3}
+                />
                 <SelectField
                   label="Unit"
                   value={unit}
                   onChange={setUnit}
                   options={[
                     { value: 'kg', label: 'kg' },
-                    { value: 'g', label: 'g' },
+                    { value: 'g', label: 'g (integer grams; 1000 g = 1 kg)' },
+                    { value: 'each', label: 'each (individual items)' },
                     { value: 'litre', label: 'litre' },
                     { value: 'unit', label: 'unit' },
                   ]}
@@ -258,7 +280,7 @@ export function RegisterBatch({
 
         {step === 1 && (
           <div style={{ display: 'grid', gap: 16 }}>
-            <HolderSigningKeyPanel />
+            <PresentationSigningSettingsLink role="supplier" />
             <Card>
               <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
                 Review batch

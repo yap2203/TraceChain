@@ -15,6 +15,7 @@ export function Btn({
   icon,
   style: sx,
   type = 'button',
+  'aria-current': ariaCurrent,
 }: {
   children: ReactNode;
   onClick?: MouseEventHandler<HTMLButtonElement>;
@@ -25,6 +26,7 @@ export function Btn({
   icon?: ReactNode;
   style?: CSSProperties;
   type?: 'button' | 'submit';
+  'aria-current'?: 'page';
 }) {
   const V: Record<BtnVariant, CSSProperties> = {
     primary: { background: T.teal, color: 'var(--c-on-accent)', border: `1px solid ${T.teal}` },
@@ -42,6 +44,7 @@ export function Btn({
   return (
     <button
       type={type}
+      aria-current={ariaCurrent}
       onClick={onClick}
       disabled={disabled || (!onClick && type !== 'submit')}
       title={!onClick && type !== 'submit' ? 'This action is not available yet' : undefined}
@@ -57,6 +60,8 @@ export function Btn({
         transition: 'all 0.15s',
         fontFamily: UI,
         width: full ? '100%' : undefined,
+        minWidth: 0,
+        maxWidth: '100%',
         justifyContent: 'center',
         ...V[variant],
         ...SZ[size],

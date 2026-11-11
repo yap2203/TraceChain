@@ -7,6 +7,7 @@ import {
   type CompanyIdentityResponse,
 } from '../../auth/auth.api';
 import { CredentialCard } from './CredentialCard';
+import { HolderSigningKeyPanel } from '../../didcomm/HolderSigningKeyPanel';
 import { Alert, Badge, Btn, Card, MONO, SectionTitle, T } from './ui';
 
 export function StakeholderCredentialPage({
@@ -105,6 +106,14 @@ export function StakeholderCredentialPage({
   const role = displayRole(identity.role);
   return (
     <div>
+      <details
+        id="presentation-signing"
+        style={{ marginBottom: 16 }}
+        open={typeof window !== 'undefined' && window.location.hash === '#presentation-signing'}
+      >
+        <summary style={{ cursor: 'pointer', padding: 12 }}>Presentation signing settings</summary>
+        <HolderSigningKeyPanel />
+      </details>
       <SectionTitle
         title="My Company Identity"
         sub="Your existing Company Role Credential and current blockchain authorization state"

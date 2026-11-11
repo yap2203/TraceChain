@@ -147,6 +147,7 @@ export async function readSelectiveIngredientClaims(credential: string) {
   });
   return instance.getClaims(credential);
 }
+export const createSelectiveCompanyIdentityPresentation = createSelectiveIngredientPresentation;
 export async function exportRecoveryKit(holder: HolderMessagingAgent, password: string) {
   if (password.length < 10) throw new Error('Use a recovery password of at least 10 characters.');
   const salt = crypto.getRandomValues(new Uint8Array(16));

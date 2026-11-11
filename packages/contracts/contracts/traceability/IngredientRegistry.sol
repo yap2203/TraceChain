@@ -5,6 +5,26 @@ import {ICredentialRegistry} from '../interfaces/ICredentialRegistry.sol';
 import {IIngredientRegistry} from '../interfaces/IIngredientRegistry.sol';
 
 contract IngredientRegistry is IIngredientRegistry {
+    struct Listing { bytes32 metadataHash; string encryptedCid; bool archived; }
+    mapping(bytes32 => Listing) private listings;
+    event IngredientListingUpdated(bytes32 indexed batchId, bytes32 metadataHash, string encryptedCid);
+    event IngredientArchived(bytes32 indexed batchId, bool archived);
+    function listingManagementPolicy() external pure returns (uint8) { return 1; }
+    function getListing(bytes32 batchId) external view returns (Listing memory) { return listings[batchId]; }
+    function _listingOwner(bytes32 batchId) private view {
+        if (batches[batchId].supplier != msg.sender || !stakeholders.isAuthorized(msg.sender, 2) || !stakeholders.hasPermission(msg.sender, keccak256('REGISTER_INGREDIENT'))) revert Unauthorized(msg.sender);
+    }
+    function updateListing(bytes32 batchId, bytes32 expectedHash, bytes32 metadataHash, string calldata cid) external {
+        _listingOwner(batchId);
+        if (metadataHash == bytes32(0) || bytes(cid).length == 0 || listings[batchId].metadataHash != expectedHash) revert InvalidInput();
+        listings[batchId].metadataHash = metadataHash; listings[batchId].encryptedCid = cid;
+        emit IngredientListingUpdated(batchId, metadataHash, cid);
+    }
+    function setArchived(bytes32 batchId, bool archived) external {
+        _listingOwner(batchId);
+        listings[batchId].archived = archived;
+        emit IngredientArchived(batchId, archived);
+    }
     enum Status {
         None,
         Active,
@@ -29,6 +49,53 @@ contract IngredientRegistry is IIngredientRegistry {
     IStakeholderRegistry public immutable stakeholders;
     ICredentialRegistry public immutable credentials;
     address public productRegistry;
+    address public override supplyOrders;
+    struct ReceivedStock { uint256 usable; uint256 damaged; uint256 rejected; uint256 missing; uint256 consumed; }
+    mapping(bytes32 => mapping(address => mapping(bytes32 => ReceivedStock))) private receivedStock;
+    mapping(bytes32 => mapping(address => uint256)) public manufacturerUsable;
+    event ReceivedStockChanged(bytes32 indexed batchId, address indexed company, bytes32 indexed location, uint256 usable);
+
+    function configureSupplyOrders(address registry) external {
+        if (!stakeholders.isAuthorized(msg.sender, 1) || registry.code.length == 0 || supplyOrders != address(0)) revert Unauthorized(msg.sender);
+        supplyOrders = registry;
+    }
+    function reserveSupply(bytes32 batchId, uint256 quantity, bool release) external {
+        if (msg.sender != supplyOrders) revert Unauthorized(msg.sender);
+        Batch storage batch = batches[batchId];
+        if (release) batch.availableQuantity += quantity;
+        else {
+            if (!isUsable(batchId) || quantity == 0 || quantity > batch.availableQuantity) revert InvalidState();
+            batch.availableQuantity -= quantity;
+        }
+    }
+    function receiveSupply(bytes32 batchId, address company, bytes32 location, uint256 accepted, uint256 damaged, uint256 rejected, uint256 missing) external {
+        if (msg.sender != supplyOrders) revert Unauthorized(msg.sender);
+        ReceivedStock storage stock = receivedStock[batchId][company][location];
+        stock.usable += accepted; stock.damaged += damaged; stock.rejected += rejected; stock.missing += missing;
+        manufacturerUsable[batchId][company] += accepted;
+        emit ReceivedStockChanged(batchId, company, location, stock.usable);
+    }
+    function getReceivedStock(bytes32 batchId, address company, bytes32 location) external view returns (ReceivedStock memory) {
+        return receivedStock[batchId][company][location];
+    }
+    function consumeReceived(bytes32 batchId, uint256 quantity, bytes32 productBatchId, address manufacturer, bytes32 location) external override {
+        if (msg.sender != productRegistry) revert Unauthorized(msg.sender);
+        ReceivedStock storage stock = receivedStock[batchId][manufacturer][location];
+        if (!isValidTraceabilitySource(batchId) || quantity == 0 || stock.usable < quantity) revert InvalidState();
+        stock.usable -= quantity; stock.consumed += quantity;
+        manufacturerUsable[batchId][manufacturer] -= quantity;
+        emit IngredientConsumed(batchId, productBatchId, quantity);
+        emit ReceivedStockChanged(batchId, manufacturer, location, stock.usable);
+    }
+    function correctReceived(bytes32 batchId, address company, bytes32 location, uint256 usable) external {
+        if (msg.sender != supplyOrders) revert Unauthorized(msg.sender);
+        ReceivedStock storage stock = receivedStock[batchId][company][location];
+        // Only reductions of currently usable stock are allowed; consumed stock is immutable.
+        if (usable > stock.usable) revert InvalidState();
+        manufacturerUsable[batchId][company] -= stock.usable - usable;
+        stock.usable = usable;
+        emit ReceivedStockChanged(batchId, company, location, usable);
+    }
     mapping(bytes32 => Batch) private batches;
     event IngredientBatchRegistered(
         bytes32 indexed batchId,
@@ -108,6 +175,7 @@ contract IngredientRegistry is IIngredientRegistry {
         bytes32 productBatchId
     ) external override {
         if (msg.sender != productRegistry) revert Unauthorized(msg.sender);
+        if (supplyOrders != address(0)) revert InvalidState();
         Batch storage batch = batches[batchId];
         if (!isUsable(batchId) || quantity == 0 || batch.availableQuantity < quantity)
             revert InvalidState();

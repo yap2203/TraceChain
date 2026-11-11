@@ -3,6 +3,14 @@ import { requestDateSchema } from '../../config/input-validation.js';
 
 export const ingredientBatchRequestSchema = z
   .object({
+    price: z
+      .string()
+      .regex(/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/)
+      .optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .default('MYR'),
     allergenInformation: z.string().trim().max(500).default(''),
     batchReference: z
       .string()

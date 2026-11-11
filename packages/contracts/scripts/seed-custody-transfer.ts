@@ -1,6 +1,15 @@
 import { encodeTransferQrPayload } from '@tracechain/shared';
 import dotenv from 'dotenv';
-import { Contract, JsonRpcProvider, ZeroAddress, ZeroHash, getAddress, id } from 'ethers';
+import {
+  Contract,
+  JsonRpcProvider,
+  ZeroAddress,
+  ZeroHash,
+  getAddress,
+  id,
+  encodeBytes32String,
+} from 'ethers';
+import { readFileSync } from 'node:fs';
 import type { ContractRunner } from 'ethers';
 import { fileURLToPath } from 'node:url';
 
@@ -33,11 +42,13 @@ const productAbi = [
   'function ingredients() view returns (address)',
   'function evidence() view returns (address)',
   'function createProduct(bytes32,bytes32,string,uint256,bytes32,uint64,uint64,bytes32[],uint256[])',
+  'function createProductAt(bytes32,bytes32,string,uint256,bytes32,uint64,uint64,bytes32[],uint256[],bytes32)',
 ] as const;
 const ingredientAbi = [
   'function stakeholders() view returns (address)',
   'function credentials() view returns (address)',
   'function registerBatch(bytes32,bytes32,string,bytes32,uint256,bytes32,uint64,uint64)',
+  'function supplyOrders() view returns (address)',
 ] as const;
 const evidenceAbi = [
   'function stakeholders() view returns (address)',
@@ -157,10 +168,10 @@ async function main() {
       'local-dev://ingredient-batch',
       ingredientCredentialId,
       100, // Change from 50
-      id('units'),
+      encodeBytes32String('g'),
       now,
       now + 86_400,
-    )
+    ),
   );
   await wait(
     connected(evidence, manufacturerSigner).requestEvidence(
@@ -184,17 +195,108 @@ async function main() {
   await wait(
     connected(evidence, manufacturerSigner).accept(evidenceRequestId, ingredientCredentialId),
   );
+  let supplyOrdersAddress = ZeroAddress;
+  try {
+    supplyOrdersAddress = getAddress(await ingredients.supplyOrders());
+  } catch (error) {
+    if (
+      (error as { code?: string; data?: string }).code !== 'CALL_EXCEPTION' ||
+      (error as { data?: string }).data !== '0x'
+    )
+      throw error;
+  }
+  const productionLocation = id(`tracechain:dev:production-location:${run}`);
+  if (supplyOrdersAddress !== ZeroAddress) {
+    const artifact = JSON.parse(
+      readFileSync(
+        new URL(
+          '../artifacts/contracts/traceability/SupplyChainOrders.sol/SupplyChainOrders.json',
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    );
+    const orders = new Contract(supplyOrdersAddress, artifact.abi, provider);
+    const sourceLocation = id(`tracechain:dev:source-location:${run}`),
+      itemId = id(`tracechain:dev:item:${run}`),
+      orderId = id(`tracechain:dev:order:${run}`),
+      deliveryId = id(`tracechain:dev:ingredient-delivery:${run}`);
+    await wait(
+      connected(orders, supplierSigner).registerLocation(
+        sourceLocation,
+        id('local-dev:source-location'),
+      ),
+    );
+    await wait(
+      connected(orders, manufacturerSigner).registerLocation(
+        productionLocation,
+        id('local-dev:production-location'),
+      ),
+    );
+    await wait(
+      connected(orders, supplierSigner).listItem(
+        itemId,
+        'Local custody-test ingredient',
+        1,
+        ingredientBatchId,
+        id('local-dev:item'),
+      ),
+    );
+    await wait(
+      connected(orders, manufacturerSigner).requestOrder(
+        orderId,
+        itemId,
+        50,
+        encodeBytes32String('g'),
+        productionLocation,
+        now + 3600,
+        false,
+        id('local-dev:order'),
+        'local-dev://order',
+      ),
+    );
+    await wait(
+      connected(orders, supplierSigner).propose(orderId, ingredientBatchId, sourceLocation),
+    );
+    await wait(connected(orders, supplierSigner).allocate(orderId, 50));
+    const dispatched = (await provider.getBlock('latest'))!.timestamp;
+    await wait(
+      connected(orders, supplierSigner).dispatch(
+        orderId,
+        deliveryId,
+        50,
+        dispatched,
+        ZeroAddress,
+        ZeroHash,
+        now + 3600,
+        id('local-dev:delivery'),
+        'local-dev://delivery',
+      ),
+    );
+    await wait(
+      connected(orders, manufacturerSigner).receiveIngredient(
+        deliveryId,
+        50,
+        0,
+        0,
+        0,
+        (await provider.getBlock('latest'))!.timestamp,
+      ),
+    );
+  }
+  const productMethod = supplyOrdersAddress === ZeroAddress ? 'createProduct' : 'createProductAt';
   await wait(
-    connected(product, manufacturerSigner).createProduct(
+    connected(product, manufacturerSigner).getFunction(productMethod)(
       productBatchId,
       id(`tracechain:dev:product-metadata:${run}`),
       'local-dev://product',
       50,
-      id('units'),
+      encodeBytes32String('each'),
       now,
       now + 86_400,
       [ingredientBatchId],
       [50],
+      ...(supplyOrdersAddress === ZeroAddress ? [] : [productionLocation]),
     ),
   );
   await wait(

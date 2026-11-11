@@ -324,6 +324,7 @@ export class IngredientBatchService {
       quantity: input.quantity,
       supplierWallet: input.supplierWallet,
       unit: input.unit,
+      ...(input.price !== undefined ? { price: input.price, currency: input.currency } : {}),
       credentialFormat: 'JWT_VC',
     };
     await this.dependencies.repository.save(record);
@@ -423,6 +424,7 @@ export class IngredientBatchService {
       quantity: input.quantity,
       supplierWallet,
       unit: input.unit,
+      ...(input.price !== undefined ? { price: input.price, currency: input.currency } : {}),
     };
   }
 

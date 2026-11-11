@@ -98,42 +98,52 @@ describe('Supplier ingredient batch workflow', () => {
     expect(submitTransaction).toHaveBeenCalledOnce();
   });
 
-  it('loads the authenticated on-chain batch list and refreshes navigation from real data', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      json: async () => ({
-        batches: [
-          {
-            allergenInformation: 'None',
-            availableQuantity: '500',
-            batchId: BASE_WORKFLOW.batchId,
-            batchReference: 'COCOA-2026-001',
-            category: 'cocoa',
-            certifications: ['Organic'],
-            credentialId: BASE_WORKFLOW.credentialId,
-            expiresAt: 1_893_456_000,
-            ingredientName: 'Cocoa Powder',
-            origin: 'Ghana',
-            producedAt: 1_759_276_800,
-            quantity: '500',
-            status: 1,
-            unit: 'kg',
-          },
-        ],
-      }),
-      ok: true,
-      status: 200,
-    });
+  it('loads the Supplier-owned ingredient grid and opens real batch details', async () => {
+    const wallet = '0x2000000000000000000000000000000000000002';
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          actor: wallet,
+          catalogue: [
+            {
+              itemId: 'item',
+              kind: 1,
+              seller: wallet,
+              name: 'Cocoa Powder',
+              category: 'cocoa',
+              batchReference: 'COCOA-2026-001',
+              unit: 'kg',
+              batches: [BASE_WORKFLOW.batchId],
+              batchDetails: [
+                {
+                  batchId: BASE_WORKFLOW.batchId,
+                  supplierAvailable: '500',
+                  status: 1,
+                  expiresAt: 2000000000,
+                },
+              ],
+              listingSupported: true,
+              listingHash: '0x' + '0'.repeat(64),
+            },
+          ],
+          orders: [],
+          locations: [],
+          shipments: [],
+        }),
+      });
     vi.stubGlobal('fetch', fetchMock);
     const onDetail = vi.fn();
     render(<IngredientBatches onNew={vi.fn()} onDetail={onDetail} />);
-
     expect(await screen.findByText('Cocoa Powder')).toBeTruthy();
-    expect(screen.getByText('COCOA-2026-001')).toBeTruthy();
+    expect(screen.getByText(/COCOA-2026-001/)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/ingredient-batches/'),
+      expect.stringContaining('/api/orders'),
       expect.objectContaining({ credentials: 'include' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'View →' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     expect(onDetail).toHaveBeenCalledWith(BASE_WORKFLOW.batchId);
   });
 });

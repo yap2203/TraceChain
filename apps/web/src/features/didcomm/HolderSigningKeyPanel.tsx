@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { Link, useInRouterContext } from 'react-router-dom';
 
 import {
   createBindingProof,
@@ -11,6 +12,16 @@ import {
 import { didCommApi } from './didcomm.api';
 import { Alert, Btn, Card } from '../workspaces/shared/ui';
 import { uploadError } from '../validation/form-validation';
+import { workspacePath } from '../workspaces/workspace-paths';
+import type { WorkspaceRole } from '../workspaces/workspace-navigation';
+
+export function PresentationSigningSettingsLink({ role }: { role: WorkspaceRole }) {
+  const inRouter = useInRouterContext();
+  const to = `${workspacePath(role, 'mycredential')}#presentation-signing`;
+  const text = 'Manage presentation signing in My company credential';
+  // SPA navigation preserves the in-memory holder key while changing workspace pages.
+  return inRouter ? <Link to={to}>{text}</Link> : <a href={to}>{text}</a>;
+}
 
 /**
  * This key signs holder presentations. It is deliberately not used for DIDComm transport; the
@@ -70,10 +81,10 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
   return (
     <Card>
       <div style={{ display: 'grid', gap: 8 }}>
-        <b>Holder presentation signing key</b>
+        <b>Presentation signature settings</b>
         <div style={{ fontSize: 12 }}>
-          This browser key signs selective or company presentations. Secure DIDComm delivery is
-          automatic and uses a different backend-managed company-agent key.
+          Create or restore the key used to sign approved credential presentations. This signing key
+          stays in your browser. Keep an encrypted backup so you can restore it after a refresh.
         </div>
         {error && <Alert type="error" message={error} />}
         <input

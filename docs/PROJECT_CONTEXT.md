@@ -29,6 +29,13 @@
 
 ## Current implementation
 
+- Supplier uses an owned ingredient grid with listing CRUD/archive/restore, a My orders table for Manufacturer requests and approve/reject decisions, and separate Received/Sent evidence tables under Information requests. There is no Supplier Browse tab. Signed ingredient fields and historical traceability remain immutable; listing amendments are distinct Supplier business metadata. Decisions never move stock or automatically grant evidence access.
+
+- Current Browse & requests UI scope is browsing, request-only quantity interest, details evidence and company proof exchange. Location/proposal/reservation/dispatch/receipt/recall controls are deferred from this page. New request-only records cannot reserve/dispatch or credit stock; existing physical-flow APIs/contracts and historical records remain intact. See docs/BROWSE_REQUESTS_README.md.
+
+- Browse & requests discovers registered ingredient/product batches without manual publishing, shows only whitelisted business metadata and optional indicative unit prices, and uses request terminology without payments.
+- New quantity-request-linked Company Identity proofs support issuer-derived SD-JWT attestations referencing existing Company Role VCs, required/optional claim selection and browser holder signing. Legacy signed Company Role JWTs remain unchanged and cannot be selectively redacted.
+
 - Responsive React UI with public login and registration pages
 - Integrated admin, supplier, manufacturer, distributor, and retailer workspace screens
 - Development sample data, simulated interactions, responsive dialogs, accessible loading states, and table pagination
@@ -57,7 +64,8 @@
 - On-chain Company Role credential linkage for every company role plus an Admin bootstrap-to-registry workflow; complete credentials remain encrypted off-chain
 - Wallet-scoped on-chain credential pages for Supplier, Manufacturer, Distributor, and Retailer, with optional private issuance metadata and no presentation fixtures
 - Readable Company Digital Identity cards backed by the actual encrypted Company Role VC, explicit Veramo/on-chain verification, copyable technical details, and PDF summaries
-- Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
+- Seven-contract Hardhat 3 traceability suite with Ignition deployment and integration tests, including SupplyChainOrders for catalogue requests, reservations, physical ingredient receipts, location-based Manufacturer stock and recall links; existing deployments require redeployment to use this stage
+- Order-bound optional Company Role VPs using the existing full-disclosure credential format and browser-held presentation keys; versioned batch proposals require freshly bound Ingredient evidence without changing the existing SD-JWT format
 - Administrator transfer that preserves historically valid Company Role Credentials while removing the former administrator's authority
 - Participant-scoped private evidence and receipt retrieval with existence-hiding not-found responses
 - Atomic workflow persistence that fails closed on corruption and confirmed-transaction refresh recovery in the UI

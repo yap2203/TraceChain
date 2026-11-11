@@ -12,10 +12,13 @@ export function SectionTitle({
 }) {
   return (
     <div
+      className="workspace-section-title"
       style={{
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
+        flexWrap: 'wrap',
+        gap: 12,
         marginBottom: 20,
       }}
     >

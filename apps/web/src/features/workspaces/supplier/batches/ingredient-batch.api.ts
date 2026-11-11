@@ -6,6 +6,8 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:300
 );
 
 export interface IngredientBatchInput {
+  price?: string;
+  currency?: string;
   allergenInformation: string;
   batchReference: string;
   category: string;

@@ -1,5 +1,98 @@
 # TraceChain
 
+Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid), **My orders**
+(incoming Manufacturer requests in a table), and **Information requests** (separate Received and
+Sent evidence tables). There is no Supplier Browse tab. Ingredients support create/read,
+version-checked listing edits, archive/delete and restore. Listing edits change the business name,
+category, description and indicative price; signed credential claims, quantities and units stay
+intact. Supplier decisions are recorded on-chain and never reserve stock or process payment.
+See [the Supplier management flow](docs/BROWSE_REQUESTS_README.md#supplier-management).
+
+The updated IngredientRegistry and SupplyChainOrders require a fresh complete suite deployment
+to enable listing management and approve/reject. Missing capabilities produce explicit update
+messages; existing source credentials, keys, deployment journals and `.env` are preserved.
+
+DIDComm transport is entirely backend-managed: the API packs/encrypts and unpacks/decrypts
+messages with separate company-agent keys. Registration and evidence/request screens have no
+messaging key setup or backup panel. Presentation signature settings are separate, under
+**My company credential → Presentation signing settings**, with links from presentation flows.
+Those browser keys sign approved VPs; they are not used for DIDComm message encryption.
+
+**Current review scope:** Browse & requests contains only item browsing, quantity/detail requests
+and company evidence exchange. The numbered workflow, location setup, proposals, reservations,
+dispatch, receipts and recall controls have been removed from this page. New request-only records
+do not change stock and cannot enter the retained reservation/dispatch methods.
+
+Read [Browse & requests — current functions and deferred work](docs/BROWSE_REQUESTS_README.md)
+for the active five-part flow, the purpose of each retained physical-flow function and the checks
+needed before implementing those steps later. The physical-flow references below document retained
+backend/contract capabilities, not the current page's controls. Updated contract deployment is
+required to submit location-free request-only records; existing records and configuration remain intact.
+
+**Browse & requests** now discovers registered ingredients and finished products automatically.
+There is no separate publishing step. Open an item in the responsive grid to inspect its safe
+business summary, request additional ingredient evidence, or request a quantity. Requests track
+supply and fulfilment; there is no checkout or payment. New registrations accept an optional
+indicative price per registered unit and a three-letter currency code; existing prices remain
+unavailable until recorded in new registration metadata.
+
+The receiver of a quantity request can request Company Identity Proof before sharing evidence.
+New request-linked company proofs use an authority-derived SD-JWT attestation tied to the existing
+Company Role VC hash and browser-held signing key. Necessary claims are enforced, optional claims
+are holder-selected, and wallet/role/subject binding always remains visible. Existing signed
+Company Role VCs and legacy full-disclosure challenges are preserved. The API verifies and can
+decrypt the source credential and needs its original issuer key to create this derived attestation;
+only the holder signs the presentation. This is not holder-exclusive credential storage.
+
+**Contract update required:** direct registered-batch requests use the new `requestBatch` method.
+Deploy the complete suite using a fresh deployment ID and update all seven root addresses before
+testing this flow; no deployment or data migration is performed automatically. See the updated
+[request test flow](docs/ORDERS_PHYSICAL_FLOW_TEST_GUIDE.md#browse-and-requests-review-flow).
+
+Workspace controls share responsive sizing and theme styles. Order forms use two desktop columns
+and collapse to one column at narrow usable widths, including beside the tablet sidebar. Long
+identifiers wrap, wide tables scroll within their own containers, and dialogs stay within the
+viewport. Responsive layout checks cover mobile, tablet and desktop sizes; real role-by-role
+business testing remains described in the guide below.
+
+Catalogue orders now connect evidence decisions to physical ingredient dispatch, receipt,
+location-based usable stock, production consumption and downstream recall tracing. The new
+**Catalogue & orders** workspace page uses an on-chain `SupplyChainOrders` ledger and preserves
+Manufacturer → Distributor → Retailer custody routes. Read the
+[local setup and role-by-role test guide](docs/ORDERS_PHYSICAL_FLOW_TEST_GUIDE.md) before testing.
+
+Catalogue & orders includes a role-specific workflow guide, visible location setup and a dedicated
+order workspace with a current-state **Next step** message. Numbered sections separate proposing,
+reserving, reviewing evidence, dispatching and receiving. Optional identity checks, interrupted
+evidence-binding recovery and cancellation have separate expandable sections. Buyers review,
+verify and accept evidence in Ingredient evidence before linking it to the order. The guide is
+operational guidance; the API and contracts still enforce authorization and current state.
+The workflow tiles provide section navigation without a duplicate tab row. **Refresh data** is
+beside the page title; **Recall & tracing** is a separate stock-safety utility below the workflow
+(Administrators use their **Trace recalls** workflow tile).
+Reservation forms pre-fill the unfulfilled order quantity and block repeated reservation while
+stock remains allocated. The API reports specific proposal, expiry, existing-reservation,
+quantity, stock, permission and ingredient-usability problems before preparing calldata.
+Dispatch preparation also checks the remaining reservation, buyer authorization, required
+identity and current credential hash, every linked evidence presentation, source validity and
+finished-product Distributor routing. The dispatch form shows missing evidence/identity blockers
+and defaults to the remaining reserved quantity; contract simulation still rechecks the final action.
+
+Catalogue entries retain the batch's registered quantity and named unit, including `g`, `kg`,
+`litre`, `each` and `unit`. Requests must use that item's exact unit; no automatic conversion
+or quantity rescaling occurs. Quantities remain whole numbers. Older deployments with the
+former g/each restriction return `CATALOGUE_UPGRADE_REQUIRED` for other units until redeployed.
+Deploy the complete **seven-contract** suite with a fresh Ignition deployment ID and configure
+the root `SUPPLY_ORDERS_ADDRESS` plus the six existing addresses. Existing chain data is preserved;
+it is not automatically migrated. No public network deployment is part of this change.
+
+New authenticated endpoints: `GET /api/orders`, `POST /api/orders/prepare`,
+`POST /api/orders/:orderId/evidence/prepare`, `POST /api/orders/:orderId/identity`,
+and `GET /api/orders/recall/:batchId`. Writes remain unsigned transaction preparations for MetaMask;
+the identity endpoint also reuses existing credential retrieval, holder-proof verification and
+backend-managed encrypted DIDComm transport. Company Role VCs remain full disclosure. Ingredient
+SD-JWT selective presentations remain supported. Run `npm run test:orders` for the scoped suite.
+
 Admin Access Control includes **Individual Permissions** alongside Role Permissions and the
 Permission Matrix. Select a registered company wallet and choose **Inherit role**, **Allow**,
 or **Deny** for each operational permission, then confirm through MetaMask. Individual settings
@@ -56,7 +149,7 @@ The current version includes a responsive React application, five stakeholder wo
 | Manufacturer production flow             | Real evidence VP, product creation, Distributor transfer, and transfer QR implemented        |
 | Company identity proof for evidence      | DIDComm-linked challenge, preview/approve/decline, VP verification, expiry and replay guards |
 | Distributor transfer flow                | Real inventory, verified Retailer transfer, MetaMask signing, and QR implemented             |
-| Smart contracts                          | Six modular TraceChain contracts plus an Ignition deployment module                          |
+| Smart contracts                          | Seven modular TraceChain contracts plus an Ignition deployment module                        |
 | Private IPFS content                     | AES-256-GCM envelope and injectable HTTP pinning gateway implemented                         |
 | Custody-transfer QR workflow             | Reconciliation, encrypted evidence, discrepancies, and MetaMask writes implemented           |
 | Product traceability QR                  | Permanent public locator, safe resolver, and custody timeline implemented                    |
@@ -143,10 +236,10 @@ npx hardhat node --chain-id 31337
 In a second terminal, deploy the complete module:
 
 ```bash
-npx hardhat ignition deploy ignition/modules/TraceChain.ts --network localhost --deployment-id tracechain-local --reset
+npx hardhat ignition deploy ignition/modules/TraceChain.ts --network localhost --deployment-id tracechain-orders-stage
 ```
 
-Copy the resulting backend contract addresses from `ignition/deployments/tracechain-local/deployed_addresses.json` into the ignored root `.env`. The tracked root example contains the deterministic addresses produced by the current local deployment. Restart both development servers after changing environment variables.
+Copy all seven resulting backend contract addresses from `ignition/deployments/tracechain-orders-stage/deployed_addresses.json` into the ignored root `.env`, including `SUPPLY_ORDERS_ADDRESS`. Keep old deployment journals and records; use a new deployment ID for a new bytecode version. The root example's six older deterministic addresses are illustrative, not this new deployment. Restart both development servers after changing environment variables.
 
 To create one real Manufacturer-to-Distributor transfer without redeploying, first set
 `DEV_DISTRIBUTOR_WALLET` to an unlocked Hardhat account that is already an active Distributor and

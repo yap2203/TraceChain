@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "test:orders": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run test:orders --workspace @tracechain/api && npm run test --workspace @tracechain/web -- src/features/orders/OrdersPage.test.tsx && npm run test --workspace @tracechain/contracts",
     "predev": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi",
     "dev": "concurrently --names web,api --prefix-colors cyan,green \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm run dev --workspace @tracechain/web",

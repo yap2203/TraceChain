@@ -14,6 +14,7 @@ export function Card({
 }) {
   return (
     <div
+      className="workspace-card"
       onClick={onClick}
       style={{
         background: T.surface,
@@ -21,6 +22,8 @@ export function Card({
         borderRadius: 12,
         boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
         padding,
+        minWidth: 0,
+        maxWidth: '100%',
         ...sx,
         cursor: onClick ? 'pointer' : undefined,
       }}

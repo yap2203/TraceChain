@@ -20,14 +20,20 @@ export function Modal({
     return () => element?.close();
   }, []);
   return (
-    <dialog ref={dialog} aria-labelledby={titleId} onCancel={onClose} style={{ width }}>
+    <dialog
+      className="workspace-dialog"
+      ref={dialog}
+      aria-labelledby={titleId}
+      onCancel={onClose}
+      style={{ width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100dvh - 32px)' }}
+    >
       <div
         style={{
           background: T.surface,
           borderRadius: 14,
           width: '100%',
           maxWidth: '100%',
-          maxHeight: '90vh',
+          maxHeight: 'calc(100dvh - 32px)',
           overflow: 'auto',
           boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
         }}
@@ -54,6 +60,7 @@ export function Modal({
               color: T.text2,
               fontSize: 18,
               lineHeight: 1,
+              flexShrink: 0,
             }}
           >
             ✕

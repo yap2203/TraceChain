@@ -1,6 +1,7 @@
 import { Contract, Interface, JsonRpcProvider, encodeBytes32String, getAddress, id } from 'ethers';
 
 import type { PreparedTransaction } from '../blockchain/blockchain-gateway.service.js';
+import { EthersOrdersGateway } from '../orders/orders.gateway.js';
 import type {
   ChainEvidenceRequest,
   ChainIngredientBatch,
@@ -21,6 +22,9 @@ const credentialAbi = [
   'function getCredential(bytes32) view returns (tuple(bytes32 credentialHash,string encryptedCid,address issuer,address subject,uint8 credentialType,uint8 status,uint64 issuedAt,uint64 expiresAt,uint64 updatedAt))',
 ] as const;
 const ingredientAbi = [
+  'function supplyOrders() view returns (address)',
+  'function manufacturerUsable(bytes32,address) view returns (uint256)',
+  'function getReceivedStock(bytes32,address,bytes32) view returns (tuple(uint256 usable,uint256 damaged,uint256 rejected,uint256 missing,uint256 consumed))',
   'error InvalidInput()',
   'event IngredientBatchRegistered(bytes32 indexed batchId,address indexed supplier,bytes32 indexed credentialId,uint256 quantity,bytes32 metadataHash,string encryptedCid)',
   'function getBatch(bytes32) view returns (tuple(address supplier,bytes32 metadataHash,string encryptedCid,bytes32 credentialId,uint256 totalQuantity,uint256 availableQuantity,bytes32 unit,uint64 producedAt,uint64 expiresAt,uint8 status))',
@@ -36,6 +40,9 @@ const evidenceAbi = [
   'function close(bytes32,uint8,bytes32)',
 ] as const;
 const productAbi = [
+  'function productionRecordedAt(bytes32) view returns (uint64)',
+  'function productionLocation(bytes32) view returns (bytes32)',
+  'function createProductAt(bytes32,bytes32,string,uint256,bytes32,uint64,uint64,bytes32[],uint256[],bytes32)',
   'error InvalidInput()',
   'function getProduct(bytes32) view returns (tuple(address manufacturer,bytes32 metadataHash,string publicCid,uint256 totalQuantity,bytes32 unit,uint64 producedAt,uint64 expiresAt,uint8 status))',
   'function getIngredientLinks(bytes32) view returns (tuple(bytes32 batchId,uint256 quantity)[])',
@@ -57,6 +64,9 @@ const ingredientInterface = new Interface(ingredientAbi);
 const credentialInterface = new Interface(credentialAbi);
 
 export interface ProductionFlowGateway {
+  getProductionRecord?(batchId: string): Promise<{ location: string; recordedAt: number }>;
+  listProposedProductBatchIds?(wallet: string): Promise<string[]>;
+  getReceivedAvailable?(batchId: string, wallet: string, location?: string): Promise<string | null>;
   assertDeployment(): Promise<void>;
   getAccess(
     wallet: string,
@@ -108,6 +118,7 @@ export interface ProductionFlowGateway {
     expiresAt: number;
   }): PreparedTransaction;
   prepareProduct(input: {
+    productionLocation?: string;
     batchId: string;
     metadataHash: string;
     publicCid: string;
@@ -129,6 +140,43 @@ export interface ProductionFlowGateway {
 }
 
 export class EthersProductionFlowGateway implements ProductionFlowGateway {
+  async getProductionRecord(batchId: string) {
+    return {
+      location: String(await this.products.productionLocation(batchId)),
+      recordedAt: Number(await this.products.productionRecordedAt(batchId)),
+    };
+  }
+  async listProposedProductBatchIds(wallet: string) {
+    if (!process.env.SUPPLY_ORDERS_ADDRESS) return [];
+    const gateway = new EthersOrdersGateway(
+      this.chainId,
+      process.env.SUPPLY_ORDERS_ADDRESS,
+      this.provider._getConnection().url,
+      {},
+    );
+    const events = await gateway.events('orders', 'OrderRequested');
+    const batches: string[] = [];
+    for (const event of events) {
+      if (String(event.buyer).toLowerCase() !== wallet.toLowerCase()) continue;
+      const order = await gateway.read('orders', 'getOrder', [event.orderId]);
+      const item = await gateway.read('orders', 'getItem', [order.itemId]);
+      if (
+        Number(item.kind) === 2 &&
+        [1, 2].includes(Number(order.status)) &&
+        Number(order.expiresAt) > Date.now() / 1000 &&
+        !/^0x0{64}$/i.test(order.proposedBatch)
+      )
+        batches.push(order.proposedBatch);
+    }
+    return [...new Set(batches)];
+  }
+  async getReceivedAvailable(batchId: string, wallet: string, location?: string) {
+    const ledger = String(await this.ingredients.supplyOrders());
+    if (/^0x0{40}$/i.test(ledger)) return null;
+    if (location)
+      return String((await this.ingredients.getReceivedStock(batchId, wallet, location)).usable);
+    return String(await this.ingredients.manufacturerUsable(batchId, wallet));
+  }
   private readonly provider: JsonRpcProvider;
   private readonly stakeholders: Contract;
   private readonly credentials: Contract;
@@ -458,6 +506,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
     );
   }
   prepareProduct(input: {
+    productionLocation?: string;
     batchId: string;
     metadataHash: string;
     publicCid: string;
@@ -469,17 +518,21 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
   }) {
     return this.tx(
       this.addresses.product,
-      productInterface.encodeFunctionData('createProduct', [
-        input.batchId,
-        input.metadataHash,
-        input.publicCid,
-        BigInt(input.quantity),
-        encodeBytes32String(input.unit),
-        input.producedAt,
-        input.expiresAt,
-        input.ingredients.map((item) => item.batchId),
-        input.ingredients.map((item) => BigInt(item.quantity)),
-      ]),
+      productInterface.encodeFunctionData(
+        input.productionLocation ? 'createProductAt' : 'createProduct',
+        [
+          input.batchId,
+          input.metadataHash,
+          input.publicCid,
+          BigInt(input.quantity),
+          encodeBytes32String(input.unit),
+          input.producedAt,
+          input.expiresAt,
+          input.ingredients.map((item) => item.batchId),
+          input.ingredients.map((item) => BigInt(item.quantity)),
+          ...(input.productionLocation ? [input.productionLocation] : []),
+        ],
+      ),
     );
   }
   prepareTransfer(input: {

@@ -5,6 +5,7 @@
   "type": "module",
   "main": "dist/server.js",
   "scripts": {
+    "test:orders": "vitest run src/modules/orders",
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "ssi:bootstrap-admin": "tsx src/scripts/bootstrap-admin.ts",

@@ -17,9 +17,16 @@ import {
   sendCompanyIdentityPresentationMessage,
 } from './evidence-didcomm';
 import { Alert, Btn } from '../workspaces/shared/ui';
-import { HolderSigningKeyPanel } from '../didcomm/HolderSigningKeyPanel';
+import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
+import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 
-export function CompanyIdentityProofAction({ requestId }: { requestId: string }) {
+export function CompanyIdentityProofAction({
+  requestId,
+  role,
+}: {
+  requestId: string;
+  role: WorkspaceRole;
+}) {
   const [status, setStatus] = useState<CompanyIdentityProofStatus>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -87,7 +94,7 @@ export function CompanyIdentityProofAction({ requestId }: { requestId: string })
       )}
       {material && status.status === 'REQUESTED' && (
         <div style={{ display: 'grid', gap: 8 }}>
-          <HolderSigningKeyPanel expectedDid={material.holderDid} />
+          <PresentationSigningSettingsLink role={role} />
           <div>
             <b>{material.presenterRole}</b> · {material.credentialHash}
           </div>

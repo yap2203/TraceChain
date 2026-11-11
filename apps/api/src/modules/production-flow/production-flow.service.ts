@@ -9,6 +9,9 @@ import {
   verifyIngredientEvidencePresentation,
   verifyIngredientCredential,
   verifyCompanyRoleCredential,
+  issueCompanyIdentitySdJwt,
+  verifyCompanyIdentitySdJwt,
+  COMPANY_IDENTITY_BINDING_CLAIMS,
   type IngredientCredential,
   type TraceChainAgent,
 } from '@tracechain/ssi';
@@ -85,6 +88,122 @@ interface EvidenceRequestPrivatePayload {
 }
 
 export class ProductionFlowService {
+  async validateOrderIdentityPresentation(
+    sessionId: string | undefined,
+    orderId: string,
+    presentation: string,
+  ) {
+    const session = await this.requireEvidenceRequester(sessionId);
+    const workflow = await this.requireWorkflow(orderId);
+    if (
+      !workflow.orderContext ||
+      !sameAddress(session.address, workflow.requester) ||
+      workflow.identityProof?.status !== 'REQUESTED'
+    )
+      throw new ProductionFlowApiError(
+        'IDENTITY_PROOF_ACCESS_DENIED',
+        'This order identity challenge is unavailable.',
+        403,
+      );
+    await this.verifyCompanyIdentityPresentation(workflow, presentation);
+  }
+  async startOrderIdentity(
+    sessionId: string | undefined,
+    context: {
+      orderId: string;
+      buyer: string;
+      seller: string;
+      batchId: string;
+      purpose: string;
+      expiresAt: number;
+      requiredClaims: string[];
+      optionalClaims?: string[];
+      selectiveDisclosure?: boolean;
+    },
+  ) {
+    const session = await this.requireEitherRole(sessionId);
+    if (!sameAddress(session.address, context.seller))
+      throw new ProductionFlowApiError(
+        'ACCESS_DENIED',
+        'Only the order seller may request buyer identity.',
+        403,
+      );
+    const currentRole = (await this.dependencies.gateway.isRoleAuthorized(context.buyer, 3))
+      ? CompanyRole.MANUFACTURER
+      : CompanyRole.RETAILER;
+    const previous = await this.dependencies.repository.findEvidence(context.orderId);
+    if (previous?.identityProof && previous.identityProof.expiresAt > this.nowSeconds()) {
+      if (
+        previous.identityProof.purpose === context.purpose &&
+        previous.identityProof.expiresAt === context.expiresAt &&
+        canonical(previous.identityProof.requiredClaims ?? []) ===
+          canonical(context.requiredClaims) &&
+        canonical(previous.identityProof.optionalClaims ?? []) ===
+          canonical(context.optionalClaims ?? []) &&
+        Boolean(previous.identityProof.selectiveDisclosure) === Boolean(context.selectiveDisclosure)
+      )
+        return {
+          challenge: previous.identityProof.challenge,
+          expiresAt: previous.identityProof.expiresAt,
+        };
+      throw new ProductionFlowApiError(
+        'IDENTITY_REQUEST_EXISTS',
+        'Resolve or wait for the existing identity request to expire before creating another.',
+        409,
+      );
+    }
+    const proof = {
+      audience: context.seller.toLowerCase(),
+      challenge: randomBytes(32).toString('base64url'),
+      expiresAt: context.expiresAt,
+      presenterRole: currentRole,
+      presenterWallet: context.buyer,
+      purpose: context.purpose,
+      requiredClaims: context.requiredClaims,
+      optionalClaims: context.optionalClaims,
+      selectiveDisclosure: context.selectiveDisclosure,
+      status: 'REQUESTED' as const,
+    };
+    // Reuse the encrypted workflow repository and existing Company Role verification logic.
+    const stored = await this.store(
+      canonical({ purpose: context.purpose, requiredClaims: context.requiredClaims }),
+      `${context.orderId}-identity-context`,
+    );
+    await this.dependencies.repository.saveEvidence({
+      orderContext: true,
+      batchId: context.batchId,
+      requestId: context.orderId,
+      requester: context.buyer,
+      supplier: context.seller,
+      operationId: context.orderId,
+      challengeHash: id(proof.challenge),
+      claimsHash: id(canonical(context.requiredClaims)),
+      dueAt: context.expiresAt,
+      requestCid: stored.cid,
+      requestPayload: stored.payload,
+      identityProof: proof,
+    });
+    return { challenge: proof.challenge, expiresAt: proof.expiresAt };
+  }
+
+  async orderIdentityAttestation(sessionId: string | undefined, orderId: string) {
+    const result = await this.verifyCompanyIdentityProof(sessionId, orderId);
+    const workflow = await this.requireWorkflow(orderId);
+    const presentation = await this.dependencies.contentStore.decrypt(
+      workflow.identityProof!.presentationPayload!,
+    );
+    const checked = await this.verifyCompanyIdentityPresentation(workflow, presentation);
+    return {
+      challengeHash: id(workflow.identityProof!.challenge),
+      presentationHash: id(presentation),
+      credentialHash: `0x${normalizeHash(checked.credentialHash)}`,
+      expiresAt: Math.min(
+        workflow.identityProof!.expiresAt,
+        Math.floor(Date.parse(checked.credential.expirationDate) / 1000),
+      ),
+      checks: result.checks,
+    };
+  }
   private readonly clock: () => Date;
 
   constructor(private readonly dependencies: Dependencies) {
@@ -119,7 +238,11 @@ export class ProductionFlowService {
           accepted: await this.safeGateway(() =>
             this.dependencies.gateway.getAccepted(batch.batchId, session.address),
           ),
-          availableQuantity: batch.availableQuantity,
+          availableQuantity:
+            (await this.dependencies.gateway.getReceivedAvailable?.(
+              batch.batchId,
+              session.address,
+            )) ?? batch.availableQuantity,
           batchId: batch.batchId,
           expiresAt: batch.expiresAt,
           supplier: batch.supplier,
@@ -200,8 +323,10 @@ export class ProductionFlowService {
     const productIds = await this.safeGateway(() =>
       this.dependencies.gateway.listReceivedProductBatchIds(session.address),
     );
+    const proposedIds =
+      (await this.dependencies.gateway.listProposedProductBatchIds?.(session.address)) ?? [];
     const nested = await Promise.all(
-      productIds.map(async (productBatchId) => {
+      [...new Set([...productIds, ...proposedIds])].map(async (productBatchId) => {
         const product = await this.safeGateway(() =>
           this.dependencies.gateway.getProduct(productBatchId),
         );
@@ -410,12 +535,31 @@ export class ProductionFlowService {
       const received = await this.safeGateway(() =>
         this.dependencies.gateway.listReceivedProductBatchIds(session.address),
       );
-      if (!received.some((id) => id.toLowerCase() === input.productBatchId!.toLowerCase()))
-        throw new ProductionFlowApiError(
-          'PRODUCT_ACCESS_DENIED',
-          'This Retailer has not received the selected product batch.',
-          403,
+      const proposed =
+        (await this.dependencies.gateway.listProposedProductBatchIds?.(session.address)) ?? [];
+      if (
+        ![...received, ...proposed].some(
+          (id) => id.toLowerCase() === input.productBatchId!.toLowerCase(),
+        )
+      ) {
+        // Browsing permits asking for evidence, never reading confidential claims without consent.
+        const product = await this.safeGateway(() =>
+          this.dependencies.gateway.getProduct(input.productBatchId!),
         );
+        if (
+          !product ||
+          product.status !== 1 ||
+          product.expiresAt <= this.nowSeconds() ||
+          !(await this.safeGateway(() =>
+            this.dependencies.gateway.isRoleAuthorized(product.manufacturer, 3),
+          ))
+        )
+          throw new ProductionFlowApiError(
+            'PRODUCT_ACCESS_DENIED',
+            'Select an active registered product from an authorized Manufacturer before requesting details.',
+            403,
+          );
+      }
       const links = await this.safeGateway(() =>
         this.dependencies.gateway.getProductLinks(input.productBatchId!),
       );
@@ -546,6 +690,61 @@ export class ProductionFlowService {
     const credential = companyRoleCredentialSchema.parse(
       JSON.parse(await this.dependencies.contentStore.decrypt(issuance.encryptedPayload)),
     );
+    if (proof.selectiveDisclosure) {
+      const agent = await this.dependencies.agentProvider();
+      const issuerDid =
+        typeof credential.issuer === 'string' ? credential.issuer : credential.issuer.id;
+      const verified = await verifyCompanyRoleCredential(
+        agent,
+        credential,
+        session.address,
+        issuerDid,
+        this.clock(),
+      );
+      if (
+        !verified.verified ||
+        normalizeHash(verified.credentialHash ?? '') !== normalizeHash(issuance.credentialHash)
+      )
+        throw new ProductionFlowApiError(
+          'COMPANY_CREDENTIAL_INVALID',
+          'The original Company Role Credential could not be verified before creating a selective proof.',
+          409,
+        );
+      const expiresAt = Math.min(
+        proof.expiresAt,
+        Math.floor(new Date(credential.expirationDate).getTime() / 1000),
+      );
+      const sdJwt = await issueCompanyIdentitySdJwt(agent, {
+        issuerDid,
+        holderDid: identity.did,
+        credentialHash: issuance.credentialHash,
+        claims: credential.credentialSubject,
+        requestId,
+        purpose: proof.purpose,
+        audience: proof.audience,
+        challenge: proof.challenge,
+        issuedAt: this.nowSeconds(),
+        expiresAt,
+      });
+      return {
+        format: 'COMPANY_IDENTITY_SD_JWT' as const,
+        sdJwt,
+        claims: credential.credentialSubject,
+        requiredClaims: [
+          ...new Set([...COMPANY_IDENTITY_BINDING_CLAIMS, ...(proof.requiredClaims ?? [])]),
+        ],
+        optionalClaims: proof.optionalClaims ?? [],
+        audience: proof.audience,
+        challenge: proof.challenge,
+        expiresAt,
+        holderDid: identity.did,
+        credentialHash: issuance.credentialHash,
+        presenterRole: proof.presenterRole,
+        presenterWallet: proof.presenterWallet,
+        purpose: proof.purpose,
+        requestId,
+      };
+    }
     return {
       audience: proof.audience,
       challenge: proof.challenge,
@@ -587,11 +786,7 @@ export class ProductionFlowService {
   }
 
   async verifyCompanyIdentityProof(sessionId: string | undefined, requestId: string) {
-    const session = await this.requireRole(
-      sessionId,
-      CompanyRole.SUPPLIER,
-      'ISSUE_INGREDIENT_CREDENTIAL',
-    );
+    const session = await this.requireEitherRole(sessionId);
     const workflow = await this.requireWorkflow(requestId);
     if (
       !sameAddress(session.address, workflow.supplier) ||
@@ -612,7 +807,9 @@ export class ProductionFlowService {
     return {
       ...this.identityProofSummary(workflow),
       checks: result.checks,
-      credential: this.identityCredentialSummary(result.credential, result.credentialHash),
+      credential:
+        result.selectedClaims ??
+        this.identityCredentialSummary(result.credential, result.credentialHash),
     };
   }
 
@@ -646,27 +843,25 @@ export class ProductionFlowService {
       workflow.identityProof?.status === 'VERIFIED' &&
       workflow.identityProof.presentationPayload
     ) {
-      const presentation = JSON.parse(
+      const checked = await this.verifyCompanyIdentityPresentation(
+        workflow,
         await this.dependencies.contentStore.decrypt(workflow.identityProof.presentationPayload),
-      ) as { credential?: unknown; credentialHash?: string };
-      const credential = companyRoleCredentialSchema.safeParse(presentation.credential);
-      if (credential.success)
-        return {
-          ...summary,
-          credential: this.identityCredentialSummary(
-            credential.data,
-            String(presentation.credentialHash ?? ''),
-          ),
-          checks: [
-            'AUTHORITY_SIGNATURE',
-            'HOLDER_SIGNATURE',
-            'WALLET_BINDING',
-            'ROLE_BINDING',
-            'CHALLENGE_AND_RECIPIENT',
-            'EXPIRY',
-            'CURRENT_ON_CHAIN_STATUS',
-          ],
-        };
+      );
+      return {
+        ...summary,
+        credential:
+          checked.selectedClaims ??
+          this.identityCredentialSummary(checked.credential, checked.credentialHash),
+        checks: [
+          'AUTHORITY_SIGNATURE',
+          'HOLDER_SIGNATURE',
+          'WALLET_BINDING',
+          'ROLE_BINDING',
+          'CHALLENGE_AND_RECIPIENT',
+          'EXPIRY',
+          'CURRENT_ON_CHAIN_STATUS',
+        ],
+      };
     }
     return summary;
   }
@@ -916,10 +1111,22 @@ export class ProductionFlowService {
           409,
         );
       }
-      if (BigInt(link.quantity) > BigInt(batch.availableQuantity)) {
+      const received = await this.dependencies.gateway.getReceivedAvailable?.(
+        link.batchId,
+        session.address,
+        input.productionLocation,
+      );
+      if (received !== null && received !== undefined && !input.productionLocation) {
+        throw new ProductionFlowApiError(
+          'PRODUCTION_LOCATION_REQUIRED',
+          'Select your registered production location. Only accepted stock held at that location can be consumed.',
+          400,
+        );
+      }
+      if (BigInt(link.quantity) > BigInt(received ?? batch.availableQuantity)) {
         throw new ProductionFlowApiError(
           'INSUFFICIENT_INGREDIENT_QUANTITY',
-          'An ingredient does not have enough available quantity.',
+          'An ingredient does not have enough accepted usable stock at this production location.',
           409,
         );
       }
@@ -930,6 +1137,7 @@ export class ProductionFlowService {
       category: input.category,
       privateMetadata: input.privateMetadata,
       productName: input.productName,
+      ...(input.price !== undefined ? { price: input.price, currency: input.currency } : {}),
     });
     const metadataHash = sha256(metadata);
     const operationHash = sha256(
@@ -964,6 +1172,7 @@ export class ProductionFlowService {
         actorWallet: session.address,
         batchId,
         links,
+        production: await this.dependencies.gateway.getProductionRecord?.(batchId),
         state: 'COMPLETE' as const,
         status: existing.status,
       };
@@ -995,6 +1204,7 @@ export class ProductionFlowService {
       batchId,
       state: 'TRANSACTION_REQUIRED' as const,
       transaction: this.dependencies.gateway.prepareProduct({
+        ...(input.productionLocation ? { productionLocation: input.productionLocation } : {}),
         batchId,
         expiresAt,
         ingredients: input.ingredientLinks,
@@ -1938,9 +2148,81 @@ export class ProductionFlowService {
         409,
       );
     let jwt;
+    let selectedClaims: Record<string, unknown> | undefined;
     try {
-      jwt = await verifyJWT(presentation, { audience: proof.audience, resolver: keyResolver });
-    } catch {
+      if (presentation.includes('~')) {
+        if (!proof.selectiveDisclosure)
+          throw new Error('This request expects a full Company Role VP.');
+        const result = await verifyCompanyIdentitySdJwt(
+          await this.dependencies.agentProvider(),
+          presentation,
+          {
+            audience: proof.audience,
+            challenge: proof.challenge,
+            requestId: workflow.requestId,
+            purpose: proof.purpose,
+            now: this.nowSeconds(),
+            requiredClaims: proof.requiredClaims ?? [],
+          },
+        );
+        const p = result.payload;
+        const records = await this.dependencies.companyRoleRepository?.list().catch(() => {
+          throw new ProductionFlowApiError(
+            'IDENTITY_SOURCE_UNAVAILABLE',
+            'The source credential store is unavailable. Retry when the service is restored.',
+            503,
+          );
+        });
+        const record = records?.find(
+          (record) =>
+            sameAddress(record.applicantWallet, proof.presenterWallet) &&
+            normalizeHash(record.credentialHash) === normalizeHash(String(p.sourceCredentialHash)),
+        );
+        if (!record) throw new Error('The source credential record is unavailable.');
+        const source = companyRoleCredentialSchema.parse(
+          JSON.parse(
+            await this.dependencies.contentStore.decrypt(record.encryptedPayload).catch(() => {
+              throw new ProductionFlowApiError(
+                'IDENTITY_SOURCE_UNAVAILABLE',
+                'The original credential could not be retrieved or decrypted. This does not establish a forged holder signature.',
+                503,
+              );
+            }),
+          ),
+        );
+        const sourceIssuer = typeof source.issuer === 'string' ? source.issuer : source.issuer.id;
+        if (p.iss !== sourceIssuer)
+          throw new Error('The derived proof was not issued by the original authority.');
+        selectedClaims = Object.fromEntries(
+          Object.entries(source.credentialSubject)
+            .filter(([key]) => key in p)
+            .map(([key, value]) => {
+              if (canonical(value) !== canonical(p[key]))
+                throw new Error('A disclosed company claim differs from the source credential.');
+              return [key, p[key]];
+            }),
+        );
+        jwt = {
+          payload: {
+            iss: p.holderDid,
+            aud: p.audience,
+            nonce: p.challenge,
+            requestId: p.requestId,
+            purpose: p.purpose,
+            wallet: p.walletAddress,
+            role: p.role,
+            exp: p.exp,
+            credential: source,
+            credentialHash: p.sourceCredentialHash,
+          },
+        };
+      } else {
+        if (proof.selectiveDisclosure)
+          throw new Error('This request requires the selective company identity proof.');
+        jwt = await verifyJWT(presentation, { audience: proof.audience, resolver: keyResolver });
+      }
+    } catch (error) {
+      if (error instanceof ProductionFlowApiError) throw error;
       throw new ProductionFlowApiError(
         'IDENTITY_HOLDER_PROOF_INVALID',
         'The company identity holder signature did not verify.',
@@ -1966,6 +2248,16 @@ export class ProductionFlowService {
         'The company identity proof is bound to a different holder, request, or recipient.',
         409,
       );
+    if (
+      typeof payload.exp !== 'number' ||
+      payload.exp > proof.expiresAt ||
+      payload.exp <= this.nowSeconds()
+    )
+      throw new ProductionFlowApiError(
+        'IDENTITY_PROOF_EXPIRED',
+        'The presentation has an invalid or expired lifetime.',
+        409,
+      );
     const credential = companyRoleCredentialSchema.safeParse(payload.credential);
     if (!credential.success)
       throw new ProductionFlowApiError(
@@ -1973,6 +2265,17 @@ export class ProductionFlowService {
         'The presentation does not contain a supported Company Role Credential.',
         409,
       );
+    for (const claim of proof.requiredClaims ?? []) {
+      if (
+        !(claim in credential.data.credentialSubject) ||
+        !String((credential.data.credentialSubject as Record<string, unknown>)[claim] ?? '').trim()
+      )
+        throw new ProductionFlowApiError(
+          'REQUIRED_IDENTITY_CLAIM_MISSING',
+          `The required company identity claim is unavailable: ${claim}.`,
+          409,
+        );
+    }
     const issuer =
       typeof credential.data.issuer === 'string'
         ? credential.data.issuer
@@ -2019,6 +2322,7 @@ export class ProductionFlowService {
     return {
       credential: credential.data,
       credentialHash: presentedHash,
+      selectedClaims,
       checks: [
         'AUTHORITY_SIGNATURE',
         'HOLDER_SIGNATURE',

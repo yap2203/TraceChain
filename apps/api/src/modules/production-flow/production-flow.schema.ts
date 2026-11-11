@@ -19,6 +19,15 @@ export const evidenceRequestSchema = z
 
 export const productRequestSchema = z
   .object({
+    price: z
+      .string()
+      .regex(/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/)
+      .optional(),
+    currency: z
+      .string()
+      .regex(/^[A-Z]{3}$/)
+      .default('MYR'),
+    productionLocation: bytes32.optional(),
     batchReference: z
       .string()
       .trim()

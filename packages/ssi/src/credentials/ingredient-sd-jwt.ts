@@ -185,7 +185,7 @@ export async function readIngredientSdJwtClaims(presentation: string) {
   );
 }
 
-function issuerInstance(agent: TraceChainAgent, keyRef: string) {
+export function issuerInstance(agent: TraceChainAgent, keyRef: string) {
   return new SDJwtInstance<Record<string, unknown>>({
     hashAlg: 'sha-256',
     hasher,
@@ -201,7 +201,7 @@ function issuerInstance(agent: TraceChainAgent, keyRef: string) {
   });
 }
 
-function verifierInstance(agent: TraceChainAgent) {
+export function verifierInstance(agent: TraceChainAgent) {
   return new SDJwtInstance<Record<string, unknown>>({
     hashAlg: 'sha-256',
     hasher,
@@ -256,7 +256,7 @@ function verifierInstance(agent: TraceChainAgent) {
   });
 }
 
-async function holderPublicJwk(holderDid: string) {
+export async function holderPublicJwk(holderDid: string) {
   if (!holderDid.startsWith('did:key:')) throw new Error('A did:key holder identity is required.');
   const resolved = await new Resolver(getResolver()).resolve(holderDid);
   const method = resolved.didDocument?.verificationMethod?.find(

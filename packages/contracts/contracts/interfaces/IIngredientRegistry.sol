@@ -8,4 +8,6 @@ interface IIngredientRegistry {
     function isUsable(bytes32 batchId) external view returns (bool);
     function isValidTraceabilitySource(bytes32 batchId) external view returns (bool);
     function consumeIngredient(bytes32 batchId, uint256 quantity, bytes32 productBatchId) external;
+    function supplyOrders() external view returns (address);
+    function consumeReceived(bytes32 batchId, uint256 quantity, bytes32 productBatchId, address manufacturer, bytes32 location) external;
 }

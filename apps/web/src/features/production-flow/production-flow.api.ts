@@ -52,6 +52,7 @@ export interface ProductionEvidenceRequest {
 }
 
 export interface WorkflowResponse {
+  production?: { location: string; recordedAt: number };
   actorWallet: string;
   batchId?: string;
   requestId?: string;
@@ -237,6 +238,9 @@ export const verifyCompanyIdentityProof = (requestId: string) =>
     method: 'POST',
   });
 export const prepareProduct = (input: {
+  price?: string;
+  currency?: string;
+  productionLocation?: string;
   batchReference: string;
   category: string;
   expiresAt: string;

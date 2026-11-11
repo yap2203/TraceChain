@@ -4,6 +4,7 @@ import {IStakeholderRegistry} from '../interfaces/IStakeholderRegistry.sol';
 import {IIngredientRegistry} from '../interfaces/IIngredientRegistry.sol';
 import {IProductRegistry} from '../interfaces/IProductRegistry.sol';
 import {EvidenceRegistry} from './EvidenceRegistry.sol';
+interface ILocationDirectory { function locationOwner(bytes32 location) external view returns (address); }
 
 contract ProductRegistry is IProductRegistry {
     enum Status {
@@ -34,6 +35,9 @@ contract ProductRegistry is IProductRegistry {
     EvidenceRegistry public immutable evidence;
     mapping(bytes32 => Product) private products;
     mapping(bytes32 => IngredientLink[]) private links;
+    mapping(bytes32 => bytes32) public productionLocation;
+    mapping(bytes32 => uint64) public productionRecordedAt;
+    event ProductionRecorded(bytes32 indexed batchId, bytes32 indexed location, uint64 occurredAt, uint64 recordedAt);
     event ProductCreated(
         bytes32 indexed batchId,
         address indexed manufacturer,
@@ -62,9 +66,11 @@ contract ProductRegistry is IProductRegistry {
         uint64 expiresAt,
         bytes32[] calldata ingredientIds,
         uint256[] calldata quantities
-    ) external {
+    ) public {
         if (!stakeholders.hasPermission(msg.sender, keccak256('REGISTER_PRODUCT')))
             revert Unauthorized(msg.sender);
+        if (ingredients.supplyOrders() != address(0) &&
+            ILocationDirectory(ingredients.supplyOrders()).locationOwner(productionLocation[batchId]) != msg.sender) revert InvalidInput();
         if (
             batchId == bytes32(0) ||
             metadataHash == bytes32(0) ||
@@ -88,6 +94,15 @@ contract ProductRegistry is IProductRegistry {
         );
         _linkIngredients(batchId, ingredientIds, quantities);
         emit ProductCreated(batchId, msg.sender, quantity, metadataHash, publicCid);
+        productionRecordedAt[batchId] = uint64(block.timestamp);
+        emit ProductionRecorded(batchId, productionLocation[batchId], producedAt, uint64(block.timestamp));
+    }
+    function createProductAt(bytes32 batchId, bytes32 metadataHash, string calldata publicCid,
+        uint256 quantity, bytes32 unit, uint64 producedAt, uint64 expiresAt,
+        bytes32[] calldata ingredientIds, uint256[] calldata quantities, bytes32 location) external {
+        if (products[batchId].status != Status.None || location == bytes32(0)) revert InvalidState();
+        productionLocation[batchId] = location;
+        createProduct(batchId, metadataHash, publicCid, quantity, unit, producedAt, expiresAt, ingredientIds, quantities);
     }
     function setStatus(bytes32 batchId, Status status, bytes32 reasonHash) external {
         Product storage product = products[batchId];
@@ -134,11 +149,12 @@ contract ProductRegistry is IProductRegistry {
             bytes32 ingredientId = ingredientIds[i];
             uint256 ingredientQuantity = quantities[i];
             if (
-                !ingredients.isUsable(ingredientId) ||
+                !(ingredients.supplyOrders() == address(0) ? ingredients.isUsable(ingredientId) : ingredients.isValidTraceabilitySource(ingredientId)) ||
                 !evidence.acceptedForManufacturer(ingredientId, msg.sender) ||
                 ingredientQuantity == 0
             ) revert InvalidState();
-            ingredients.consumeIngredient(ingredientId, ingredientQuantity, productBatchId);
+            if (ingredients.supplyOrders() == address(0)) ingredients.consumeIngredient(ingredientId, ingredientQuantity, productBatchId);
+            else ingredients.consumeReceived(ingredientId, ingredientQuantity, productBatchId, msg.sender, productionLocation[productBatchId]);
             links[productBatchId].push(IngredientLink(ingredientId, ingredientQuantity));
             emit IngredientLinked(productBatchId, ingredientId, ingredientQuantity);
         }

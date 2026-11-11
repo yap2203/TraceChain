@@ -15,6 +15,8 @@ import {
 } from './ingredient-credential.js';
 
 export interface IssueIngredientCredentialInput {
+  price?: string;
+  currency?: string;
   allergenInformation: string;
   batchId: string;
   category: string;
@@ -153,6 +155,7 @@ export function canonicalIngredientMetadata(
       quantity: input.quantity,
       supplierWallet: getAddress(input.supplierWallet),
       unit: input.unit,
+      ...(input.price !== undefined ? { price: input.price, currency: input.currency } : {}),
     }),
   );
 }

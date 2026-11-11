@@ -66,6 +66,9 @@ import {
 } from './modules/production-flow/production-flow.repository.js';
 import { createProductionFlowRouter } from './modules/production-flow/production-flow.routes.js';
 import { ProductionFlowService } from './modules/production-flow/production-flow.service.js';
+import { EthersOrdersGateway } from './modules/orders/orders.gateway.js';
+import { OrdersService } from './modules/orders/orders.service.js';
+import { createOrdersRouter } from './modules/orders/orders.routes.js';
 import { ProductTraceabilityController } from './modules/product-traceability/product-traceability.controller.js';
 import { EthersProductTraceabilityGateway } from './modules/product-traceability/product-traceability.gateway.js';
 import { RepositoryTraceabilityMetadataReader } from './modules/product-traceability/product-traceability.metadata.js';
@@ -327,6 +330,38 @@ export function createApp({
       ),
     env.AUTH_COOKIE_NAME,
   );
+  let ordersService: OrdersService | undefined;
+  const resolveOrders = () => {
+    if (!ordersService) {
+      const chain = loadBlockchainEnvironment();
+      if (!process.env.SUPPLY_ORDERS_ADDRESS) throw new Error('Order registry is not configured.');
+      ordersService = new OrdersService(
+        resolvedAuthService,
+        new EthersOrdersGateway(
+          env.CHAIN_ID,
+          process.env.SUPPLY_ORDERS_ADDRESS,
+          chain.CHAIN_RPC_URL,
+          {
+            stakeholders: chain.STAKEHOLDER_REGISTRY_ADDRESS,
+            ingredients: chain.INGREDIENT_REGISTRY_ADDRESS,
+            products: chain.PRODUCT_REGISTRY_ADDRESS,
+            evidence: chain.EVIDENCE_REGISTRY_ADDRESS,
+            custody: chain.CUSTODY_TRANSFER_ADDRESS,
+          },
+        ),
+        lazyCredentialContentStore,
+        new JsonProductionFlowRepository(didCommStorage.productionWorkflowStorePath),
+        resolvedProductionFlowService,
+        didCommService,
+        stakeholderDirectory,
+        new JsonIngredientBatchWorkflowRepository(
+          loadCredentialStorageEnvironment().ingredientWorkflowStorePath,
+        ),
+      );
+    }
+    return ordersService;
+  };
+  const ordersRouter = createOrdersRouter(resolveOrders, env.AUTH_COOKIE_NAME);
   const ssiController = new SsiController(
     new CompanyRoleSsiService({
       agentProvider: defaultSsi.agentProvider,
@@ -351,16 +386,18 @@ export function createApp({
       ),
     env.AUTH_COOKIE_NAME,
   );
-  const productionFlowController = new ProductionFlowController(
+  const resolvedProductionFlowService =
     productionFlowService ??
-      createDefaultProductionFlowService(
-        resolvedAuthService,
-        defaultSsi.agentProvider,
-        lazyCredentialContentStore,
-        stakeholderDirectory,
-        didCommRepository,
-        lazyIssuanceRepository,
-      ),
+    createDefaultProductionFlowService(
+      resolvedAuthService,
+      defaultSsi.agentProvider,
+      lazyCredentialContentStore,
+      stakeholderDirectory,
+      didCommRepository,
+      lazyIssuanceRepository,
+    );
+  const productionFlowController = new ProductionFlowController(
+    resolvedProductionFlowService,
     env.AUTH_COOKIE_NAME,
   );
   const didCommService = new DidCommService(
@@ -375,6 +412,16 @@ export function createApp({
       const record = await new JsonProductionFlowRepository(
         didCommStorage.productionWorkflowStorePath,
       ).findEvidence(reference);
+      if (record?.orderContext) {
+        const order = await resolveOrders().gateway.read('orders', 'getOrder', [reference]);
+        if (
+          order.status === '0' ||
+          order.status === '3' ||
+          Number(order.expiresAt) <= Date.now() / 1000
+        )
+          return undefined;
+        return { requester: order.buyer, supplier: order.seller, order: true };
+      }
       return record ? { requester: record.requester, supplier: record.supplier } : undefined;
     },
   );
@@ -434,6 +481,7 @@ export function createApp({
     ),
   );
   app.use('/api/ssi', express.json({ limit: '256kb' }), createSsiRouter(ssiController));
+  app.use('/api/orders', express.json({ limit: '384kb' }), ordersRouter);
   app.use(
     '/api/ingredient-batches',
     express.json({ limit: '32kb' }),
@@ -763,6 +811,9 @@ function createDefaultProductionFlowService(
     return gateway;
   };
   const lazyGateway: ProductionFlowGateway = {
+    getProductionRecord: (batchId) => resolveGateway().getProductionRecord!(batchId),
+    listProposedProductBatchIds: (wallet) => resolveGateway().listProposedProductBatchIds!(wallet),
+    getReceivedAvailable: (...input) => resolveGateway().getReceivedAvailable!(...input),
     assertDeployment: () => resolveGateway().assertDeployment(),
     getAccess: (...input) => resolveGateway().getAccess(...input),
     getAccepted: (...input) => resolveGateway().getAccepted(...input),

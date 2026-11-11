@@ -8,6 +8,8 @@ import {
 import { T, UI, MONO } from './tokens';
 
 export const inputBase: CSSProperties = {
+  minWidth: 0,
+  maxWidth: '100%',
   width: '100%',
   background: T.surface,
   border: `1px solid ${T.border2}`,
@@ -36,8 +38,20 @@ export function FormField({
   descriptionId?: string;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-      <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 600, color: T.text2 }}>
+    <div
+      className="workspace-form-field"
+      style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}
+    >
+      <label
+        style={{
+          display: 'grid',
+          gap: 5,
+          fontSize: 12,
+          fontWeight: 600,
+          color: T.text2,
+          minWidth: 0,
+        }}
+      >
         <span>
           {label}
           {required && <span style={{ color: T.red, marginLeft: 2 }}> *</span>}
@@ -66,6 +80,7 @@ export function Input({
   required,
   hint,
   mono,
+  icon,
   error,
   ...constraints
 }: {
@@ -77,6 +92,7 @@ export function Input({
   required?: boolean;
   hint?: string;
   mono?: boolean;
+  icon?: ReactNode;
   error?: string;
 } & Pick<
   InputHTMLAttributes<HTMLInputElement>,
@@ -104,23 +120,41 @@ export function Input({
       error={error || validationMessage}
       descriptionId={descriptionId}
     >
-      <input
-        {...constraints}
-        required={required}
-        aria-invalid={Boolean(error || validationMessage)}
-        aria-describedby={error || validationMessage || hint ? descriptionId : undefined}
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(e) => {
-          e.target.setCustomValidity('');
-          setValidationMessage('');
-          onChange(e.target.value);
-        }}
-        onBlur={(e) => check(e.currentTarget)}
-        onInvalid={(e) => check(e.currentTarget)}
-        style={{ ...inputBase, fontFamily: mono ? MONO : UI }}
-      />
+      <span style={{ position: 'relative', display: 'block', minWidth: 0 }}>
+        {icon && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              display: 'inline-flex',
+              color: T.text3,
+              pointerEvents: 'none',
+            }}
+          >
+            {icon}
+          </span>
+        )}
+        <input
+          {...constraints}
+          required={required}
+          aria-invalid={Boolean(error || validationMessage)}
+          aria-describedby={error || validationMessage || hint ? descriptionId : undefined}
+          type={type}
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => {
+            e.target.setCustomValidity('');
+            setValidationMessage('');
+            onChange(e.target.value);
+          }}
+          onBlur={(e) => check(e.currentTarget)}
+          onInvalid={(e) => check(e.currentTarget)}
+          style={{ ...inputBase, paddingLeft: icon ? 38 : undefined, fontFamily: mono ? MONO : UI }}
+        />
+      </span>
     </FormField>
   );
 }
@@ -177,18 +211,21 @@ export function SelectField({
   onChange,
   options,
   required,
+  disabled,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   required?: boolean;
+  disabled?: boolean;
 }) {
   const descriptionId = useId();
   const [message, setMessage] = useState('');
   return (
     <FormField label={label} required={required} error={message} descriptionId={descriptionId}>
       <select
+        disabled={disabled}
         required={required}
         value={value}
         aria-invalid={!!message}

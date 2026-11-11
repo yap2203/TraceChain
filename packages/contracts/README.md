@@ -1,5 +1,11 @@
 # TraceChain smart contracts
 
+Registered ingredient/product batches now support direct `SupplyChainOrders.requestBatch` requests.
+The buyer transaction resolves the trusted source seller/unit; there is no separate seller publishing
+step in the application. Existing list/request methods remain for compatibility. This source change
+requires a fresh complete suite deployment and updated configured addresses; it does not upgrade
+already deployed bytecode or migrate records. `registeredRequestPolicy()` returns `1` for this flow.
+
 This workspace contains the authoritative on-chain rules for TraceChain. It uses Hardhat 3, Solidity 0.8.34, ethers, Mocha, and Hardhat Ignition.
 
 This document describes the contracts as currently implemented. It is also a verification checklist: compare every workflow below with the Solidity source and the integration test in `test/TraceChain.ts` before deploying to a persistent network.
@@ -28,6 +34,7 @@ Sensitive content must be encrypted before IPFS upload. A CID is an integrity/lo
 | `IngredientRegistry`  | Supplier ingredient batches, credential references, quantities, lifecycle, and ingredient consumption                |
 | `ProductRegistry`     | Manufacturer product batches and immutable product-to-ingredient quantity links                                      |
 | `CustodyTransfer`     | Manufacturer/distributor/retailer inventory, intended transfers, receipts, rejection, and discrepancies              |
+| `SupplyChainOrders`   | Catalogue, versioned batch proposals, per-order reservations, ingredient dispatch/receipts, private-location references and append-only corrections |
 
 All role-restricted contracts ask `StakeholderRegistry` for the caller's current authorized role. A role becomes ineffective when the stakeholder or required credential is inactive or expired.
 
@@ -58,6 +65,18 @@ Deploy the complete suite through `ignition/modules/TraceChain.ts`. The module p
 6. Deploy `ProductRegistry(stakeholderRegistry, ingredientRegistry, evidenceRegistry)`.
 7. Call `IngredientRegistry.configureProductRegistry(productRegistry)` once.
 8. Deploy `CustodyTransfer(stakeholderRegistry, productRegistry)`.
+9. Deploy `SupplyChainOrders(stakeholderRegistry, ingredientRegistry, productRegistry, evidenceRegistry, custodyTransfer)`.
+10. Call `IngredientRegistry.configureSupplyOrders(orders)` and `CustodyTransfer.configureSupplyOrders(orders)` once. Production then consumes Manufacturer-accepted stock through `createProductAt`, not the Supplier's remaining global stock.
+
+New stage contracts require a fresh, consistently wired deployment. Use a new deployment ID and
+retain old journals. See [the complete local order/VP/dispatch/receipt/production/recall test flow](../../docs/ORDERS_PHYSICAL_FLOW_TEST_GUIDE.md).
+Stock quantities remain integers in their registered named unit (for example `g`, `kg`, `litre`,
+`each` or `unit`). Catalogue items and their batches must share an exact unit; requests cannot
+substitute another unit. No value is automatically converted or rescaled. `catalogueUnitPolicy()`
+returns 2 for this behavior; older deployed contracts require redeployment to remove the former
+g/each restriction. Unreadable legacy unit hashes are not assigned guessed labels. The local custody seed script detects a
+wired order ledger and records an ingredient receipt before production; its synthetic credentials
+remain local test scaffolding and cannot substitute for API cryptographic verification.
 
 The deployer becomes the active `SystemAdmin`. The bootstrap administrator is a special case and has no credential hash in the constructor-created record.
 

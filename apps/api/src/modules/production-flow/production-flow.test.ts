@@ -185,6 +185,29 @@ describe('production flow service', () => {
     expect(prepared?.challengeHash).toMatch(/^0x[0-9a-f]{64}$/i);
     expect(prepared?.claimsHash).toMatch(/^0x[0-9a-f]{64}$/i);
   });
+  it('lets a Retailer request details of an active registered product before ordering without returning private claims', async () => {
+    const retailer = createService(gateway, repository, retailerAuth(), encryptedWrites);
+    vi.mocked(gateway.listReceivedProductBatchIds).mockResolvedValue([]);
+    vi.mocked(gateway.getProduct).mockResolvedValue({
+      manufacturer: MANUFACTURER,
+      status: 1,
+      expiresAt: Math.floor(NOW.getTime() / 1000) + 86400,
+    } as any);
+    vi.mocked(gateway.getProductLinks).mockResolvedValue([{ batchId: BATCH_ID, quantity: '1' }]);
+    vi.mocked(gateway.isRoleAuthorized).mockResolvedValue(true);
+    const input = { ...requestInput(), productBatchId: id('browse-product') };
+    const result = await retailer.prepareEvidenceRequest('session', input);
+    expect(result.requestId).toBeTruthy();
+    expect(result).not.toHaveProperty('credential');
+    expect(result).not.toHaveProperty('presentation');
+    vi.mocked(gateway.getProductLinks).mockResolvedValue([]);
+    await expect(
+      retailer.prepareEvidenceRequest('session', {
+        ...input,
+        operationId: '88888888-8888-4888-8888-888888888888',
+      }),
+    ).rejects.toMatchObject({ code: 'INGREDIENT_NOT_LINKED' });
+  });
 
   it('rejects an expired evidence request before preparing a Supplier response', async () => {
     const input = requestInput();

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { Alert, Badge, Btn, Card, EmptyState, T, TechnicalDetails } from '../../shared/ui';
 import { getIngredientBatches, type RegisteredIngredientBatch } from './ingredient-batch.api';
+import { getOrders, type OrderRecord } from '../../../orders/orders.api';
 
 export function IngredientBatchDetail({
   batchId,
@@ -13,9 +14,26 @@ export function IngredientBatchDetail({
 }) {
   const [batch, setBatch] = useState<RegisteredIngredientBatch | null>();
   const [error, setError] = useState('');
+  const [listing, setListing] = useState<OrderRecord>();
+  const [listingError, setListingError] = useState('');
 
   useEffect(() => {
     let active = true;
+    void getOrders()
+      .then((data) => {
+        const entry = data.catalogue.find(
+          (item) =>
+            item.batches.includes(batchId) &&
+            item.seller.toLowerCase() === data.actor.toLowerCase(),
+        );
+        if (active && entry) setListing(entry.batchSummaries?.[batchId] ?? entry);
+      })
+      .catch(() => {
+        if (active)
+          setListingError(
+            'The current listing summary is unavailable. Original registered details remain below.',
+          );
+      });
     getIngredientBatches()
       .then(({ batches }) => {
         if (active) setBatch(batches.find((candidate) => candidate.batchId === batchId) ?? null);
@@ -73,13 +91,34 @@ export function IngredientBatchDetail({
           Back to Batches
         </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
-          {batch.ingredientName} · {batch.batchReference}
+          {listing?.name ?? batch.ingredientName} · {batch.batchReference}
         </h2>
         <Badge
-          label={batch.status === 1 ? 'Active' : 'Unavailable'}
+          label={
+            listing?.archived ? 'Archived listing' : batch.status === 1 ? 'Active' : 'Unavailable'
+          }
           variant={batch.status === 1 ? 'active' : 'pending'}
         />
       </div>
+      {listingError && <Alert type="warning" message={listingError} />}
+      {listing && (
+        <Card>
+          <h3>Current Supplier listing</h3>
+          <p>
+            Listing fields are Supplier-provided business information. The original credential
+            claims below are preserved.
+          </p>
+          <p>Name: {listing.name}</p>
+          <p>Category: {listing.category ?? 'Unavailable'}</p>
+          <p>
+            Price:{' '}
+            {listing.price !== undefined
+              ? `${listing.currency} ${listing.price} per ${batch.unit}`
+              : 'Unavailable'}
+          </p>
+          <p>Description: {listing.description || 'No description provided'}</p>
+        </Card>
+      )}
       <div className="workspace-detail-grid">
         <Card>
           <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>

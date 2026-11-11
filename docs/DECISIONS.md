@@ -2,6 +2,13 @@
 
 ## Repository and implementation
 
+- Supplier navigation separates owned Ingredient batches, incoming My orders, and Received/Sent Information requests. Supplier does not need a separate Browse function. Order decisions and company evidence review are separate actions and do not initiate payment or physical fulfilment.
+
+- The current Browse & requests stage is limited to browsing, quantity/detail requests and company evidence exchange. Defer the numbered physical workflow, location setup, proposal, reservation, dispatch, receipt and recall controls from this page until the user requests them. Preserve their existing implementation and records for later review.
+
+- Registered ingredients and products should be discoverable without a separate seller publishing step. Use supply requests rather than payment/checkout orders; unit prices are informational.
+- Requesters specify necessary evidence claims and holders explicitly choose optional disclosures. Verified company identity does not automatically authorize confidential ingredient disclosure.
+
 - Use one GitHub repository as an npm monorepo.
 - Work directly on `main`; do not create additional branches unless requested later.
 - Use npm workspaces with the folder structure `apps/*` and `packages/*`.
@@ -18,6 +25,8 @@
 - Treat the included Counter contract, tests, deployment module, and scripts as toolchain starter code rather than TraceChain business contracts.
 
 ## Blockchain-first data architecture
+
+- Preserve a batch's registered numeric quantity and named unit when listing it or ordering stock. Keep one exact unit per catalogue item, require matching batch/request units, and do not silently convert or rescale values. The initial g/each-only catalogue restriction is removed; current ledger quantities remain whole numbers.
 
 - Build TraceChain without a centralized SQL business database.
 - Describe the architecture as **blockchain-first with no centralized SQL business database**, rather than claiming that every value is stored on-chain or that the system has no off-chain storage.

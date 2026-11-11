@@ -25,7 +25,7 @@ import { completePreparedWorkflow } from '../../../production-flow/production-fl
 import { Alert, Badge, Btn, Card, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
 import { textError } from '../../../validation/form-validation';
-import { HolderSigningKeyPanel } from '../../../didcomm/HolderSigningKeyPanel';
+import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
 
 export function SelectiveDisclosure({
   request,
@@ -231,7 +231,7 @@ export function SelectiveDisclosure({
           <Btn variant="outline" disabled={busy || !details} onClick={() => void loadPreview()}>
             Preview available claim values
           </Btn>
-          {holderDid && <HolderSigningKeyPanel expectedDid={holderDid} />}
+          {holderDid && <PresentationSigningSettingsLink role="supplier" />}
           {details?.claims.map((claim) => {
             const required = details.requiredClaims.includes(claim);
             return (

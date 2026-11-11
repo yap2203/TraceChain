@@ -9,6 +9,7 @@ import { completePreparedWorkflow } from '../../../production-flow/production-fl
 import { ProductQrDisplay } from '../../../product-traceability';
 import { Alert, Badge, Btn, Card, Input, T } from '../../shared/ui';
 import { shortChainId } from '../../shared/operational-format';
+import { getOrders } from '../../../orders/orders.api';
 import {
   textError,
   quantityError,
@@ -19,22 +20,40 @@ import {
 export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [locations, setLocations] = useState<{ location: string; label: string }[]>([]);
+  const [productionLocation, setProductionLocation] = useState('');
   const [productName, setProductName] = useState('');
   const [batchReference, setBatchReference] = useState('');
   const [category, setCategory] = useState('');
   const [quantity, setQuantity] = useState('');
-  const [unit, setUnit] = useState('units');
+  const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState('MYR');
+  const [unit, setUnit] = useState('each');
   const [producedAt, setProducedAt] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [createdProduct, setCreatedProduct] = useState<{
+    production?: { location: string; recordedAt: number };
+    producedAt?: string;
     batchId: string;
     batchReference: string;
     productName: string;
   }>();
 
   useEffect(() => {
+    void getOrders()
+      .then((result) =>
+        setLocations(
+          result.locations
+            .filter((location) => location.company.toLowerCase() === result.actor.toLowerCase())
+            .map((location) => ({
+              location: location.location,
+              label: location.label ?? location.location,
+            })),
+        ),
+      )
+      .catch(() => undefined);
     void listProductionIngredients()
       .then((result) => setIngredients(result.batches.filter((batch) => batch.accepted)))
       .catch((cause) =>
@@ -60,6 +79,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       textError(productName, 'Product name', 160) ||
       referenceError(batchReference) ||
       textError(category, 'Category', 100) ||
+      (price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(price)
+        ? 'Enter a non-negative unit price with at most two decimal places.'
+        : '') ||
+      (price && !/^[A-Z]{3}$/.test(currency) ? 'Enter a three-letter currency code.' : '') ||
       quantityError(quantity) ||
       textError(unit, 'Unit', 31) ||
       (!/^[A-Za-z0-9._/-]+$/.test(unit.trim()) ? 'Unit contains unsupported characters.' : '') ||
@@ -80,8 +103,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     try {
       const result = await completePreparedWorkflow(() =>
         prepareProduct({
+          ...(productionLocation ? { productionLocation } : {}),
           batchReference: submittedBatchReference,
           category,
+          ...(price ? { price, currency } : {}),
           expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
           ingredientLinks: links,
           privateMetadata: { productName: submittedProductName, category },
@@ -93,6 +118,8 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       );
       if ('batchId' in result && typeof result.batchId === 'string') {
         setCreatedProduct({
+          production: result.production,
+          producedAt,
           batchId: result.batchId,
           batchReference: submittedBatchReference,
           productName: submittedProductName,
@@ -114,6 +141,16 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           type="success"
           message="Product creation was verified on chain. Its permanent traceability QR is ready."
         />
+        <p>
+          Production occurred: {createdProduct.producedAt ?? 'Unavailable'} · Recorded on-chain:{' '}
+          {createdProduct.production?.recordedAt
+            ? new Date(createdProduct.production.recordedAt * 1000).toLocaleString()
+            : 'Unavailable'}{' '}
+          · Location:{' '}
+          {createdProduct.production?.location
+            ? shortChainId(createdProduct.production.location)
+            : 'Unavailable'}
+        </p>
         <Card>
           <ProductQrDisplay
             batchId={createdProduct.batchId}
@@ -136,7 +173,40 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       </div>
       {error && <Alert type="error" message={error} />}
       <Card>
+        <label style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
+          Production stock location
+          <select
+            aria-label="Production stock location"
+            value={productionLocation}
+            onChange={(event) => setProductionLocation(event.target.value)}
+          >
+            <option value="">Select your registered receiving / production location</option>
+            {locations.map((location) => (
+              <option key={location.location} value={location.location}>
+                {location.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p>
+          Production consumes only accepted ingredient stock at this location. Register locations
+          and receive ingredients under Catalogue & orders first.
+        </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <Input
+            label={`Price per ${unit} (optional)`}
+            value={price}
+            onChange={setPrice}
+            type="number"
+            min="0"
+            step="0.01"
+          />
+          <Input
+            label="Currency code"
+            value={currency}
+            onChange={(value) => setCurrency(value.toUpperCase())}
+            maxLength={3}
+          />
           <Input
             label="Product name"
             maxLength={160}

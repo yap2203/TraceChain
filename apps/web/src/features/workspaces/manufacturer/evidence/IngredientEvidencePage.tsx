@@ -354,7 +354,7 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
                   />
                 </TD>
                 <TD>
-                  <CompanyIdentityProofAction requestId={request.requestId} />
+                  <CompanyIdentityProofAction requestId={request.requestId} role="manufacturer" />
                   {request.status >= 2 && (
                     <Btn
                       size="xs"

@@ -42,6 +42,7 @@ import {
 } from './retailer';
 import AuditReport from './reports/AuditReportPage';
 import { ScanReceiptFlow, ReceiptGatedFlow } from './receipts';
+import { OrdersPage } from '../orders/OrdersPage';
 
 export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page: string }) {
   const navigate = useNavigate();
@@ -57,6 +58,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     navigate(`${workspacePath(role, page)}${newView ? '?view=' + tab : ''}`);
   };
   const goTo = (view: string, id = '') => setSearchParams({ view, ...(id ? { id } : {}) });
+  if (tab === 'orders') return <OrdersPage role={role} />;
   if (role === 'admin') {
     if (tab === 'overview') return <AdminOverview onNav={nav} />;
     if (tab === 'applications') return <Applications />;
@@ -87,7 +89,14 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     }
     if (tab === 'requests') {
       if (discReq) return <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />;
-      return <InformationRequests onRespond={(req) => setDiscReq(req)} />;
+      return (
+        <InformationRequests
+          onRespond={(req) => setDiscReq(req)}
+          initialOrderId={params.get('orderId') ?? undefined}
+          initialDirection={params.get('direction') === 'sent' ? 'sent' : 'received'}
+          onClearSelection={() => setSearchParams({ direction: 'sent' })}
+        />
+      );
     }
     if (tab === 'mycredential') return <SupplierCredential />;
     if (tab === 'audit') return <AuditReport />;

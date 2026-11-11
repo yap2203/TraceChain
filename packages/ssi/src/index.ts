@@ -63,3 +63,8 @@ export type {
   IngredientSdJwtClaims,
   IssueIngredientSdJwtInput,
 } from './credentials/ingredient-sd-jwt.js';
+export {
+  issueCompanyIdentitySdJwt,
+  verifyCompanyIdentitySdJwt,
+  COMPANY_IDENTITY_BINDING_CLAIMS,
+} from './credentials/company-identity-sd-jwt.js';

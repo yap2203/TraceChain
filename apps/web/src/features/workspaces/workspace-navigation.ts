@@ -26,6 +26,7 @@ export type WorkspaceRole = WorkspaceKey & TraceChainWorkspaceRole;
 export const workspaceNavigation = {
   admin: [
     ['overview', 'Overview', LayoutDashboard],
+    ['orders', 'Requests & recall', ClipboardList],
     ['applications', 'Applications', ClipboardList],
     ['credentials', 'Credentials', BadgeCheck],
     ['accesscontrol', 'Access control', ShieldCheck],
@@ -34,6 +35,7 @@ export const workspaceNavigation = {
   ],
   supplier: [
     ['overview', 'Overview', LayoutDashboard],
+    ['orders', 'Manage orders', ClipboardList],
     ['batches', 'Ingredient batches', Layers],
     ['requests', 'Information requests', Inbox],
     ['mycredential', 'My company credential', ContactRound],
@@ -41,6 +43,7 @@ export const workspaceNavigation = {
   ],
   manufacturer: [
     ['overview', 'Overview', LayoutDashboard],
+    ['orders', 'Browse & requests', ClipboardList],
     ['evidence', 'Ingredient evidence', FlaskConical],
     ['products', 'Product batches', Package],
     ['transfers', 'Transfers', ArrowRightLeft],
@@ -49,6 +52,7 @@ export const workspaceNavigation = {
   ],
   distributor: [
     ['overview', 'Overview', LayoutDashboard],
+    ['orders', 'Browse & requests', ClipboardList],
     ['incoming', 'Incoming shipments', Truck],
     ['inventory', 'Custody inventory', Warehouse],
     ['transfers', 'Transfers', ArrowRightLeft],
@@ -57,6 +61,7 @@ export const workspaceNavigation = {
   ],
   retailer: [
     ['overview', 'Overview', LayoutDashboard],
+    ['orders', 'Browse & requests', ClipboardList],
     ['receive', 'Receive products', PackageCheck],
     ['scan', 'Scan & verify', ScanQrCode],
     ['history', 'Product history', History],
