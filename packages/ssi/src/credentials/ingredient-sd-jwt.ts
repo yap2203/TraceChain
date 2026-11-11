@@ -5,10 +5,45 @@ import { Resolver } from 'did-resolver';
 import { bytesToBase64url, decodeJWT, extractPublicKeyBytes, verifyJWS } from 'did-jwt';
 import { id } from 'ethers';
 import { getResolver } from 'key-did-resolver';
+import { z } from 'zod';
 
 import type { TraceChainAgent } from '../agent/tracechain-agent.js';
 
 export const INGREDIENT_SD_JWT_VCT = 'urn:tracechain:credential:ingredient:sd-jwt:v1';
+
+const claimText = (maximum: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximum)
+    .refine((value) => value.trim().length > 0, 'Must not be blank.');
+const claimDate = z.union([z.iso.date(), z.iso.datetime({ offset: true })]);
+const issuanceInputSchema = z
+  .object({
+    claims: z
+      .object({
+        allergenDeclaration: z.string().max(500).optional(),
+        batchId: claimText(120),
+        batchReference: claimText(120).optional(),
+        certificationDetails: z.array(claimText(120)).max(20).optional(),
+        countryOfOrigin: claimText(160).optional(),
+        credentialId: claimText(512),
+        exactSourceFacility: z.string().max(2000).optional(),
+        expiryDate: claimDate.optional(),
+        ingredientName: claimText(160),
+        internalQualityRemarks: z.string().max(4000).optional(),
+        productionDate: claimDate.optional(),
+        qualityTestSummary: z.string().max(4000).optional(),
+        supplierWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+      })
+      .strict(),
+    expiresAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    issuedAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    holderDid: z.string().startsWith('did:key:'),
+    issuerDid: z.string().startsWith('did:'),
+  })
+  .strict()
+  .refine((value) => value.expiresAt > value.issuedAt, 'Credential expiry must follow issuance.');
 
 export interface IngredientSdJwtClaims {
   allergenDeclaration?: string;
@@ -49,6 +84,7 @@ export async function issueIngredientSdJwt(
   agent: TraceChainAgent,
   input: IssueIngredientSdJwtInput,
 ) {
+  issuanceInputSchema.parse(input);
   const holderJwk = await holderPublicJwk(input.holderDid);
   const issuer = await agent.didManagerGet({ did: input.issuerDid });
   const issuerKey = issuer.keys[0];

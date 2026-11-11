@@ -29,7 +29,7 @@ export function Button({
       {...props}
     >
       {loading ? <LoadingIndicator label="Working" size="small" /> : leadingIcon}
-      <span>{children}</span>
+      <span className="ui-button__label">{children}</span>
     </button>
   );
 }

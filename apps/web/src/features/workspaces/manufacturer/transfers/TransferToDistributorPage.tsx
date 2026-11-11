@@ -10,6 +10,7 @@ import {
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { Alert, Btn, Card, Input, T } from '../../shared/ui';
 import { shortChainId } from '../../shared/operational-format';
+import { textError, quantityError, futureDateError } from '../../../validation/form-validation';
 
 export function TransferToDistributor({ onBack }: { onBack: () => void }) {
   const { data, error: readError } = useOperationalData();
@@ -31,6 +32,20 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
       );
   }, []);
   const submit = async () => {
+    const product = data.productBatches.find(
+      (item) => item.batchId === productBatchId && item.status === 1,
+    );
+    const validationError = !product
+      ? 'Select an active product batch.'
+      : !distributors.some((item) => item.walletAddress.toLowerCase() === recipient.toLowerCase())
+        ? 'Select an authorized Distributor.'
+        : quantityError(quantity, 'Transfer quantity', product.totalQuantity) ||
+          futureDateError(expectedAt, 'Expected arrival') ||
+          textError(shipmentReference, 'Shipment reference', 120);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -97,9 +112,18 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
                 ))}
               </select>
             </label>
-            <Input label="Transfer quantity" value={quantity} onChange={setQuantity} required />
+            <Input
+              label="Transfer quantity"
+              inputMode="numeric"
+              pattern="[1-9][0-9]{0,38}"
+              maxLength={39}
+              value={quantity}
+              onChange={setQuantity}
+              required
+            />
             <Input
               label="Expected arrival"
+              error={expectedAt ? futureDateError(expectedAt, 'Expected arrival') : undefined}
               type="date"
               value={expectedAt}
               onChange={setExpectedAt}

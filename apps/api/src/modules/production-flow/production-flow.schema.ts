@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requestDateSchema } from '../../config/input-validation.js';
 
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
@@ -9,7 +10,7 @@ export const evidenceRequestSchema = z
     batchId: bytes32,
     claims: z.array(z.string().trim().min(1).max(80)).min(1).max(20),
     requiredClaims: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
-    dueAt: z.coerce.date(),
+    dueAt: requestDateSchema,
     operationId: z.string().uuid(),
     productBatchId: bytes32.optional(),
     reason: z.string().trim().min(1).max(500),
@@ -25,13 +26,13 @@ export const productRequestSchema = z
       .max(120)
       .regex(/^[A-Za-z0-9._:/-]+$/),
     category: z.string().trim().min(1).max(100),
-    expiresAt: z.coerce.date(),
+    expiresAt: requestDateSchema,
     ingredientLinks: z
       .array(z.object({ batchId: bytes32, quantity: positiveInteger }).strict())
       .min(1)
       .max(50),
     privateMetadata: z.record(z.string(), z.string().max(500)).default({}),
-    producedAt: z.coerce.date(),
+    producedAt: requestDateSchema,
     productName: z.string().trim().min(1).max(160),
     quantity: positiveInteger,
     unit: z
@@ -45,7 +46,7 @@ export const productRequestSchema = z
 
 export const transferRequestSchema = z
   .object({
-    expectedAt: z.coerce.date(),
+    expectedAt: requestDateSchema,
     productBatchId: bytes32,
     quantity: positiveInteger,
     recipient: wallet,
@@ -55,7 +56,7 @@ export const transferRequestSchema = z
 
 export const distributorTransferRequestSchema = z
   .object({
-    expectedAt: z.coerce.date(),
+    expectedAt: requestDateSchema,
     handlingNotes: z.string().trim().max(1_000).default(''),
     operationId: z.string().uuid(),
     productBatchId: bytes32,

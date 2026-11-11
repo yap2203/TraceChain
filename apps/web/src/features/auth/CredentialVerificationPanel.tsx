@@ -60,6 +60,7 @@ export function CredentialVerificationPanel({
       if (!file.name.toLowerCase().endsWith('.json') && file.type !== 'application/json') {
         throw new Error('Choose a JSON credential file.');
       }
+      if (!file.size) throw new Error('The selected credential file is empty.');
       if (file.size > MAX_CREDENTIAL_FILE_SIZE) {
         throw new Error('The credential file must be smaller than 240 KiB.');
       }

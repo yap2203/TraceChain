@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { requestDateSchema } from '../../config/input-validation.js';
 
 export const companyRoleVerificationRequestSchema = z
   .object({
@@ -12,7 +13,7 @@ export const companyRoleIssuanceRequestSchema = z
     approvedRole: z.number().int().min(2).max(5),
     companyName: z.string().trim().min(1).max(200),
     companyRegistrationNumber: z.string().trim().min(1).max(120),
-    expirationDate: z.coerce.date().refine((value) => value.getTime() > Date.now(), {
+    expirationDate: requestDateSchema.refine((value) => value.getTime() > Date.now(), {
       message: 'The credential expiration date must be in the future.',
     }),
   })

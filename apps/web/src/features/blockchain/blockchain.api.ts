@@ -176,6 +176,30 @@ export interface RolePermissionRecord {
   name: string;
   roles: Record<string, boolean>;
 }
+export interface PersonalPermissionRecord {
+  id: string;
+  name: string;
+  roleAllowed: boolean;
+  setting: number;
+  effective: boolean;
+}
+export function getPersonalPermissions(account: string) {
+  return blockchainRequest<{
+    account: string;
+    role: number;
+    permissions: PersonalPermissionRecord[];
+  }>(`/personal-permissions/${encodeURIComponent(account)}`);
+}
+export function preparePersonalPermission(input: {
+  account: string;
+  permission: string;
+  setting: number;
+}) {
+  return blockchainRequest<PreparedTransaction>('/transactions/personal-permission', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
 export function getRolePermissions() {
   return blockchainRequest<{ permissions: RolePermissionRecord[] }>('/role-permissions');
 }

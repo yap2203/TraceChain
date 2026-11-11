@@ -34,6 +34,7 @@ import {
   TR,
 } from '../../shared/ui';
 import { chainDate, shortChainId } from '../../shared/operational-format';
+import { textError, futureDateError } from '../../../validation/form-validation';
 
 const claimOptions = [
   ['countryOfOrigin', 'Country of origin'],
@@ -87,6 +88,16 @@ export function RetailerEvidenceRequests() {
   );
   const requestEvidence = async () => {
     if (!chosen) return;
+    const validationError =
+      textError(reason, 'Reason', 500) ||
+      futureDateError(dueAt, 'Response deadline') ||
+      (!claimOptions.some(([name]) => ['required', 'optional'].includes(choices[name] ?? 'none'))
+        ? 'Select at least one requested claim.'
+        : '');
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setBusy('request');
     setError('');
     setNotice('');
@@ -145,6 +156,13 @@ export function RetailerEvidenceRequests() {
   };
   const decide = async (accepted: boolean) => {
     if (!review) return;
+    if (!accepted) {
+      const invalid = textError(rejectReason, 'Rejection reason', 500);
+      if (invalid) {
+        setError(invalid);
+        return;
+      }
+    }
     setBusy('decision');
     try {
       if (accepted)

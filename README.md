@@ -1,5 +1,25 @@
 # TraceChain
 
+Admin Access Control includes **Individual Permissions** alongside Role Permissions and the
+Permission Matrix. Select a registered company wallet and choose **Inherit role**, **Allow**,
+or **Deny** for each operational permission, then confirm through MetaMask. Individual settings
+take precedence over role defaults; current stakeholder/credential validity and operation-specific
+role/participant restrictions still apply. Settings reset on an approved role change and do not
+carry over to a replacement wallet. This controls company wallets, not separate employees.
+
+Admin-only API endpoints: `GET /api/blockchain/personal-permissions/:account` and
+`POST /api/blockchain/transactions/personal-permission` (`account`, permission hash, `setting`:
+0 inherit, 1 allow, 2 deny). The API prepares unsigned calldata and the administrator signs it.
+**This feature changes StakeholderRegistry bytecode and requires a fresh, consistently wired
+contract-suite deployment and updated root environment addresses.** Existing deployments do not
+gain these methods automatically; no deployment or environment changes are performed by this feature.
+
+Forms provide required-field feedback and validate names/references, whole-number quantities,
+date ranges, recipient selections, email/contact/DID formats and file type/size limits before
+transaction preparation. Protected APIs retain their independent validation; date inputs reject
+numeric/boolean/null coercions and impossible calendar dates. Shared action buttons keep icons
+and labels aligned horizontally.
+
 > Evidence messaging uses backend-managed DIDComm company agents beneath the existing business screens. MetaMask + SIWE remains the login, holder presentation-signing keys remain client-controlled, and OpenID4VP is deferred. See [`docs/DIDCOMM_STAGE1.md`](docs/DIDCOMM_STAGE1.md) for protocol, custody, migration and security boundaries.
 
 The real Manufacturer/Retailer–Supplier Ingredient Evidence workflow now uses this channel for

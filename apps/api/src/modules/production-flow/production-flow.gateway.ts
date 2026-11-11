@@ -12,7 +12,6 @@ const stakeholderAbi = [
   'event StakeholderRegistered(address indexed account,uint8 indexed role,bytes32 indexed credentialHash)',
   'function getStakeholder(address) view returns (tuple(uint8 role,uint8 status,bytes32 credentialHash,string credentialCid,uint64 credentialExpiresAt,uint64 updatedAt))',
   'function hasPermission(address,bytes32) view returns (bool)',
-  'function roleHasPermission(uint8,bytes32) view returns (bool)',
   'function roleOf(address) view returns (uint8)',
 ] as const;
 const credentialAbi = [
@@ -181,7 +180,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
       Number(stakeholder.status) === 1 &&
       String(stakeholder.credentialHash).toLowerCase() === expectedHash.toLowerCase() &&
       credentialStatus === 1 &&
-      Boolean(await this.stakeholders.roleHasPermission(role, id(permission)))
+      Boolean(await this.stakeholders.hasPermission(wallet, id(permission)))
     );
   }
 

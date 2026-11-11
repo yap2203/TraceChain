@@ -244,6 +244,20 @@ export function createApp({
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.getRolePermission(role, permission);
     },
+    getPersonalPermission: async (account, permission) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      if (!resolvedGateway.getPersonalPermission)
+        throw new Error(
+          'Individual permissions are unavailable. Update the StakeholderRegistry deployment.',
+        );
+      return resolvedGateway.getPersonalPermission(account, permission);
+    },
+    preparePersonalPermission: (input) => {
+      if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
+      if (!resolvedGateway.preparePersonalPermission)
+        throw new Error('Individual permissions are unavailable.');
+      return resolvedGateway.preparePersonalPermission(input);
+    },
     listApplications: async () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       return resolvedGateway.listApplications();

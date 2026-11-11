@@ -16,6 +16,9 @@ const stakeholderRegistryAbi = [
   'function revokeStakeholder(address account, bytes32 reasonHash)',
   'function roleHasPermission(uint8 role, bytes32 permission) view returns (bool)',
   'function setRolePermission(uint8 role, bytes32 permission, bool allowed)',
+  'function getPersonalPermission(address account, bytes32 permission) view returns (uint8)',
+  'function hasPermission(address account, bytes32 permission) view returns (bool)',
+  'function setPersonalPermission(address account, bytes32 permission, uint8 setting)',
 ] as const;
 
 const credentialRegistryAbi = [
@@ -79,6 +82,15 @@ export interface ChainApplicationRecord {
 }
 
 export interface BlockchainGateway {
+  getPersonalPermission?(
+    account: string,
+    permission: string,
+  ): Promise<{ setting: number; effective: boolean }>;
+  preparePersonalPermission?(input: {
+    account: string;
+    permission: string;
+    setting: number;
+  }): PreparedTransaction;
   getRegistryReferences?(): { credentialRegistry: string; stakeholderRegistry: string };
   listOperationalData?(account: string): Promise<OperationalData>;
   getAdministrator(): Promise<string>;
@@ -530,6 +542,24 @@ export class BlockchainGatewayService implements BlockchainGateway {
 
   private transaction(data: string): PreparedTransaction {
     return { chainId: this.chainId, data, to: this.registryAddress, value: '0x0' };
+  }
+
+  async getPersonalPermission(account: string, permission: string) {
+    const [setting, effective] = await Promise.all([
+      this.registry.getPersonalPermission(account, permission),
+      this.registry.hasPermission(account, permission),
+    ]);
+    return { setting: Number(setting), effective: Boolean(effective) };
+  }
+
+  preparePersonalPermission(input: { account: string; permission: string; setting: number }) {
+    return this.transaction(
+      registryInterface.encodeFunctionData('setPersonalPermission', [
+        input.account,
+        input.permission,
+        input.setting,
+      ]),
+    );
   }
 
   private async requireDeployment() {

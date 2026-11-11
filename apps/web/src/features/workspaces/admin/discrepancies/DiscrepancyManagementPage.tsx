@@ -43,6 +43,10 @@ export default function DiscrepancyManagementPage() {
 
   const resolve = async (item: AdminCustodyDiscrepancy, acceptActual: boolean) => {
     const reason = reasons[item.transferId]?.trim();
+    if (reason && reason.length > 4000) {
+      setError('Reason must be 4000 characters or fewer.');
+      return;
+    }
     if (!reason || busyId) return;
     setBusyId(item.transferId);
     setError('');

@@ -88,6 +88,9 @@
 .workspace-ui button {
   line-height: 1.5;
 }
+.workspace-ui button svg {
+  flex-shrink: 0;
+}
 .workspace-ui :is(button, a, input, select, textarea):focus-visible {
   outline: 2px solid var(--c-teal);
   outline-offset: 3px;

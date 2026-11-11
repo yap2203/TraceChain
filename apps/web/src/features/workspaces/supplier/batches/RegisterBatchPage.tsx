@@ -8,6 +8,12 @@ import {
 } from './ingredient-batch.api';
 import { submitIngredientBatchTransaction } from './ingredient-batch-transaction';
 import { HolderSigningKeyPanel } from '../../../didcomm/HolderSigningKeyPanel';
+import {
+  textError,
+  quantityError,
+  referenceError,
+  productionDateError,
+} from '../../../validation/form-validation';
 
 type WorkflowStep = 'waiting' | 'active' | 'complete';
 
@@ -58,14 +64,20 @@ export function RegisterBatch({
     unit,
   });
 
-  const isFormComplete = Boolean(
-    name.trim() &&
-    batchReference.trim() &&
-    origin.trim() &&
-    producedAt &&
-    expiresAt &&
-    /^[1-9]\d*$/.test(quantity),
-  );
+  const validationError =
+    textError(name, 'Ingredient name', 160) ||
+    referenceError(batchReference) ||
+    textError(origin, 'Origin', 160) ||
+    textError(category, 'Category', 80) ||
+    quantityError(quantity) ||
+    textError(unit, 'Unit', 31) ||
+    textError(allergen, 'Allergen information', 500, false) ||
+    (buildInput().certifications.length > 20 ||
+    buildInput().certifications.some((value) => value.length > 120)
+      ? 'Use at most 20 certifications, each with at most 120 characters.'
+      : '') ||
+    productionDateError(producedAt, expiresAt);
+  const isFormComplete = !validationError;
 
   const applyState = (workflow: IngredientBatchWorkflow) => {
     if (workflow.state === 'CREDENTIAL_REGISTRATION_REQUIRED') {
@@ -81,6 +93,10 @@ export function RegisterBatch({
   };
 
   const register = async () => {
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     if (activeSubmission.current) return;
     activeSubmission.current = true;
     setBusy(true);
@@ -119,6 +135,7 @@ export function RegisterBatch({
         </h2>
       </div>
       <div style={{ maxWidth: 700, margin: '0 auto' }}>
+        {error && <Alert type="error" message={error} />}
         <StepProgress steps={['Ingredient information', 'Review & register']} current={step} />
 
         {step === 0 && (
@@ -130,6 +147,7 @@ export function RegisterBatch({
               <div className="workspace-form-grid">
                 <Input
                   label="Ingredient name"
+                  maxLength={160}
                   placeholder="Cocoa Powder"
                   value={name}
                   onChange={setName}
@@ -137,6 +155,8 @@ export function RegisterBatch({
                 />
                 <Input
                   label="Batch reference"
+                  maxLength={120}
+                  pattern="[A-Za-z0-9._:/-]+"
                   placeholder="COCOA-2026-001"
                   value={batchReference}
                   onChange={setBatchReference}
@@ -158,6 +178,7 @@ export function RegisterBatch({
                 />
                 <Input
                   label="Country / location of origin"
+                  maxLength={160}
                   placeholder="Ghana"
                   value={origin}
                   onChange={setOrigin}
@@ -167,6 +188,7 @@ export function RegisterBatch({
               <div className="workspace-form-grid">
                 <Input
                   label="Production date"
+                  max={new Date().toISOString().slice(0, 10)}
                   type="date"
                   value={producedAt}
                   onChange={setProducedAt}
@@ -183,6 +205,9 @@ export function RegisterBatch({
               <div className="workspace-form-grid workspace-form-grid--quantity">
                 <Input
                   label="Quantity"
+                  inputMode="numeric"
+                  pattern="[1-9][0-9]{0,38}"
+                  maxLength={39}
                   placeholder="500"
                   value={quantity}
                   onChange={setQuantity}
@@ -202,6 +227,7 @@ export function RegisterBatch({
               </div>
               <Input
                 label="Allergen information"
+                maxLength={500}
                 placeholder="None"
                 value={allergen}
                 onChange={setAllergen}
@@ -213,7 +239,17 @@ export function RegisterBatch({
                 onChange={setCertifications}
                 hint="Separate multiple certifications with commas"
               />
-              <Btn onClick={() => setStep(1)} full disabled={!isFormComplete}>
+              <Btn
+                onClick={() => {
+                  if (!isFormComplete) setError(validationError);
+                  else {
+                    setError('');
+                    setStep(1);
+                  }
+                }}
+                full
+                disabled={busy}
+              >
                 Continue to review
               </Btn>
             </div>
@@ -261,7 +297,6 @@ export function RegisterBatch({
               </p>
             </Card>
 
-            {error && <Alert type="error" message={error} />}
             {complete && (
               <Alert
                 type="success"

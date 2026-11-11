@@ -73,6 +73,13 @@ contract StakeholderRegistry is IStakeholderRegistry {
     bytes32[] private applicationIds;
     mapping(bytes32 => RoleChangeRequest) private roleChangeRequests;
     mapping(Role => mapping(bytes32 => bool)) private rolePermissions;
+    // 0 inherits the role default, 1 allows, 2 denies. Scoped to a role-assignment epoch
+    // so a role change or replacement wallet cannot inherit stale exceptions.
+    mapping(address => uint256) private permissionEpoch;
+    mapping(address => mapping(uint256 => mapping(bytes32 => uint8))) private personalPermissions;
+    event PersonalPermissionChanged(
+        address indexed account, Role indexed role, bytes32 indexed permission, uint8 setting
+    );
     bytes32[] private roleChangeRequestIds;
 
     event ApplicationSubmitted(
@@ -361,6 +368,7 @@ contract StakeholderRegistry is IStakeholderRegistry {
         ) revert InvalidState();
         _validateCredential(replacementCredentialHash, credentialExpiresAt);
         Role previousRole = stakeholder.role;
+        ++permissionEpoch[request.stakeholder];
         stakeholder.role = request.requestedRole;
         stakeholder.credentialHash = replacementCredentialHash;
         stakeholder.credentialCid = replacementCredentialCid;
@@ -497,7 +505,22 @@ contract StakeholderRegistry is IStakeholderRegistry {
     }
     function hasPermission(address account, bytes32 permission) external view override returns (bool) {
         uint8 activeRole = _authorizedRole(account);
-        return activeRole == uint8(Role.SystemAdmin) || (activeRole != 0 && rolePermissions[Role(activeRole)][permission]);
+        if (activeRole == uint8(Role.SystemAdmin)) return true;
+        if (activeRole == 0) return false;
+        uint8 setting = personalPermissions[account][permissionEpoch[account]][permission];
+        return setting == 1 || (setting == 0 && rolePermissions[Role(activeRole)][permission]);
+    }
+    function getPersonalPermission(address account, bytes32 permission) external view returns (uint8) {
+        return personalPermissions[account][permissionEpoch[account]][permission];
+    }
+    function setPersonalPermission(address account, bytes32 permission, uint8 setting) external onlyAdministrator {
+        Stakeholder storage stakeholder = stakeholders[account];
+        if (
+            stakeholder.role < Role.Supplier || stakeholder.role > Role.Retailer ||
+            stakeholder.status == StakeholderStatus.Revoked || permission == bytes32(0) || setting > 2
+        ) revert InvalidInput();
+        personalPermissions[account][permissionEpoch[account]][permission] = setting;
+        emit PersonalPermissionChanged(account, stakeholder.role, permission, setting);
     }
     function roleHasPermission(Role role, bytes32 permission) external view returns (bool) {
         return role == Role.SystemAdmin || rolePermissions[role][permission];

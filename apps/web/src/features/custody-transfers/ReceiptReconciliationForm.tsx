@@ -54,6 +54,10 @@ export function ReceiptReconciliationForm({
     return { error: '', usable: actualValue - damagedValue - rejectedValue };
   }, [actual, damaged, rejected]);
   const mismatch = /^(0|[1-9]\d*)$/.test(actual) && BigInt(actual) !== BigInt(transfer.quantity);
+  const arrivalError =
+    arrival && (!Number.isFinite(Date.parse(arrival)) || Date.parse(arrival) > Date.now() + 60_000)
+      ? 'Actual arrival must be a valid time that is not in the future.'
+      : '';
 
   const readFiles = async (files: FileList | null) => {
     setFileError('');
@@ -64,7 +68,11 @@ export function ReceiptReconciliationForm({
       return;
     }
     const allowed = ['image/png', 'image/jpeg', 'image/webp', 'application/pdf'];
-    if (selected.some((file) => !allowed.includes(file.type) || file.size > 5 * 1024 * 1024)) {
+    if (
+      selected.some(
+        (file) => !allowed.includes(file.type) || !file.size || file.size > 5 * 1024 * 1024,
+      )
+    ) {
       setFileError('Evidence must be PNG, JPG, WebP, or PDF and no larger than 5 MB each.');
       return;
     }
@@ -96,6 +104,7 @@ export function ReceiptReconciliationForm({
           Actual quantity received
           <input
             inputMode="numeric"
+            maxLength={16}
             value={actual}
             onChange={(event) => setActual(event.target.value)}
           />
@@ -104,6 +113,7 @@ export function ReceiptReconciliationForm({
           Damaged quantity
           <input
             inputMode="numeric"
+            maxLength={16}
             value={damaged}
             onChange={(event) => setDamaged(event.target.value)}
           />
@@ -112,6 +122,7 @@ export function ReceiptReconciliationForm({
           Rejected quantity
           <input
             inputMode="numeric"
+            maxLength={16}
             value={rejected}
             onChange={(event) => setRejected(event.target.value)}
           />
@@ -141,7 +152,12 @@ export function ReceiptReconciliationForm({
       </label>
       <label>
         Receipt notes {mismatch && '(required)'}
-        <textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
+        <textarea
+          rows={3}
+          maxLength={4000}
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+        />
       </label>
       <label>
         Supporting evidence (optional)
@@ -158,9 +174,21 @@ export function ReceiptReconciliationForm({
           {fileError}
         </div>
       )}
+      {arrivalError && (
+        <div role="alert" className="transfer-scanner-error">
+          {arrivalError}
+        </div>
+      )}
       <button
         className="transfer-qr-button"
-        disabled={busy || !!values.error || !!fileError || (mismatch && !notes.trim())}
+        disabled={
+          busy ||
+          !!values.error ||
+          !!fileError ||
+          !!arrivalError ||
+          notes.length > 4000 ||
+          (mismatch && !notes.trim())
+        }
         onClick={() =>
           void onSubmit({
             actualArrivalAt: arrival ? new Date(arrival).toISOString() : undefined,
@@ -211,12 +239,13 @@ export function ReceiptReconciliationForm({
             <textarea
               rows={3}
               value={rejectReason}
+              maxLength={4000}
               onChange={(event) => setRejectReason(event.target.value)}
             />
           </label>
           <button
             className="transfer-qr-danger"
-            disabled={busy || !rejectReason.trim()}
+            disabled={busy || !rejectReason.trim() || rejectReason.length > 4000 || !!fileError}
             onClick={() =>
               void onReject({
                 evidence,

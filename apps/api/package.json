@@ -11,7 +11,7 @@
     "ssi:export-admin-credential": "tsx src/scripts/export-admin-credential.ts",
     "start": "node dist/server.js",
     "test:auth": "vitest run src/modules/auth/auth.test.ts",
-    "test:blockchain": "vitest run src/modules/blockchain/blockchain.test.ts",
+    "test:blockchain": "vitest run src/modules/blockchain",
     "test:custody-transfers": "vitest run src/modules/custody-transfers/custody-transfer.test.ts",
     "test:ingredient-batches": "vitest run src/modules/ingredient-batches/ingredient-batch.test.ts",
     "test:production-flow": "vitest run src/modules/production-flow/production-flow.test.ts",

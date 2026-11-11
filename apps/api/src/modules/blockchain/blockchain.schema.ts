@@ -2,6 +2,14 @@ import { z } from 'zod';
 
 const bytes32Schema = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 
+export const personalPermissionTransactionSchema = z
+  .object({
+    account: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    permission: bytes32Schema,
+    setting: z.number().int().min(0).max(2),
+  })
+  .strict();
+
 export const applicationTransactionSchema = z
   .object({
     applicationId: bytes32Schema,

@@ -13,10 +13,81 @@ import {
   credentialLifecycleTransactionSchema,
   rejectionTransactionSchema,
   rolePermissionTransactionSchema,
+  personalPermissionTransactionSchema,
   stakeholderLifecycleTransactionSchema,
 } from './blockchain.schema.js';
 
 export class BlockchainController {
+  private readonly permissionNames = [
+    'REGISTER_INGREDIENT',
+    'ISSUE_INGREDIENT_CREDENTIAL',
+    'REQUEST_EVIDENCE',
+    'REGISTER_PRODUCT',
+    'INITIATE_TRANSFER',
+    'RECEIVE_TRANSFER',
+  ];
+
+  listPersonalPermissions = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      await this.requireAdministrator(request);
+      const { account } = personalPermissionTransactionSchema
+        .pick({ account: true })
+        .parse(request.params);
+      if (!this.gateway.getPersonalPermission)
+        throw new BlockchainApiError(
+          'PERSONAL_PERMISSIONS_UNAVAILABLE',
+          'Individual permissions require the updated StakeholderRegistry deployment.',
+          503,
+        );
+      const stakeholder = await this.gateway.getStakeholder(account);
+      const permissions = await Promise.all(
+        this.permissionNames.map(async (name) => ({
+          id: id(name),
+          name,
+          roleAllowed: await this.gateway.getRolePermission(stakeholder.role, id(name)),
+          ...(await this.readPersonalPermission(account, id(name))),
+        })),
+      );
+      response.json({ account, role: stakeholder.role, permissions });
+    } catch (error) {
+      this.handleError(error, response, next);
+    }
+  };
+
+  preparePersonalPermission = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      await this.requireAdministrator(request);
+      const input = personalPermissionTransactionSchema.parse(request.body);
+      if (
+        !this.permissionNames.some(
+          (name) => id(name).toLowerCase() === input.permission.toLowerCase(),
+        )
+      )
+        throw new BlockchainApiError(
+          'INVALID_PERMISSION',
+          'Select a supported operational permission.',
+          400,
+        );
+      const stakeholder = await this.gateway.getStakeholder(input.account);
+      if (stakeholder.role < 2 || stakeholder.role > 5 || ![1, 2].includes(stakeholder.status))
+        throw new BlockchainApiError(
+          'INVALID_STAKEHOLDER_STATE',
+          'Select a registered, non-revoked company wallet.',
+          409,
+        );
+      if (!this.gateway.preparePersonalPermission || !this.gateway.getPersonalPermission)
+        throw new BlockchainApiError(
+          'PERSONAL_PERMISSIONS_UNAVAILABLE',
+          'Individual permissions require the updated StakeholderRegistry deployment.',
+          503,
+        );
+      // Probe support before asking the user to sign a transaction against an older deployment.
+      await this.readPersonalPermission(input.account, input.permission);
+      response.json(this.gateway.preparePersonalPermission(input));
+    } catch (error) {
+      this.handleError(error, response, next);
+    }
+  };
   constructor(
     private readonly gateway: BlockchainGateway,
     private readonly authService: AuthService,
@@ -298,6 +369,18 @@ export class BlockchainController {
       this.handleError(error, response, next);
     }
   };
+
+  private async readPersonalPermission(account: string, permission: string) {
+    try {
+      return await this.gateway.getPersonalPermission!(account, permission);
+    } catch {
+      throw new BlockchainApiError(
+        'PERSONAL_PERMISSIONS_UNAVAILABLE',
+        'Individual permissions could not be read. Check the RPC connection and updated StakeholderRegistry deployment.',
+        503,
+      );
+    }
+  }
 
   private async requireAdministrator(request: Request) {
     const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;

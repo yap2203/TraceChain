@@ -33,6 +33,21 @@ All role-restricted contracts ask `StakeholderRegistry` for the caller's current
 
 ## Deployment and wiring
 
+### Individual permission exceptions
+
+`hasPermission(wallet, permission)` first requires current on-chain stakeholder and Company Role
+credential authorization. Admin retains full authority. For a company, `getPersonalPermission`
+returns 0 (inherit role), 1 (allow), or 2 (deny). `setPersonalPermission(wallet, permission, setting)`
+is administrator-only and emits `PersonalPermissionChanged` with wallet, role, permission and setting.
+An individual setting overrides the role default without changing other companies. Separate role,
+recipient and business-state restrictions in each operation continue to apply. Suspended, revoked,
+expired and replaced wallets cannot regain access through an allow setting. Approving a role change
+resets individual settings; wallet replacement does not copy them. There is no employee-account model.
+
+Redeploy the consistently wired suite to use these methods: downstream contracts hold immutable
+references to their registry. Do not update just one address against an older suite. Existing
+deployment journals and historical chain records are not migrated automatically.
+
 Deploy the complete suite through `ignition/modules/TraceChain.ts`. The module performs these operations in dependency order:
 
 1. Deploy `StakeholderRegistry(account[0])`.

@@ -101,7 +101,7 @@ describe('Distributor to Retailer transfer page', () => {
     fireEvent.change(retailerSelect, { target: { value: RETAILER } });
     fireEvent.change(screen.getByLabelText(/Transfer quantity/), { target: { value: '25' } });
     fireEvent.change(screen.getByLabelText(/Expected arrival/), {
-      target: { value: '2026-11-10' },
+      target: { value: new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10) },
     });
     fireEvent.change(screen.getByLabelText(/Shipment reference/), {
       target: { value: 'DIST-RET-001' },
@@ -141,7 +141,7 @@ describe('Distributor to Retailer transfer page', () => {
     fireEvent.change(retailerSelect, { target: { value: RETAILER } });
     fireEvent.change(screen.getByLabelText(/Transfer quantity/), { target: { value: '25' } });
     fireEvent.change(screen.getByLabelText(/Expected arrival/), {
-      target: { value: '2026-11-10' },
+      target: { value: new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10) },
     });
     fireEvent.change(screen.getByLabelText(/Shipment reference/), {
       target: { value: 'DIST-RET-001' },

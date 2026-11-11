@@ -24,6 +24,7 @@ import {
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { Alert, Badge, Btn, Card, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
+import { textError } from '../../../validation/form-validation';
 import { HolderSigningKeyPanel } from '../../../didcomm/HolderSigningKeyPanel';
 
 export function SelectiveDisclosure({
@@ -129,6 +130,11 @@ export function SelectiveDisclosure({
     }
   };
   const decline = async () => {
+    const invalid = textError(declineReason, 'Decline reason', 500);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -271,6 +277,7 @@ export function SelectiveDisclosure({
           </Btn>
           <input
             aria-label="Decline reason"
+            maxLength={500}
             placeholder="Reason for declining"
             value={declineReason}
             onChange={(event) => setDeclineReason(event.target.value)}

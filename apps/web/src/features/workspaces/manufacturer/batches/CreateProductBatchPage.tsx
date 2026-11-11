@@ -9,6 +9,12 @@ import { completePreparedWorkflow } from '../../../production-flow/production-fl
 import { ProductQrDisplay } from '../../../product-traceability';
 import { Alert, Badge, Btn, Card, Input, T } from '../../shared/ui';
 import { shortChainId } from '../../shared/operational-format';
+import {
+  textError,
+  quantityError,
+  referenceError,
+  productionDateError,
+} from '../../../validation/form-validation';
 
 export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
@@ -40,6 +46,33 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     .filter(([, amount]) => /^[1-9]\d*$/.test(amount))
     .map(([batchId, amount]) => ({ batchId, quantity: amount }));
   const submit = async () => {
+    const invalidAmount = Object.entries(amounts).find(
+      ([, amount]) => amount !== '' && !!quantityError(amount),
+    );
+    const excessAmount = links.find((link) => {
+      const ingredient = ingredients.find((item) => item.batchId === link.batchId);
+      return (
+        !ingredient ||
+        !!quantityError(link.quantity, 'Ingredient quantity', ingredient.availableQuantity)
+      );
+    });
+    const validationError =
+      textError(productName, 'Product name', 160) ||
+      referenceError(batchReference) ||
+      textError(category, 'Category', 100) ||
+      quantityError(quantity) ||
+      textError(unit, 'Unit', 31) ||
+      (!/^[A-Za-z0-9._/-]+$/.test(unit.trim()) ? 'Unit contains unsupported characters.' : '') ||
+      productionDateError(producedAt, expiresAt) ||
+      (invalidAmount ? 'Every entered ingredient quantity must be a positive whole number.' : '') ||
+      (excessAmount ? 'An ingredient quantity exceeds its available inventory.' : '') ||
+      (!links.length || links.length > 50
+        ? 'Select between 1 and 50 valid ingredient batches.'
+        : '');
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     const submittedProductName = productName.trim();
     const submittedBatchReference = batchReference.trim();
     setBusy(true);
@@ -104,15 +137,31 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       {error && <Alert type="error" message={error} />}
       <Card>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Input label="Product name" value={productName} onChange={setProductName} required />
+          <Input
+            label="Product name"
+            maxLength={160}
+            value={productName}
+            onChange={setProductName}
+            required
+          />
           <Input
             label="Product batch reference"
+            maxLength={120}
+            pattern="[A-Za-z0-9._:/-]+"
             value={batchReference}
             onChange={setBatchReference}
             required
           />
           <Input label="Category" value={category} onChange={setCategory} required />
-          <Input label="Quantity produced" value={quantity} onChange={setQuantity} required />
+          <Input
+            label="Quantity produced"
+            inputMode="numeric"
+            pattern="[1-9][0-9]{0,38}"
+            maxLength={39}
+            value={quantity}
+            onChange={setQuantity}
+            required
+          />
           <Input label="Unit" value={unit} onChange={setUnit} required />
           <Input
             label="Production date"

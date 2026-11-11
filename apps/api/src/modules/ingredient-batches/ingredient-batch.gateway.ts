@@ -4,7 +4,7 @@ import type { PreparedTransaction } from '../blockchain/blockchain-gateway.servi
 
 const stakeholderAbi = [
   'function getStakeholder(address) view returns (tuple(uint8 role,uint8 status,bytes32 credentialHash,string credentialCid,uint64 credentialExpiresAt,uint64 updatedAt))',
-  'function roleHasPermission(uint8,bytes32) view returns (bool)',
+  'function hasPermission(address,bytes32) view returns (bool)',
 ] as const;
 const credentialAbi = [
   'error InvalidInput()',
@@ -130,8 +130,8 @@ export class EthersIngredientBatchGateway implements IngredientBatchGateway {
       /^0x0{64}$/i.test(String(credentialId))
         ? Promise.resolve(0)
         : this.credentials.effectiveStatus(credentialId),
-      this.stakeholders.roleHasPermission(2, id('ISSUE_INGREDIENT_CREDENTIAL')),
-      this.stakeholders.roleHasPermission(2, id('REGISTER_INGREDIENT')),
+      this.stakeholders.hasPermission(wallet, id('ISSUE_INGREDIENT_CREDENTIAL')),
+      this.stakeholders.hasPermission(wallet, id('REGISTER_INGREDIENT')),
     ]);
     return {
       credentialAuthorized:

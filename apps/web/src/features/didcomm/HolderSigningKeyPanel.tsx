@@ -10,6 +10,7 @@ import {
 } from './didcomm-agent';
 import { didCommApi } from './didcomm.api';
 import { Alert, Btn, Card } from '../workspaces/shared/ui';
+import { uploadError } from '../validation/form-validation';
 
 /**
  * This key signs holder presentations. It is deliberately not used for DIDComm transport; the
@@ -36,6 +37,10 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
     if (!selected) return;
     setError('');
     try {
+      const invalid = uploadError(selected, 1 * 1024 * 1024, /\.json$/i, ['application/json']);
+      if (invalid) throw new Error(invalid);
+      if (password.length < 10)
+        throw new Error('Enter the original backup password (at least 10 characters).');
       const holder = await importRecoveryKit(await selected.text(), password);
       if (expectedDid && holder.did !== expectedDid)
         throw new Error('This backup is not the presentation key bound to the credential.');

@@ -47,6 +47,8 @@ export function Btn({
       title={!onClick && type !== 'submit' ? 'This action is not available yet' : undefined}
       style={{
         display: 'inline-flex',
+        flexDirection: 'row',
+        flexWrap: 'nowrap',
         alignItems: 'center',
         gap: 6,
         fontWeight: 600,
@@ -61,8 +63,20 @@ export function Btn({
         ...sx,
       }}
     >
-      {icon && <span>{icon}</span>}
-      {children}
+      {icon && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
+      )}
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 6,
+          minWidth: 0,
+        }}
+      >
+        {children}
+      </span>
     </button>
   );
 }

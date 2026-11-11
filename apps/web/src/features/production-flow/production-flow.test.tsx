@@ -186,7 +186,7 @@ describe('production transaction workflow', () => {
     fireEvent.change(distributor, { target: { value: DISTRIBUTOR } });
     fireEvent.change(screen.getByLabelText(/Transfer quantity/), { target: { value: '25' } });
     fireEvent.change(screen.getByLabelText(/Expected arrival/), {
-      target: { value: '2026-11-10' },
+      target: { value: new Date(Date.now() + 3 * 86400_000).toISOString().slice(0, 10) },
     });
     fireEvent.change(screen.getByLabelText(/Shipment reference/), {
       target: { value: 'SHIP-001' },

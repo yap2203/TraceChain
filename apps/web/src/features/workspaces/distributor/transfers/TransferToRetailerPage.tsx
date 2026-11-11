@@ -24,6 +24,7 @@ import {
   Textarea,
 } from '../../shared/ui';
 import { chainDate, shortChainId, transferStatuses } from '../../shared/operational-format';
+import { quantityError, futureDateError, textError } from '../../../validation/form-validation';
 
 type Step = 'form' | 'review' | 'created';
 
@@ -80,6 +81,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
     try {
       return (
         Boolean(product) &&
+        !quantityError(quantity) &&
         BigInt(quantity) > 0n &&
         BigInt(quantity) <= BigInt(product!.availableQuantity)
       );
@@ -87,7 +89,12 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
       return false;
     }
   }, [product, quantity]);
-  const canReview = quantityValid && Boolean(recipient && expectedAt && shipmentReference.trim());
+  const canReview =
+    quantityValid &&
+    !!retailer &&
+    !futureDateError(expectedAt, 'Expected arrival') &&
+    !textError(shipmentReference, 'Shipment reference', 120) &&
+    handlingNotes.length <= 1000;
 
   const submit = async () => {
     if (!canReview || submissionActive.current) return;
@@ -200,6 +207,14 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
               />
               <Input
                 label="Transfer quantity"
+                error={
+                  quantity
+                    ? quantityError(quantity, 'Transfer quantity', product?.availableQuantity)
+                    : undefined
+                }
+                min="1"
+                step="1"
+                max={product?.availableQuantity}
                 type="number"
                 value={quantity}
                 onChange={setQuantity}
@@ -208,6 +223,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
               />
               <Input
                 label="Expected arrival"
+                error={expectedAt ? futureDateError(expectedAt, 'Expected arrival') : undefined}
                 type="date"
                 value={expectedAt}
                 onChange={setExpectedAt}
@@ -215,6 +231,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
               />
               <Input
                 label="Shipment reference"
+                maxLength={120}
                 value={shipmentReference}
                 onChange={setShipmentReference}
                 placeholder="Your internal shipment reference"
@@ -222,6 +239,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
               />
               <Textarea
                 label="Handling notes"
+                maxLength={1000}
                 value={handlingNotes}
                 onChange={setHandlingNotes}
                 placeholder="Optional handling instructions"

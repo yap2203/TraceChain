@@ -173,6 +173,120 @@ describe('TraceChain integration', function () {
     );
   });
 
+  it('applies individual allow/deny/inherit without changing another company or the role defaults', async function () {
+    const system = await networkHelpers.loadFixture(deployFixture);
+    await onboard(system, system.supplier, 2);
+    await onboard(system, system.newCompany, 2);
+    const permission = ethers.id('REGISTER_INGREDIENT');
+    await expect(
+      asSigner(system.stakeholders, system.supplier).setPersonalPermission(
+        system.newCompany.address,
+        permission,
+        2,
+      ),
+    ).to.be.revertedWithCustomError(system.stakeholders, 'Unauthorized');
+    await expect(system.stakeholders.setPersonalPermission(system.supplier.address, permission, 2))
+      .to.emit(system.stakeholders, 'PersonalPermissionChanged')
+      .withArgs(system.supplier.address, 2, permission, 2);
+    expect(
+      await system.stakeholders.getPersonalPermission(system.supplier.address, permission),
+    ).to.equal(2n);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+    expect(await system.stakeholders.hasPermission(system.newCompany.address, permission)).to.equal(
+      true,
+    );
+    expect(await system.stakeholders.roleHasPermission(2, permission)).to.equal(true);
+    await system.stakeholders.setRolePermission(2, permission, false);
+    await system.stakeholders.setPersonalPermission(system.supplier.address, permission, 1);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      true,
+    );
+    expect(await system.stakeholders.hasPermission(system.newCompany.address, permission)).to.equal(
+      false,
+    );
+    await system.stakeholders.setPersonalPermission(system.supplier.address, permission, 0);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+    await system.stakeholders.setRolePermission(2, permission, true);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      true,
+    );
+  });
+
+  it('never lets individual grants bypass credential lifecycle, unknown wallets or administrator protection', async function () {
+    const system = await networkHelpers.loadFixture(deployFixture);
+    await onboard(system, system.supplier, 2);
+    const permission = ethers.id('REGISTER_INGREDIENT');
+    for (const account of [system.admin.address, system.stranger.address]) {
+      await expect(
+        system.stakeholders.setPersonalPermission(account, permission, 1),
+      ).to.be.revertedWithCustomError(system.stakeholders, 'InvalidInput');
+    }
+    await expect(
+      system.stakeholders.setPersonalPermission(system.supplier.address, permission, 3),
+    ).to.be.revertedWithCustomError(system.stakeholders, 'InvalidInput');
+    await system.stakeholders.setPersonalPermission(system.supplier.address, permission, 1);
+    await system.stakeholders.suspendStakeholder(system.supplier.address, ethers.id('review'));
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+    await system.stakeholders.reactivateStakeholder(system.supplier.address);
+    const credentialId = ethers.id(`company-credential-id:${system.supplier.address}`);
+    await system.credentials.suspendCredential(credentialId, ethers.id('review'));
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+    await system.credentials.reactivateCredential(credentialId);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      true,
+    );
+    await networkHelpers.time.increase(86_401);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+    await system.stakeholders.revokeStakeholder(system.supplier.address, ethers.id('revoke'));
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+  });
+
+  it('enforces personal denial on the real ingredient write contract and resets exceptions after a role change', async function () {
+    const system = await networkHelpers.loadFixture(ingredientFixture);
+    const permission = ethers.id('REGISTER_INGREDIENT');
+    await system.stakeholders.setPersonalPermission(system.supplier.address, permission, 2);
+    await expect(
+      asSigner(system.ingredients, system.supplier).registerBatch(
+        ethers.id('denied-batch'),
+        ethers.id('metadata'),
+        'cid',
+        ethers.id('traceability-ingredient-credential'),
+        10,
+        ethers.id('kg'),
+        await networkHelpers.time.latest(),
+        (await networkHelpers.time.latest()) + 3600,
+      ),
+    ).to.be.revertedWithCustomError(system.ingredients, 'Unauthorized');
+    const requestId = ethers.id('personal-permission-role-change');
+    await asSigner(system.stakeholders, system.supplier).submitRoleChange(
+      requestId,
+      3,
+      ethers.id('evidence'),
+      'cid',
+    );
+    await system.stakeholders.approveRoleChange(
+      requestId,
+      ethers.id('replacement'),
+      'cid',
+      (await networkHelpers.time.latest()) + 3600,
+    );
+    expect(
+      await system.stakeholders.getPersonalPermission(system.supplier.address, permission),
+    ).to.equal(0n);
+  });
+
   it('preserves historical Company Role credentials across administrator transfer', async function () {
     const system = await networkHelpers.loadFixture(deployFixture);
     await onboard(system, system.supplier, 2);

@@ -32,6 +32,7 @@ import {
   TR,
 } from '../../shared/ui';
 import { chainDate, shortChainId } from '../../shared/operational-format';
+import { textError, futureDateError } from '../../../validation/form-validation';
 
 const statuses = [
   'Unknown',
@@ -89,6 +90,19 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
   }, []);
 
   const requestEvidence = async () => {
+    const validationError = !ingredients.some((item) => item.batchId === batchId && !item.accepted)
+      ? 'Select an available ingredient batch.'
+      : textError(reason, 'Reason', 500) ||
+        futureDateError(dueAt, 'Response deadline') ||
+        (!selectableClaims.some(([name]) =>
+          ['required', 'optional'].includes(claimChoices[name] ?? 'none'),
+        )
+          ? 'Select at least one requested claim.'
+          : '');
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setBusy('request');
     setError('');
     setNotice('');
@@ -176,6 +190,11 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
 
   const reject = async () => {
     if (!review) return;
+    const invalid = textError(rejectReason, 'Rejection reason', 500);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
     setBusy(`reject:${review.requestId}`);
     setError('');
     try {
@@ -251,8 +270,15 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
                 ))}
             </select>
           </label>
-          <Input label="Reason" value={reason} onChange={setReason} required />
-          <Input label="Response deadline" type="date" value={dueAt} onChange={setDueAt} required />
+          <Input label="Reason" maxLength={500} value={reason} onChange={setReason} required />
+          <Input
+            label="Response deadline"
+            type="date"
+            error={dueAt ? futureDateError(dueAt, 'Response deadline') : undefined}
+            value={dueAt}
+            onChange={setDueAt}
+            required
+          />
           <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
             <legend style={{ color: T.navy, fontWeight: 700 }}>Requested claims</legend>
             <div style={{ fontSize: 12, color: T.text2, marginBottom: 10 }}>
@@ -431,6 +457,7 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
             </Btn>
             <Input
               label="Rejection reason"
+              maxLength={500}
               value={rejectReason}
               onChange={setRejectReason}
               placeholder="Required to reject"
