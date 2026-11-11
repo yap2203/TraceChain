@@ -142,6 +142,24 @@ describe('production transaction workflow', () => {
     },
   );
 
+  it('reports a mined transaction as confirmed when the authoritative refresh is unavailable', async () => {
+    const prepare = vi
+      .fn()
+      .mockResolvedValueOnce({
+        actorWallet: MANUFACTURER,
+        state: 'TRANSACTION_REQUIRED',
+        transaction: TRANSACTION,
+      })
+      .mockRejectedValueOnce(new Error('raw provider internals'));
+
+    await expect(completePreparedWorkflow(prepare)).rejects.toMatchObject({
+      code: 'CONFIRMATION_REFRESH_PENDING',
+      confirmationSucceeded: true,
+      message: expect.stringContaining('blockchain transaction was confirmed'),
+    });
+    expect(prepare).toHaveBeenCalledTimes(2);
+  });
+
   it('passes the real confirmed transfer ID to the existing QR display and blocks duplicate submits', async () => {
     mocks.prepareTransfer
       .mockResolvedValueOnce({

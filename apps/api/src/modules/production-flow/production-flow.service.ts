@@ -71,6 +71,19 @@ interface Dependencies {
   stakeholderDirectory?: StakeholderDirectory;
 }
 
+interface EvidenceRequestPrivatePayload {
+  batchId?: string;
+  challenge?: string;
+  claims?: string[];
+  dueAt?: number;
+  issuedAt?: number;
+  reason?: string;
+  requestId?: string;
+  requester?: string;
+  requiredClaims?: string[];
+  supplier?: string;
+}
+
 export class ProductionFlowService {
   private readonly clock: () => Date;
 
@@ -233,9 +246,9 @@ export class ProductionFlowService {
       !sameAddress(session.address, workflow.supplier)
     )
       throw new ProductionFlowApiError(
-        'EVIDENCE_ACCESS_DENIED',
-        'Only the request participants can access private evidence details.',
-        403,
+        'REQUEST_NOT_FOUND',
+        'The evidence request was not found.',
+        404,
       );
     const chain = await this.requireChainRequest(requestId);
     const request = JSON.parse(
@@ -282,9 +295,9 @@ export class ProductionFlowService {
     const chain = await this.requireChainRequest(requestId);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError(
-        'EVIDENCE_ACCESS_DENIED',
-        'Only the requesting Manufacturer can review this presentation.',
-        403,
+        'REQUEST_NOT_FOUND',
+        'The evidence request was not found.',
+        404,
       );
     if (!workflow.response || chain.status < 2)
       throw new ProductionFlowApiError(
@@ -599,10 +612,7 @@ export class ProductionFlowService {
     return {
       ...this.identityProofSummary(workflow),
       checks: result.checks,
-      credential: this.identityCredentialSummary(
-        result.credential,
-        result.credentialHash,
-      ),
+      credential: this.identityCredentialSummary(result.credential, result.credentialHash),
     };
   }
 
@@ -778,10 +788,13 @@ export class ProductionFlowService {
       );
     }
     if (chain.status === 3) {
-      const accepted = await this.safeGateway(() =>
-        this.dependencies.gateway.getAccepted(workflow.batchId, session.address),
-      );
-      if (!accepted) throw this.recordMismatch('The accepted evidence flag is missing.');
+      const requesterRole = await this.requesterRole(workflow);
+      if (requesterRole === CompanyRole.MANUFACTURER) {
+        const accepted = await this.safeGateway(() =>
+          this.dependencies.gateway.getAccepted(workflow.batchId, session.address),
+        );
+        if (!accepted) throw this.recordMismatch('The accepted evidence flag is missing.');
+      }
       return { actorWallet: session.address, requestId, state: 'COMPLETE' as const, status: 3 };
     }
     if (chain.status !== 2 || chain.presentationExpiresAt <= this.nowSeconds()) {
@@ -1350,7 +1363,18 @@ export class ProductionFlowService {
     supplier: string,
     dueAt: number,
   ) {
-    const challenge = randomBytes(32).toString('base64url');
+    const requestId = id(`${input.operationId}:${session.address}`);
+    const issuedAt = this.nowSeconds();
+    const challenge = `${randomBytes(32).toString('base64url')}.${evidenceRequestBindingHash({
+      batchId: input.batchId,
+      dueAt,
+      issuedAt,
+      purpose: input.reason,
+      requestId,
+      requesterWallet: session.address,
+      supplierWallet: supplier,
+      verifierWallet: session.address,
+    })}`;
     const challengeHash = id(challenge);
     const claims = [...new Set(input.claims)].sort();
     const requiredClaims = [...new Set(input.requiredClaims)].sort();
@@ -1361,7 +1385,6 @@ export class ProductionFlowService {
         400,
       );
     const claimsHash = sha256(canonical({ claims, requiredClaims }));
-    const requestId = id(`${input.operationId}:${session.address}`);
     const stored = await this.store(
       canonical({
         batchId: input.batchId,
@@ -1369,8 +1392,10 @@ export class ProductionFlowService {
         claims,
         requiredClaims,
         dueAt,
+        issuedAt,
         productBatchId: input.productBatchId,
         reason: input.reason,
+        requestId,
         requester: session.address,
         requesterRole: session.onChainAuthorization?.role,
         supplier,
@@ -1412,9 +1437,10 @@ export class ProductionFlowService {
     ) as { credential?: unknown; sdJwt?: string };
     const request = JSON.parse(
       await this.dependencies.contentStore.decrypt(workflow.requestPayload),
-    ) as { challenge?: string; claims?: string[]; requiredClaims?: string[]; reason?: string };
+    ) as EvidenceRequestPrivatePayload;
     if (!request.challenge || id(request.challenge) !== workflow.challengeHash)
       throw this.recordMismatch('Evidence challenge mismatch.');
+    this.assertEvidenceRequestBinding(workflow, request);
     if (ingredient.credentialFormat === 'SD_JWT_VC') {
       if (!holderPresentation || !envelope.sdJwt || !ingredient.holderDid)
         throw new ProductionFlowApiError(
@@ -1476,6 +1502,7 @@ export class ProductionFlowService {
       holderDid: ingredient.issuerDid,
       purpose: request.reason ?? 'Ingredient evidence verification',
       requestId: workflow.requestId,
+      supplierWallet,
       verifier: workflow.requester,
     });
     const checked = await verifyIngredientEvidencePresentation(agent, presentation, {
@@ -1520,12 +1547,13 @@ export class ProductionFlowService {
       throw this.recordMismatch('Presentation reference mismatch.');
     const request = JSON.parse(
       await this.dependencies.contentStore.decrypt(workflow.requestPayload),
-    ) as { challenge?: string; reason?: string };
+    ) as EvidenceRequestPrivatePayload;
     const serializedPresentation = await this.dependencies.contentStore.decrypt(
       workflow.response.presentationPayload,
     );
     if (!request.challenge || id(request.challenge) !== chain!.challengeHash)
       throw this.recordMismatch('Presentation challenge mismatch.');
+    this.assertEvidenceRequestBinding(workflow, request);
     const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
     if (!ingredient) throw this.recordMismatch('Ingredient workflow is missing.');
     const agent: TraceChainAgent = await this.dependencies.agentProvider();
@@ -1731,6 +1759,33 @@ export class ProductionFlowService {
       chain.dueAt !== workflow.dueAt
     )
       throw this.recordMismatch('Evidence request record mismatch.');
+  }
+  private assertEvidenceRequestBinding(
+    workflow: EvidenceWorkflowRecord,
+    request: EvidenceRequestPrivatePayload,
+  ) {
+    const challengeParts = request.challenge?.split('.') ?? [];
+    const expectedBinding = evidenceRequestBindingHash({
+      batchId: workflow.batchId,
+      dueAt: workflow.dueAt,
+      issuedAt: request.issuedAt ?? 0,
+      purpose: request.reason ?? '',
+      requestId: workflow.requestId,
+      requesterWallet: workflow.requester,
+      supplierWallet: workflow.supplier,
+      verifierWallet: workflow.requester,
+    });
+    if (
+      challengeParts.length !== 2 ||
+      !challengeParts[0] ||
+      challengeParts[1] !== expectedBinding ||
+      request.batchId?.toLowerCase() !== workflow.batchId.toLowerCase() ||
+      request.requestId?.toLowerCase() !== workflow.requestId.toLowerCase() ||
+      !sameAddress(String(request.requester ?? ''), workflow.requester) ||
+      !sameAddress(String(request.supplier ?? ''), workflow.supplier) ||
+      request.dueAt !== workflow.dueAt
+    )
+      throw this.recordMismatch('Evidence request context binding mismatch.');
   }
   private recordMismatch(message: string) {
     return new ProductionFlowApiError('ON_CHAIN_RECORD_MISMATCH', message, 409);
@@ -1991,6 +2046,18 @@ function sortJson(value: unknown): unknown {
 }
 function sha256(value: string) {
   return `0x${createHash('sha256').update(value, 'utf8').digest('hex')}`;
+}
+function evidenceRequestBindingHash(value: {
+  batchId: string;
+  dueAt: number;
+  issuedAt: number;
+  purpose: string;
+  requestId: string;
+  requesterWallet: string;
+  supplierWallet: string;
+  verifierWallet: string;
+}) {
+  return createHash('sha256').update(canonical(value), 'utf8').digest('base64url');
 }
 function sameAddress(left: string, right: string) {
   try {

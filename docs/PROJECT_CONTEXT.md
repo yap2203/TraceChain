@@ -23,7 +23,7 @@
 - ERC-4361 Sign-In with Ethereum
 - Veramo agent services and stakeholder-specific repositories
 - Company Role Credentials for credential-based RBAC
-- Ingredient Credentials and challenge-bound full-credential presentations; selective disclosure requires a future credential format
+- Ingredient Credentials and request-bound full-credential presentations covering request, batch, parties, purpose, challenge, dates, and exact credential identity; selective disclosure requires a future credential format
 - Solidity smart contracts and a blockchain gateway
 - QR-code generation and scanning
 
@@ -58,6 +58,9 @@
 - Wallet-scoped on-chain credential pages for Supplier, Manufacturer, Distributor, and Retailer, with optional private issuance metadata and no presentation fixtures
 - Readable Company Digital Identity cards backed by the actual encrypted Company Role VC, explicit Veramo/on-chain verification, copyable technical details, and PDF summaries
 - Six-contract Hardhat 3 traceability suite with Ignition deployment and integration tests
+- Administrator transfer that preserves historically valid Company Role Credentials while removing the former administrator's authority
+- Participant-scoped private evidence and receipt retrieval with existence-hiding not-found responses
+- Atomic workflow persistence that fails closed on corruption and confirmed-transaction refresh recovery in the UI
 
 Several non-admin stakeholder screens still use presentation fixtures. Workspace access requires a
 SIWE session and current matching blockchain authorization in every environment; there is no
@@ -69,6 +72,7 @@ Role VC, although issuance and manual verification remain available separately.
 - MetaMask proves control of a wallet; it does not issue Company Role Credentials or Ingredient Credentials.
 - Veramo manages the current DID, credential, and presentation foundation.
 - Login roles come only from current contract authorization. Company Role VCs remain independently verifiable off-chain and their registered type, subject, hash/reference, lifecycle, and expiry constrain on-chain company access.
+- A historical Company Role Credential is not invalidated solely because its issuer is no longer the current administrator; the current credential and stakeholder records remain authoritative.
 - Suppliers issue Ingredient Credentials through their authenticated, permission-checked workflow. Selective disclosure is not implemented by the current JWT credential format.
 - Invalid, expired, suspended, or revoked credentials must never grant access.
 - Routes, wallet addresses, fixture data, and browser storage are not trusted role evidence.
@@ -99,6 +103,8 @@ Role VC, although issuance and manual verification remain available separately.
 - Superseded encrypted receipt drafts remain in prototype storage for audit-safe non-overwrite behavior; retention and cleanup policy requires a future production design
 - Direct contract rejection records only a reason hash, so its encrypted evidence CID remains in the authorized off-chain receipt repository rather than on-chain
 - Remaining non-admin reports still contain presentation fixtures and are not authoritative
+- SIWE nonce and session state is process-local; restarting the API requires users to sign in again
+- Ignored atomic JSON workflow files are restart-recoverable on one host but are not shared, replicated production storage; corruption fails closed and needs operator recovery from a trusted backup
 
 ## Important system qualities
 

@@ -18,6 +18,17 @@ export class ProductionTransactionError extends Error {
   }
 }
 
+export class WorkflowRefreshPendingError extends Error {
+  readonly code = 'CONFIRMATION_REFRESH_PENDING';
+  readonly confirmationSucceeded = true;
+
+  constructor() {
+    super(
+      'The blockchain transaction was confirmed, but TraceChain could not refresh the authoritative record. Use Refresh records; do not submit the transaction again.',
+    );
+  }
+}
+
 export async function submitProductionTransaction(
   transaction: PreparedTransaction,
   actorWallet: string,
@@ -92,10 +103,12 @@ export async function completePreparedWorkflow<
   if (first.state === 'COMPLETE') return first;
   if (!first.transaction) throw new Error('The API did not return the required transaction.');
   await submitProductionTransaction(first.transaction, first.actorWallet);
-  const confirmed = await prepare();
-  if (confirmed.state !== 'COMPLETE')
-    throw new Error(
-      'The transaction was mined, but the authoritative contract record was not found. Refresh and retry.',
-    );
+  let confirmed: T;
+  try {
+    confirmed = await prepare();
+  } catch {
+    throw new WorkflowRefreshPendingError();
+  }
+  if (confirmed.state !== 'COMPLETE') throw new WorkflowRefreshPendingError();
   return confirmed;
 }

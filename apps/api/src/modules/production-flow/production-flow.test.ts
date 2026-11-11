@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { CompanyRole } from '@tracechain/shared';
 import { Interface, id } from 'ethers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -32,9 +37,11 @@ import {
   EthersProductionFlowGateway,
   type ProductionFlowGateway,
 } from './production-flow.gateway.js';
-import type {
-  EvidenceWorkflowRecord,
-  ProductionFlowRepository,
+import {
+  JsonProductionFlowRepository,
+  ProductionFlowPersistenceError,
+  type EvidenceWorkflowRecord,
+  type ProductionFlowRepository,
 } from './production-flow.repository.js';
 import { ProductionFlowService } from './production-flow.service.js';
 
@@ -205,8 +212,19 @@ describe('production flow service', () => {
   it('completes request, response, and acceptance only from the server-held credential and matching presentation', async () => {
     const operationId = '22222222-2222-4222-8222-222222222222';
     const requestId = id(`${operationId}:${MANUFACTURER}`);
-    const challenge = 'server-generated-challenge';
     const ingredientBatchId = id('COCOA-001');
+    const dueAt = Math.floor(new Date('2026-11-10').getTime() / 1000);
+    const issuedAt = Math.floor(NOW.getTime() / 1000);
+    const challenge = boundChallenge({
+      batchId: ingredientBatchId,
+      dueAt,
+      issuedAt,
+      purpose: 'Product traceability',
+      requestId,
+      requesterWallet: MANUFACTURER,
+      supplierWallet: SUPPLIER,
+      verifierWallet: MANUFACTURER,
+    });
     const ingredientRecord = {
       batchId: ingredientBatchId,
       credentialHash: `0x${'aa'.repeat(32)}`,
@@ -225,7 +243,7 @@ describe('production flow service', () => {
       batchId: ingredientBatchId,
       challengeHash: id(challenge),
       claimsHash: `0x${'cc'.repeat(32)}`,
-      dueAt: Math.floor(new Date('2026-11-10').getTime() / 1000),
+      dueAt,
       operationId,
       requestCid: 'bafy-request',
       requestId,
@@ -267,7 +285,20 @@ describe('production flow service', () => {
           credential: { credentialSubject: { batchId: 'COCOA-001' }, id: 'urn:credential:1' },
         }),
       ],
-      ['request', JSON.stringify({ challenge })],
+      [
+        'request',
+        JSON.stringify({
+          batchId: ingredientBatchId,
+          challenge,
+          dueAt,
+          issuedAt,
+          reason: 'Product traceability',
+          requestId,
+          requester: MANUFACTURER,
+          requesterRole: CompanyRole.MANUFACTURER,
+          supplier: SUPPLIER,
+        }),
+      ],
     ]);
     const contentStore = {
       decrypt: async (payload: EncryptedCredentialPayload) =>
@@ -386,6 +417,28 @@ describe('production flow service', () => {
       manufacturerService.prepareEvidenceAcceptance('session', requestId),
     ).rejects.toMatchObject({ code: 'INGREDIENT_CREDENTIAL_INACTIVE', status: 409 });
 
+    for (const invalidCredential of [
+      { status: 3 },
+      { credentialType: 1 },
+      { subject: RETAILER },
+      { issuer: RETAILER },
+      { credentialHash: `0x${'99'.repeat(32)}` },
+      { expiresAt: Math.floor(NOW.getTime() / 1_000) },
+    ]) {
+      vi.mocked(gateway.getCredential).mockResolvedValueOnce({
+        credentialHash: ingredientRecord.credentialHash,
+        credentialType: 2,
+        expiresAt: ingredientRecord.expiresAt,
+        issuer: SUPPLIER,
+        status: 1,
+        subject: SUPPLIER,
+        ...invalidCredential,
+      });
+      await expect(
+        manufacturerService.prepareEvidenceAcceptance('session', requestId),
+      ).rejects.toMatchObject({ code: 'INGREDIENT_CREDENTIAL_INACTIVE', status: 409 });
+    }
+
     vi.mocked(gateway.getAccepted).mockResolvedValue(true);
     vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({
       ...(await gateway.getEvidenceRequest(requestId))!,
@@ -393,6 +446,98 @@ describe('production flow service', () => {
     });
     const complete = await manufacturerService.prepareEvidenceAcceptance('session', requestId);
     expect(complete.state).toBe('COMPLETE');
+  });
+
+  it('treats completed Retailer acceptance as idempotent across an API restart', async () => {
+    const requestId = id('retailer-accepted-request');
+    evidence.set(requestId.toLowerCase(), {
+      batchId: BATCH_ID,
+      challengeHash: id('retailer-challenge'),
+      claimsHash: id('retailer-claims'),
+      dueAt: 1_900_000_000,
+      operationId: '77777777-7777-4777-8777-777777777777',
+      requestCid: 'bafy-retailer-request',
+      requestId,
+      requestPayload: PAYLOAD,
+      requester: RETAILER,
+      supplier: SUPPLIER,
+    });
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({
+      challengeHash: id('retailer-challenge'),
+      claimsHash: id('retailer-claims'),
+      dueAt: 1_900_000_000,
+      ingredientBatchId: BATCH_ID,
+      presentationCid: 'bafy-retailer-presentation',
+      presentationExpiresAt: 1_900_000_000,
+      presentationHash: id('retailer-presentation'),
+      requestCid: 'bafy-retailer-request',
+      requester: RETAILER,
+      status: 3,
+      supplier: SUPPLIER,
+      updatedAt: 1,
+    });
+    const contentStore = {
+      decrypt: vi.fn().mockResolvedValue(JSON.stringify({ requesterRole: CompanyRole.RETAILER })),
+      encryptAndStore: vi.fn(),
+    };
+    const dependencies = {
+      agentProvider: vi.fn(),
+      authService: retailerAuth(),
+      clock: () => NOW,
+      contentStore,
+      gateway,
+      ingredientRepository: {
+        find: vi.fn(),
+        listForSupplier: vi.fn().mockResolvedValue([]),
+        save: vi.fn(),
+      },
+      repository,
+    };
+
+    await expect(
+      new ProductionFlowService(dependencies).prepareEvidenceAcceptance('session', requestId),
+    ).resolves.toMatchObject({ state: 'COMPLETE', status: 3 });
+    await expect(
+      new ProductionFlowService(dependencies).prepareEvidenceAcceptance('session', requestId),
+    ).resolves.toMatchObject({ state: 'COMPLETE', status: 3 });
+    expect(gateway.getAccepted).not.toHaveBeenCalled();
+    expect(gateway.prepareAccept).not.toHaveBeenCalled();
+  });
+
+  it('conceals private evidence records from unrelated companies', async () => {
+    const requestId = id('private-evidence-request');
+    evidence.set(requestId.toLowerCase(), {
+      batchId: BATCH_ID,
+      challengeHash: id('private-challenge'),
+      claimsHash: id('private-claims'),
+      dueAt: 1_900_000_000,
+      operationId: '88888888-8888-4888-8888-888888888888',
+      requestCid: 'bafy-private-request',
+      requestId,
+      requestPayload: PAYLOAD,
+      requester: MANUFACTURER,
+      supplier: SUPPLIER,
+    });
+    const unrelated = createService(
+      gateway,
+      repository,
+      {
+        requireSession: vi
+          .fn()
+          .mockResolvedValue(
+            session(CompanyRole.MANUFACTURER, '0x7000000000000000000000000000000000000007'),
+          ),
+      } as unknown as AuthService,
+      encryptedWrites,
+    );
+    await expect(unrelated.getEvidenceDetails('session', requestId)).rejects.toMatchObject({
+      code: 'REQUEST_NOT_FOUND',
+      status: 404,
+    });
+    await expect(unrelated.reviewEvidence('session', requestId)).rejects.toMatchObject({
+      code: 'REQUEST_NOT_FOUND',
+      status: 404,
+    });
   });
 
   it('rejects product creation until every ingredient has accepted evidence', async () => {
@@ -620,6 +765,38 @@ describe('production calldata', () => {
     expect(parsed?.args[2]).toBe(DISTRIBUTOR);
     expect(parsed?.args[3]).toBe(25n);
   });
+
+  it('restores persisted workflows after restart and fails closed on corrupted JSON', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tracechain-production-flow-'));
+    const filePath = join(directory, 'workflow.json');
+    const record: EvidenceWorkflowRecord = {
+      batchId: BATCH_ID,
+      challengeHash: id('persisted-challenge'),
+      claimsHash: id('persisted-claims'),
+      dueAt: 1_900_000_000,
+      operationId: '99999999-9999-4999-8999-999999999999',
+      requestCid: 'bafy-persisted-request',
+      requestId: id('persisted-request'),
+      requestPayload: PAYLOAD,
+      requester: MANUFACTURER,
+      supplier: SUPPLIER,
+    };
+    try {
+      await new JsonProductionFlowRepository(filePath).saveEvidence(record);
+      await expect(
+        new JsonProductionFlowRepository(filePath).findEvidence(record.requestId),
+      ).resolves.toEqual(record);
+
+      await writeFile(filePath, '{corrupted-json', 'utf8');
+      const restarted = new JsonProductionFlowRepository(filePath);
+      await expect(restarted.findEvidence(record.requestId)).rejects.toBeInstanceOf(
+        ProductionFlowPersistenceError,
+      );
+      expect(await readFile(filePath, 'utf8')).toBe('{corrupted-json');
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
 });
 
 function createService(
@@ -692,6 +869,11 @@ function distributorAuth() {
     requireSession: vi.fn().mockResolvedValue(session(CompanyRole.DISTRIBUTOR, DISTRIBUTOR)),
   } as unknown as AuthService;
 }
+function retailerAuth() {
+  return {
+    requireSession: vi.fn().mockResolvedValue(session(CompanyRole.RETAILER, RETAILER)),
+  } as unknown as AuthService;
+}
 function retailerDirectory() {
   const identity = {
     active: true as const,
@@ -746,4 +928,20 @@ function distributorTransferInput() {
     recipient: RETAILER,
     shipmentReference: 'DIST-RETAIL-001',
   };
+}
+
+function boundChallenge(context: Record<string, unknown>) {
+  const canonical = JSON.stringify(sortForTest(context));
+  const binding = createHash('sha256').update(canonical, 'utf8').digest('base64url');
+  return `server-generated-challenge.${binding}`;
+}
+
+function sortForTest(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortForTest);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => [key, sortForTest(nested)]),
+  );
 }

@@ -15,7 +15,10 @@ import {
   type RetailerEvidenceOption,
 } from '../../../production-flow/production-flow.api';
 import { sendEvidenceRequestMessage } from '../../../production-flow/evidence-didcomm';
-import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import {
+  completePreparedWorkflow,
+  WorkflowRefreshPendingError,
+} from '../../../production-flow/production-flow.transaction';
 import { CompanyIdentityProofAction } from '../../../production-flow/CompanyIdentityProofAction';
 import {
   Alert,
@@ -67,6 +70,7 @@ export function RetailerEvidenceRequests() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [refreshPending, setRefreshPending] = useState(false);
   const load = async () => {
     const [available, current] = await Promise.all([
       listRetailerEvidenceOptions(),
@@ -107,7 +111,10 @@ export function RetailerEvidenceRequests() {
       setSelected('');
       await load();
     } catch (cause) {
-      setError(message(cause));
+      if (cause instanceof WorkflowRefreshPendingError) {
+        setNotice(cause.message);
+        setRefreshPending(true);
+      } else setError(message(cause));
     } finally {
       setBusy('');
     }
@@ -154,7 +161,11 @@ export function RetailerEvidenceRequests() {
       setReview(undefined);
       await load();
     } catch (cause) {
-      setError(message(cause));
+      if (cause instanceof WorkflowRefreshPendingError) {
+        setNotice(cause.message);
+        setRefreshPending(true);
+        setReview(undefined);
+      } else setError(message(cause));
     } finally {
       setBusy('');
     }
@@ -168,6 +179,25 @@ export function RetailerEvidenceRequests() {
       />
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
+      {refreshPending && (
+        <Btn
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            setBusy('refresh');
+            setError('');
+            void load()
+              .then(() => {
+                setRefreshPending(false);
+                setNotice('The confirmed blockchain record has been refreshed.');
+              })
+              .catch((cause) => setError(message(cause)))
+              .finally(() => setBusy(''));
+          }}
+        >
+          {busy === 'refresh' ? 'Refreshing…' : 'Refresh records'}
+        </Btn>
+      )}
       <Card>
         <div style={{ display: 'grid', gap: 12 }}>
           <label style={{ fontSize: 12, color: T.text2 }}>

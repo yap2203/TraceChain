@@ -307,7 +307,12 @@ export class CustodyTransferService {
     const session = await this.requireAuthorizedSession(sessionId);
     const transferId = this.transferId(parameters);
     const transfer = await this.lookupTransfer(transferId);
-    this.requireParticipantOrAdmin(session.address, session.onChainAuthorization?.role, transfer);
+    this.requireParticipantOrAdmin(
+      session.address,
+      session.onChainAuthorization?.role,
+      transfer,
+      true,
+    );
     const privateDetails = await this.authoritativePrivateDetails(transferId, transfer);
     if (!privateDetails)
       throw new CustodyTransferApiError(
@@ -497,6 +502,7 @@ export class CustodyTransferService {
     sessionAddress: string,
     role: CompanyRole | undefined,
     transfer: CustodyTransferRecord,
+    hidePrivateRecord = false,
   ) {
     if (
       role !== CompanyRole.SYSTEM_ADMIN &&
@@ -504,9 +510,11 @@ export class CustodyTransferService {
       !sameAddress(sessionAddress, transfer.recipient)
     )
       throw new CustodyTransferApiError(
-        'TRANSFER_PARTICIPANT_REQUIRED',
-        'Only transfer participants and the System Admin may access this receipt record.',
-        403,
+        hidePrivateRecord ? 'RECEIPT_EVIDENCE_NOT_FOUND' : 'TRANSFER_PARTICIPANT_REQUIRED',
+        hidePrivateRecord
+          ? 'No encrypted receipt evidence is available.'
+          : 'Only transfer participants and the System Admin may access this receipt record.',
+        hidePrivateRecord ? 404 : 403,
       );
   }
 

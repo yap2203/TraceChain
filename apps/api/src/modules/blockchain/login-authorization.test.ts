@@ -6,6 +6,7 @@ import { GatewayLoginAuthorizationResolver } from './login-authorization.service
 
 const NOW = new Date('2026-11-07T00:00:00.000Z');
 const ADMIN = '0x1000000000000000000000000000000000000001';
+const NEW_ADMIN = '0x9000000000000000000000000000000000000009';
 const WALLET = '0x2000000000000000000000000000000000000002';
 const HASH = `0x${'33'.repeat(32)}`;
 const CREDENTIAL_ID = `0x${'44'.repeat(32)}`;
@@ -105,6 +106,35 @@ describe('direct on-chain login authorization', () => {
       role,
       status: 'AUTHORIZED',
     });
+  });
+
+  it('keeps a valid historical Company Role credential authorized after administrator transfer', async () => {
+    const configured = gateway({
+      getAdministrator: vi.fn(async () => NEW_ADMIN),
+      getEffectiveRole: vi.fn(async () => 2),
+    });
+    const result = await new GatewayLoginAuthorizationResolver(configured, () => NOW).resolve(
+      WALLET,
+    );
+    expect(result).toMatchObject({ role: CompanyRole.SUPPLIER, status: 'AUTHORIZED' });
+    expect(await configured.getCredential(CREDENTIAL_ID)).toMatchObject({ issuer: ADMIN });
+  });
+
+  it('does not authorize the former administrator after transfer', async () => {
+    const configured = gateway({
+      getAdministrator: vi.fn(async () => NEW_ADMIN),
+      getStakeholder: vi.fn(async () => ({
+        credentialCid: '',
+        credentialExpiresAt: 0,
+        credentialHash: `0x${'0'.repeat(64)}`,
+        role: 0,
+        status: 3,
+        updatedAt: 1,
+      })),
+    });
+    await expect(
+      new GatewayLoginAuthorizationResolver(configured, () => NOW).resolve(ADMIN),
+    ).resolves.toMatchObject({ status: 'REVOKED' });
   });
 
   it('reports activation pending when approval exists but credential registration is incomplete', async () => {

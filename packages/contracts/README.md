@@ -216,7 +216,7 @@ Management:
 - Revocation is terminal in the current implementation.
 - Expired credentials fail `isCredentialValid`; `effectiveStatus` reports an expired active credential as `Revoked` without mutating storage.
 
-Company Role Credential validity also requires the subject stakeholder to remain active and its current stakeholder credential hash to equal the credential record hash.
+Company Role Credential validity also requires the subject stakeholder to remain active and its current stakeholder credential hash to equal the credential record hash. A credential validly registered by a previous administrator remains valid after administrator transfer; validity does not require its historical issuer to equal the current administrator. The former administrator is revoked and cannot issue new Company Role Credentials, while the new administrator can issue and manage existing credentials.
 
 ### 4. Stakeholder suspension, revocation, role change, and wallet recovery
 
@@ -280,13 +280,13 @@ Requester: authorized Manufacturer or Retailer. Responder: the selected authoriz
 
 1. Requester creates a unique challenge off-chain.
 2. Requester calls `requestEvidence` with request ID, Supplier, ingredient batch ID, claims hash, challenge hash, encrypted request CID, and future due time.
-3. Supplier builds a selective presentation bound to the challenge.
+3. Supplier builds a full-credential presentation bound to the request context and challenge.
 4. Before the due time, Supplier calls `respond` with presentation hash, encrypted presentation CID, and future expiry.
 5. The challenge is permanently marked consumed.
 6. Requester verifies the presentation off-chain.
 7. Requester calls `accept(requestId, ingredientCredentialId)` while the presentation and credential are valid.
 
-Acceptance records `acceptedForManufacturer[ingredientBatchId][requester] = true`. Either participant may close an open request as Declined, Rejected, or Cancelled.
+Acceptance sets `acceptedForManufacturer[ingredientBatchId][requester] = true` only when the requester is a Manufacturer. Retailer acceptance records the request as `Accepted` without granting product-creation authority. Either participant may close an open request as Declined, Rejected, or Cancelled.
 
 ### 7. Product creation
 
@@ -376,7 +376,7 @@ Review these points before Sepolia deployment:
 
 - **Approval is a two-transaction workflow.** If application approval succeeds but credential registration fails, the stakeholder exists but has no effective role until registration is completed.
 - **Role change and wallet replacement also require subsequent credential registration.** The registry reference alone does not create a CredentialRegistry record.
-- **Evidence acceptance does not prove that the supplied credential ID belongs to the requested ingredient batch or Supplier.** It only checks that the credential is currently valid. Add an explicit batch/credential binding before treating this as production-grade evidence authorization.
+- **Historical Company Role Credentials survive administrator transfer.** Their status, expiry, subject, type, active stakeholder, and matching stakeholder hash remain mandatory; the former administrator cannot issue new credentials.
 - **Product creation loops over caller-provided ingredient arrays without a maximum count.** Transaction gas bounds the call, but an explicit maximum would make behavior predictable.
 - **Evidence, ingredient, product, and transfer records are not enumerable on-chain.** Event indexing is required for complete lists.
 - **No upgrade mechanism exists.** Contracts are immutable deployments; fixes require redeployment and migration unless an upgrade policy is intentionally introduced.

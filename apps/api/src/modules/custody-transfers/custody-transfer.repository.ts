@@ -28,6 +28,14 @@ export interface ReceiptWorkflowRepository {
   save(record: ReceiptWorkflowRecord): Promise<void>;
 }
 
+export class ReceiptWorkflowPersistenceError extends Error {
+  readonly code = 'RECEIPT_PERSISTENCE_UNAVAILABLE';
+
+  constructor() {
+    super('The persisted receipt workflow is unavailable or corrupted.');
+  }
+}
+
 export class JsonReceiptWorkflowRepository implements ReceiptWorkflowRepository {
   private writeQueue = Promise.resolve();
 
@@ -70,7 +78,7 @@ export class JsonReceiptWorkflowRepository implements ReceiptWorkflowRepository 
       );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-      throw error;
+      throw new ReceiptWorkflowPersistenceError();
     }
   }
 }

@@ -17,6 +17,7 @@ import { CustodyTransferService } from './custody-transfer.service.js';
 import {
   InMemoryReceiptWorkflowRepository,
   JsonReceiptWorkflowRepository,
+  ReceiptWorkflowPersistenceError,
 } from './custody-transfer.repository.js';
 import type { CustodyTransferRecord } from './custody-transfer.types.js';
 
@@ -843,6 +844,19 @@ describe('custody-transfer QR resolution API', () => {
     }
   });
 
+  it('fails closed without overwriting a corrupted receipt workflow file', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tracechain-corrupted-receipts-'));
+    const filePath = join(directory, 'custody-receipts.json');
+    try {
+      await writeFile(filePath, '{corrupted-json', 'utf8');
+      const repository = new JsonReceiptWorkflowRepository(filePath);
+      await expect(repository.list()).rejects.toBeInstanceOf(ReceiptWorkflowPersistenceError);
+      expect(await readFile(filePath, 'utf8')).toBe('{corrupted-json');
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it('prepares a complete rejection without recording usable inventory', async () => {
     const response = await request(app)
       .post('/api/custody-transfers/transactions/reject')
@@ -896,9 +910,9 @@ describe('custody-transfer QR resolution API', () => {
     const outsider = await request(app)
       .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
       .set('Cookie', `${COOKIE_NAME}=authorized-outsider`)
-      .expect(403);
+      .expect(404);
 
-    expect(outsider.body.error.code).toBe('TRANSFER_PARTICIPANT_REQUIRED');
+    expect(outsider.body.error.code).toBe('RECEIPT_EVIDENCE_NOT_FOUND');
   });
 
   it('lists real discrepancy records only for an authorized System Admin', async () => {

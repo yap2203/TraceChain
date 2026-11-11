@@ -87,7 +87,6 @@ export class GatewayLoginAuthorizationResolver implements LoginAuthorizationReso
         return { checkedAt, role, status: 'EXPIRED' };
       if (
         credential.credentialType !== 1 ||
-        getAddress(credential.issuer) !== administrator ||
         getAddress(credential.subject) !== address ||
         credential.credentialHash.toLowerCase() !== stakeholder.credentialHash.toLowerCase() ||
         credential.encryptedCid !== stakeholder.credentialCid ||

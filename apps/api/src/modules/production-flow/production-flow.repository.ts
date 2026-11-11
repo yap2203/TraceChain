@@ -68,6 +68,14 @@ export interface ProductionFlowRepository {
   savePrivate(kind: 'products' | 'transfers', record: PrivateWorkflowRecord): Promise<void>;
 }
 
+export class ProductionFlowPersistenceError extends Error {
+  readonly code = 'WORKFLOW_PERSISTENCE_UNAVAILABLE';
+
+  constructor() {
+    super('The persisted production workflow is unavailable or corrupted.');
+  }
+}
+
 export class JsonProductionFlowRepository implements ProductionFlowRepository {
   private writeQueue = Promise.resolve();
 
@@ -123,7 +131,7 @@ export class JsonProductionFlowRepository implements ProductionFlowRepository {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return { evidence: {}, products: {}, transfers: {} };
       }
-      throw error;
+      throw new ProductionFlowPersistenceError();
     }
   }
 }

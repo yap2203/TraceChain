@@ -10,7 +10,7 @@ function asSigner<T extends BaseContract>(contract: T, signer: ContractRunner): 
 
 describe('TraceChain integration', function () {
   async function deployFixture() {
-    const [admin, supplier, manufacturer, distributor, retailer, stranger] =
+    const [admin, supplier, manufacturer, distributor, retailer, stranger, newCompany] =
       await ethers.getSigners();
     const stakeholders = await ethers.deployContract('StakeholderRegistry', [admin.address]);
     const credentials = await ethers.deployContract('CredentialRegistry', [stakeholders]);
@@ -32,6 +32,7 @@ describe('TraceChain integration', function () {
       admin,
       supplier,
       manufacturer,
+      newCompany,
       distributor,
       retailer,
       stranger,
@@ -172,6 +173,58 @@ describe('TraceChain integration', function () {
     );
   });
 
+  it('preserves historical Company Role credentials across administrator transfer', async function () {
+    const system = await networkHelpers.loadFixture(deployFixture);
+    await onboard(system, system.supplier, 2);
+    const existingCredentialId = ethers.id(`company-credential-id:${system.supplier.address}`);
+    const expiry = BigInt((await networkHelpers.time.latest()) + 86_400);
+
+    await system.stakeholders.beginAdministratorTransfer(system.stranger.address);
+    await asSigner(system.stakeholders, system.stranger).acceptAdministratorTransfer();
+
+    expect(await system.credentials.isCredentialValid(existingCredentialId)).to.equal(true);
+    expect(await system.stakeholders.roleOf(system.supplier.address)).to.equal(2n);
+    expect(await system.stakeholders.roleOf(system.admin.address)).to.equal(0n);
+    expect(await system.stakeholders.roleOf(system.stranger.address)).to.equal(1n);
+
+    await expect(
+      system.credentials.registerCredential(
+        ethers.id('former-admin-new-credential'),
+        ethers.id('former-admin-new-hash'),
+        'encrypted-former-admin-cid',
+        system.newCompany.address,
+        1,
+        expiry,
+      ),
+    ).to.be.revertedWithCustomError(system.credentials, 'Unauthorized');
+
+    const newCredentialId = ethers.id('new-admin-company-role-credential');
+    await asSigner(system.credentials, system.stranger).registerCredential(
+      newCredentialId,
+      ethers.id('new-admin-company-role-hash'),
+      'encrypted-new-admin-cid',
+      system.newCompany.address,
+      1,
+      expiry,
+    );
+    expect((await system.credentials.getCredential(newCredentialId)).issuer).to.equal(
+      system.stranger.address,
+    );
+
+    await asSigner(system.credentials, system.stranger).suspendCredential(
+      existingCredentialId,
+      ethers.id('new-admin-review'),
+    );
+    expect(await system.credentials.isCredentialValid(existingCredentialId)).to.equal(false);
+    await asSigner(system.credentials, system.stranger).reactivateCredential(existingCredentialId);
+    expect(await system.credentials.isCredentialValid(existingCredentialId)).to.equal(true);
+    await asSigner(system.credentials, system.stranger).revokeCredential(
+      existingCredentialId,
+      ethers.id('new-admin-revocation'),
+    );
+    expect(await system.credentials.isCredentialValid(existingCredentialId)).to.equal(false);
+  });
+
   it('keeps a product transferable after consuming the final ingredient unit', async function () {
     const system = await networkHelpers.loadFixture(fullyConsumedProductFixture);
 
@@ -297,6 +350,29 @@ describe('TraceChain integration', function () {
     ).to.be.revertedWithCustomError(system.evidence, 'InvalidState');
   });
 
+  it('prevents a consumed presentation challenge from being reused', async function () {
+    const system = await networkHelpers.loadFixture(ingredientFixture);
+    const original = await system.evidence.getRequest(ethers.id('TRACEABILITY-REQUEST'));
+    const requestId = ethers.id('REUSED-CHALLENGE-REQUEST');
+    await asSigner(system.evidence, system.manufacturer).requestEvidence(
+      requestId,
+      system.supplier.address,
+      system.ingredientId,
+      ethers.id('second-claims'),
+      original.challengeHash,
+      'encrypted-second-request-cid',
+      system.now + 3_600,
+    );
+    await expect(
+      asSigner(system.evidence, system.supplier).respond(
+        requestId,
+        ethers.id('reused-presentation'),
+        'encrypted-reused-presentation-cid',
+        system.now + 1_800,
+      ),
+    ).to.be.revertedWithCustomError(system.evidence, 'InvalidState');
+  });
+
   it('records Retailer evidence satisfaction without granting Manufacturer consumption rights', async function () {
     const system = await networkHelpers.loadFixture(ingredientFixture);
     await onboard(system, system.retailer, 5);
@@ -324,6 +400,9 @@ describe('TraceChain integration', function () {
       await system.evidence.acceptedForManufacturer(system.ingredientId, system.retailer),
     ).to.equal(false);
     expect((await system.evidence.getRequest(requestId)).status).to.equal(3n);
+    await expect(
+      asSigner(system.evidence, system.retailer).accept(requestId, system.ingredientCredentialId),
+    ).to.be.revertedWithCustomError(system.evidence, 'InvalidState');
   });
 
   it('reserves split inventory and settles receipt quantities exactly once', async function () {

@@ -147,14 +147,15 @@ contract CredentialRegistry is ICredentialRegistry {
         CredentialRecord storage record = credentials[credentialId];
         if (
             record.status != CredentialStatus.Active ||
-            record.expiresAt <= block.timestamp ||
-            !stakeholderRegistry.isActive(record.issuer)
+            record.expiresAt <= block.timestamp
         ) return false;
         if (record.credentialType == CredentialType.CompanyRole)
             return
                 stakeholderRegistry.isActive(record.subject) &&
                 stakeholderRegistry.credentialHashOf(record.subject) == record.credentialHash;
-        return stakeholderRegistry.isAuthorized(record.issuer, 2);
+        return
+            stakeholderRegistry.isActive(record.issuer) &&
+            stakeholderRegistry.isAuthorized(record.issuer, 2);
     }
     function effectiveStatus(bytes32 credentialId) external view returns (CredentialStatus) {
         CredentialRecord storage record = credentials[credentialId];

@@ -21,9 +21,11 @@ verification/decision operations:
 - `POST /api/production-flow/evidence-requests/:requestId/accept/prepare`
 - `POST /api/production-flow/evidence-requests/:requestId/close/prepare`
 
-Private details are restricted to the exact Supplier and Manufacturer wallets recorded for the
-request. The authenticated API returns the existing backend-signed VP so the Supplier browser can
-encrypt it for the verified DIDComm recipient; plaintext is not written to relay logs or URLs.
+Private details are restricted to the exact Supplier and requesting Manufacturer or Retailer wallets
+recorded for the request. Unrelated callers receive not found so the endpoint does not disclose that
+a private record exists. The authenticated API returns the existing backend-signed VP so the Supplier
+browser can encrypt it for the verified DIDComm recipient; plaintext is not written to relay logs or
+URLs.
 
 The Express API defaults to `http://localhost:3000`. It accepts credentialed browser requests only from the configured `FRONTEND_URL` origin. All authentication responses set `Cache-Control: no-store`, and authentication request bodies are limited to 10 KB.
 
@@ -190,8 +192,8 @@ The following endpoints require a SIWE session and a fresh matching on-chain rol
 - `GET /api/production-flow/ingredients` lists active Supplier ingredient batches for a Manufacturer and marks batches already accepted for that Manufacturer.
 - `POST /api/production-flow/evidence-requests/prepare` creates or resumes an encrypted, random-challenge evidence request and returns unsigned `EvidenceRegistry.requestEvidence` calldata until the exact contract record exists.
 - `GET /api/production-flow/evidence-requests` returns authoritative request state scoped to the authenticated Manufacturer or intended Supplier.
-- `POST /api/production-flow/evidence-requests/:requestId/respond/prepare` retrieves the intended Supplier's server-authorized issued Ingredient Credential, creates and verifies a challenge-bound VP containing the complete credential, encrypts it, and returns unsigned `respond` calldata.
-- `POST /api/production-flow/evidence-requests/:requestId/accept/prepare` decrypts and cryptographically verifies the stored VP, challenge, Supplier issuer, batch, credential ID/hash, dates, current credential state, and Supplier role before returning unsigned `accept` calldata.
+- `POST /api/production-flow/evidence-requests/:requestId/respond/prepare` retrieves the intended Supplier's server-authorized issued Ingredient Credential, creates and verifies a request-bound VP containing the complete credential, encrypts it, and returns unsigned `respond` calldata.
+- `POST /api/production-flow/evidence-requests/:requestId/accept/prepare` decrypts and cryptographically verifies the stored VP, signed request/party/purpose/challenge/date context, Supplier issuer, exact registered batch credential ID/hash, current credential state, and Supplier role before returning unsigned `accept` calldata. A completed Retailer acceptance is idempotently detected through the request's `Accepted` status and never relies on or sets the Manufacturer-only product-creation flag.
 - `POST /api/production-flow/products/prepare` requires accepted evidence and sufficient available quantity for every ingredient, encrypts private product metadata, and returns unsigned `ProductRegistry.createProduct` calldata.
 - `GET /api/production-flow/distributors` lists currently authorized Distributor wallets discovered from registry events and refreshed through `roleOf`.
 - `POST /api/production-flow/transfers/prepare` validates the Manufacturer, product transferability, inventory, intended Distributor, quantity, and arrival date before returning unsigned `CustodyTransfer.createTransfer` calldata. Completion is reported only after `getTransfer` matches and reports `AwaitingReceipt`.
@@ -199,7 +201,7 @@ The following endpoints require a SIWE session and a fresh matching on-chain rol
 - `GET /api/production-flow/retailers` returns active verified Retailer identities as company name, role, and wallet address; the wallet remains the transaction recipient.
 - `POST /api/production-flow/distributor/transfers/prepare` rechecks Distributor authorization, product transferability, inventory, Retailer role and permission, encrypts shipment details, and returns idempotent unsigned `CustodyTransfer.createTransfer` calldata. A retry reports completion only after the on-chain record matches and is `AwaitingReceipt`.
 
-Workflow retries reuse ignored metadata under `.tracechain/issuance/production-flow.json` and reject changed inputs. Complete credentials, VPs, private metadata, encryption keys, and pinning credentials are never returned to the browser. The current JWT VP contains the complete Ingredient Credential; selective disclosure is not supported or claimed.
+Workflow retries reuse ignored metadata under `.tracechain/issuance/production-flow.json` and reject changed inputs. The repository uses atomic replacement, preserves records across API restarts, and fails closed without overwriting a malformed file. Complete credentials, VPs, private metadata, encryption keys, and pinning credentials are never returned to the browser. The current JWT VP contains the complete Ingredient Credential; selective disclosure is not supported or claimed.
 
 ### `POST /api/custody-transfers/resolve-qr`
 
@@ -277,7 +279,7 @@ and releases reserved sender inventory according to the contract.
 ### `GET /api/custody-transfers/:transferId/evidence`
 
 Requires current authorization and restricts access to the transfer sender, recipient, or System
-Admin. It decrypts only the workflow record matching the authoritative on-chain receipt hash/CID,
+Admin. Unrelated callers receive not found. It decrypts only the workflow record matching the authoritative on-chain receipt hash/CID,
 discrepancy hash/CID, or rejection reason hash. It never returns a superseded draft, an encryption
 key, or plaintext content to public product traceability.
 
