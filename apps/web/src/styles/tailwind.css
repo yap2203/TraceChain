@@ -1,0 +1,31 @@
+/* Keep TraceChain's existing reset. Preflight would alter native controls and headings. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+@source '../';
+
+/* Inline aliases resolve at the element, including inside light-theme workspaces. */
+@theme inline {
+  --font-ui: 'Inter', system-ui, sans-serif;
+  --font-code: 'JetBrains Mono', monospace;
+  --color-ui-background: var(--color-background);
+  --color-ui-surface: var(--color-surface);
+  --color-ui-text: var(--color-text);
+  --color-ui-muted: var(--color-text-muted);
+  --color-ui-primary: var(--color-primary);
+  --color-ui-border: var(--color-border);
+  --color-ws-navy: var(--c-navy);
+  --color-ws-bg: var(--c-bg);
+  --color-ws-surface: var(--c-surface);
+  --color-ws-surface2: var(--c-surface2);
+  --color-ws-text: var(--c-text);
+  --color-ws-text2: var(--c-text2);
+  --color-ws-text3: var(--c-text3);
+  --color-ws-teal: var(--c-teal);
+  --color-ws-on-accent: var(--c-on-accent);
+  --color-ws-border: var(--c-border);
+  --color-ws-border2: var(--c-border2);
+  --color-ws-red: var(--c-red);
+  --color-ws-green: var(--c-green);
+  --color-ws-amber: var(--c-amber);
+}

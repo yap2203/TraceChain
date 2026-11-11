@@ -17,6 +17,7 @@
 ## Confirmed target architecture
 
 - React and Vite web application
+- Tailwind CSS 4 with the existing TraceChain design tokens, layouts and dark/light workspace themes
 - Node.js and Express application server
 - MetaMask wallet authentication and transaction signing
 - Ethereum Sepolia test network

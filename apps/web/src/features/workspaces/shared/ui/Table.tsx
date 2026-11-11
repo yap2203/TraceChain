@@ -1,27 +1,16 @@
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { type ReactNode } from 'react';
-import { T, UI, MONO } from './tokens';
 
 export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
   return (
     <PaginatedTable>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <table className="w-full border-collapse">
         <thead>
-          <tr style={{ background: T.surface2 }}>
+          <tr className="bg-ws-surface2">
             {headers.map((h) => (
               <th
                 key={h}
-                style={{
-                  padding: '10px 16px',
-                  textAlign: 'left',
-                  fontSize: 11,
-                  color: T.text2,
-                  fontWeight: 600,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                  borderBottom: `1px solid ${T.border}`,
-                }}
+                className="px-[16px] py-[10px] text-left text-[11px] text-ws-text2 font-semibold tracking-[0.05em] uppercase whitespace-nowrap border-b [border-bottom-style:solid] border-ws-border"
               >
                 {h}
               </th>
@@ -45,13 +34,7 @@ export function TR({ children, onClick }: { children: ReactNode; onClick?: () =>
           onClick?.();
         }
       }}
-      style={{
-        borderBottom: `1px solid ${T.border}`,
-        cursor: onClick ? 'pointer' : undefined,
-        transition: 'background 0.12s',
-      }}
-      onMouseEnter={(e) => onClick && (e.currentTarget.style.background = T.surface2)}
-      onMouseLeave={(e) => onClick && (e.currentTarget.style.background = 'transparent')}
+      className={`border-b [border-bottom-style:solid] border-ws-border transition-[background] duration-[120ms] ease-[ease] ${onClick ? 'cursor-pointer hover:bg-ws-surface2' : ''}`}
     >
       {children}
     </tr>
@@ -71,13 +54,7 @@ export function TD({
 }) {
   return (
     <td
-      style={{
-        padding: '12px 16px',
-        fontSize: 13,
-        fontFamily: mono ? MONO : UI,
-        color: muted ? T.text2 : T.text,
-        fontWeight: bold ? 600 : 400,
-      }}
+      className={`px-[16px] py-[12px] text-[13px] ${mono ? 'font-code' : 'font-ui'} ${muted ? 'text-ws-text2' : 'text-ws-text'} ${bold ? 'font-semibold' : 'font-normal'}`}
     >
       {children}
     </td>

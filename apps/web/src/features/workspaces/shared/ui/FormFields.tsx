@@ -1,26 +1,7 @@
-import {
-  useId,
-  useState,
-  type InputHTMLAttributes,
-  type ReactNode,
-  type CSSProperties,
-} from 'react';
-import { T, UI, MONO } from './tokens';
+import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 
-export const inputBase: CSSProperties = {
-  minWidth: 0,
-  maxWidth: '100%',
-  width: '100%',
-  background: T.surface,
-  border: `1px solid ${T.border2}`,
-  borderRadius: 8,
-  padding: '9px 12px',
-  fontSize: 13,
-  color: T.text,
-  outline: 'none',
-  fontFamily: UI,
-  transition: 'border-color 0.15s',
-};
+const inputClasses =
+  'min-w-0 max-w-full w-full bg-ws-surface border border-solid border-ws-border2 rounded-[8px] px-[12px] py-[9px] text-[13px] text-ws-text outline-none transition-[border-color] duration-150 ease-[ease]';
 
 export function FormField({
   label,
@@ -38,23 +19,11 @@ export function FormField({
   descriptionId?: string;
 }) {
   return (
-    <div
-      className="workspace-form-field"
-      style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}
-    >
-      <label
-        style={{
-          display: 'grid',
-          gap: 5,
-          fontSize: 12,
-          fontWeight: 600,
-          color: T.text2,
-          minWidth: 0,
-        }}
-      >
+    <div className="workspace-form-field flex flex-col gap-[5px] min-w-0">
+      <label className="grid gap-[5px] text-[12px] font-semibold text-ws-text2 min-w-0">
         <span>
           {label}
-          {required && <span style={{ color: T.red, marginLeft: 2 }}> *</span>}
+          {required && <span className="text-ws-red ml-[2px]"> *</span>}
         </span>
         {children}
       </label>
@@ -62,7 +31,7 @@ export function FormField({
         <div
           id={descriptionId}
           role={error ? 'alert' : undefined}
-          style={{ fontSize: 11, color: error ? T.red : T.text3 }}
+          className={`text-[11px] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
         >
           {error || hint}
         </div>
@@ -120,19 +89,11 @@ export function Input({
       error={error || validationMessage}
       descriptionId={descriptionId}
     >
-      <span style={{ position: 'relative', display: 'block', minWidth: 0 }}>
+      <span className="relative block min-w-0">
         {icon && (
           <span
             aria-hidden="true"
-            style={{
-              position: 'absolute',
-              left: 12,
-              top: '50%',
-              transform: 'translateY(-50%)',
-              display: 'inline-flex',
-              color: T.text3,
-              pointerEvents: 'none',
-            }}
+            className="absolute left-[12px] top-1/2 -translate-y-1/2 inline-flex text-ws-text3 pointer-events-none"
           >
             {icon}
           </span>
@@ -152,7 +113,7 @@ export function Input({
           }}
           onBlur={(e) => check(e.currentTarget)}
           onInvalid={(e) => check(e.currentTarget)}
-          style={{ ...inputBase, paddingLeft: icon ? 38 : undefined, fontFamily: mono ? MONO : UI }}
+          className={`${inputClasses} ${icon ? 'pl-[38px]' : '[padding-left:revert]'} ${mono ? 'font-code' : 'font-ui'}`}
         />
       </span>
     </FormField>
@@ -199,7 +160,7 @@ export function Textarea({
         }}
         placeholder={placeholder}
         rows={rows}
-        style={{ ...inputBase, resize: 'vertical' }}
+        className={`${inputClasses} font-ui resize-y`}
       />
     </FormField>
   );
@@ -235,7 +196,7 @@ export function SelectField({
           onChange(e.target.value);
         }}
         onBlur={(e) => setMessage(e.currentTarget.validationMessage)}
-        style={{ ...inputBase, cursor: 'pointer' }}
+        className={`${inputClasses} font-ui cursor-pointer`}
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

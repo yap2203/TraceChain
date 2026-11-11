@@ -38,23 +38,22 @@ export function Alert({
   const Icon = s.icon;
   return (
     <div
+      className="rounded-[8px] px-[14px] py-[10px] flex gap-[10px] items-start"
       style={{
         background: s.bg,
         border: `1px solid ${s.border}`,
-        borderRadius: 8,
-        padding: '10px 14px',
-        display: 'flex',
-        gap: 10,
-        alignItems: 'flex-start',
       }}
     >
       <Icon
         aria-hidden="true"
         size={17}
         strokeWidth={1.8}
-        style={{ color: s.color, flexShrink: 0, marginTop: 1 }}
+        className="shrink-0 mt-[1px]"
+        style={{ color: s.color }}
       />
-      <span style={{ fontSize: 13, color: s.color }}>{message}</span>
+      <span className="text-[13px]" style={{ color: s.color }}>
+        {message}
+      </span>
     </div>
   );
 }

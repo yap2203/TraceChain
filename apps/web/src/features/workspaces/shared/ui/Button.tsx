@@ -1,9 +1,22 @@
 import { type ReactNode, type CSSProperties, type MouseEventHandler } from 'react';
-import { T, UI } from './tokens';
 
 export type BtnVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
 
 export type BtnSize = 'xs' | 'sm' | 'md' | 'lg';
+
+const variants: Record<BtnVariant, string> = {
+  primary: 'bg-ws-teal text-ws-on-accent border-ws-teal',
+  secondary: 'bg-ws-surface text-ws-teal border-ws-teal',
+  outline: 'bg-transparent text-ws-text2 border-ws-border2',
+  ghost: 'bg-transparent text-ws-text2 border-transparent',
+  danger: 'bg-ws-red text-white border-ws-red',
+};
+const sizes: Record<BtnSize, string> = {
+  xs: 'px-[10px] py-[4px] text-[11px] rounded-[6px]',
+  sm: 'px-[14px] py-[6px] text-[12px] rounded-[7px]',
+  md: 'px-[18px] py-[9px] text-[13px] rounded-[8px]',
+  lg: 'px-[24px] py-[12px] text-[14px] rounded-[9px]',
+};
 
 export function Btn({
   children,
@@ -28,19 +41,6 @@ export function Btn({
   type?: 'button' | 'submit';
   'aria-current'?: 'page';
 }) {
-  const V: Record<BtnVariant, CSSProperties> = {
-    primary: { background: T.teal, color: 'var(--c-on-accent)', border: `1px solid ${T.teal}` },
-    secondary: { background: T.surface, color: T.teal, border: `1px solid ${T.teal}` },
-    outline: { background: 'transparent', color: T.text2, border: `1px solid ${T.border2}` },
-    ghost: { background: 'transparent', color: T.text2, border: '1px solid transparent' },
-    danger: { background: T.red, color: '#fff', border: `1px solid ${T.red}` },
-  };
-  const SZ: Record<BtnSize, CSSProperties> = {
-    xs: { padding: '4px 10px', fontSize: 11, borderRadius: 6 },
-    sm: { padding: '6px 14px', fontSize: 12, borderRadius: 7 },
-    md: { padding: '9px 18px', fontSize: 13, borderRadius: 8 },
-    lg: { padding: '12px 24px', fontSize: 14, borderRadius: 9 },
-  };
   return (
     <button
       type={type}
@@ -48,40 +48,11 @@ export function Btn({
       onClick={onClick}
       disabled={disabled || (!onClick && type !== 'submit')}
       title={!onClick && type !== 'submit' ? 'This action is not available yet' : undefined}
-      style={{
-        display: 'inline-flex',
-        flexDirection: 'row',
-        flexWrap: 'nowrap',
-        alignItems: 'center',
-        gap: 6,
-        fontWeight: 600,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-        transition: 'all 0.15s',
-        fontFamily: UI,
-        width: full ? '100%' : undefined,
-        minWidth: 0,
-        maxWidth: '100%',
-        justifyContent: 'center',
-        ...V[variant],
-        ...SZ[size],
-        ...sx,
-      }}
+      className={`inline-flex flex-row flex-nowrap items-center justify-center gap-[6px] font-semibold font-ui min-w-0 max-w-full border border-solid transition-all duration-150 ease-[ease] ${variants[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer opacity-100'}`}
+      style={sx}
     >
-      {icon && (
-        <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-      )}
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 6,
-          minWidth: 0,
-        }}
-      >
-        {children}
-      </span>
+      {icon && <span className="inline-flex items-center shrink-0">{icon}</span>}
+      <span className="inline-flex items-center justify-center gap-[6px] min-w-0">{children}</span>
     </button>
   );
 }

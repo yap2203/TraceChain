@@ -1,5 +1,22 @@
 # TraceChain
 
+The web application uses **Tailwind CSS 4** through the official Vite plugin, preserving the
+existing TraceChain navy/teal theme, typography, page layouts and dark/light workspace themes.
+Run `npm install` at the repository root after updating dependencies, then `npm run dev` as usual.
+
+Styling starts in `apps/web/src/styles/tailwind.css`, imported by `main.tsx`. Its inline theme
+aliases expose existing tokens as utilities such as `bg-ws-surface`, `text-ws-teal`, `font-ui`
+and `font-code`. Shared buttons, cards, form controls, tables, badges and alerts use utilities.
+Existing page selectors use Tailwind `@apply` in the `components` layer; each stylesheet imports
+the theme with `@reference`. Keep utility class names complete in variant maps so Tailwind can
+discover them. Add new source styles under `apps/web/src`.
+
+Preflight is deliberately omitted to preserve the existing reset and native control appearance
+([Tailwind's documented selective imports](https://tailwindcss.com/docs/preflight)). Theme variables,
+specialized effects, animations, print styles and runtime/data-dependent inline styles remain
+where needed. Existing media/container breakpoints are retained. To validate styling changes,
+run `npm run test:frontend`, `npm run typecheck` and `npm run build --workspace @tracechain/web`.
+
 Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid), **My orders**
 (incoming Manufacturer requests in a table), and **Information requests** (separate Received and
 Sent evidence tables). There is no Supplier Browse tab. Ingredients support create/read,

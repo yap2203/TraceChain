@@ -1,5 +1,4 @@
 import { type ReactNode } from 'react';
-import { T } from './tokens';
 
 export function SectionTitle({
   title,
@@ -11,20 +10,10 @@ export function SectionTitle({
   action?: ReactNode;
 }) {
   return (
-    <div
-      className="workspace-section-title"
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        flexWrap: 'wrap',
-        gap: 12,
-        marginBottom: 20,
-      }}
-    >
+    <div className="workspace-section-title flex justify-between items-start flex-wrap gap-[12px] mb-[20px]">
       <div>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>{title}</h2>
-        {sub && <div style={{ fontSize: 13, color: T.text2, marginTop: 3 }}>{sub}</div>}
+        <h2 className="text-[18px] font-bold text-ws-navy m-0">{title}</h2>
+        {sub && <div className="text-[13px] text-ws-text2 mt-[3px]">{sub}</div>}
       </div>
       {action && <div>{action}</div>}
     </div>

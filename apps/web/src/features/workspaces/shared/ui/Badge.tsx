@@ -47,28 +47,16 @@ export function Badge({
   size?: 'xs' | 'sm';
 }) {
   const s = BADGE[variant] ?? BADGE.default;
-  const pad = size === 'xs' ? '1px 6px' : '3px 10px';
-  const fs = size === 'xs' ? 10 : 11;
   return (
     <span
+      className={`inline-flex items-center gap-[5px] rounded-[20px] font-semibold tracking-[0.03em] whitespace-nowrap ${size === 'xs' ? 'px-[6px] py-[1px] text-[10px]' : 'px-[10px] py-[3px] text-[11px]'}`}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 5,
         background: s.bg,
         color: s.color,
         border: `1px solid color-mix(in srgb, ${s.dot} 19%, transparent)`,
-        borderRadius: 20,
-        padding: pad,
-        fontSize: fs,
-        fontWeight: 600,
-        letterSpacing: '0.03em',
-        whiteSpace: 'nowrap',
       }}
     >
-      <span
-        style={{ width: 5, height: 5, borderRadius: '50%', background: s.dot, flexShrink: 0 }}
-      />
+      <span className="w-[5px] h-[5px] rounded-full shrink-0" style={{ background: s.dot }} />
       {label}
     </span>
   );

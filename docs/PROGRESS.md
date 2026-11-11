@@ -1,5 +1,12 @@
 # Project Progress
 
+## 2026-11-12 — Tailwind styling migration
+
+- Added Tailwind CSS and its official Vite plugin (tested with 4.3.5). Centralized utility generation and inline aliases for the existing public/workspace color and font tokens in `apps/web/src/styles/tailwind.css`. Kept the current reset instead of Preflight.
+- Migrated 1,560 layout/spacing/typography declarations across all seven existing frontend stylesheets to Tailwind `@apply` within the components layer. Retained existing selectors and media/container breakpoints, theme variables, effects, animations, print rules and specialized CSS. Shared buttons, cards, form controls, tables, section headings, badges and alerts now use utility classes; runtime colors and caller style overrides remain supported.
+- Preserved the current page designs and behavior. An ignored isolated headless-browser harness compared the previous source with migrated shared controls in both workspace themes and login/registration screens at 375, 1024 and 1440 pixels. Those sampled element dimensions, positions, colors, font sizes and padding matched, with no viewport overflow. This is representative coverage, not an assertion that every page/state received manual visual review.
+- Validation: 116 frontend tests passed, repository-wide type checks passed, and the frontend production build passed. Existing large-bundle and apg-js directive warnings remain. No environment, credential, contract, authentication or deployment changes were needed.
+
 ## 2026-11-12 — Temporary local Manufacturer and Supplier accounts
 
 - Registered the user-requested 0x70997970C51812dc3A010C7d01b50e0d17dc79C8 as Manufacturer and 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC as Supplier on local chain 31337, with temporary synthetic test-company identities expiring in approximately 30 days.

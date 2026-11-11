@@ -1,5 +1,4 @@
 import { type ReactNode, type CSSProperties } from 'react';
-import { T } from './tokens';
 
 export function Card({
   children,
@@ -14,18 +13,11 @@ export function Card({
 }) {
   return (
     <div
-      className="workspace-card"
+      className={`workspace-card bg-ws-surface border border-solid border-ws-border rounded-[12px] shadow-[0_1px_4px_rgba(0,0,0,0.35)] min-w-0 max-w-full ${onClick ? 'cursor-pointer' : ''}`}
       onClick={onClick}
       style={{
-        background: T.surface,
-        border: `1px solid ${T.border}`,
-        borderRadius: 12,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.35)',
         padding,
-        minWidth: 0,
-        maxWidth: '100%',
         ...sx,
-        cursor: onClick ? 'pointer' : undefined,
       }}
     >
       {children}
