@@ -9,6 +9,7 @@ import {
   evidencePresentationSchema,
   evidenceRequestSchema,
   productRequestSchema,
+  productionIngredientsQuerySchema,
   requestIdSchema,
   transferRequestSchema,
 } from './production-flow.schema.js';
@@ -20,7 +21,10 @@ export class ProductionFlowController {
     private readonly sessionCookieName: string,
   ) {}
 
-  listIngredients = this.action((request) => this.service.listIngredients(this.session(request)));
+  listIngredients = this.action((request) => {
+    const query = productionIngredientsQuerySchema.parse(request.query);
+    return this.service.listIngredients(this.session(request), query.location, query.purpose);
+  });
   listEvidence = this.action((request) => this.service.listEvidence(this.session(request)));
   listRetailerEvidenceOptions = this.action((request) =>
     this.service.listRetailerEvidenceOptions(this.session(request)),

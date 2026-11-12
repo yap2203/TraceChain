@@ -435,7 +435,9 @@ export function createApp({
           return undefined;
         return { requester: order.buyer, supplier: order.seller, order: true };
       }
-      return record ? { requester: record.requester, supplier: record.supplier } : undefined;
+      return record
+        ? resolvedProductionFlowService.resolveEvidenceMessagingParticipants(reference)
+        : undefined;
     },
   );
   const productTraceabilityController = new ProductTraceabilityController(
@@ -831,6 +833,7 @@ function createDefaultProductionFlowService(
     return gateway;
   };
   const lazyGateway: ProductionFlowGateway = {
+    supportsOptionalProductionEvidence: () => resolveGateway().supportsOptionalProductionEvidence!(),
     getProductionRecord: (batchId) => resolveGateway().getProductionRecord!(batchId),
     listProposedProductBatchIds: (wallet) => resolveGateway().listProposedProductBatchIds!(wallet),
     getReceivedAvailable: (...input) => resolveGateway().getReceivedAvailable!(...input),

@@ -10,6 +10,16 @@ export const orderActionSchema = z.discriminatedUnion('action', [
   z
     .object({
       ...base,
+      action: z.literal('approved-receipt'),
+      orderId: hash,
+      quantity,
+      location: hash,
+      occurredAt: time,
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
       action: z.literal('ingredient-update'),
       batchId: hash,
       expectedHash: hash,

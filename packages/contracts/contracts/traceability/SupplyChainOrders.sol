@@ -14,6 +14,25 @@ contract SupplyChainOrders {
     function registeredRequestPolicy() external pure returns (uint8) { return 1; }
     function requestOnlyPolicy() external pure returns (uint8) { return 1; }
     function supplierManagementPolicy() external pure returns (uint8) { return 1; }
+    function approvedReceiptPolicy() external pure returns (uint8) { return 1; }
+    mapping(bytes32 => bytes32) public requestedBatch;
+    mapping(bytes32 => uint256) public approvedReceivedQuantity;
+    mapping(bytes32 => bool) public approvedReceiptUsed;
+    event ApprovedIngredientReceived(bytes32 indexed receiptId, bytes32 indexed orderId, bytes32 indexed batchId, address manufacturer, bytes32 location, uint256 quantity, uint64 occurredAt, uint64 recordedAt);
+    function confirmApprovedIngredientReceipt(bytes32 receiptId, bytes32 orderId, uint256 quantity, bytes32 location, uint64 occurredAt) external {
+        Order storage order = orders[orderId];
+        if (order.buyer != msg.sender || !stakeholders.isAuthorized(msg.sender, 3)) revert Unauthorized();
+        bytes32 batchId = requestedBatch[orderId];
+        if (!requestOnly[orderId] || requestDecision[orderId].status != 1 || order.status != 1 || order.expiresAt <= block.timestamp || items[order.itemId].kind != 1 || batchId == bytes32(0)) revert InvalidState();
+        if (receiptId == bytes32(0) || approvedReceiptUsed[receiptId] || quantity == 0 || quantity > order.requested - approvedReceivedQuantity[orderId] || locationOwner[location] != msg.sender || occurredAt < requestDecision[orderId].recordedAt || occurredAt > block.timestamp) revert InvalidInput();
+        if (ingredients.getBatch(batchId).supplier != order.seller) revert InvalidState();
+        approvedReceiptUsed[receiptId] = true;
+        approvedReceivedQuantity[orderId] += quantity;
+        ingredients.reserveSupply(batchId, quantity, false);
+        ingredients.receiveSupply(batchId, msg.sender, location, quantity, 0, 0, 0);
+        if (approvedReceivedQuantity[orderId] == order.requested) { order.status = 3; emit OrderChanged(orderId, 3); }
+        emit ApprovedIngredientReceived(receiptId, orderId, batchId, msg.sender, location, quantity, occurredAt, uint64(block.timestamp));
+    }
     struct Decision { uint8 status; bytes32 detailsHash; string encryptedCid; uint64 recordedAt; }
     mapping(bytes32 => Decision) public requestDecision;
     event RequestDecided(bytes32 indexed requestId, uint8 status, bytes32 detailsHash, string encryptedCid);
@@ -116,6 +135,7 @@ contract SupplyChainOrders {
         bytes32 itemId = _registeredItem(kind, batchId);
         _createRequest(requestId, itemId, quantity, items[itemId].unit, bytes32(0), expiresAt, false, detailsHash, detailsCid);
         requestOnly[requestId] = true;
+        requestedBatch[requestId] = batchId;
     }
     function _registeredItem(uint8 kind, bytes32 batchId) private returns (bytes32 itemId) {
         if (kind == 1 && ingredients.getListing(batchId).archived) revert InvalidState();

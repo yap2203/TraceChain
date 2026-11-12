@@ -13,6 +13,8 @@ import {
   Upload,
 } from 'lucide-react';
 
+import { SupplierStockSummary } from '../../../orders/SupplierStockSummary';
+import type { SupplierStock } from '../../../orders/orders.api';
 import { CatalogueImage } from '../../../orders/CatalogueMedia';
 import {
   getOrders,
@@ -391,6 +393,9 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
             <IngredientCard
               key={item.itemId}
               item={item}
+              stock={data.supplierStock?.find(
+                (stock) => stock.batchId.toLowerCase() === item.batchId.toLowerCase(),
+              )}
               busy={busy}
               onDetails={() => setSelected(item)}
               onEdit={() => openEdit(item)}
@@ -541,6 +546,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
 
 function IngredientCard({
   item,
+  stock,
   busy,
   onDetails,
   onEdit,
@@ -548,6 +554,7 @@ function IngredientCard({
   onRestore,
 }: {
   item: InventoryItem;
+  stock?: SupplierStock;
   busy: boolean;
   onDetails: () => void;
   onEdit: () => void;
@@ -582,6 +589,7 @@ function IngredientCard({
           />
           <Fact label="Indicative price" value={price(item)} />
         </dl>
+        {stock && <SupplierStockSummary stock={stock} />}
         <dl className="ingredient-card__dates">
           <Fact label="Produced" value={date(item.batch.producedAt)} />
           <Fact label="Expires" value={date(item.batch.expiresAt)} />

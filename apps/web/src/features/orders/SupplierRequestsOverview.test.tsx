@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { RequestsLoading, RequestsOverview } from './RequestsOverview';
+import { requestStatus, RequestsLoading, RequestsOverview } from './RequestsOverview';
 
 const actor = '0x2000000000000000000000000000000000000002';
 const buyer = '0x3000000000000000000000000000000000000003';
@@ -43,6 +43,17 @@ function mount(orders = [request]) {
 }
 
 describe('Supplier quantity request inbox', () => {
+  it.each([
+    ['5', 'Partially received', 'approved'],
+    ['12', 'Received', 'closed'],
+  ])(
+    'keeps receipt status after the request inbox redesign (%s received)',
+    (received, label, group) => {
+      expect(
+        requestStatus({ ...request, decision: { status: 1 }, approvedReceivedQuantity: received }),
+      ).toMatchObject({ label, group });
+    },
+  );
   beforeEach(() => vi.setSystemTime(new Date('2026-11-12T00:00:00Z')));
   afterEach(() => {
     cleanup();

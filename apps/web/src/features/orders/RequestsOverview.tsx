@@ -398,6 +398,24 @@ function SupplierRequestCard({
 }
 
 export function requestStatus(order: OrderRecord) {
+  if (
+    /^\d+$/.test(String(order.approvedReceivedQuantity)) &&
+    BigInt(order.approvedReceivedQuantity) > 0n
+  ) {
+    return BigInt(order.approvedReceivedQuantity) >= BigInt(order.requested)
+      ? {
+          key: 'completed',
+          group: 'closed' as const,
+          label: 'Received',
+          variant: 'verified' as const,
+        }
+      : {
+          key: 'approved',
+          group: 'approved' as const,
+          label: 'Partially received',
+          variant: 'accepted' as const,
+        };
+  }
   if (Number(order.decision?.status) === 1)
     return {
       key: 'approved',

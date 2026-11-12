@@ -15,6 +15,7 @@ import type { CredentialContentStore } from '../ssi/encrypted-credential.store.j
 import type { ProductionFlowRepository } from '../production-flow/production-flow.repository.js';
 import type { OrdersGateway, ChainRecord } from './orders.gateway.js';
 import type { OrderAction } from './orders.schema.js';
+import { supplierStock } from './supplier-stock.js';
 import type { ProductionFlowService } from '../production-flow/production-flow.service.js';
 import type { DidCommService } from '../didcomm/didcomm.service.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
@@ -663,6 +664,8 @@ export class OrdersService {
         } as any);
       }
     }
+    const approvedReceiptsSupported =
+      Number(await this.optionalRead('orders', 'approvedReceiptPolicy')) === 1;
     const orders: ChainRecord[] = [];
     const shipments: ChainRecord[] = [];
     const actor = session.address;
@@ -734,6 +737,12 @@ export class OrdersService {
         details,
         evidenceIds: await this.gateway.read('orders', 'getOrderEvidence', [event.orderId]),
         decision: await this.loadRequestDecision(event.orderId, order.seller),
+        requestedBatch: approvedReceiptsSupported
+          ? await this.gateway.read('orders', 'requestedBatch', [event.orderId])
+          : undefined,
+        approvedReceivedQuantity: approvedReceiptsSupported
+          ? await this.gateway.read('orders', 'approvedReceivedQuantity', [event.orderId])
+          : undefined,
         isRequestOnly: await this.optionalRead('orders', 'requestOnly', [event.orderId]),
       });
     }
@@ -803,6 +812,10 @@ export class OrdersService {
     return {
       actor,
       listingBatches,
+      approvedReceiptsSupported,
+      ...(session.role === CompanyRole.SUPPLIER
+        ? { supplierStock: supplierStock(actor, catalogue, orders, Math.floor(Date.now() / 1000)) }
+        : {}),
       role: session.role,
       catalogue: catalogue.map((item) => ({
         ...item,
@@ -841,7 +854,68 @@ export class OrdersService {
         'The reported event cannot be in the future.',
         400,
       );
-    if (input.action === 'ingredient-update' || input.action === 'ingredient-archive') {
+    if (input.action === 'approved-receipt') {
+      if (Number(await this.optionalRead('orders', 'approvedReceiptPolicy')) !== 1)
+        throw new OrdersError(
+          'APPROVED_RECEIPT_UPGRADE_REQUIRED',
+          'Deploy the updated registry suite to confirm receipt of approved ingredient requests. Existing stock is unchanged.',
+        );
+      const order = await this.gateway.read('orders', 'getOrder', [input.orderId]);
+      if (!same(order.buyer, session.address) || session.role !== CompanyRole.MANUFACTURER)
+        throw new OrdersError('NOT_FOUND', 'Request not found.', 404);
+      const decision = await this.gateway.read('orders', 'requestDecision', [input.orderId]);
+      const item = await this.gateway.read('orders', 'getItem', [order.itemId]);
+      if (
+        !(await this.gateway.read('orders', 'requestOnly', [input.orderId])) ||
+        Number(decision.status) !== 1 ||
+        Number(order.status) !== 1 ||
+        Number(order.expiresAt) <= now ||
+        Number(item.kind) !== 1
+      )
+        throw new OrdersError(
+          'RECEIPT_NOT_AVAILABLE',
+          'Only an open Supplier-approved ingredient request can be received.',
+        );
+      const received = BigInt(
+        await this.gateway.read('orders', 'approvedReceivedQuantity', [input.orderId]),
+      );
+      if (BigInt(input.quantity) > BigInt(order.requested) - received)
+        throw new OrdersError(
+          'RECEIPT_EXCEEDS_APPROVAL',
+          'Received quantity exceeds the approved amount still outstanding.',
+        );
+      if (
+        !same(await this.gateway.read('orders', 'locationOwner', [input.location]), session.address)
+      )
+        throw new OrdersError(
+          'RECEIVING_LOCATION_REQUIRED',
+          'Select a receiving location registered to your company.',
+        );
+      if (input.occurredAt < Number(decision.recordedAt))
+        throw new OrdersError(
+          'INVALID_EVENT_TIME',
+          'Receipt time must be after Supplier approval.',
+          400,
+        );
+      const batchId = await this.gateway.read('orders', 'requestedBatch', [input.orderId]);
+      if (!batchId || /^0x0+$/.test(batchId))
+        throw new OrdersError(
+          'RECEIPT_BATCH_UNAVAILABLE',
+          'This older request has no bound receipt batch. Submit a new request using the updated suite.',
+        );
+      const batch = await this.gateway.read('ingredients', 'getBatch', [batchId]);
+      if (
+        !same(batch.supplier, order.seller) ||
+        !(await this.gateway.read('ingredients', 'isUsable', [batchId])) ||
+        BigInt(batch.availableQuantity) < BigInt(input.quantity)
+      )
+        throw new OrdersError(
+          'INSUFFICIENT_SUPPLIER_STOCK',
+          'The Supplier batch is invalid or has insufficient remaining stock for this receipt.',
+        );
+      method = 'confirmApprovedIngredientReceipt';
+      args = [operationKey, input.orderId, input.quantity, input.location, input.occurredAt];
+    } else if (input.action === 'ingredient-update' || input.action === 'ingredient-archive') {
       const batch = await this.gateway.read('ingredients', 'getBatch', [input.batchId]);
       if (!same(batch.supplier, session.address) || session.role !== CompanyRole.SUPPLIER)
         throw new OrdersError(

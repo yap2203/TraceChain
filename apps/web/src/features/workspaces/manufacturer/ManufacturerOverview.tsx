@@ -45,7 +45,7 @@ export function ManufacturerOverview({ onNav }: { onNav: (tab: string) => void }
           <EmptyState
             icon={<Package size={40} />}
             title="No product batches on chain"
-            sub="Create a product after accepting ingredient evidence."
+            sub="Create a product after confirming ingredient receipt. Ingredient evidence is optional."
           />
         ) : (
           data.productBatches.slice(0, 4).map((p) => (

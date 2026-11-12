@@ -7,6 +7,7 @@ import {EvidenceRegistry} from './EvidenceRegistry.sol';
 interface ILocationDirectory { function locationOwner(bytes32 location) external view returns (address); }
 
 contract ProductRegistry is IProductRegistry {
+    function receivedProductionPolicy() external pure returns (uint8) { return 1; }
     enum Status {
         None,
         Active,
@@ -150,7 +151,7 @@ contract ProductRegistry is IProductRegistry {
             uint256 ingredientQuantity = quantities[i];
             if (
                 !(ingredients.supplyOrders() == address(0) ? ingredients.isUsable(ingredientId) : ingredients.isValidTraceabilitySource(ingredientId)) ||
-                !evidence.acceptedForManufacturer(ingredientId, msg.sender) ||
+                (ingredients.supplyOrders() == address(0) && !evidence.acceptedForManufacturer(ingredientId, msg.sender)) ||
                 ingredientQuantity == 0
             ) revert InvalidState();
             if (ingredients.supplyOrders() == address(0)) ingredients.consumeIngredient(ingredientId, ingredientQuantity, productBatchId);

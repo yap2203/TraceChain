@@ -7,7 +7,8 @@ import {
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { ProductQrDisplay } from '../../../product-traceability';
-import { Alert, Badge, Btn, Card, Input, T } from '../../shared/ui';
+import { Alert, Badge, Btn, Card, Input, SelectField, T } from '../../shared/ui';
+import { registeredIngredientQuantity, ingredientUnitOptions } from './ingredient-quantities';
 import { shortChainId } from '../../shared/operational-format';
 import { getOrders } from '../../../orders/orders.api';
 import {
@@ -20,6 +21,12 @@ import {
 export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [ingredientUnits, setIngredientUnits] = useState<Record<string, string>>({});
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [stockLoading, setStockLoading] = useState(true);
+  const [stockError, setStockError] = useState('');
+  const [confirmedStock, setConfirmedStock] = useState<ProductionIngredient[]>([]);
   const [locations, setLocations] = useState<{ location: string; label: string }[]>([]);
   const [productionLocation, setProductionLocation] = useState('');
   const [productName, setProductName] = useState('');
@@ -43,7 +50,14 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     void getOrders()
-      .then((result) =>
+      .then((result) => {
+        setNames(
+          Object.fromEntries(
+            result.catalogue.flatMap((item) =>
+              item.batches.map((batchId: string) => [batchId, item.name]),
+            ),
+          ),
+        );
         setLocations(
           result.locations
             .filter((location) => location.company.toLowerCase() === result.actor.toLowerCase())
@@ -51,30 +65,60 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
               location: location.location,
               label: location.label ?? location.location,
             })),
-        ),
-      )
-      .catch(() => undefined);
-    void listProductionIngredients()
-      .then((result) => setIngredients(result.batches.filter((batch) => batch.accepted)))
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : 'Could not load ingredients.'),
+        );
+      })
+      .catch(() =>
+        setError('Receiving locations and readable ingredient names could not be loaded.'),
       );
   }, []);
+  useEffect(() => {
+    let active = true;
+    setStockLoading(true);
+    setStockError('');
+    setIngredients([]);
+    setSelected({});
+    setAmounts({});
+    setIngredientUnits({});
+    void listProductionIngredients(productionLocation || undefined, 'production')
+      .then((result) => {
+        if (active)
+          setIngredients(result.batches.filter((batch) => BigInt(batch.availableQuantity) > 0n));
+      })
+      .catch((cause) => {
+        if (active)
+          setStockError(cause instanceof Error ? cause.message : 'Could not load received stock.');
+      })
+      .finally(() => {
+        if (active) setStockLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [productionLocation]);
 
-  const links = Object.entries(amounts)
-    .filter(([, amount]) => /^[1-9]\d*$/.test(amount))
-    .map(([batchId, amount]) => ({ batchId, quantity: amount }));
-  const submit = async () => {
-    const invalidAmount = Object.entries(amounts).find(
-      ([, amount]) => amount !== '' && !!quantityError(amount),
-    );
-    const excessAmount = links.find((link) => {
-      const ingredient = ingredients.find((item) => item.batchId === link.batchId);
-      return (
-        !ingredient ||
-        !!quantityError(link.quantity, 'Ingredient quantity', ingredient.availableQuantity)
+  const selections = ingredients
+    .filter((ingredient) => selected[ingredient.batchId])
+    .map((ingredient) => {
+      const converted = registeredIngredientQuantity(
+        amounts[ingredient.batchId] ?? '',
+        ingredientUnits[ingredient.batchId] ?? ingredient.unit,
+        ingredient.unit,
       );
+      const excess =
+        converted.quantity !== undefined &&
+        BigInt(converted.quantity) > BigInt(ingredient.availableQuantity);
+      return {
+        ingredient,
+        quantity: converted.quantity,
+        error:
+          converted.error ??
+          (excess ? 'Amount exceeds received stock at this location.' : undefined),
+      };
     });
+  const links = selections
+    .filter((entry) => entry.quantity && !entry.error)
+    .map((entry) => ({ batchId: entry.ingredient.batchId, quantity: entry.quantity! }));
+  const submit = async () => {
     const validationError =
       textError(productName, 'Product name', 160) ||
       referenceError(batchReference) ||
@@ -87,8 +131,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       textError(unit, 'Unit', 31) ||
       (!/^[A-Za-z0-9._/-]+$/.test(unit.trim()) ? 'Unit contains unsupported characters.' : '') ||
       productionDateError(producedAt, expiresAt) ||
-      (invalidAmount ? 'Every entered ingredient quantity must be a positive whole number.' : '') ||
-      (excessAmount ? 'An ingredient quantity exceeds its available inventory.' : '') ||
+      (!productionLocation
+        ? 'Select the receiving / production location holding your ingredients.'
+        : '') ||
+      (selections.find((entry) => entry.error)?.error ?? '') ||
       (!links.length || links.length > 50
         ? 'Select between 1 and 50 valid ingredient batches.'
         : '');
@@ -124,6 +170,15 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           batchReference: submittedBatchReference,
           productName: submittedProductName,
         });
+        try {
+          setConfirmedStock(
+            (await listProductionIngredients(productionLocation, 'production')).batches,
+          );
+        } catch {
+          setStockError(
+            'Product creation succeeded, but the updated stock could not be loaded. Refresh before creating another product.',
+          );
+        }
       } else {
         throw new Error('The confirmed product did not include its on-chain batch ID.');
       }
@@ -151,6 +206,19 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             ? shortChainId(createdProduct.production.location)
             : 'Unavailable'}
         </p>
+        <Card>
+          <h3>Remaining ingredient stock</h3>
+          {stockError && <Alert type="warning" message={stockError} />}
+          {links.map((link) => {
+            const stock = confirmedStock.find((item) => item.batchId === link.batchId);
+            return (
+              <p key={link.batchId}>
+                {names[link.batchId] ?? shortChainId(link.batchId)}:{' '}
+                {stock ? `${stock.availableQuantity} ${stock.unit}` : 'Refreshing / unavailable'}
+              </p>
+            );
+          })}
+        </Card>
         <Card>
           <ProductQrDisplay
             batchId={createdProduct.batchId}
@@ -232,7 +300,24 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             onChange={setQuantity}
             required
           />
-          <Input label="Unit" value={unit} onChange={setUnit} required />
+          <SelectField
+            label="Product output unit"
+            value={['each', 'kg', 'g', 'litre', 'ml'].includes(unit) ? unit : 'custom'}
+            onChange={(value) => setUnit(value === 'custom' ? '' : value)}
+            options={['each', 'kg', 'g', 'litre', 'ml', 'custom'].map((value) => ({
+              value,
+              label: value === 'custom' ? 'Other unit' : value,
+            }))}
+          />
+          {!['each', 'kg', 'g', 'litre', 'ml'].includes(unit) && (
+            <Input
+              label="Custom product unit"
+              value={unit}
+              onChange={setUnit}
+              maxLength={31}
+              required
+            />
+          )}
           <Input
             label="Production date"
             type="date"
@@ -251,47 +336,98 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       </Card>
       <Card>
         <div style={{ fontWeight: 700, color: T.navy, marginBottom: 5 }}>
-          Accepted ingredient evidence
+          Select received ingredients
         </div>
         <p style={{ color: T.text2, fontSize: 12, marginTop: 0 }}>
-          Enter the amount to consume from one or more accepted, active ingredient batches.
+          Select one or more ingredients, choose compatible units and enter the amount used.
+          Remaining stock updates automatically. Confirmed received stock can be consumed;
+          requesting ingredient evidence is optional.
         </p>
-        {ingredients.length === 0 ? (
+        {stockLoading && <p role="status">Reading ingredient stock…</p>}
+        {stockError && <Alert type="error" message={stockError} />}
+        {!stockLoading && ingredients.length === 0 ? (
           <Alert
             type="warning"
-            message="No ingredient evidence has been accepted for this Manufacturer yet."
+            message="No received ingredient stock is available here. Confirm receipt of a Supplier-approved request at this location first. Ingredient evidence is optional."
           />
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
-            {ingredients.map((ingredient) => (
-              <div
-                key={ingredient.batchId}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 180px',
-                  alignItems: 'center',
-                  gap: 12,
-                  border: `1px solid ${T.border}`,
-                  borderRadius: 9,
-                  padding: 12,
-                }}
-              >
-                <div>
-                  <b>{shortChainId(ingredient.batchId)}</b>
-                  <div style={{ fontSize: 11, color: T.text2 }}>
-                    {ingredient.supplierName ?? 'Verified Supplier'} ·{' '}
-                    {ingredient.availableQuantity} available
+            {ingredients.map((ingredient) => {
+              const selection = selections.find(
+                (entry) => entry.ingredient.batchId === ingredient.batchId,
+              );
+              return (
+                <div
+                  key={ingredient.batchId}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
+                    alignItems: 'center',
+                    gap: 12,
+                    border: `1px solid ${T.border}`,
+                    borderRadius: 9,
+                    padding: 12,
+                  }}
+                >
+                  <div>
+                    <label className="flex items-start gap-[8px]">
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
+                        disabled={
+                          busy || !productionLocation || BigInt(ingredient.availableQuantity) === 0n
+                        }
+                        checked={!!selected[ingredient.batchId]}
+                        onChange={(event) =>
+                          setSelected((current) => ({
+                            ...current,
+                            [ingredient.batchId]: event.target.checked,
+                          }))
+                        }
+                      />
+                      <b>{names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}</b>
+                    </label>
+                    <div style={{ fontSize: 11, color: T.text2 }}>
+                      {ingredient.supplierName ?? 'Verified Supplier'} ·{' '}
+                      {ingredient.availableQuantity} {ingredient.unit} received and available
+                    </div>
+                    {selected[ingredient.batchId] && (
+                      <p aria-live="polite">
+                        Remaining after production:{' '}
+                        {selection?.quantity && !selection.error
+                          ? `${BigInt(ingredient.availableQuantity) - BigInt(selection.quantity)} ${ingredient.unit}`
+                          : 'Enter a valid amount'}
+                      </p>
+                    )}
                   </div>
+                  {selected[ingredient.batchId] && (
+                    <div className="grid gap-[8px]">
+                      <SelectField
+                        label={`Ingredient unit for ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
+                        value={ingredientUnits[ingredient.batchId] ?? ingredient.unit}
+                        onChange={(value) =>
+                          setIngredientUnits((current) => ({
+                            ...current,
+                            [ingredient.batchId]: value,
+                          }))
+                        }
+                        options={ingredientUnitOptions(ingredient.unit)}
+                      />
+                      <Input
+                        label={`Quantity to use for ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
+                        value={amounts[ingredient.batchId] ?? ''}
+                        inputMode="decimal"
+                        maxLength={46}
+                        error={amounts[ingredient.batchId] ? selection?.error : undefined}
+                        onChange={(value) =>
+                          setAmounts((current) => ({ ...current, [ingredient.batchId]: value }))
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
-                <Input
-                  label="Quantity to consume"
-                  value={amounts[ingredient.batchId] ?? ''}
-                  onChange={(value) =>
-                    setAmounts((current) => ({ ...current, [ingredient.batchId]: value }))
-                  }
-                />
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
         <div style={{ marginTop: 14 }}>
@@ -312,6 +448,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
               !unit ||
               !producedAt ||
               !expiresAt ||
+              !productionLocation ||
+              stockLoading ||
+              !!stockError ||
+              selections.some((entry) => !!entry.error) ||
               links.length === 0
             }
             onClick={() => void submit()}

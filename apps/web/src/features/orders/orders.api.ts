@@ -1,6 +1,19 @@
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 export type OrderRecord = Record<string, any>;
+export interface SupplierStock {
+  batchId: string;
+  unit: string;
+  availableQuantity: string;
+  pendingQuantity: string;
+  approvedQuantity: string;
+  outstandingQuantity: string;
+  remainingAfterRequests: string | null;
+  shortfall: string | null;
+  requestCount: number;
+}
 export interface OrdersState {
+  supplierStock?: SupplierStock[];
+  approvedReceiptsSupported?: boolean;
   listingBatches?: Array<{ batchId: string; unit: string; eligible: boolean; reason: string }>;
   actor: string;
   role: string;

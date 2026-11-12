@@ -49,7 +49,10 @@ export class DidCommService {
     private readonly backendAgents?: BackendDidCommAgentService,
     private readonly businessParticipants?: (
       reference: string,
-    ) => Promise<{ requester: string; supplier: string; order?: boolean } | undefined>,
+    ) => Promise<
+      | { requester: string; supplier: string; order?: boolean; identityRequestAllowed?: boolean }
+      | undefined
+    >,
   ) {}
   async challenge(sessionId?: string) {
     const session = await this.session(sessionId);
@@ -269,7 +272,18 @@ export class DidCommService {
           item.toDid === sender.did &&
           expectedParentTypes.includes(item.messageType),
       )?.id;
-      if (!parentThreadId)
+      if (
+        !parentThreadId &&
+        !(
+          input.messageType === IDENTITY_REQUEST &&
+          (await this.canStartIdentityThread(
+            session.address,
+            input.recipientWallet,
+            input.businessReference,
+            input.threadId,
+          ))
+        )
+      )
         throw new DidCommError(
           'THREAD_MISMATCH',
           'The linked secure business-message thread is unavailable.',
@@ -449,24 +463,36 @@ export class DidCommService {
           403,
         );
     } else if (input.messageType === IDENTITY_REQUEST) {
+      const businessThread =
+        !input.parentThreadId &&
+        (await this.canStartIdentityThread(
+          session.address,
+          recipient.wallet,
+          input.businessReference,
+          input.threadId,
+        ));
       if (
         session.role !== CompanyRole.SUPPLIER ||
         (recipient.role !== CompanyRole.MANUFACTURER && recipient.role !== CompanyRole.RETAILER) ||
-        !input.parentThreadId
+        (!input.parentThreadId && !businessThread)
       )
         throw new DidCommError(
           'UNAUTHORIZED_MESSAGE_FLOW',
           'Invalid company identity request flow.',
           403,
         );
-      const thread = (await this.envelopesFor(session.address, sender.did)).find(
-        (item) =>
-          item.id === input.parentThreadId &&
-          item.toDid === sender.did &&
-          item.fromDid === recipient.did &&
-          item.messageType === REQUEST,
-      );
-      if (!thread)
+      const thread =
+        input.parentThreadId &&
+        (await this.envelopesFor(session.address, sender.did)).find(
+          (item) =>
+            item.id === input.parentThreadId &&
+            item.toDid === sender.did &&
+            item.fromDid === recipient.did &&
+            item.threadId === input.threadId &&
+            item.businessReference.toLowerCase() === input.businessReference.toLowerCase() &&
+            item.messageType === REQUEST,
+        );
+      if (!thread && !businessThread)
         throw new DidCommError(
           'THREAD_MISMATCH',
           'Identity request is not linked to the evidence request.',
@@ -563,6 +589,22 @@ export class DidCommService {
     return this.backendAgents && this.repository.listEnvelopesByDid
       ? this.repository.listEnvelopesByDid(did)
       : this.repository.listEnvelopes(wallet);
+  }
+  private async canStartIdentityThread(
+    sender: string,
+    recipient: string,
+    reference: string,
+    threadId: string,
+  ) {
+    if (reference.toLowerCase() !== threadId.toLowerCase()) return false;
+    const context = await this.businessParticipants?.(reference);
+    return (
+      !!context &&
+      !context.order &&
+      context.identityRequestAllowed === true &&
+      context.supplier.toLowerCase() === sender.toLowerCase() &&
+      context.requester.toLowerCase() === recipient.toLowerCase()
+    );
   }
 }
 export const DIDCOMM_EVIDENCE_REQUEST_TYPE = REQUEST;

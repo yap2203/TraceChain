@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { CompanyRole } from '@tracechain/shared';
-import { Interface, id } from 'ethers';
+import { Interface, id, encodeBytes32String } from 'ethers';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const ssiMocks = vi.hoisted(() => ({
@@ -184,6 +184,95 @@ describe('production flow service', () => {
     const prepared = vi.mocked(gateway.prepareEvidenceRequest).mock.calls[0]?.[0];
     expect(prepared?.challengeHash).toMatch(/^0x[0-9a-f]{64}$/i);
     expect(prepared?.claimsHash).toMatch(/^0x[0-9a-f]{64}$/i);
+  });
+  it('reads only the authenticated Manufacturer stock at the selected location and decodes the registered unit', async () => {
+    const batch = await gateway.getIngredient(BATCH_ID);
+    vi.mocked(gateway.listIngredients).mockResolvedValue([
+      { ...batch!, batchId: BATCH_ID, unit: encodeBytes32String('g') },
+    ]);
+    vi.mocked(gateway.getAccepted).mockResolvedValue(true);
+    gateway.getReceivedAvailable = vi.fn().mockResolvedValue('875');
+    const location = id('factory');
+    const result = await service.listIngredients('session', location);
+    expect(gateway.getReceivedAvailable).toHaveBeenCalledWith(BATCH_ID, MANUFACTURER, location);
+    expect(result.batches[0]).toMatchObject({
+      availableQuantity: '875',
+      unit: 'g',
+      accepted: true,
+    });
+  });
+  it('rejects duplicate ingredient IDs and checks each received balance independently', async () => {
+    const input = productInput();
+    await expect(
+      service.prepareProduct('session', {
+        ...input,
+        ingredientLinks: [...input.ingredientLinks, ...input.ingredientLinks],
+      }),
+    ).rejects.toMatchObject({ code: 'DUPLICATE_INGREDIENT' });
+    vi.mocked(gateway.getAccepted).mockResolvedValue(true);
+    gateway.getReceivedAvailable = vi.fn().mockResolvedValue('499');
+    await expect(
+      service.prepareProduct('session', { ...input, productionLocation: id('factory') }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_INGREDIENT_QUANTITY' });
+    expect(gateway.prepareProduct).not.toHaveBeenCalled();
+  });
+  it('resolves messaging participants only from a matching live chain request, not stale workflow storage', async () => {
+    const prepared = await service.prepareEvidenceRequest('session', requestInput());
+    const workflow = evidence.get(prepared.requestId!.toLowerCase())!;
+    await expect(
+      service.resolveEvidenceMessagingParticipants(prepared.requestId!),
+    ).resolves.toBeUndefined();
+    const chain = {
+      challengeHash: workflow.challengeHash,
+      claimsHash: workflow.claimsHash,
+      dueAt: workflow.dueAt,
+      ingredientBatchId: workflow.batchId,
+      presentationCid: '',
+      presentationExpiresAt: 0,
+      presentationHash: id('none'),
+      requestCid: workflow.requestCid,
+      requester: workflow.requester,
+      supplier: workflow.supplier,
+      status: 1,
+      updatedAt: 0,
+    };
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue(chain);
+    await expect(
+      service.resolveEvidenceMessagingParticipants(prepared.requestId!),
+    ).resolves.toEqual({
+      requester: workflow.requester,
+      supplier: workflow.supplier,
+      identityRequestAllowed: false,
+    });
+    workflow.identityProof = {
+      audience: workflow.supplier,
+      challenge: 'fresh-challenge',
+      expiresAt: Math.floor(NOW.getTime() / 1000) + 900,
+      presenterRole: 'MANUFACTURER',
+      presenterWallet: workflow.requester,
+      purpose: 'Company evidence',
+      status: 'REQUESTED',
+    };
+    await expect(
+      service.resolveEvidenceMessagingParticipants(prepared.requestId!),
+    ).resolves.toMatchObject({ identityRequestAllowed: true });
+    const supplierService = createService(gateway, repository, supplierAuth(), encryptedWrites);
+    await supplierService.requestCompanyIdentityProof('session', prepared.requestId!);
+    await supplierService.requestCompanyIdentityProof('session', prepared.requestId!);
+    expect(workflow.identityProof.challenge).toBe('fresh-challenge');
+    expect(workflow.identityProof.expiresAt).toBe(Math.floor(NOW.getTime() / 1000) + 900);
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({ ...chain, requester: RETAILER });
+    await expect(service.resolveEvidenceMessagingParticipants(prepared.requestId!)).rejects.toThrow(
+      'Evidence request record mismatch',
+    );
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({ ...chain, status: 6 });
+    await expect(
+      service.resolveEvidenceMessagingParticipants(prepared.requestId!),
+    ).resolves.toBeUndefined();
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({ ...chain, dueAt: 1 });
+    await expect(
+      service.resolveEvidenceMessagingParticipants(prepared.requestId!),
+    ).resolves.toBeUndefined();
   });
   it('lets a Retailer request details of an active registered product before ordering without returning private claims', async () => {
     const retailer = createService(gateway, repository, retailerAuth(), encryptedWrites);
@@ -563,7 +652,7 @@ describe('production flow service', () => {
     });
   });
 
-  it('rejects product creation until every ingredient has accepted evidence', async () => {
+  it('keeps the legacy no-receipt-ledger evidence gate for older integrations', async () => {
     await expect(service.prepareProduct('session', productInput())).rejects.toMatchObject({
       code: 'EVIDENCE_NOT_ACCEPTED',
       status: 409,
@@ -574,6 +663,31 @@ describe('production flow service', () => {
     expect(gateway.prepareProduct).toHaveBeenCalledWith(
       expect.objectContaining({ ingredients: [{ batchId: BATCH_ID, quantity: '500' }] }),
     );
+  });
+  it('lists and produces from received stock without evidence queries or evidence permission', async () => {
+    vi.mocked(gateway.getAccess).mockImplementation(
+      async (_wallet, _hash, _role, permission) => permission === 'REGISTER_PRODUCT',
+    );
+    const batch = await gateway.getIngredient(BATCH_ID);
+    vi.mocked(gateway.listIngredients).mockResolvedValue([
+      { ...batch!, batchId: BATCH_ID, unit: encodeBytes32String('g') },
+    ]);
+    gateway.getReceivedAvailable = vi.fn().mockResolvedValue('500');
+    gateway.supportsOptionalProductionEvidence = vi.fn().mockResolvedValue(true);
+    vi.mocked(gateway.getAccepted).mockRejectedValue(
+      new Error('Evidence is optional and not loaded'),
+    );
+    const location = id('factory');
+    const result = await service.listIngredients('session', location, 'production');
+    expect(result.batches[0].availableQuantity).toBe('500');
+    expect(result.batches[0].accepted).toBeUndefined();
+    await service.prepareProduct('session', { ...productInput(), productionLocation: location });
+    expect(gateway.getAccepted).not.toHaveBeenCalled();
+    expect(gateway.prepareProduct).toHaveBeenCalled();
+    gateway.supportsOptionalProductionEvidence = vi.fn().mockResolvedValue(false);
+    await expect(
+      service.prepareProduct('session', { ...productInput(), productionLocation: location }),
+    ).rejects.toMatchObject({ code: 'OPTIONAL_EVIDENCE_DEPLOYMENT_REQUIRED' });
   });
 
   it('validates Distributor role and effective Manufacturer inventory before transfer preparation', async () => {
