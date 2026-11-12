@@ -44,6 +44,9 @@ import {
 import { createDidCommRouter } from './modules/didcomm/didcomm.routes.js';
 import { DidCommService } from './modules/didcomm/didcomm.service.js';
 import { BackendDidCommAgentService } from './modules/didcomm/backend-agent.service.js';
+import { DocumentExtractionController } from './modules/document-extraction/document-extraction.controller.js';
+import { createDocumentExtractionRouter } from './modules/document-extraction/document-extraction.routes.js';
+import { DocumentExtractionService } from './modules/document-extraction/document-extraction.service.js';
 import { IngredientBatchController } from './modules/ingredient-batches/ingredient-batch.controller.js';
 import {
   EthersIngredientBatchGateway,
@@ -101,6 +104,7 @@ interface CreateAppOptions {
   authService?: AuthService;
   blockchainGateway?: BlockchainGateway;
   custodyTransferService?: CustodyTransferService;
+  documentExtractionService?: DocumentExtractionService;
   ingredientBatchService?: IngredientBatchService;
   productionFlowService?: ProductionFlowService;
   productTraceabilityService?: ProductTraceabilityService;
@@ -116,6 +120,7 @@ export function createApp({
   authService,
   blockchainGateway,
   custodyTransferService,
+  documentExtractionService,
   ingredientBatchService,
   productionFlowService,
   productTraceabilityService,
@@ -377,14 +382,21 @@ export function createApp({
     }),
     env.AUTH_COOKIE_NAME,
   );
-  const ingredientBatchController = new IngredientBatchController(
+  const resolvedIngredientBatchService =
     ingredientBatchService ??
-      createDefaultIngredientBatchService(
-        resolvedAuthService,
-        defaultSsi.agentProvider,
-        lazyCredentialContentStore,
-        didCommRepository,
-      ),
+    createDefaultIngredientBatchService(
+      resolvedAuthService,
+      defaultSsi.agentProvider,
+      lazyCredentialContentStore,
+      didCommRepository,
+    );
+  const ingredientBatchController = new IngredientBatchController(
+    resolvedIngredientBatchService,
+    env.AUTH_COOKIE_NAME,
+  );
+  const documentExtractionController = new DocumentExtractionController(
+    documentExtractionService ??
+      new DocumentExtractionService({ access: resolvedIngredientBatchService }),
     env.AUTH_COOKIE_NAME,
   );
   const resolvedProductionFlowService =
@@ -485,6 +497,7 @@ export function createApp({
   );
   app.use('/api/ssi', express.json({ limit: '256kb' }), createSsiRouter(ssiController));
   app.use('/api/orders', express.json({ limit: '4mb' }), ordersRouter);
+  app.use('/api/ingredients', createDocumentExtractionRouter(documentExtractionController));
   app.use(
     '/api/ingredient-batches',
     express.json({ limit: '32kb' }),

@@ -49,14 +49,25 @@ specialized effects, animations, print styles and runtime/data-dependent inline 
 where needed. Existing media/container breakpoints are retained. To validate styling changes,
 run `npm run test:frontend`, `npm run typecheck` and `npm run build --workspace @tracechain/web`.
 
-Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid), **My orders**
-(incoming Manufacturer requests in a table), and **Information requests** (separate Received and
-Sent evidence tables). There is no Supplier Browse tab. Ingredients support create/read,
+Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid), **Order
+requests** (a responsive Manufacturer quantity-request inbox), and **Information requests**
+(separate Received and Sent evidence tables). The request inbox provides calculated status
+summaries, search, workflow filters, sorting and structured review dialogs while keeping wallets and
+technical identifiers collapsed. There is no Supplier Browse tab. Ingredients support create/read,
 version-checked listing edits, archive/delete and restore. Listing edits change the business name,
 category, description and indicative price; signed credential claims, quantities and units stay
 intact. Suppliers can also attach an optional validated presentation image to an owned batch.
-Supplier decisions are recorded on-chain and never reserve stock or process payment.
+Supplier decisions are recorded on-chain and never reserve stock, process payment or dispatch goods.
 See [the Supplier management flow](docs/BROWSE_REQUESTS_README.md#supplier-management).
+
+Supplier ingredient registration also supports document-assisted data entry. An authorized Supplier
+may upload one PDF, DOCX, PNG or JPG/JPEG document up to 10 MB; the API extracts embedded text or
+runs local English OCR, then prefills the existing registration form with per-field confidence
+labels. The Supplier must review, edit and explicitly confirm every extracted value before the
+existing credential and MetaMask registration workflow can continue. Extraction does not register a
+batch, issue a credential, submit a transaction, store the source document, upload it to IPFS or
+independently verify that its claims are truthful. Scanned PDFs without embedded text should be
+uploaded as PNG/JPG pages or entered manually.
 
 The updated IngredientRegistry and SupplyChainOrders require a fresh complete suite deployment
 to enable listing management and approve/reject. Missing capabilities produce explicit update

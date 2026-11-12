@@ -239,8 +239,8 @@ describe('browse and request-only UI', () => {
         <OrdersPage role="supplier" />
       </MemoryRouter>,
     );
-    await screen.findAllByRole('button', { name: 'View request' });
-    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
+    await screen.findAllByRole('button', { name: 'Review request' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
     expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
     expect(screen.queryByLabelText('Dispatch quantity')).toBeNull();
     expect(screen.queryByLabelText('Allocation quantity')).toBeNull();
@@ -402,13 +402,13 @@ describe('browse and request-only UI', () => {
     await screen.findByText(/Request submitted/);
   });
   it('shows errors without inserting sample items', async () => {
-    api.getOrders.mockRejectedValue(new Error('Service unavailable'));
+    api.getOrders.mockRejectedValue(new Error('The order service is unavailable.'));
     render(
       <MemoryRouter>
         <OrdersPage role="manufacturer" />
       </MemoryRouter>,
     );
-    await screen.findByText('Service unavailable');
+    await screen.findByText('The order service is unavailable. Try again shortly.');
     expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();
   });
   it('embeds Supplier ingredient details in Products without Browse or order tabs', async () => {

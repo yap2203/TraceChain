@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({
@@ -23,6 +23,7 @@ vi.mock('../../production-flow/production-flow.transaction', () => ({
 import { IngredientBatches } from './batches/IngredientBatchesPage';
 import { InformationRequests } from './evidence/InformationRequestsPage';
 import { OrdersPage } from '../../orders/OrdersPage';
+import { workspaceNavigation } from '../workspace-navigation';
 const actor = '0x2000000000000000000000000000000000000002',
   buyer = '0x3000000000000000000000000000000000000003';
 const batchId = '0x' + '11'.repeat(32);
@@ -106,17 +107,25 @@ describe('Supplier ingredient and request management', () => {
         },
       ],
     });
-    const grid = mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
+    const grid = mount(<IngredientBatches onNew={vi.fn()} />);
     await screen.findByText('88 g');
     expect(screen.getByText('Remaining after open requests')).toBeTruthy();
-    expect(screen.getByText('100 g')).toBeTruthy();
+    expect(
+      within(screen.getByRole('region', { name: 'Supplier stock summary' })).getByText('100 g'),
+    ).toBeTruthy();
     grid.unmount();
     mount(<OrdersPage role="supplier" mode="manage" initialOrderId="order" />);
     await screen.findByText('88 g');
     expect(screen.getByText(/Actual stock decreases on confirmed receipt/)).toBeTruthy();
   });
+
+  it('labels the Supplier navigation as Order requests', () => {
+    expect(workspaceNavigation.supplier.find(([id]) => id === 'orders')?.[1]).toBe(
+      'Order requests',
+    );
+  });
   it('edits only listing fields and requires confirmation before archiving', async () => {
-    mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
+    mount(<IngredientBatches onNew={vi.fn()} />);
     await screen.findByText('Supplier cocoa');
     fireEvent.click(screen.getByRole('button', { name: 'Edit listing' }));
     fireEvent.change(screen.getByLabelText(/Listing name/), {
@@ -138,7 +147,7 @@ describe('Supplier ingredient and request management', () => {
     );
     await screen.findByText(/Listing updated successfully/);
     api.prepareOrder.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
     expect(api.prepareOrder).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
     await waitFor(() =>
@@ -148,11 +157,11 @@ describe('Supplier ingredient and request management', () => {
     );
   });
   it('uploads an optional Supplier-owned catalogue image without changing credential fields', async () => {
-    mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
+    mount(<IngredientBatches onNew={vi.fn()} />);
     await screen.findByText('Supplier cocoa');
-    fireEvent.click(screen.getByRole('button', { name: 'Edit listing' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     const file = new File(['image'], 'ingredient.png', { type: 'image/png' });
-    fireEvent.change(screen.getByLabelText('Choose catalogue image'), {
+    fireEvent.change(screen.getByLabelText('Choose ingredient image'), {
       target: { files: [file] },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Upload image' }));
@@ -168,9 +177,9 @@ describe('Supplier ingredient and request management', () => {
   });
   it('shows archived ingredients only on request and offers restore', async () => {
     api.getOrders.mockResolvedValue({ ...state, catalogue: [{ ...item, archived: true }] });
-    mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
-    await screen.findByText('No on-chain ingredient batches');
-    fireEvent.click(screen.getByLabelText('Show archived ingredients'));
+    mount(<IngredientBatches onNew={vi.fn()} />);
+    await screen.findByText('No batches match these filters');
+    fireEvent.click(screen.getByLabelText('Show archived'));
     expect(screen.getByText('Supplier cocoa')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
     await waitFor(() =>
@@ -179,14 +188,25 @@ describe('Supplier ingredient and request management', () => {
       ),
     );
   });
-  it('shows orders as a table and separates approval from stock or evidence', async () => {
+  it('shows requests as responsive cards and separates approval from stock or evidence', async () => {
     mount(<OrdersPage role="supplier" />);
     await screen.findAllByText('Manufacturer One');
-    expect(screen.getByRole('table')).toBeTruthy();
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(document.querySelector('.supplier-requests-list')).toBeTruthy();
+    expect(document.querySelector('.supplier-request-row.supplier-request-card')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
-    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toBeTruthy();
     expect(screen.getByText(/For our next production run/)).toBeTruthy();
+    const technical = within(dialog).getByText('Technical details').closest('details');
+    expect(technical?.open).toBe(false);
+    expect(within(technical as HTMLElement).getByText('Request ID')).toBeTruthy();
+    expect(within(technical as HTMLElement).getByText('Requester wallet')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: /payment|checkout|cart|dispatch|reserve stock/i }),
+    ).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     expect(
       (screen.getByRole('button', { name: 'Confirm rejection' }) as HTMLButtonElement).disabled,
@@ -200,6 +220,25 @@ describe('Supplier ingredient and request management', () => {
         expect.objectContaining({ action: 'decide-request', orderId: 'order', decision: 1 }),
       ),
     );
+  });
+  it('prevents duplicate decision submission while preparation is active', async () => {
+    api.prepareOrder.mockImplementation(() => new Promise(() => undefined));
+    mount(<OrdersPage role="supplier" />);
+    await screen.findAllByRole('button', { name: 'Review request' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm approval' });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    expect(api.prepareOrder).toHaveBeenCalledTimes(1);
+  });
+  it('shows a clear RPC-unavailable state without inserting requests', async () => {
+    api.getOrders.mockRejectedValue(new Error('RPC provider unavailable'));
+    mount(<OrdersPage role="supplier" />);
+    await screen.findByText(
+      'Blockchain/RPC unavailable. Try again when the configured network is reachable.',
+    );
+    expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
   });
   it('keeps received ingredient requests and sent company proofs in separate tables', async () => {
     api.getOrders.mockResolvedValue({

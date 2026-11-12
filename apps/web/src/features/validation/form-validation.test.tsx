@@ -68,6 +68,7 @@ describe('form validation', () => {
     const prepare = vi.fn();
     const sign = vi.fn();
     render(<RegisterBatch onBack={() => {}} prepareWorkflow={prepare} submitTransaction={sign} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Enter information manually' }));
     fireEvent.click(screen.getByRole('button', { name: 'Continue to review' }));
     expect(screen.getByText('Ingredient name is required.')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Register with MetaMask' })).toBeNull();

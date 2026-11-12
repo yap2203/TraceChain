@@ -1,5 +1,11 @@
 # Project Progress
 
+## 2026-11-12 — Merge Supplier inventory and request design
+
+- Resolved six merge conflicts by retaining the incoming compact Supplier ingredient inventory, request review dialogs and document-assisted registration alongside the existing Manufacturer physical receipt controls, Supplier remaining-stock projections and partial/full receipt statuses. Combined both branches' confirmed decisions and progress records without adding an architectural decision.
+- Preserved both navigation and stock regressions, added receipt-status coverage for the redesigned inbox, and installed the already-declared document-extraction dependencies. No commits, deployments or live-chain writes were performed.
+- Validation: 161 frontend tests, 72 Orders API tests and 10 document-extraction API tests passed, along with repository-wide type checks, root production builds and whitespace checks. Existing bundler warnings remain. Conflict resolutions are staged; the merge commit is left to the user.
+
 ## 2026-11-12 — Product detail QR configuration error
 
 - Added the missing public application origin to the ignored local root environment for browser testing. Production labels still require an explicitly configured, externally reachable origin; no automatic production URL is invented.
@@ -60,6 +66,39 @@
 
 - Confirmed both requested wallets were unregistered on the current local chain 31337. Cryptographically verified and reused their existing locally encrypted Company Role credentials, then submitted applications, registered the credentials and approved the Manufacturer (0x70997970C51812dc3A010C7d01b50e0d17dc79C8) and Supplier (0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC) through unlocked local test accounts.
 - Preserved credential expiry, existing issuance history, secrets and deployment configuration. Saved only encrypted synthetic application profiles locally; no IPFS upload or public-chain transaction occurred. The normal login authorization resolver confirmed AUTHORIZED for both requested roles. Resetting the local chain removes these registrations again.
+
+## 2026-11-12 — Supplier document-assisted ingredient registration
+
+- Added an authenticated Supplier-only `POST /api/ingredients/extract-document` endpoint with the existing current-role, Company Role credential and ingredient permission checks. Uploads are limited to one 10 MB file, processed in memory, signature/MIME/extension checked and never persisted or uploaded to IPFS.
+- Added modular embedded-text extraction for text PDFs, paragraph/table text extraction for DOCX, bundled local English OCR for PNG/JPEG, independent alias-based ingredient-field mapping, registration-schema validation, per-field High/Review required/Missing confidence and safe warnings. Scanned PDFs without usable embedded text return an explicit PNG/JPG or manual-entry instruction.
+- Added a drag-and-drop/manual choice to Supplier registration, extraction progress and failure states, editable prefilling, missing-field highlighting, safe filename metadata, the required accuracy confirmation and the supplier-claim limitation. The existing credential issuance, MetaMask transactions and on-chain verification do not start during extraction.
+- Added focused API and frontend coverage for formats, OCR confidence, aliases, invalid values, authentication/role denial, size/type mismatch, in-memory cleanup, no registration side effects, manual fallback, loading/errors and the review-confirmation gate.
+- Validation: 10 document-extraction API tests, 6 existing ingredient-batch API tests, 23 SSI package tests, 12 SSI API tests and all 149 frontend tests passed. Repository-wide type checks and production builds passed, changed-file formatting and diff checks passed, and a local bundled-OCR smoke check completed without a network service. Existing Vite bundle-size/directive warnings remain. `npm audit --omit=dev` reports the existing moderate transitive Veramo/MetaMask findings; the new extraction dependencies were not in those advisory paths.
+
+## 2026-11-12 — Supplier page density refinement
+
+- Compacted the Ingredient batches summary, filter toolbar, result heading and card internals with page-scoped styles. The ingredient grid now uses auto-fit tracks at desktop widths so one or two records use the available row sensibly, while tablet and mobile layouts retain two and one columns without changing inventory, listing or image behavior.
+- Consolidated the Order requests heading and Refresh action, replaced the duplicate status-tab row with five keyboard-accessible clickable summary filters including All requests, and kept search, sort and result count in one compact toolbar. Request cards use the existing four-section desktop structure with reduced padding/gaps and no fixed clipping height.
+- Removed the redundant authorized-connection sentence from the Supplier Ingredient batches and Order requests pages only; the shared workspace header remains authoritative and unauthorized/error messaging is unchanged. Request IDs, wallets, batch IDs and transaction identifiers were removed from list cards and remain available in the review modal's collapsed Technical details.
+- Updated focused regressions for summary filtering, absence of duplicate tabs, modal-only technical identifiers and unchanged request/listing actions. No backend, contract, authentication, SSI, DIDComm, request-state or transaction behavior changed.
+- Validation: all 146 frontend tests, repository-wide type checks, the root production build, changed-file Prettier checks and `git diff --check` passed. The production CSS compiles the requested 320/375/768/1024/1440/1920 density transitions; screenshot-based overflow inspection could not run because the browser/native automation hosts were unavailable. The repository-wide Prettier command still reports the existing 197-file formatting backlog outside these changed files.
+
+## 2026-11-12 — Supplier Ingredient batches inventory UI
+
+- Redesigned Ingredient batches as a responsive authenticated inventory page with real active, available, expiring-soon and archived summaries; mixed quantity units are never combined. Added name/reference search, category and lifecycle filters, four sort modes, archived visibility, clear filters and a visible result count.
+- Replaced full-width text cards with a three/two/one-column ingredient grid using the existing protected CatalogueImage path and equal-size category fallbacks. Cards keep readable identity, origin, quantity/unit, indicative price, dates and credential state prominent while wallet addresses and hashes remain out of the grid.
+- Added a single-scroll structured detail dialog with Supplier presentation-data boundaries, inventory/listing/date groups, collapsed technical details, image upload/change, listing edit and reversible archive/restore controls. Corrected the old Delete wording because the operation only archives a listing and preserves credentials and traceability.
+- Grouped registration into basic details, origin/dates, quantity/price, immutable credential claims and an optional presentation image. The existing two-step MetaMask review now explains which values become signed/on-chain records and which listing fields remain editable; a failed optional image upload does not misreport a confirmed batch registration as failed.
+- Added focused frontend coverage for calculated summaries, mixed units, search/filter/sort/reset behavior, archived views, media fallbacks, long values, quantities, expiry warnings, credential state, collapsed technical details, safe image rejection, loading/empty/RPC states and the absence of technical identifiers or fixture data from cards. No backend, contract, authentication, SSI, DIDComm, deployment or API business rule changed.
+- Validation: all 146 frontend tests, repository-wide type checks, the root production build, changed-file Prettier checks and `git diff --check` passed. The requested 320/375/768/1024/1440/1920 breakpoints are encoded as a one/two/three-column grid and compiled successfully; the browser automation host was unavailable for screenshot-based visual inspection. The repository-wide Prettier check still reports the existing 197-file formatting backlog outside these changed files.
+
+## 2026-11-12 — Supplier Order requests inbox
+
+- Renamed Supplier Manage orders to Order requests and replaced the repeated heading/table layout with one Incoming quantity requests page, real calculated summary counts, status tabs, search, four sorting modes and one responsive row-card list. Ingredient images, Manufacturer initials, readable names, quantities, dates, deadline warnings and next actions stay prominent; wallets and technical IDs remain collapsed.
+- Reused the shared single-scroll modal for structured request review, including ingredient/Manufacturer context, workflow and company-evidence state, explicit next action, existing confirmation-gated approve/reject controls and company-evidence navigation. Approval remains a decision record only and cannot reserve stock, take payment or dispatch goods.
+- Refined each request into one compact responsive row: a prominent undistorted ingredient image, item and larger Manufacturer identity together, compact quantity/date facts, and status/next action/review controls together. Technical details remain collapsed without reserving a blank column and expand into a responsive identifier grid below the row.
+- Added focused frontend coverage for summaries, attention/evidence filtering, search/sorting, long names, media fallbacks, responsive structures, technical-detail boundaries, loading/empty/API/RPC states, confirmation gates and duplicate decision prevention. No backend, contract, authentication, SSI, DIDComm, deployment or storage behavior changed.
+- Validation: all 141 frontend tests, repository-wide type checks, the root production build, changed-file Prettier checks and `git diff --check` passed. The repository-wide Prettier check still reports the existing formatting backlog outside these changed files; browser automation was unavailable for screenshot capture in this session.
 
 ## 2026-11-12 — Resolve Orders page merge
 

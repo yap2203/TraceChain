@@ -181,6 +181,25 @@ The request contains the batch reference, ingredient name, category, origin, pro
 
 Retries reuse the persisted workflow under `.tracechain/issuance/ingredient-batches.json` and resume from the first incomplete on-chain stage. The API never signs or broadcasts either transaction and never returns the full credential, encryption key, or plaintext private metadata.
 
+### `POST /api/ingredients/extract-document`
+
+Requires the same current SIWE-authenticated Supplier role, Company Role credential and ingredient
+issuance/registration permissions as batch preparation. Send one multipart field named `document`.
+Supported files are PDF, DOCX, PNG and JPG/JPEG up to 10 MB. The API checks the extension, declared
+MIME type and detected file signature before processing; legacy DOC, DOCM/macro-enabled,
+password-protected, executable and mismatched files are rejected.
+
+Text PDFs and DOCX documents are read locally. PNG/JPEG images use bundled local English OCR. PDFs
+are limited to 50 pages, images to 12,000 pixels per side and 40 million pixels total. Scanned PDFs
+without usable embedded text are not OCR-rendered in this phase; upload their pages as PNG/JPG or use
+manual entry.
+
+The response contains safe document metadata, mapped ingredient fields with `High`, `Review
+required` or `Missing` confidence, and warnings. Missing or unsafe values remain empty. Extraction is
+assistive only: the upload stays in memory, is discarded after the response and is never stored,
+sent to an external AI service, uploaded to IPFS, placed on-chain, used to issue a credential or used
+to prepare a transaction. TraceChain does not certify that the Supplier document's claims are true.
+
 ### `GET /api/ingredient-batches`
 
 Requires the same Supplier authorization. The API obtains batch IDs from `IngredientBatchRegistered` events, re-reads each batch with `getBatch`, filters by the authenticated Supplier wallet, and merges authorized private metadata from the encrypted local workflow envelope. It does not accept a Supplier wallet query parameter.
