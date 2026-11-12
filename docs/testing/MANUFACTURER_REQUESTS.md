@@ -36,7 +36,7 @@ For buyer-facing product decisions, also use an authorized Retailer and an exist
    its actual name/reference. Open a product and inspect its real quantity/unit, dates, QR and links.
 2. Select Supplier ingredients. Search for an ingredient registered by the Supplier. Open it and
    check the Supplier, reference, available quantity, expiry and optional indicative unit price.
-3. Select Request ingredient details. Enter a reason and future deadline, select necessary/optional
+3. Select Request evidence or information. Enter a reason and future deadline, select necessary/optional
    claims, and explicitly send/sign the request. In Information requests → Sent, open that request
    and confirm its exact batch, reason and claim requirements.
 4. As Supplier, open the received ingredient-information request and request company identity proof.
@@ -46,7 +46,7 @@ For buyer-facing product decisions, also use an authorized Retailer and an exist
 5. As Supplier, verify the company proof and separately decide whether to share ingredient evidence.
    As Manufacturer, view the disclosed values under the Sent request. View, Verify and Accept/Reject
    must remain separate; opening a response must not verify or accept it automatically.
-6. Return to ingredient details and expand Request ingredient quantity. Enter a positive whole-number
+6. Return to ingredient details and select Request quantity. Enter a positive whole-number
    quantity in the batch's existing unit, future deadline and optional private note. Submit/sign.
    Confirm My orders → Sent shows the exact company, item, quantity, deadline and decision.
 7. As Supplier, open My orders, inspect the received Manufacturer request and request company evidence.

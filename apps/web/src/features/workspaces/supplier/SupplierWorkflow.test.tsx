@@ -8,6 +8,8 @@ const api = vi.hoisted(() => ({
   orderIdentity: vi.fn(),
   listEvidenceRequests: vi.fn(),
   getCompanyIdentityProofStatus: vi.fn(),
+  imageFilePayload: vi.fn(),
+  uploadIngredientCatalogueImage: vi.fn(),
 }));
 vi.mock('../../orders/orders.api', () => api);
 vi.mock('../../production-flow/production-flow.api', async (original) => ({
@@ -71,6 +73,14 @@ beforeEach(() => {
   });
   api.listEvidenceRequests.mockResolvedValue({ requests: [] });
   api.getCompanyIdentityProofStatus.mockResolvedValue({ status: 'NOT_REQUESTED' });
+  api.imageFilePayload.mockResolvedValue({
+    data: 'safe-image',
+    fileName: 'ingredient.png',
+    mimeType: 'image/png',
+  });
+  api.uploadIngredientCatalogueImage.mockResolvedValue({
+    image: { path: `/catalogue/ingredients/${batchId}/image` },
+  });
   api.orderIdentity.mockResolvedValue({
     status: 'REQUESTED',
     purpose: 'Confirm requester company',
@@ -111,6 +121,25 @@ describe('Supplier ingredient and request management', () => {
       ),
     );
   });
+  it('uploads an optional Supplier-owned catalogue image without changing credential fields', async () => {
+    mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
+    await screen.findByText('Supplier cocoa');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit listing' }));
+    const file = new File(['image'], 'ingredient.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Choose catalogue image'), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload image' }));
+    await waitFor(() =>
+      expect(api.uploadIngredientCatalogueImage).toHaveBeenCalledWith(batchId, {
+        data: 'safe-image',
+        fileName: 'ingredient.png',
+        mimeType: 'image/png',
+      }),
+    );
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+    expect(screen.getByText(/Credential claims and batch history are unchanged/)).toBeTruthy();
+  });
   it('shows archived ingredients only on request and offers restore', async () => {
     api.getOrders.mockResolvedValue({ ...state, catalogue: [{ ...item, archived: true }] });
     mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
@@ -126,10 +155,10 @@ describe('Supplier ingredient and request management', () => {
   });
   it('shows orders as a table and separates approval from stock or evidence', async () => {
     mount(<OrdersPage role="supplier" />);
-    await screen.findByText('Manufacturer One');
+    await screen.findAllByText('Manufacturer One');
     expect(screen.getByRole('table')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'View request' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
     expect(screen.getByText(/For our next production run/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));

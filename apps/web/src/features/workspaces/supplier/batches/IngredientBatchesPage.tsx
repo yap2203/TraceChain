@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Boxes, Plus, Pencil, Archive, RotateCcw, RefreshCw, Search } from 'lucide-react';
+import { Boxes, Plus, Pencil, Archive, RotateCcw, RefreshCw, Search, Upload } from 'lucide-react';
 import { Alert, Badge, Btn, Card, EmptyState, Input, SectionTitle } from '../../shared/ui';
 import {
   getOrders,
+  imageFilePayload,
   prepareOrder,
+  uploadIngredientCatalogueImage,
   type OrdersState,
   type OrderRecord,
 } from '../../../orders/orders.api';
 import { submitProductionTransaction } from '../../../production-flow/production-flow.transaction';
+import { CatalogueImage } from '../../../orders/CatalogueMedia';
 
 export function IngredientBatches({
   onNew,
@@ -25,6 +28,7 @@ export function IngredientBatches({
     [search, setSearch] = useState('');
   const [editing, setEditing] = useState<OrderRecord>(),
     [deleting, setDeleting] = useState<OrderRecord>();
+  const [imageFile, setImageFile] = useState<File>();
   const [form, setForm] = useState({
     name: '',
     category: '',
@@ -102,6 +106,7 @@ export function IngredientBatches({
   const edit = (item: OrderRecord) => {
     setEditing(item);
     setDeleting(undefined);
+    setImageFile(undefined);
     setForm({
       name: item.name,
       category: item.category ?? '',
@@ -115,6 +120,24 @@ export function IngredientBatches({
     form.category.trim() &&
     /^[A-Z]{3}$/.test(form.currency) &&
     (!form.price || /^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(form.price));
+  const uploadImage = async () => {
+    if (!editing || !imageFile) return;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      await uploadIngredientCatalogueImage(editing.batches[0], await imageFilePayload(imageFile));
+      setImageFile(undefined);
+      setNotice(
+        'Supplier-provided catalogue image updated. Credential claims and batch history are unchanged.',
+      );
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The catalogue image could not be saved.');
+    } finally {
+      setBusy(false);
+    }
+  };
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <SectionTitle
@@ -172,6 +195,36 @@ export function IngredientBatches({
             quantity, unit, origin and credential dates are preserved. Register a new batch to
             revise signed credential claims.
           </p>
+          <div className="catalogue-upload">
+            <CatalogueImage
+              path={editing.imagePath}
+              category={editing.category}
+              alt={`Current Supplier-provided catalogue image for ${editing.name}`}
+              large
+            />
+            <div>
+              <strong>Catalogue image</strong>
+              <p>
+                Optional presentation image only. PNG, JPEG or WebP, maximum 2 MB. Uploading an
+                image does not change the signed credential or verify the physical ingredient.
+              </p>
+              <input
+                aria-label="Choose catalogue image"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                disabled={busy}
+                onChange={(event) => setImageFile(event.target.files?.[0])}
+              />
+              <Btn
+                variant="outline"
+                icon={<Upload size={15} />}
+                disabled={busy || !imageFile}
+                onClick={() => void uploadImage()}
+              >
+                {editing.imagePath ? 'Replace image' : 'Upload image'}
+              </Btn>
+            </div>
+          </div>
           <div className="workspace-form-grid">
             <Input
               label="Listing name"
@@ -227,7 +280,14 @@ export function IngredientBatches({
             >
               Save listing
             </Btn>
-            <Btn variant="outline" disabled={busy} onClick={() => setEditing(undefined)}>
+            <Btn
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setEditing(undefined);
+                setImageFile(undefined);
+              }}
+            >
               Cancel
             </Btn>
           </div>

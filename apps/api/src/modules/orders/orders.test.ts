@@ -12,6 +12,7 @@ import type { OrdersGateway } from './orders.gateway.js';
 import type { AuthService } from '../auth/auth.service.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { ProductionFlowRepository } from '../production-flow/production-flow.repository.js';
+import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 
 const buyer = '0x1000000000000000000000000000000000000001';
 const seller = '0x2000000000000000000000000000000000000002';
@@ -116,9 +117,34 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
     gateway as unknown as OrdersGateway,
     store as unknown as CredentialContentStore,
     repository as unknown as ProductionFlowRepository,
+    undefined,
+    undefined,
+    {
+      resolve: vi.fn(async (walletAddress: string) => ({
+        active: true,
+        companyName:
+          walletAddress.toLowerCase() === seller.toLowerCase()
+            ? 'Verified Supplier'
+            : 'Verified Buyer',
+        role: walletAddress.toLowerCase() === seller.toLowerCase() ? CompanyRole.SUPPLIER : role,
+        walletAddress,
+      })),
+      resolveMany: vi.fn(async (wallets: string[]) =>
+        wallets.map((walletAddress) => ({
+          active: true as const,
+          companyName:
+            walletAddress.toLowerCase() === seller.toLowerCase()
+              ? 'Verified Supplier'
+              : 'Verified Buyer',
+          role: walletAddress.toLowerCase() === seller.toLowerCase() ? CompanyRole.SUPPLIER : role,
+          walletAddress,
+        })),
+      ),
+      list: vi.fn(async () => []),
+    } as unknown as StakeholderDirectory,
   );
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '4mb' }));
   app.use(
     '/api/orders',
     createOrdersRouter(() => service, 'session'),
@@ -126,6 +152,113 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
   return { app, gateway, service, store, repository };
 }
 describe('order API and private metadata', () => {
+  const png =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+
+  it('stores and serves an authorized Supplier image without exposing storage references', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    const uploaded = await request(f.app)
+      .post(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .send({ data: png, fileName: 'cocoa.png', mimeType: 'image/png' })
+      .expect(200);
+    expect(uploaded.body.image).toMatchObject({
+      mimeType: 'image/png',
+      path: `/catalogue/ingredients/${batchId}/image`,
+      supplierProvided: true,
+      width: 1,
+      height: 1,
+    });
+    expect(JSON.stringify(uploaded.body)).not.toContain('encrypted-cid');
+    const image = await request(f.app)
+      .get(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .expect(200)
+      .expect('Content-Type', 'image/png');
+    expect(image.headers['x-content-type-options']).toBe('nosniff');
+    expect(image.body).toEqual(Buffer.from(png, 'base64'));
+  });
+
+  it('rejects oversized, unsupported, mismatched and corrupt catalogue images', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    const oversized = Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64');
+    const cases = [
+      {
+        body: { data: oversized, fileName: 'large.png', mimeType: 'image/png' },
+        code: 'IMAGE_TOO_LARGE',
+      },
+      {
+        body: { data: png, fileName: 'image.svg', mimeType: 'image/svg+xml' },
+        code: 'INVALID_REQUEST',
+      },
+      {
+        body: { data: png, fileName: 'image.jpg', mimeType: 'image/png' },
+        code: 'IMAGE_TYPE_MISMATCH',
+      },
+      {
+        body: {
+          data: Buffer.from('not an image').toString('base64'),
+          fileName: 'image.png',
+          mimeType: 'image/png',
+        },
+        code: 'IMAGE_INVALID',
+      },
+    ];
+    for (const entry of cases) {
+      const response = await request(f.app)
+        .post(`/api/orders/catalogue/ingredients/${batchId}/image`)
+        .send(entry.body)
+        .expect(400);
+      expect(response.body.error.code).toBe(entry.code);
+    }
+  });
+
+  it('rejects cross-Supplier image updates and cross-company logo updates', async () => {
+    const otherSupplier = fixture(outsider, true, CompanyRole.SUPPLIER);
+    await request(otherSupplier.app)
+      .post(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .send({ data: png, fileName: 'ingredient.png', mimeType: 'image/png' })
+      .expect(403);
+    expect(otherSupplier.store.encryptAndStore).not.toHaveBeenCalled();
+
+    const company = fixture(buyer, true, CompanyRole.MANUFACTURER);
+    await request(company.app)
+      .post(`/api/orders/branding/${seller}/logo`)
+      .send({ data: png, fileName: 'logo.png', mimeType: 'image/png' })
+      .expect(403);
+    await request(company.app)
+      .post(`/api/orders/branding/${buyer}/logo`)
+      .send({ data: png, fileName: 'logo.png', mimeType: 'image/png', wallet: seller })
+      .expect(400);
+    expect(company.store.encryptAndStore).not.toHaveBeenCalled();
+  });
+
+  it('returns only whitelisted catalogue media and verified company presentation fields', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    await request(f.app)
+      .post(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .send({ data: png, fileName: 'ingredient.png', mimeType: 'image/png' })
+      .expect(200);
+    await request(f.app)
+      .post(`/api/orders/branding/${seller}/logo`)
+      .send({ data: png, fileName: 'logo.png', mimeType: 'image/png' })
+      .expect(200);
+    const events = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, name) =>
+      name === 'IngredientBatchRegistered'
+        ? [{ batchId, supplier: seller, blockNumber: 42 }]
+        : events(contract, name),
+    );
+    const response = await request(f.app).get('/api/orders').expect(200);
+    expect(response.body.catalogue[0]).toMatchObject({
+      imagePath: `/catalogue/ingredients/${batchId}/image`,
+      sellerLogoPath: `/branding/${seller}/logo`,
+      sellerName: 'Verified Supplier',
+      sellerRole: CompanyRole.SUPPLIER,
+    });
+    const serialized = JSON.stringify(response.body.catalogue);
+    expect(serialized).not.toContain(png);
+    expect(serialized).not.toContain('encrypted-cid');
+    expect(serialized).not.toContain('ciphertext');
+  });
   it('prepares a version-checked listing edit and reads only the hash-matched public fields', async () => {
     const f = fixture(seller, true, CompanyRole.SUPPLIER);
     await request(f.app)

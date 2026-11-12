@@ -23,6 +23,7 @@ const artifactNames: Record<string, string> = {
   custody: 'traceability/CustodyTransfer',
   evidence: 'traceability/EvidenceRegistry',
   stakeholders: 'access/StakeholderRegistry',
+  credentials: 'credentials/CredentialRegistry',
 };
 // Named fields only, with integer quantities serialized without precision loss.
 function plain(value: any, outputs?: readonly any[]): any {

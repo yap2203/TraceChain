@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
 
 import { CompanyRole } from '@tracechain/shared';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({ get: vi.fn(), verify: vi.fn() }));
+const brandingApi = vi.hoisted(() => ({
+  get: vi.fn(),
+  image: vi.fn(),
+  upload: vi.fn(),
+  media: vi.fn(),
+}));
 vi.mock('../../auth/auth.api', () => ({
   getMyCompanyIdentity: api.get,
   verifyMyCompanyIdentity: api.verify,
+}));
+vi.mock('../../orders/orders.api', () => ({
+  getMyCompanyBranding: brandingApi.get,
+  imageFilePayload: brandingApi.image,
+  uploadCompanyLogo: brandingApi.upload,
+  fetchCatalogueMedia: brandingApi.media,
 }));
 
 import type { CompanyIdentityResponse } from '../../auth/auth.api';
@@ -48,6 +60,21 @@ describe('My Company Identity', () => {
   beforeEach(() => {
     api.get.mockReset().mockResolvedValue(identity);
     api.verify.mockReset();
+    brandingApi.get.mockReset().mockResolvedValue({
+      branding: {
+        companyName: 'Verified Cocoa Company',
+        role: 'MANUFACTURER',
+      },
+    });
+    brandingApi.image.mockReset().mockResolvedValue({
+      data: 'logo-data',
+      fileName: 'logo.webp',
+      mimeType: 'image/webp',
+    });
+    brandingApi.upload.mockReset().mockResolvedValue({
+      branding: { logoPath: '/branding/logo' },
+    });
+    brandingApi.media.mockReset().mockResolvedValue(new Blob(['logo'], { type: 'image/webp' }));
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockResolvedValue(undefined) },
@@ -75,6 +102,23 @@ describe('My Company Identity', () => {
     fireEvent.click(screen.getAllByRole('button', { name: 'Copy full Associated wallet' })[0]!);
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(identity.identity.associatedWallet);
     expect(await screen.findByText('Associated wallet copied successfully.')).toBeTruthy();
+  });
+  it('updates only the authenticated company presentation logo', async () => {
+    render(<StakeholderCredentialPage expectedRole="MANUFACTURER" />);
+    await screen.findByLabelText('Choose company logo');
+    const file = new File(['logo'], 'logo.webp', { type: 'image/webp' });
+    fireEvent.change(screen.getByLabelText('Choose company logo'), {
+      target: { files: [file] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload logo' }));
+    await waitFor(() =>
+      expect(brandingApi.upload).toHaveBeenCalledWith(identity.identity.associatedWallet, {
+        data: 'logo-data',
+        fileName: 'logo.webp',
+        mimeType: 'image/webp',
+      }),
+    );
+    expect(screen.getByText(/Authorization is unchanged/)).toBeTruthy();
   });
 
   it('downloads the PDF summary from the top-right action without overflowing line wrapping', async () => {

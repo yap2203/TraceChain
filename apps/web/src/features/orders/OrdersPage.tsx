@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw, Search } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { targetChainId } from '../../config/chain';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
@@ -11,18 +11,7 @@ import {
   type OrdersState,
   type OrderRecord,
 } from './orders.api';
-import {
-  Alert,
-  Btn,
-  Card,
-  Input,
-  SelectField,
-  T,
-  Table,
-  TR,
-  TD,
-  Badge,
-} from '../workspaces/shared/ui';
+import { Alert, Btn, Card, Input, T, TechnicalDetails } from '../workspaces/shared/ui';
 import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import {
@@ -33,6 +22,8 @@ import {
 import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
 import { getEvidenceDetails, prepareEvidenceRequest } from '../production-flow/production-flow.api';
 import { sendEvidenceRequestMessage } from '../production-flow/evidence-didcomm';
+import { CatalogueBrowser, CatalogueSkeleton } from './CatalogueBrowser';
+import { RequestsOverview } from './RequestsOverview';
 
 const short = (value?: string) =>
   value ? `${value.slice(0, 10)}…${value.slice(-6)}` : 'Unavailable';
@@ -57,16 +48,11 @@ export function OrdersPage({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [detailsRequestOpen, setDetailsRequestOpen] = useState(false);
-  const [detailClaims, setDetailClaims] = useState<Record<string, string>>({
-    countryOfOrigin: 'optional',
-    expiryDate: 'required',
-  });
+  const busyRef = useRef(false);
   const [tab, setTab] = useState(
     role === 'supplier' || evidenceOnly || mode === 'manage' ? 'orders' : 'catalogue',
   );
   const [direction, setDirection] = useState<'sent' | 'received'>('sent');
-  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(initialOrderId);
   const [pendingDecision, setPendingDecision] = useState<1 | 2>();
   const [decisionReason, setDecisionReason] = useState('');
@@ -97,15 +83,19 @@ export function OrdersPage({
     const entry = data.catalogue.find((item) =>
       item.batches?.some((batch: string) => same(batch, initialBatchId)),
     );
-    if (entry) {
-      setSelected(entry.itemId);
-      setForm((current) => ({ ...current, unit: entry.unit }));
-    } else
+    if (!entry)
       setError(
         'This linked ingredient is not currently available in the registered Supplier records. Refresh or contact its Supplier.',
       );
   }, [initialBatchId, data]);
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(''), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
   const run = async (operation: () => Promise<void>) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     setError('');
     setNotice('');
@@ -114,6 +104,7 @@ export function OrdersPage({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Action failed.');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -152,30 +143,16 @@ export function OrdersPage({
   const buyer = !!order && !!data && same(order.buyer, data.actor);
   const activeOrder = !!order && Number(order.status) < 3 && Number(order.expiresAt) > now();
   const managedOrders =
-    data?.orders.filter(
-      (entry) =>
-        (role === 'supplier' || direction === 'received'
-          ? same(entry.seller, data.actor)
-          : same(entry.buyer, data.actor)) &&
-        [
-          entry.orderId,
-          entry.buyerName,
-          entry.sellerName,
-          data.catalogue.find((item) => item.itemId === entry.itemId)?.name,
-        ]
-          .join(' ')
-          .toLowerCase()
-          .includes(search.toLowerCase()),
+    data?.orders.filter((entry) =>
+      role === 'supplier' || direction === 'received'
+        ? same(entry.seller, data.actor)
+        : same(entry.buyer, data.actor),
     ) ?? [];
   const availableItems =
     data?.catalogue.filter(
       (entry) =>
         !entry.archived &&
         (mode !== 'browse' || Number(entry.kind) === 1) &&
-        [entry.name, entry.sellerName, entry.category]
-          .join(' ')
-          .toLowerCase()
-          .includes(search.toLowerCase()) &&
         (role !== 'manufacturer' || Number(entry.kind) === 1 || same(entry.seller, data.actor)) &&
         (role !== 'retailer' || Number(entry.kind) === 2),
     ) ?? [];
@@ -185,15 +162,6 @@ export function OrdersPage({
     setIdentityMaterial(undefined);
     setIdentityStatus(undefined);
   };
-  const choices = (label: string, field: string, options: { value: string; label: string }[]) => (
-    <SelectField
-      label={label}
-      value={form[field] ?? ''}
-      onChange={change(field)}
-      disabled={busy}
-      options={[{ value: '', label: 'Select…' }, ...options]}
-    />
-  );
   const fields = {
     display: 'grid',
     gridTemplateColumns: 'repeat(2,minmax(0,1fr))',
@@ -267,271 +235,54 @@ export function OrdersPage({
         </nav>
       )}
       {error && <Alert type="error" message={error} />}
-      {notice && <div role="status">{notice}</div>}
-      {!data && !error && <p role="status">Loading on-chain order ledger…</p>}
+      {notice && <Alert type="success" message={notice} />}
+      {!data && !error && <CatalogueSkeleton />}
       {data && role !== 'supplier' && tab === 'catalogue' && (
-        <>
-          {!item && (
-            <Input
-              label="Search ingredients"
-              type="search"
-              icon={<Search size={18} />}
-              placeholder="Search ingredient name, Supplier or category…"
-              value={search}
-              onChange={setSearch}
-            />
-          )}
-          {item && !order ? (
-            <Btn variant="outline" onClick={() => setSelected('')}>
-              Back to items
-            </Btn>
-          ) : mode !== 'browse' ? (
-            <div>
-              <h3>Registered ingredients & products</h3>
-              <p>
-                {role === 'manufacturer'
-                  ? 'Browse registered supplier ingredients. Your finished products appear automatically for retailers after production.'
-                  : role === 'retailer'
-                    ? 'Choose a finished product, view details and send a quantity or evidence request.'
-                    : 'Browse the registered items and review requests available to your company.'}
-              </p>
-            </div>
-          ) : null}
-          {!availableItems.length && !item && (
-            <p>
-              {search
-                ? 'No registered items match your search.'
-                : mode === 'browse'
-                  ? 'No Supplier ingredients are currently available. Registered ingredients appear here automatically.'
-                  : 'No registered ingredients or products found. They appear here automatically after registration.'}
-            </p>
-          )}
-          {!item && (
-            <div className="request-item-grid">
-              {availableItems.map((entry) => (
-                <Card key={entry.itemId}>
-                  <span>{Number(entry.kind) === 1 ? 'Ingredient' : 'Product'}</span>
-                  <h3>{entry.name}</h3>
-                  <p>{entry.sellerName ?? 'Company name unavailable'}</p>
-                  <p>
-                    {entry.price !== undefined
-                      ? entry.currency + ' ' + entry.price + ' / ' + entry.unit
-                      : 'Price unavailable'}
-                  </p>
-                  <p>
-                    {entry.category ?? 'Category unavailable'} |{' '}
-                    {entry.active === false ? 'Unavailable for requests' : 'Registered batch'}
-                  </p>
-                  <Btn
-                    variant="outline"
-                    onClick={() => {
-                      setSelected(entry.itemId);
-                      setDetailsRequestOpen(false);
-                      setForm({ quantity: '', unit: entry.unit });
-                    }}
-                  >
-                    View details
-                  </Btn>
-                </Card>
-              ))}
-            </div>
-          )}
-          {item && !order && (
-            <Card>
-              <h3>{item.name}</h3>
-              <p>
-                Company: {item.sellerName ?? 'Company name unavailable'} | Category:{' '}
-                {item.category ?? 'Unavailable'}
-              </p>
-              <p>Reference: {item.batchReference ?? short(item.batches[0])}</p>
-              <p>
-                Indicative price:{' '}
-                {item.price !== undefined
-                  ? `${item.currency} ${item.price} per ${item.unit}`
-                  : 'Unavailable'}
-                . Requests do not take payment.
-              </p>
-              {item.batchDetails?.map((batch: OrderRecord) => (
-                <p key={batch.batchId}>
-                  Batch {short(batch.batchId)} | Expires {timestamp(batch.expiresAt)} |{' '}
-                  {batch.supplierAvailable !== undefined
-                    ? `${batch.supplierAvailable} ${item.unit} available`
-                    : 'Quantity recorded in the product batch'}
-                </p>
-              ))}
-              {((role === 'manufacturer' && Number(item.kind) === 1) ||
-                (role === 'retailer' && Number(item.kind) === 2)) && (
-                <Btn variant="outline" onClick={() => setDetailsRequestOpen((current) => !current)}>
-                  Request {Number(item.kind) === 1 ? 'ingredient' : 'product'} details
-                </Btn>
-              )}
-              {detailsRequestOpen && (
-                <section className="orders-stage">
-                  <h4>Request additional evidence</h4>
-                  <p>
-                    Select necessary claims and optional claims. The holder chooses optional
-                    disclosures. Product requests concern linked ingredient evidence.
-                  </p>
-                  {Number(item.kind) === 2 &&
-                    choices(
-                      'Ingredient in this product',
-                      'detailBatch',
-                      (
-                        item.batchDetails?.flatMap(
-                          (batch: OrderRecord) => batch.ingredientLinks ?? [],
-                        ) ?? []
-                      ).map((link: OrderRecord) => ({
-                        value: link.batchId,
-                        label: short(link.batchId),
-                      })),
-                    )}
-                  <Input
-                    label="Reason for requesting details"
-                    value={form.detailReason ?? ''}
-                    onChange={change('detailReason')}
-                    maxLength={500}
-                  />
-                  <Input
-                    label="Details response deadline"
-                    type="datetime-local"
-                    value={form.detailDeadline ?? ''}
-                    onChange={change('detailDeadline')}
-                  />
-                  <div style={fields}>
-                    {[
-                      'countryOfOrigin',
-                      'productionDate',
-                      'expiryDate',
-                      'allergenDeclaration',
-                      'certificationDetails',
-                      'qualityTestSummary',
-                    ].map((claim) => (
-                      <SelectField
-                        key={claim}
-                        label={claim + ' disclosure requirement'}
-                        value={detailClaims[claim] ?? 'not-requested'}
-                        onChange={(value) =>
-                          setDetailClaims((current) => ({ ...current, [claim]: value }))
-                        }
-                        options={[
-                          { value: 'not-requested', label: 'Do not request' },
-                          { value: 'optional', label: 'Optional' },
-                          { value: 'required', label: 'Necessary' },
-                        ]}
-                      />
-                    ))}
-                  </div>
-                  <Btn
-                    disabled={
-                      busy ||
-                      !form.detailReason?.trim() ||
-                      !form.detailDeadline ||
-                      !Object.values(detailClaims).some((value) => value !== 'not-requested') ||
-                      (Number(item.kind) === 2 && !form.detailBatch)
-                    }
-                    onClick={() =>
-                      void run(async () => {
-                        const prepared = await prepareEvidenceRequest({
-                          batchId: Number(item.kind) === 1 ? item.batches[0] : form.detailBatch,
-                          ...(Number(item.kind) === 2 ? { productBatchId: item.batches[0] } : {}),
-                          operationId: crypto.randomUUID(),
-                          claims: Object.keys(detailClaims).filter(
-                            (key) => detailClaims[key] !== 'not-requested',
-                          ),
-                          requiredClaims: Object.keys(detailClaims).filter(
-                            (key) => detailClaims[key] === 'required',
-                          ),
-                          reason: form.detailReason,
-                          dueAt: new Date(form.detailDeadline).toISOString(),
-                        });
-                        if (!prepared.transaction || !prepared.requestId)
-                          throw new Error('Details request could not be prepared.');
-                        await sign(prepared.transaction);
-                        await sendEvidenceRequestMessage(
-                          await getEvidenceDetails(prepared.requestId),
-                        );
-                        setNotice(
-                          'Evidence requested. Open Information requests to review the response; verification and acceptance remain separate.',
-                        );
-                      })
-                    }
-                  >
-                    Send details request
-                  </Btn>
-                  <Btn
-                    variant="outline"
-                    onClick={() =>
-                      navigate(
-                        workspacePath(role, role === 'manufacturer' ? 'requests' : 'evidence'),
-                      )
-                    }
-                  >
-                    Open evidence responses
-                  </Btn>
-                </section>
-              )}
-              {((role === 'manufacturer' && Number(item.kind) === 1) ||
-                (role === 'retailer' && Number(item.kind) === 2)) && (
-                <details className="orders-stage">
-                  <summary>
-                    {mode === 'browse' ? 'Request ingredient quantity' : 'Request a quantity'}
-                  </summary>
-                  <p>
-                    Enter the quantity you are interested in, a deadline and an optional note. The
-                    recipient can review your request and ask for company evidence.
-                  </p>
-                  <div style={fields}>
-                    <Input
-                      label={`Requested quantity (${item.unit})`}
-                      value={form.quantity}
-                      onChange={change('quantity')}
-                      type="number"
-                      min="1"
-                      step="1"
-                      required
-                    />
-                    <Input
-                      label="Request deadline"
-                      type="datetime-local"
-                      value={form.deadline ?? ''}
-                      onChange={change('deadline')}
-                      required
-                    />
-                    <Input
-                      label="Private note"
-                      value={form.note ?? ''}
-                      onChange={change('note')}
-                      maxLength={500}
-                    />
-                  </div>
-                  <Btn
-                    disabled={
-                      busy ||
-                      item.active === false ||
-                      !/^[1-9]\d*$/.test(form.quantity) ||
-                      !form.deadline
-                    }
-                    onClick={() =>
-                      void submit('request', {
-                        itemId: item.itemId,
-                        batchId: item.batches[0],
-                        kind: Number(item.kind),
-                        requestOnly: true,
-                        quantity: form.quantity,
-                        unit: item.unit,
-                        expiresAt: Math.floor(Date.parse(form.deadline) / 1000),
-                        evidenceRequired: false,
-                        note: form.note ?? '',
-                      })
-                    }
-                  >
-                    Submit request
-                  </Btn>
-                </details>
-              )}
-            </Card>
-          )}
-        </>
+        <CatalogueBrowser
+          actor={data.actor}
+          busy={busy}
+          items={availableItems}
+          initialBatchId={initialBatchId}
+          role={role}
+          onOpenEvidence={() =>
+            navigate(workspacePath(role, role === 'manufacturer' ? 'requests' : 'evidence'))
+          }
+          onQuantityRequest={(selectedItem, input) =>
+            submit('request', {
+              itemId: selectedItem.itemId,
+              batchId: selectedItem.batches[0],
+              kind: Number(selectedItem.kind),
+              requestOnly: true,
+              quantity: input.quantity,
+              unit: selectedItem.unit,
+              expiresAt: Math.floor(Date.parse(input.deadline) / 1000),
+              evidenceRequired: false,
+              note: input.note,
+            })
+          }
+          onEvidenceRequest={(selectedItem, input) =>
+            run(async () => {
+              const prepared = await prepareEvidenceRequest({
+                batchId: input.batchId,
+                ...(Number(selectedItem.kind) === 2
+                  ? { productBatchId: selectedItem.batches[0] }
+                  : {}),
+                operationId: crypto.randomUUID(),
+                claims: input.claims,
+                requiredClaims: input.requiredClaims,
+                reason: input.reason,
+                dueAt: new Date(input.deadline).toISOString(),
+              });
+              if (!prepared.transaction || !prepared.requestId)
+                throw new Error('Information request could not be prepared.');
+              await sign(prepared.transaction);
+              await sendEvidenceRequestMessage(await getEvidenceDetails(prepared.requestId));
+              setNotice(
+                'Information requested. Open Information requests to review the Supplier response.',
+              );
+            })
+          }
+        />
       )}
       {data && tab === 'orders' && (
         <>
@@ -551,14 +302,6 @@ export function OrdersPage({
                   Received from buyers
                 </Btn>
               </nav>
-              <Input
-                label="Search orders"
-                type="search"
-                icon={<Search size={18} />}
-                placeholder="Search company, item or request ID…"
-                value={search}
-                onChange={setSearch}
-              />
             </>
           )}
           <h3>
@@ -577,135 +320,26 @@ export function OrdersPage({
               Back to requests
             </Btn>
           )}
-          {!data.orders.length && <p>No requests for your wallet.</p>}
-          {!order && (role === 'supplier' || mode === 'manage') && (
-            <Card padding="0">
-              <Table
-                headers={[
-                  mode === 'manage' ? 'Company' : 'Manufacturer',
-                  mode === 'manage' ? 'Item' : 'Ingredient',
-                  'Requested quantity',
-                  'Deadline',
-                  'Decision',
-                  '',
-                ]}
-              >
-                {managedOrders.map((entry) => (
-                  <TR
-                    key={entry.orderId}
-                    onClick={() => {
-                      setSelected(entry.orderId);
-                      setPendingDecision(undefined);
-                    }}
-                  >
-                    <TD bold>
-                      {same(entry.seller, data.actor)
-                        ? (entry.buyerName ?? short(entry.buyer))
-                        : (entry.sellerName ?? short(entry.seller))}
-                    </TD>
-                    <TD>
-                      {data.catalogue.find((item) => item.itemId === entry.itemId)?.name ??
-                        'Unavailable'}
-                    </TD>
-                    <TD>
-                      {entry.requested}{' '}
-                      {data.catalogue.find((item) => item.itemId === entry.itemId)?.unit ?? ''}
-                    </TD>
-                    <TD muted>{timestamp(entry.expiresAt)}</TD>
-                    <TD>
-                      <Badge
-                        label={
-                          Number(entry.decision?.status) === 1
-                            ? 'Approved'
-                            : Number(entry.decision?.status) === 2
-                              ? 'Rejected'
-                              : Number(entry.expiresAt) <= now()
-                                ? 'Expired'
-                                : Number(entry.status) === 3
-                                  ? 'Closed'
-                                  : 'Awaiting review'
-                        }
-                        variant={Number(entry.decision?.status) === 1 ? 'active' : 'pending'}
-                      />
-                    </TD>
-                    <TD>
-                      <Btn
-                        size="sm"
-                        variant="outline"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSelected(entry.orderId);
-                          setPendingDecision(undefined);
-                        }}
-                      >
-                        View request
-                      </Btn>
-                    </TD>
-                  </TR>
-                ))}
-              </Table>
-              {managedOrders.length === 0 && (
-                <p className="p-[16px]">
-                  No matching {role === 'supplier' ? 'received' : direction} requests.
-                </p>
-              )}
-            </Card>
+          {!order && (
+            <RequestsOverview
+              actor={data.actor}
+              catalogue={data.catalogue}
+              orders={mode === 'manage' || role === 'supplier' ? managedOrders : data.orders}
+              role={role}
+              onView={(orderId) => {
+                setSelected(orderId);
+                setPendingDecision(undefined);
+                setIdentityMaterial(undefined);
+                setIdentityStatus(undefined);
+              }}
+            />
           )}
-          {!order &&
-            role !== 'supplier' &&
-            mode !== 'manage' &&
-            data.orders.map((entry) => (
-              <Card key={entry.orderId}>
-                <h3>
-                  {data.catalogue.find((item) => item.itemId === entry.itemId)?.name ??
-                    'Item name unavailable'}
-                </h3>
-                <p>
-                  {same(entry.seller, data.actor)
-                    ? 'Received request'
-                    : same(entry.buyer, data.actor)
-                      ? 'Sent request'
-                      : 'Request record'}
-                </p>
-                <p>
-                  Requester: {entry.buyerName ?? short(entry.buyer)} | Recipient:{' '}
-                  {entry.sellerName ?? short(entry.seller)}
-                </p>
-                <p>
-                  Quantity requested: {entry.requested}{' '}
-                  {data.catalogue.find((item) => item.itemId === entry.itemId)?.unit ?? ''} |
-                  Deadline: {timestamp(entry.expiresAt)}
-                </p>
-                <p>
-                  Status:{' '}
-                  {Number(entry.decision?.status) === 1
-                    ? 'Approved'
-                    : Number(entry.decision?.status) === 2
-                      ? 'Rejected'
-                      : Number(entry.status) === 3
-                        ? 'Closed'
-                        : Number(entry.expiresAt) <= now()
-                          ? 'Expired'
-                          : 'Submitted'}
-                </p>
-                <Btn
-                  onClick={() => {
-                    setSelected(entry.orderId);
-                    setIdentityMaterial(undefined);
-                    setIdentityStatus(undefined);
-                  }}
-                >
-                  View request
-                </Btn>
-              </Card>
-            ))}
           {order && (
             <Card key={order.orderId}>
               <h3>{item?.name ?? 'Requested item'}</h3>
               <p>
                 Requested quantity: {order.requested} {item?.unit ?? ''}
               </p>
-              <p>Request ID: {order.orderId}</p>
               <p>
                 Requester: {order.buyerName ?? short(order.buyer)} · Recipient:{' '}
                 {order.sellerName ?? short(order.seller)}
@@ -843,6 +477,13 @@ export function OrdersPage({
                   )}
                 </>
               )}
+              <TechnicalDetails
+                fields={[
+                  { label: 'Request ID', value: order.orderId },
+                  { label: 'Requester wallet', value: order.buyer },
+                  { label: 'Recipient wallet', value: order.seller },
+                ]}
+              />
               {(seller || buyer) &&
                 activeOrder &&
                 (evidenceOnly || (role !== 'supplier' && mode !== 'manage')) && (

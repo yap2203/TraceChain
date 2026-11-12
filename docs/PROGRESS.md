@@ -1,5 +1,11 @@
 # Project Progress
 
+## 2026-11-12 — Resolve Orders page merge
+
+- Reconciled the Manufacturer Products/My orders changes with the catalogue/media and responsive request-summary redesign. Preserved browse/manage modes, ingredient-only discovery in Products, linked-batch detail opening, sent/received filtering, Supplier and Manufacturer decisions, company-proof handling, duplicate-submit protection and collapsed technical identifiers.
+- Connected linked-batch navigation to the new catalogue dialog and retained request-ID search in the responsive overview. Updated conflicting UI regressions for the dialog controls and desktop/mobile request layouts. No backend, contract, credential or environment edits were needed for the resolution.
+- Validation: 133 frontend tests passed, repository-wide type checks passed and the frontend production build passed with the existing bundle-size/apg-js warnings. No commit, push or deployment was performed.
+
 ## 2026-11-12 — Manufacturer products, orders and information requests
 
 - Replaced Manufacturer Browse navigation with Products, My orders and Information requests. Products contains searchable owned-product and Supplier-ingredient grids, with real registered metadata, quantities/units, dates, status and available indicative prices. Product detail links open the exact linked ingredient's detail/request view. Legacy Ingredient evidence routes redirect to Information requests.
@@ -7,6 +13,13 @@
 - Added Manufacturer Received/Sent information-request tables. Received company proofs cover both Supplier ingredient-information and quantity-request challenges. Sent ingredient requests expose actual requested claims/reason and preserve separate View, Verify and Accept/Reject actions; sent company proofs from product buyers reuse existing order identity handling. Missing services/statuses show explicit partial-load errors rather than fabricated verification results.
 - Preserved SIWE, browser holder presentation signing, backend DIDComm, tenant checks, contract authorization and physical-stock requirements. Quantity requests/decisions never credit stock; production still requires accepted physical receipts. No contract, deployment, environment or dependency change was required.
 - Validation: all 125 frontend tests, repository-wide type checks and frontend production build passed. Browser checks of grids, detail/request forms and sent/received tables passed at 375, 768 and 1440 pixels without horizontal page overflow, using isolated synthetic service responses for layout review. Existing bundle-size/apg-js warnings remain. Live multi-wallet transactions were not sent; the manual checklist is in docs/testing/MANUFACTURER_REQUESTS.md.
+## 2026-11-12 — B2B Browse & requests catalogue redesign
+
+- Replaced the sparse Browse & requests grid with a responsive one-to-four-column catalogue containing search, item type/category/origin/credential/availability filters, sorting, clear filters, result counts, lifecycle and credential summaries, verified company names, long-name handling, image/logo fallbacks, safe empty/error/loading states and an accessible detail dialog. Quantity and evidence requests remain separate and reuse the existing MetaMask and consent/verification flows.
+- Added a responsive My requests overview with a compact desktop table and mobile cards, readable counterpart names, status and next-action summaries, while keeping request IDs and wallet addresses in collapsed technical details. No cart, checkout, payment, stock reservation or automatic fulfilment was introduced.
+- Added optional Supplier-owned ingredient images and authenticated own-company logos. The API restricts PNG/JPEG/WebP files to 2 MB, validates MIME/extension/binary dimensions, encrypts presentation records through the existing content store, checks authoritative ownership, and returns only safe authenticated media routes rather than CIDs, ciphertext or keys. Images remain Supplier/company presentation data and do not alter signed credentials or authorization.
+- Added focused API and frontend coverage for upload validation, tenant isolation, safe responses, catalogue search/filter/empty/loading/error behavior, request validation, desktop/mobile structures, Supplier image upload and company-logo ownership. Documentation now records the security and request-only boundaries. No contract, SSI issuance, deployment, environment file, commit or push was performed.
+- Validation: root build and typecheck passed; 63 Orders API, 6 ingredient-batch, 15 production-flow and 122 frontend tests passed; changed-file Prettier and `git diff --check` passed. The unchanged Hardhat sub-suite invoked by `test:orders` could not start because the local Windows Hardhat/compiler cache was locked after `uv_os_get_passwd` returned `ENOMEM`; API and web portions of that command passed, and no Solidity files were changed.
 
 ## 2026-11-12 — Tailwind styling migration
 

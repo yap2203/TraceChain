@@ -9,6 +9,7 @@ import {
 import { CredentialCard } from './CredentialCard';
 import { HolderSigningKeyPanel } from '../../didcomm/HolderSigningKeyPanel';
 import { Alert, Badge, Btn, Card, MONO, SectionTitle, T } from './ui';
+import { CompanyBrandingPanel } from './CompanyBrandingPanel';
 
 export function StakeholderCredentialPage({
   expectedRole: _expectedRole,
@@ -168,6 +169,9 @@ export function StakeholderCredentialPage({
         wallet={identity.associatedWallet}
         onCopy={(label, value) => void copyValue(label, value)}
       />
+      <div style={{ marginBottom: 16 }}>
+        <CompanyBrandingPanel walletAddress={identity.associatedWallet} />
+      </div>
       {verificationError && (
         <Alert type="error" message={`Verification service unavailable: ${verificationError}`} />
       )}

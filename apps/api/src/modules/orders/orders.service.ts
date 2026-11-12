@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   decodeBytes32String,
   encodeBytes32String,
+  getAddress,
   id,
   solidityPackedKeccak256,
   ZeroAddress,
@@ -17,6 +18,13 @@ import type { OrderAction } from './orders.schema.js';
 import type { ProductionFlowService } from '../production-flow/production-flow.service.js';
 import type { DidCommService } from '../didcomm/didcomm.service.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
+import {
+  CatalogueImageError,
+  decodeStoredCatalogueImage,
+  extensionFor,
+  validateCatalogueImage,
+  type CatalogueImageInput,
+} from './catalogue-media.js';
 
 export class OrdersError extends Error {
   constructor(
@@ -172,11 +180,30 @@ export class OrdersService {
         metadata.productName ??
         (kind === 1 ? 'Ingredient name unavailable' : 'Product name unavailable'),
       category: metadata.category,
+      countryOfOrigin: metadata.origin,
+      description: metadata.description,
       batchReference: metadata.batchId ?? metadata.batchReference,
       price: metadata.price,
       currency: metadata.price !== undefined ? metadata.currency : undefined,
     };
     if (kind === 1) {
+      try {
+        const credential = await this.gateway.read('credentials', 'getCredential', [
+          batch.credentialId,
+        ]);
+        summary.credentialStatus = Number(credential.status);
+        summary.credentialExpiresAt = credential.expiresAt;
+        summary.evidenceAvailability =
+          Number(credential.status) === 1
+            ? 'Credential registered; evidence available by request'
+            : 'Credential evidence is not currently active';
+      } catch {
+        summary.credentialStatus = 0;
+        summary.evidenceAvailability = 'Credential status unavailable';
+      }
+      const image = await this.repository.findPrivate('products', mediaKey('ingredient', batchId));
+      if (image && same(image.owner, batch.supplier))
+        summary.imagePath = `/catalogue/ingredients/${batchId}/image`;
       const listing = await this.optionalRead('ingredients', 'getListing', [batchId]);
       summary.archived = Boolean(listing?.archived);
       summary.listingHash = listing?.metadataHash ?? ZeroHash;
@@ -332,13 +359,7 @@ export class OrdersService {
       : this.flow.declineCompanyIdentityProof(sessionId, orderId);
   }
   async session(sessionId?: string) {
-    const session = await this.auth.getSession(sessionId);
-    if (!session.authenticated || !session.authorizationReady || !session.address)
-      throw new OrdersError(
-        'AUTHORIZATION_REQUIRED',
-        'Sign in with an active authorized company wallet.',
-        403,
-      );
+    const session = await this.authorizedSession(sessionId);
     try {
       await this.gateway.assertDeployment?.();
     } catch {
@@ -348,6 +369,16 @@ export class OrdersService {
         503,
       );
     }
+    return session;
+  }
+  private async authorizedSession(sessionId?: string) {
+    const session = await this.auth.getSession(sessionId);
+    if (!session.authenticated || !session.authorizationReady || !session.address)
+      throw new OrdersError(
+        'AUTHORIZATION_REQUIRED',
+        'Sign in with an active authorized company wallet.',
+        403,
+      );
     return session;
   }
   private async privateRecord(key: string, actor: string, value: unknown) {
@@ -372,6 +403,154 @@ export class OrdersService {
     };
     await this.repository.savePrivate('products', record);
     return record;
+  }
+  private async replacePresentationRecord(key: string, actor: string, value: unknown) {
+    const existing = await this.repository.findPrivate('products', key);
+    if (existing && !same(existing.owner, actor))
+      throw new OrdersError(
+        'PRESENTATION_OWNER_REQUIRED',
+        'This presentation record is not yours.',
+        403,
+      );
+    const serialized = JSON.stringify(value);
+    const contentHash = `0x${createHash('sha256').update(serialized).digest('hex')}`;
+    if (existing?.contentHash === contentHash) return existing;
+    const encrypted = await this.store.encryptAndStore(serialized, key);
+    const record = {
+      id: key,
+      owner: actor,
+      contentHash,
+      cid: encrypted.cid,
+      payload: encrypted.payload,
+    };
+    await this.repository.savePrivate('products', record);
+    return record;
+  }
+
+  async updateIngredientImage(
+    sessionId: string | undefined,
+    batchId: string,
+    input: CatalogueImageInput,
+  ) {
+    const session = await this.session(sessionId);
+    if (session.role !== CompanyRole.SUPPLIER)
+      throw new OrdersError(
+        'INGREDIENT_OWNER_REQUIRED',
+        'Only a Supplier can manage ingredient images.',
+        403,
+      );
+    const batch = await this.gateway.read('ingredients', 'getBatch', [batchId]);
+    if (!same(batch.supplier, session.address))
+      throw new OrdersError(
+        'INGREDIENT_OWNER_REQUIRED',
+        'Only this ingredient’s Supplier can replace its image.',
+        403,
+      );
+    const image = validateImage(input);
+    await this.replacePresentationRecord(mediaKey('ingredient', batchId), session.address, image);
+    return {
+      image: {
+        height: image.height,
+        mimeType: image.mimeType,
+        path: `/catalogue/ingredients/${batchId}/image`,
+        supplierProvided: true,
+        width: image.width,
+      },
+    };
+  }
+
+  async updateCompanyLogo(
+    sessionId: string | undefined,
+    targetWallet: string,
+    input: CatalogueImageInput,
+  ) {
+    const session = await this.authorizedSession(sessionId);
+    if (!same(getAddress(targetWallet), session.address))
+      throw new OrdersError(
+        'COMPANY_BRANDING_OWNER_REQUIRED',
+        'You can update only your own company logo.',
+        403,
+      );
+    const identity = await this.directory?.resolve(session.address);
+    if (!identity)
+      throw new OrdersError(
+        'COMPANY_IDENTITY_REQUIRED',
+        'A current verified company identity is required.',
+        403,
+      );
+    const image = validateImage(input);
+    await this.replacePresentationRecord(
+      mediaKey('company', session.address),
+      session.address,
+      image,
+    );
+    return {
+      branding: {
+        companyName: identity.companyName,
+        logoPath: `/branding/${getAddress(session.address)}/logo`,
+        role: identity.role,
+        companyProvided: true,
+      },
+    };
+  }
+
+  async myBranding(sessionId: string | undefined) {
+    const session = await this.authorizedSession(sessionId);
+    const identity = await this.directory?.resolve(session.address);
+    if (!identity)
+      throw new OrdersError(
+        'COMPANY_IDENTITY_REQUIRED',
+        'A current verified company identity is required.',
+        403,
+      );
+    const logo = await this.repository.findPrivate(
+      'products',
+      mediaKey('company', session.address),
+    );
+    return {
+      branding: {
+        companyName: identity.companyName,
+        logoPath:
+          logo && same(logo.owner, session.address)
+            ? `/branding/${getAddress(session.address)}/logo`
+            : undefined,
+        role: identity.role,
+      },
+    };
+  }
+
+  async catalogueMedia(
+    sessionId: string | undefined,
+    kind: 'company' | 'ingredient',
+    reference: string,
+  ) {
+    await this.authorizedSession(sessionId);
+    let owner: string;
+    if (kind === 'company') {
+      owner = getAddress(reference);
+      if (!(await this.directory?.resolve(owner)))
+        throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+    } else {
+      const batch = await this.gateway.read('ingredients', 'getBatch', [reference]);
+      owner = batch.supplier;
+    }
+    const record = await this.repository.findPrivate('products', mediaKey(kind, reference));
+    if (!record || !same(record.owner, owner))
+      throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+    try {
+      const stored = decodeStoredCatalogueImage(
+        JSON.parse(await this.store.decrypt(record.payload)),
+      );
+      return {
+        bytes: stored.bytes,
+        contentHash: record.contentHash,
+        fileName: `${kind}-${createHash('sha256').update(reference.toLowerCase()).digest('hex').slice(0, 16)}.${extensionFor(stored.mimeType)}`,
+        mimeType: stored.mimeType,
+      };
+    } catch (error) {
+      if (error instanceof OrdersError) throw error;
+      throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+    }
   }
   async state(sessionId?: string) {
     const session = await this.session(sessionId);
@@ -400,7 +579,9 @@ export class OrdersService {
             return {
               batchId,
               expiresAt: batch.expiresAt,
+              producedAt: batch.producedAt,
               status: batch.status,
+              totalQuantity: batch.totalQuantity,
               ...(Number(item.kind) === 1
                 ? { supplierAvailable: batch.availableQuantity }
                 : {
@@ -438,6 +619,10 @@ export class OrdersService {
             [batchId]: summary,
           };
           Object.assign(existing, summary);
+          existing.registeredBlock = Math.max(
+            Number(existing.registeredBlock ?? 0),
+            Number(event.blockNumber ?? 0),
+          );
           existing.active = existing.active && !summary.archived;
           continue;
         }
@@ -456,12 +641,14 @@ export class OrdersService {
           ...summary,
           batchSummaries: { [batchId]: summary },
           registeredBatch: true,
+          registeredBlock: Number(event.blockNumber ?? 0),
           batches: [batchId],
           batchDetails: [
             {
               batchId,
               status: batch.status,
               expiresAt: batch.expiresAt,
+              producedAt: batch.producedAt,
               totalQuantity: batch.totalQuantity,
               ...(kind === 1
                 ? { supplierAvailable: batch.availableQuantity }
@@ -600,11 +787,31 @@ export class OrdersService {
     const identities = (await this.directory?.resolveMany(wallets)) ?? [];
     const name = (wallet: string) =>
       identities.find((identity) => same(identity.walletAddress, wallet))?.companyName;
+    const role = (wallet: string) =>
+      identities.find((identity) => same(identity.walletAddress, wallet))?.role;
+    const logoWallets = new Set<string>();
+    await Promise.all(
+      identities.map(async (identity) => {
+        const logo = await this.repository.findPrivate(
+          'products',
+          mediaKey('company', identity.walletAddress),
+        );
+        if (logo && same(logo.owner, identity.walletAddress))
+          logoWallets.add(identity.walletAddress.toLowerCase());
+      }),
+    );
     return {
       actor,
       listingBatches,
       role: session.role,
-      catalogue: catalogue.map((item) => ({ ...item, sellerName: name(item.seller) })),
+      catalogue: catalogue.map((item) => ({
+        ...item,
+        sellerName: name(item.seller),
+        sellerRole: role(item.seller),
+        sellerLogoPath: logoWallets.has(item.seller.toLowerCase())
+          ? `/branding/${getAddress(item.seller)}/logo`
+          : undefined,
+      })),
       orders: orders.map((order) => ({
         ...order,
         buyerName: name(order.buyer),
@@ -1262,5 +1469,18 @@ export class OrdersService {
       transfers,
       corrections,
     };
+  }
+}
+
+function mediaKey(kind: 'company' | 'ingredient', reference: string) {
+  return id(`catalogue-media:${kind}:${reference.toLowerCase()}`);
+}
+
+function validateImage(input: CatalogueImageInput) {
+  try {
+    return validateCatalogueImage(input);
+  } catch (error) {
+    if (error instanceof CatalogueImageError) throw new OrdersError(error.code, error.message, 400);
+    throw error;
   }
 }

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({
@@ -47,6 +47,16 @@ describe('browse and request-only UI', () => {
     expiresAt: '2000000000',
     details: { requestOnly: true, note: 'Please review' },
   };
+  it('shows catalogue skeleton cards while authoritative data loads', () => {
+    api.getOrders.mockImplementation(() => new Promise(() => undefined));
+    const { container } = render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('status', { name: 'Loading catalogue' })).toBeTruthy();
+    expect(container.querySelectorAll('.catalogue-skeleton')).toHaveLength(4);
+  });
   it('shows registered items in a grid with price and a detail view without publishing', async () => {
     api.getOrders.mockResolvedValue({
       ...state,
@@ -68,7 +78,7 @@ describe('browse and request-only UI', () => {
         },
       ],
     });
-    render(
+    const { container } = render(
       <MemoryRouter>
         <OrdersPage role="manufacturer" />
       </MemoryRouter>,
@@ -76,11 +86,18 @@ describe('browse and request-only UI', () => {
     await screen.findByText('Ingredient from chain records');
     expect(screen.queryByRole('button', { name: 'Publish catalogue entry' })).toBeNull();
     expect(screen.getByText('MYR 12.50 / litre')).toBeTruthy();
+    expect(container.querySelector('.workspace-shell')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
-    expect(screen.getByText(/Requests do not take payment/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Request ingredient details' }));
-    expect(screen.getByLabelText('expiryDate disclosure requirement')).toBeTruthy();
-    expect(screen.getByText('Request a quantity')).toBeTruthy();
+    expect(container.querySelectorAll('.workspace-dialog__body')).toHaveLength(1);
+    expect(container.querySelector('.catalogue-dialog-content')).toBeTruthy();
+    expect(container.querySelector('.catalogue-dialog-summary')).toBeTruthy();
+    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(1);
+    expect(screen.getByText(/does not independently prove physical quality/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Request evidence or information' }));
+    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(2);
+    expect(container.querySelector('.catalogue-request-form')).toBeTruthy();
+    expect(screen.getByLabelText('expiryDate disclosure')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Request quantity' })).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
   });
   it('lets the holder choose optional company claims while keeping binding claims necessary', async () => {
@@ -113,9 +130,9 @@ describe('browse and request-only UI', () => {
         <OrdersPage role="manufacturer" />
       </MemoryRouter>,
     );
-    await screen.findByText(/No registered ingredients or products found/);
+    await screen.findByText('No registered items');
     fireEvent.click(screen.getByRole('button', { name: 'My requests' }));
-    fireEvent.click(screen.getByRole('button', { name: 'View request' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
     fireEvent.click(screen.getByRole('button', { name: 'Preview requested Company Role VP' }));
     await screen.findByLabelText('Share companyName');
     expect(screen.queryByLabelText('Presentation key backup password')).toBeNull();
@@ -149,7 +166,7 @@ describe('browse and request-only UI', () => {
         <OrdersPage role="supplier" />
       </MemoryRouter>,
     );
-    await screen.findByText('No requests for your wallet.');
+    await screen.findByText('No incoming requests');
     expect(screen.queryByText('Your workflow')).toBeNull();
     for (const name of [
       /reserve stock/i,
@@ -161,7 +178,7 @@ describe('browse and request-only UI', () => {
     ])
       expect(screen.queryByRole('button', { name })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
-    expect(screen.getByText('No requests for your wallet.')).toBeTruthy();
+    expect(screen.getByText('No incoming requests')).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
   });
   it('submits quantity interest without location, reservation or dispatch prerequisites', async () => {
@@ -192,9 +209,9 @@ describe('browse and request-only UI', () => {
     );
     await screen.findByText('Registered ingredient');
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
-    fireEvent.click(screen.getByText('Request a quantity'));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Request quantity' })[1]);
     fireEvent.change(screen.getByLabelText(/Requested quantity/), { target: { value: '12' } });
-    fireEvent.change(screen.getByLabelText(/Request deadline/), {
+    fireEvent.change(screen.getByLabelText(/Response deadline/), {
       target: { value: '2099-01-01T10:00' },
     });
     expect(screen.queryByLabelText('Receiving location')).toBeNull();
@@ -222,13 +239,167 @@ describe('browse and request-only UI', () => {
         <OrdersPage role="supplier" />
       </MemoryRouter>,
     );
-    await screen.findByRole('button', { name: 'View request' });
-    fireEvent.click(screen.getByRole('button', { name: 'View request' }));
+    await screen.findAllByRole('button', { name: 'View request' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
     expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
     expect(screen.queryByLabelText('Dispatch quantity')).toBeNull();
     expect(screen.queryByLabelText('Allocation quantity')).toBeNull();
     expect(screen.getByText(/This request does not reserve stock/)).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
+  });
+  it('searches, filters and clears a mixed responsive catalogue without commerce controls', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      catalogue: [
+        {
+          itemId: 'cocoa',
+          name: 'Single Origin Fermented Cocoa Beans With A Deliberately Long Catalogue Name',
+          seller: 'supplier-a',
+          sellerName: 'Sabah Cocoa Cooperative',
+          category: 'Cocoa',
+          countryOfOrigin: 'Malaysia',
+          kind: 1,
+          unit: 'kg',
+          active: true,
+          credentialStatus: 1,
+          registeredBlock: 10,
+          batches: ['batch-a'],
+          batchDetails: [{ status: 1, expiresAt: 2000000000, supplierAvailable: '20' }],
+        },
+        {
+          itemId: 'oil',
+          name: 'Refined Sunflower Oil',
+          seller: 'supplier-b',
+          sellerName: 'Eastern Oils Sdn. Bhd.',
+          category: 'Oil',
+          countryOfOrigin: 'Thailand',
+          kind: 1,
+          unit: 'litre',
+          active: false,
+          credentialStatus: 0,
+          registeredBlock: 20,
+          batches: ['batch-b'],
+          batchDetails: [{ status: 2, expiresAt: 2000000000, supplierAvailable: '0' }],
+        },
+      ],
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" />
+      </MemoryRouter>,
+    );
+    await screen.findByText(/Single Origin Fermented Cocoa Beans/);
+    expect(container.querySelector('.catalogue-grid')).toBeTruthy();
+    expect(screen.getByLabelText('Cocoa image placeholder')).toBeTruthy();
+    expect(screen.getByLabelText('Sabah Cocoa Cooperative initials')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /cart|checkout|buy|pay/i })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Search catalogue'), {
+      target: { value: 'sunflower' },
+    });
+    expect(screen.queryByText(/Single Origin Fermented Cocoa Beans/)).toBeNull();
+    expect(screen.getByText('Refined Sunflower Oil')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Credential status'), {
+      target: { value: 'active' },
+    });
+    expect(screen.getByText('No items match these filters')).toBeTruthy();
+    fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
+    expect(screen.getByText(/Single Origin Fermented Cocoa Beans/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'newest' } });
+    expect(container.querySelector('.catalogue-card h4')?.textContent).toBe(
+      'Refined Sunflower Oil',
+    );
+    const longName = screen.getByText(
+      'Single Origin Fermented Cocoa Beans With A Deliberately Long Catalogue Name',
+    );
+    const longNameCard = longName.closest('.catalogue-card');
+    expect(longNameCard).toBeTruthy();
+    fireEvent.click(
+      within(longNameCard as HTMLElement).getByRole('button', { name: 'View details' }),
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.querySelector('.catalogue-detail')).toBeTruthy();
+    expect(dialog.textContent).toContain(
+      'Single Origin Fermented Cocoa Beans With A Deliberately Long Catalogue Name',
+    );
+    expect(dialog.textContent).toContain('Sabah Cocoa Cooperative');
+  });
+  it('keeps invalid quantity requests disabled and presents desktop and mobile request views', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      catalogue: [
+        {
+          itemId: 'item',
+          name: 'Registered ingredient',
+          seller: 'supplier',
+          sellerName: 'Supplier Company',
+          kind: 1,
+          unit: 'g',
+          active: true,
+          batches: ['batch'],
+          batchDetails: [{ status: 1, expiresAt: '2000000000', supplierAvailable: '50' }],
+        },
+      ],
+      orders: [{ ...order, sellerName: 'Supplier Company' }],
+    });
+    const { container } = render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Registered ingredient');
+    fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
+    const submit = screen.getByRole('button', { name: 'Submit request' }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Requested quantity/), { target: { value: '0' } });
+    expect(submit.disabled).toBe(true);
+    fireEvent.click(screen.getByLabelText('Close dialog'));
+    fireEvent.click(screen.getByRole('button', { name: 'My requests' }));
+    expect(container.querySelector('.requests-desktop')).toBeTruthy();
+    expect(container.querySelector('.requests-mobile')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'View request' })).toHaveLength(2);
+  });
+  it('prevents a duplicate quantity submission while preparation is active', async () => {
+    Object.defineProperty(window, 'ethereum', { configurable: true, value: { request: vi.fn() } });
+    api.getOrders.mockResolvedValue({
+      ...state,
+      catalogue: [
+        {
+          itemId: 'item',
+          name: 'Duplicate-safe ingredient',
+          seller: 'supplier',
+          sellerName: 'Supplier Company',
+          kind: 1,
+          unit: 'kg',
+          active: true,
+          batches: ['batch'],
+          batchDetails: [{ status: 1, expiresAt: 2000000000, supplierAvailable: '50' }],
+        },
+      ],
+    });
+    let resolvePreparation!: (value: any) => void;
+    api.prepareOrder.mockImplementation(
+      () => new Promise((resolve) => (resolvePreparation = resolve)),
+    );
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Duplicate-safe ingredient');
+    fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
+    fireEvent.change(screen.getByLabelText(/Requested quantity/), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText(/Response deadline/), {
+      target: { value: '2030-01-01T00:00' },
+    });
+    const submit = screen.getByRole('button', { name: 'Submit request' });
+    fireEvent.click(submit);
+    fireEvent.click(submit);
+    expect(api.prepareOrder).toHaveBeenCalledTimes(1);
+    resolvePreparation({
+      resultId: 'request',
+      transaction: { chainId: 31337, to: actor, data: '0x1234', value: '0x0' },
+    });
+    await screen.findByText(/Request submitted/);
   });
   it('shows errors without inserting sample items', async () => {
     api.getOrders.mockRejectedValue(new Error('Service unavailable'));
@@ -267,13 +438,15 @@ describe('browse and request-only UI', () => {
         <OrdersPage role="manufacturer" mode="browse" initialBatchId="batch" />
       </MemoryRouter>,
     );
-    await screen.findByRole('button', { name: 'Request ingredient details' });
-    expect(screen.getByText('Request ingredient quantity')).toBeTruthy();
+    await screen.findByRole('button', { name: 'Request evidence or information' });
+    expect(
+      within(screen.getByRole('dialog')).getByRole('button', { name: 'Request quantity' }),
+    ).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'My requests' })).toBeNull();
     expect(screen.queryByText('Own finished product')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Back to items' }));
-    expect(screen.getByRole('searchbox', { name: 'Search ingredients' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    expect(screen.getByRole('searchbox', { name: 'Search catalogue' })).toBeTruthy();
     expect(screen.queryByText('Own finished product')).toBeNull();
     expect(api.prepareOrder).not.toHaveBeenCalled();
   });
@@ -299,14 +472,14 @@ describe('browse and request-only UI', () => {
         <OrdersPage role="manufacturer" mode="manage" />
       </MemoryRouter>,
     );
-    await screen.findByText('Supplier A');
+    await screen.findAllByText('Supplier A');
     expect(screen.queryByText('Retailer A')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
     expect(screen.getByRole('table')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Received from buyers' }));
-    expect(screen.getByText('Retailer A')).toBeTruthy();
+    expect(screen.getAllByText('Retailer A').length).toBeGreaterThan(0);
     expect(screen.queryByText('Supplier A')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'View request' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
     expect(screen.getByRole('button', { name: 'Approve' }).hasAttribute('disabled')).toBe(false);
     expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
