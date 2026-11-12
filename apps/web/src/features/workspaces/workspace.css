@@ -501,4 +501,239 @@
     @apply mb-[16px];
     color: var(--c-text2);
   }
+
+  .catalogue-browser,
+  .requests-overview {
+    container-type: inline-size;
+    @apply grid gap-[18px] min-w-0;
+  }
+  .catalogue-heading,
+  .requests-overview__heading {
+    @apply flex items-start justify-between gap-[16px] flex-wrap;
+  }
+  .catalogue-heading > div,
+  .requests-overview__heading > div {
+    @apply grid gap-[5px] max-w-[760px];
+  }
+  .catalogue-heading > strong,
+  .requests-overview__heading > strong {
+    color: var(--c-text2);
+  }
+  .catalogue-toolbar,
+  .requests-toolbar {
+    @apply grid gap-[12px] items-end;
+    grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(145px, 1fr));
+  }
+  .catalogue-check {
+    @apply flex items-center gap-[8px] min-h-[40px] cursor-pointer;
+    color: var(--c-text2);
+  }
+  .catalogue-check input {
+    accent-color: var(--c-teal);
+  }
+  .catalogue-type-tabs {
+    @apply inline-flex gap-[4px] p-[4px] w-fit rounded-[10px];
+    background: var(--c-surface2);
+    border: 1px solid var(--c-border);
+  }
+  .catalogue-type-tabs button {
+    @apply px-[14px] py-[7px] rounded-[7px] border-0 cursor-pointer;
+    color: var(--c-text2);
+    background: transparent;
+  }
+  .catalogue-type-tabs button[aria-pressed='true'] {
+    color: var(--c-on-accent);
+    background: var(--c-teal);
+  }
+  .catalogue-grid {
+    @apply grid gap-[16px] min-w-0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .catalogue-card {
+    @apply min-w-0 overflow-hidden rounded-[var(--radius)] flex flex-col;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+    box-shadow: var(--shadow);
+  }
+  .catalogue-card:hover {
+    border-color: var(--c-border2);
+    box-shadow: var(--shadow-md);
+  }
+  .catalogue-image {
+    @apply block w-full aspect-[4/3] object-cover;
+    background: var(--c-surface2);
+  }
+  .catalogue-image--fallback {
+    @apply grid place-items-center;
+    color: var(--c-text3);
+    background: linear-gradient(135deg, var(--c-surface2), var(--c-teal-light)), var(--c-surface2);
+  }
+  .catalogue-image--large {
+    @apply rounded-[var(--radius)] max-h-[350px];
+  }
+  .catalogue-card__body {
+    @apply p-[16px] grid gap-[13px] h-full;
+  }
+  .catalogue-card__body h4 {
+    @apply m-0 text-[16px] leading-[1.35] line-clamp-2;
+    color: var(--c-text);
+  }
+  .catalogue-card__badges,
+  .catalogue-card__actions,
+  .catalogue-detail__actions {
+    @apply flex flex-wrap gap-[8px] items-center;
+  }
+  .catalogue-card__actions {
+    @apply mt-auto;
+  }
+  .catalogue-company {
+    @apply flex items-center gap-[9px] min-w-0;
+    color: var(--c-text2);
+  }
+  .catalogue-company > span {
+    @apply truncate;
+  }
+  .catalogue-company--large > div {
+    @apply grid gap-[2px] min-w-0;
+  }
+  .catalogue-company--large span {
+    @apply text-[12px];
+    color: var(--c-text2);
+  }
+  .company-avatar {
+    @apply rounded-full shrink-0 grid place-items-center overflow-hidden font-bold uppercase;
+    color: var(--c-on-accent);
+    background: var(--c-teal);
+  }
+  .company-avatar img {
+    @apply w-full h-full object-cover;
+  }
+  .company-avatar--sm {
+    @apply size-[28px] text-[10px];
+  }
+  .company-avatar--md {
+    @apply size-[36px] text-[11px];
+  }
+  .company-avatar--lg {
+    @apply size-[44px] text-[13px];
+  }
+  .catalogue-card__facts,
+  .catalogue-detail__facts {
+    @apply grid gap-[8px] m-0;
+  }
+  .catalogue-card__facts > div,
+  .catalogue-detail__facts > div {
+    @apply flex gap-[12px] justify-between;
+  }
+  .catalogue-card__facts dt,
+  .catalogue-detail__facts dt {
+    color: var(--c-text2);
+  }
+  .catalogue-card__facts dd,
+  .catalogue-detail__facts dd {
+    @apply m-0 text-right font-medium;
+  }
+  .catalogue-warning {
+    @apply text-[12px] font-semibold;
+    color: var(--c-amber);
+  }
+  .catalogue-detail {
+    @apply grid grid-cols-2 gap-[20px] items-start;
+  }
+  .catalogue-detail__summary,
+  .catalogue-request-form {
+    @apply grid gap-[14px];
+  }
+  .catalogue-upload {
+    @apply grid gap-[16px] items-center my-[16px] p-[14px] rounded-[var(--radius)];
+    grid-template-columns: minmax(120px, 190px) minmax(0, 1fr);
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .catalogue-upload > div {
+    @apply grid gap-[10px] justify-items-start min-w-0;
+  }
+  .catalogue-upload .catalogue-image {
+    @apply rounded-[var(--radius-sm)];
+  }
+  .company-branding {
+    @apply flex items-center gap-[12px] mb-[12px];
+  }
+  .company-branding__actions {
+    @apply flex flex-wrap items-center gap-[10px] mt-[12px];
+  }
+  .catalogue-claim-grid {
+    @apply grid grid-cols-2 gap-[12px];
+  }
+  .catalogue-skeleton {
+    @apply min-h-[380px];
+    background: linear-gradient(
+      100deg,
+      var(--c-surface) 30%,
+      var(--c-surface2) 50%,
+      var(--c-surface) 70%
+    );
+    background-size: 220% 100%;
+    animation: catalogue-shimmer 1.4s ease-in-out infinite;
+  }
+  .requests-toolbar {
+    grid-template-columns: minmax(220px, 2fr) minmax(180px, 1fr);
+    max-width: 720px;
+  }
+  .requests-mobile {
+    @apply hidden gap-[12px];
+  }
+  .requests-mobile__title {
+    @apply flex justify-between items-start gap-[10px];
+  }
+  @keyframes catalogue-shimmer {
+    to {
+      background-position: -220% 0;
+    }
+  }
+  @container workspace (max-width: 1200px) {
+    .catalogue-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .catalogue-toolbar {
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+    }
+  }
+  @container workspace (max-width: 820px) {
+    .catalogue-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .catalogue-toolbar {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .catalogue-detail {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @container workspace (max-width: 560px) {
+    .catalogue-grid,
+    .catalogue-toolbar,
+    .requests-toolbar,
+    .catalogue-claim-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .catalogue-card__actions > button,
+    .catalogue-detail__actions > button {
+      @apply grow;
+    }
+    .catalogue-upload {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .requests-desktop {
+      @apply hidden;
+    }
+    .requests-mobile {
+      @apply grid;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .catalogue-skeleton {
+      animation: none;
+    }
+  }
 }

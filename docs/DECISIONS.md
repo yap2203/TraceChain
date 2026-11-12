@@ -4,6 +4,10 @@
 
 - Use Tailwind CSS for web styling while preserving the existing TraceChain visual design, as requested on 2026-11-12. Use its official Vite integration, reuse the existing theme tokens and retain the current reset rather than introducing Preflight layout changes.
 
+- Present Browse & requests as a responsive B2B catalogue with search/filter/sort, verified company names, safe item details and separate quantity/evidence actions. Keep the workflow request-only: no cart, checkout, payment, reservation or automatic fulfilment.
+
+- Treat optional ingredient images and company logos as presentation metadata. Accept only validated PNG/JPEG/WebP files up to 2 MB, encrypt/store them through the existing content abstraction, require authoritative ownership for writes and authenticated safe routes for reads, and never treat them as credential claims or physical-quality evidence.
+
 - Supplier navigation separates owned Ingredient batches, incoming My orders, and Received/Sent Information requests. Supplier does not need a separate Browse function. Order decisions and company evidence review are separate actions and do not initiate payment or physical fulfilment.
 
 - The current Browse & requests stage is limited to browsing, quantity/detail requests and company evidence exchange. Defer the numbered physical workflow, location setup, proposal, reservation, dispatch, receipt and recall controls from this page until the user requests them. Preserve their existing implementation and records for later review.

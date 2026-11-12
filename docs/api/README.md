@@ -292,6 +292,26 @@ the recipient uses the same endpoint and performs a separate final confirmation.
 transfer, a currently authorized sender, recipient, or System Admin also receives the actual-arrival
 time from the private record matching `ReceiptConfirmed`; a missing value is returned as `null`.
 
+## Catalogue presentation media
+
+All routes require the existing fully authorized SIWE session. Presentation media never changes
+credential, stakeholder, batch or inventory state.
+
+- `GET /api/orders/branding/me` returns the verified session company's safe name/role and optional
+  authenticated logo route.
+- `POST /api/orders/branding/:wallet/logo` accepts a PNG/JPEG/WebP data envelope up to 2 MB. The
+  path wallet must equal the SIWE wallet and the stakeholder directory must verify the company.
+- `GET /api/orders/branding/:wallet/logo` rechecks the verified company and returns the decrypted,
+  revalidated image with private caching, content sniffing disabled and a safe filename.
+- `POST /api/orders/catalogue/ingredients/:batchId/image` accepts the same image envelope only when
+  the authenticated Supplier is the authoritative on-chain batch owner.
+- `GET /api/orders/catalogue/ingredients/:batchId/image` rechecks that batch ownership before
+  returning the safe image bytes.
+
+Upload validation checks the allowlisted MIME type, matching filename extension, base64 encoding,
+binary signature, dimensions and maximum size before encrypted storage. Catalogue JSON exposes only
+safe media paths. It never exposes raw image data, a storage CID, ciphertext or an encryption key.
+
 ## Authentication boundary
 
 SIWE proves control of a wallet address only. Workspace authorization comes from current configured registry state and is refreshed during restoration and protected operations. This login check does not cryptographically verify the off-chain Company Role VC. The frontend must not derive a role from its URL, wallet address, fixture data, or local storage.

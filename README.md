@@ -22,7 +22,8 @@ Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid
 Sent evidence tables). There is no Supplier Browse tab. Ingredients support create/read,
 version-checked listing edits, archive/delete and restore. Listing edits change the business name,
 category, description and indicative price; signed credential claims, quantities and units stay
-intact. Supplier decisions are recorded on-chain and never reserve stock or process payment.
+intact. Suppliers can also attach an optional validated presentation image to an owned batch.
+Supplier decisions are recorded on-chain and never reserve stock or process payment.
 See [the Supplier management flow](docs/BROWSE_REQUESTS_README.md#supplier-management).
 
 The updated IngredientRegistry and SupplyChainOrders require a fresh complete suite deployment
@@ -47,11 +48,20 @@ backend/contract capabilities, not the current page's controls. Updated contract
 required to submit location-free request-only records; existing records and configuration remain intact.
 
 **Browse & requests** now discovers registered ingredients and finished products automatically.
-There is no separate publishing step. Open an item in the responsive grid to inspect its safe
-business summary, request additional ingredient evidence, or request a quantity. Requests track
-supply and fulfilment; there is no checkout or payment. New registrations accept an optional
+There is no separate publishing step. The responsive one-to-four-column catalogue includes search,
+filters, sorting, result counts, lifecycle/credential summaries, verified company names and safe
+empty/loading/error states. Open an item to inspect its allowlisted business summary, request
+additional ingredient evidence, or request a quantity. Requests do not reserve stock, move goods or
+take payment. New registrations accept an optional
 indicative price per registered unit and a three-letter currency code; existing prices remain
 unavailable until recorded in new registration metadata.
+
+Suppliers can upload one optional PNG/JPEG/WebP catalogue image per owned ingredient batch, and a
+verified company can upload its own optional logo, each limited to 2 MB. These files are validated,
+encrypted and stored through the existing off-chain content abstraction. Catalogue responses expose
+authenticated media routes rather than storage CIDs or ciphertext. Images and prices are
+Supplier-provided presentation data and are not credential claims or independent physical-quality
+evidence.
 
 The receiver of a quantity request can request Company Identity Proof before sharing evidence.
 New request-linked company proofs use an authority-derived SD-JWT attestation tied to the existing
@@ -105,7 +115,10 @@ it is not automatically migrated. No public network deployment is part of this c
 
 New authenticated endpoints: `GET /api/orders`, `POST /api/orders/prepare`,
 `POST /api/orders/:orderId/evidence/prepare`, `POST /api/orders/:orderId/identity`,
-and `GET /api/orders/recall/:batchId`. Writes remain unsigned transaction preparations for MetaMask;
+`GET /api/orders/recall/:batchId`, `GET /api/orders/branding/me`,
+`POST|GET /api/orders/branding/:wallet/logo`, and
+`POST|GET /api/orders/catalogue/ingredients/:batchId/image`. Writes remain unsigned transaction
+preparations for MetaMask or authenticated presentation-media updates;
 the identity endpoint also reuses existing credential retrieval, holder-proof verification and
 backend-managed encrypted DIDComm transport. Company Role VCs remain full disclosure. Ingredient
 SD-JWT selective presentations remain supported. Run `npm run test:orders` for the scoped suite.

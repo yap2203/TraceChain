@@ -343,6 +343,7 @@ export function createApp({
           chain.CHAIN_RPC_URL,
           {
             stakeholders: chain.STAKEHOLDER_REGISTRY_ADDRESS,
+            credentials: chain.CREDENTIAL_REGISTRY_ADDRESS,
             ingredients: chain.INGREDIENT_REGISTRY_ADDRESS,
             products: chain.PRODUCT_REGISTRY_ADDRESS,
             evidence: chain.EVIDENCE_REGISTRY_ADDRESS,
@@ -481,7 +482,7 @@ export function createApp({
     ),
   );
   app.use('/api/ssi', express.json({ limit: '256kb' }), createSsiRouter(ssiController));
-  app.use('/api/orders', express.json({ limit: '384kb' }), ordersRouter);
+  app.use('/api/orders', express.json({ limit: '4mb' }), ordersRouter);
   app.use(
     '/api/ingredient-batches',
     express.json({ limit: '32kb' }),

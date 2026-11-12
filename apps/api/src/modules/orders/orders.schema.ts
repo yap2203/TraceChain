@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { catalogueImageMimeTypes } from './catalogue-media.js';
 const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 const quantity = z.string().regex(/^[1-9]\d{0,38}$/);
@@ -139,3 +140,11 @@ export const orderActionSchema = z.discriminatedUnion('action', [
     .strict(),
 ]);
 export type OrderAction = z.infer<typeof orderActionSchema>;
+
+export const catalogueImageSchema = z
+  .object({
+    data: z.string().min(4).max(2_800_000),
+    fileName: z.string().trim().min(1).max(160),
+    mimeType: z.enum(catalogueImageMimeTypes),
+  })
+  .strict();

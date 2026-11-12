@@ -16,8 +16,13 @@ export function Modal({
   const titleId = useId();
   useEffect(() => {
     const element = dialog.current;
-    element?.showModal();
-    return () => element?.close();
+    if (!element) return;
+    if (typeof element.showModal === 'function') element.showModal();
+    else element.setAttribute('open', '');
+    return () => {
+      if (typeof element.close === 'function') element.close();
+      else element.removeAttribute('open');
+    };
   }, []);
   return (
     <dialog

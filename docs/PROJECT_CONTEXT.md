@@ -30,11 +30,12 @@
 
 ## Current implementation
 
-- Supplier uses an owned ingredient grid with listing CRUD/archive/restore, a My orders table for Manufacturer requests and approve/reject decisions, and separate Received/Sent evidence tables under Information requests. There is no Supplier Browse tab. Signed ingredient fields and historical traceability remain immutable; listing amendments are distinct Supplier business metadata. Decisions never move stock or automatically grant evidence access.
+- Supplier uses an owned ingredient grid with listing CRUD/archive/restore and optional owned-batch presentation images, a My orders table for Manufacturer requests and approve/reject decisions, and separate Received/Sent evidence tables under Information requests. There is no Supplier Browse tab. Signed ingredient fields and historical traceability remain immutable; listing amendments and images are distinct Supplier business metadata. Decisions never move stock or automatically grant evidence access.
 
 - Current Browse & requests UI scope is browsing, request-only quantity interest, details evidence and company proof exchange. Location/proposal/reservation/dispatch/receipt/recall controls are deferred from this page. New request-only records cannot reserve/dispatch or credit stock; existing physical-flow APIs/contracts and historical records remain intact. See docs/BROWSE_REQUESTS_README.md.
 
-- Browse & requests discovers registered ingredient/product batches without manual publishing, shows only whitelisted business metadata and optional indicative unit prices, and uses request terminology without payments.
+- Browse & requests discovers registered ingredient/product batches without manual publishing, shows only whitelisted business metadata, optional validated presentation media and optional indicative unit prices, and uses request terminology without payments. It provides responsive search/filter/sort cards, a safe detail dialog, distinct quantity/evidence actions, and desktop/mobile request history. Verified company names come from the stakeholder directory; wallets and IDs remain collapsed technical details.
+- Catalogue images and company logos are authenticated, ownership-checked, encrypted off-chain presentation records. They never replace Credential Registry, Stakeholder Registry or batch ownership checks and are never treated as signed credential evidence.
 - New quantity-request-linked Company Identity proofs support issuer-derived SD-JWT attestations referencing existing Company Role VCs, required/optional claim selection and browser holder signing. Legacy signed Company Role JWTs remain unchanged and cannot be selectively redacted.
 
 - Responsive React UI with public login and registration pages

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z, ZodError } from 'zod';
-import { orderActionSchema } from './orders.schema.js';
+import { catalogueImageSchema, orderActionSchema } from './orders.schema.js';
 import { OrdersError, type OrdersService } from './orders.service.js';
 import { AuthError } from '../auth/auth.service.js';
 import { ProductionFlowApiError } from '../production-flow/production-flow.service.js';
@@ -52,6 +52,62 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     '/',
     action((service, session) => service.state(session)),
   );
+  const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+  const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
+  router.get(
+    '/branding/me',
+    action((service, session) => service.myBranding(session)),
+  );
+  router.post(
+    '/branding/:wallet/logo',
+    action((service, session, request) =>
+      service.updateCompanyLogo(
+        session,
+        wallet.parse(request.params.wallet),
+        catalogueImageSchema.parse(request.body),
+      ),
+    ),
+  );
+  router.post(
+    '/catalogue/ingredients/:batchId/image',
+    action((service, session, request) =>
+      service.updateIngredientImage(
+        session,
+        hash.parse(request.params.batchId),
+        catalogueImageSchema.parse(request.body),
+      ),
+    ),
+  );
+  const media = (kind: 'company' | 'ingredient') => async (request: any, response: any) => {
+    try {
+      const reference =
+        kind === 'company'
+          ? wallet.parse(request.params.wallet)
+          : hash.parse(request.params.batchId);
+      const result = await resolve().catalogueMedia(request.cookies?.[cookieName], kind, reference);
+      response.setHeader('Cache-Control', 'private, max-age=300');
+      response.setHeader('Content-Type', result.mimeType);
+      response.setHeader('Content-Disposition', `inline; filename="${result.fileName}"`);
+      response.setHeader('ETag', `"${result.contentHash.slice(2)}"`);
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      response.send(result.bytes);
+    } catch (error) {
+      if (error instanceof ZodError)
+        return response.status(400).json({
+          error: { code: 'INVALID_REQUEST', message: error.issues[0]?.message },
+        });
+      if (error instanceof OrdersError)
+        return response
+          .status(error.status)
+          .json({ error: { code: error.code, message: error.message } });
+      return response.status(503).json({
+        error: { code: 'MEDIA_UNAVAILABLE', message: 'Catalogue media is unavailable.' },
+      });
+    }
+  };
+  router.get('/branding/:wallet/logo', media('company'));
+  router.get('/catalogue/ingredients/:batchId/image', media('ingredient'));
   router.post(
     '/prepare',
     action((service, session, request) =>
@@ -61,13 +117,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
   router.get(
     '/recall/:batchId',
     action((service, session, request) =>
-      service.recall(
-        session,
-        z
-          .string()
-          .regex(/^0x[0-9a-fA-F]{64}$/)
-          .parse(request.params.batchId),
-      ),
+      service.recall(session, hash.parse(request.params.batchId)),
     ),
   );
   router.post(

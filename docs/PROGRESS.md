@@ -1,5 +1,13 @@
 # Project Progress
 
+## 2026-11-12 — B2B Browse & requests catalogue redesign
+
+- Replaced the sparse Browse & requests grid with a responsive one-to-four-column catalogue containing search, item type/category/origin/credential/availability filters, sorting, clear filters, result counts, lifecycle and credential summaries, verified company names, long-name handling, image/logo fallbacks, safe empty/error/loading states and an accessible detail dialog. Quantity and evidence requests remain separate and reuse the existing MetaMask and consent/verification flows.
+- Added a responsive My requests overview with a compact desktop table and mobile cards, readable counterpart names, status and next-action summaries, while keeping request IDs and wallet addresses in collapsed technical details. No cart, checkout, payment, stock reservation or automatic fulfilment was introduced.
+- Added optional Supplier-owned ingredient images and authenticated own-company logos. The API restricts PNG/JPEG/WebP files to 2 MB, validates MIME/extension/binary dimensions, encrypts presentation records through the existing content store, checks authoritative ownership, and returns only safe authenticated media routes rather than CIDs, ciphertext or keys. Images remain Supplier/company presentation data and do not alter signed credentials or authorization.
+- Added focused API and frontend coverage for upload validation, tenant isolation, safe responses, catalogue search/filter/empty/loading/error behavior, request validation, desktop/mobile structures, Supplier image upload and company-logo ownership. Documentation now records the security and request-only boundaries. No contract, SSI issuance, deployment, environment file, commit or push was performed.
+- Validation: root build and typecheck passed; 63 Orders API, 6 ingredient-batch, 15 production-flow and 122 frontend tests passed; changed-file Prettier and `git diff --check` passed. The unchanged Hardhat sub-suite invoked by `test:orders` could not start because the local Windows Hardhat/compiler cache was locked after `uv_os_get_passwd` returned `ENOMEM`; API and web portions of that command passed, and no Solidity files were changed.
+
 ## 2026-11-12 — Tailwind styling migration
 
 - Added Tailwind CSS and its official Vite plugin (tested with 4.3.5). Centralized utility generation and inline aliases for the existing public/workspace color and font tokens in `apps/web/src/styles/tailwind.css`. Kept the current reset instead of Preflight.
