@@ -22,7 +22,7 @@ import {
   TransferToDistributor,
   ManufacturerCredential,
 } from './manufacturer';
-import { IngredientEvidence } from './manufacturer/evidence/IngredientEvidencePage';
+import { ManufacturerInformationRequests } from './manufacturer/evidence/ManufacturerInformationRequests';
 import {
   DistributorOverview,
   IncomingShipmentsList,
@@ -58,7 +58,14 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     navigate(`${workspacePath(role, page)}${newView ? '?view=' + tab : ''}`);
   };
   const goTo = (view: string, id = '') => setSearchParams({ view, ...(id ? { id } : {}) });
-  if (tab === 'orders') return <OrdersPage role={role} />;
+  if (tab === 'orders')
+    return (
+      <OrdersPage
+        role={role}
+        initialOrderId={params.get('orderId') ?? ''}
+        mode={role === 'manufacturer' ? 'manage' : 'combined'}
+      />
+    );
   if (role === 'admin') {
     if (tab === 'overview') return <AdminOverview onNav={nav} />;
     if (tab === 'applications') return <Applications />;
@@ -104,7 +111,14 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
 
   if (role === 'manufacturer') {
     if (tab === 'overview') return <ManufacturerOverview onNav={nav} />;
-    if (tab === 'evidence') return <IngredientEvidence onNav={(t) => nav(t)} />;
+    if (tab === 'requests' || tab === 'evidence')
+      return (
+        <ManufacturerInformationRequests
+          initialOrderId={params.get('orderId') ?? undefined}
+          initialDirection={params.get('direction') === 'received' ? 'received' : 'sent'}
+          onClearSelection={(direction) => setSearchParams({ direction })}
+        />
+      );
     if (tab === 'products') {
       if (subView === 'products-new')
         return <CreateProductBatch onBack={() => setSearchParams({})} />;
@@ -114,10 +128,16 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
             batchId={activeId}
             onBack={() => setSearchParams({})}
             onTransfer={() => nav('transfers')}
+            onIngredientDetail={(batchId) => setSearchParams({ view: 'ingredients', batchId })}
           />
         );
       return (
         <ProductBatches
+          section={subView === 'ingredients' ? 'ingredients' : 'products'}
+          ingredientBatchId={params.get('batchId') ?? undefined}
+          onSectionChange={(section) =>
+            setSearchParams(section === 'ingredients' ? { view: 'ingredients' } : {})
+          }
           onNew={() => goTo('products-new')}
           onTransfer={() => nav('transfers')}
           onDetail={(id) => goTo('product-detail', id)}

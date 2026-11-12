@@ -15,7 +15,6 @@ import {
   PackageCheck,
   ScanQrCode,
   History,
-  FlaskConical,
   AlertTriangle,
   type LucideIcon,
 } from 'lucide-react';
@@ -43,9 +42,9 @@ export const workspaceNavigation = {
   ],
   manufacturer: [
     ['overview', 'Overview', LayoutDashboard],
-    ['orders', 'Browse & requests', ClipboardList],
-    ['evidence', 'Ingredient evidence', FlaskConical],
-    ['products', 'Product batches', Package],
+    ['products', 'Products', Package],
+    ['orders', 'My orders', ClipboardList],
+    ['requests', 'Information requests', Inbox],
     ['transfers', 'Transfers', ArrowRightLeft],
     ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit reports', ChartNoAxesCombined],

@@ -11,6 +11,7 @@ import {
   reviewEvidence,
   verifyEvidence,
   type EvidenceReview,
+  type EvidenceDetails,
   type ProductionEvidenceRequest,
   type ProductionIngredient,
 } from '../../../production-flow/production-flow.api';
@@ -55,7 +56,15 @@ const selectableClaims = [
   ['internalQualityRemarks', 'Internal quality remarks'],
 ] as const;
 
-export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) => void }) {
+export function IngredientEvidence({
+  onNav: _onNav,
+  hideComposer = false,
+  requestId,
+}: {
+  onNav: (target: string) => void;
+  hideComposer?: boolean;
+  requestId?: string;
+}) {
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
   const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
   const [batchId, setBatchId] = useState('');
@@ -66,6 +75,30 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
   const [notice, setNotice] = useState('');
   const [verified, setVerified] = useState<Record<string, string>>({});
   const [review, setReview] = useState<EvidenceReview>();
+  const [details, setDetails] =
+    useState<Pick<EvidenceDetails, 'batchId' | 'reason' | 'claims' | 'requiredClaims'>>();
+  useEffect(() => {
+    let active = true;
+    setDetails(undefined);
+    if (hideComposer && requestId)
+      void getEvidenceDetails(requestId)
+        .then((result) => {
+          if (active)
+            setDetails({
+              batchId: result.batchId,
+              reason: result.reason,
+              claims: result.claims,
+              requiredClaims: result.requiredClaims,
+            });
+        })
+        .catch((cause) => {
+          if (active)
+            setError(cause instanceof Error ? cause.message : 'Request details are unavailable.');
+        });
+    return () => {
+      active = false;
+    };
+  }, [hideComposer, requestId]);
   const [rejectReason, setRejectReason] = useState('');
   const [claimChoices, setClaimChoices] = useState<
     Record<string, 'required' | 'optional' | 'none'>
@@ -77,17 +110,21 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
 
   const load = async () => {
     const [ingredientResult, requestResult] = await Promise.all([
-      listProductionIngredients(),
+      hideComposer ? Promise.resolve({ batches: [] }) : listProductionIngredients(),
       listEvidenceRequests(),
     ]);
     setIngredients(ingredientResult.batches);
-    setRequests(requestResult.requests);
+    setRequests(
+      requestId
+        ? requestResult.requests.filter((request) => request.requestId === requestId)
+        : requestResult.requests,
+    );
   };
   useEffect(() => {
     void load().catch((cause) =>
       setError(cause instanceof Error ? cause.message : 'Could not load evidence records.'),
     );
-  }, []);
+  }, [hideComposer, requestId]);
 
   const requestEvidence = async () => {
     const validationError = !ingredients.some((item) => item.batchId === batchId && !item.accepted)
@@ -215,11 +252,24 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <SectionTitle
-        title="Ingredient Evidence"
+        title={hideComposer ? 'Ingredient evidence request' : 'Ingredient Evidence'}
         sub="Real EvidenceRegistry requests and challenge-bound Supplier presentations"
       />
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
+      {hideComposer && details && (
+        <Card>
+          <h3>Requested information</h3>
+          <p>Ingredient batch: {details.batchId}</p>
+          <p>Reason: {details.reason}</p>
+          <p>Necessary claims: {details.requiredClaims.join(', ') || 'None'}</p>
+          <p>
+            Optional claims:{' '}
+            {details.claims.filter((claim) => !details.requiredClaims.includes(claim)).join(', ') ||
+              'None'}
+          </p>
+        </Card>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 14 }}>
         <StatCard
           label="Awaiting Supplier"
@@ -240,94 +290,97 @@ export function IngredientEvidence({ onNav: _onNav }: { onNav: (target: string) 
           icon={<CheckCircle2 size={20} />}
         />
       </div>
-      <Card>
-        <div style={{ fontWeight: 700, color: T.navy, marginBottom: 12 }}>
-          Request evidence for an active Supplier batch
-        </div>
-        <div style={{ display: 'grid', gap: 12 }}>
-          <label style={{ fontSize: 12, color: T.text2 }}>
-            Ingredient batch
-            <select
-              value={batchId}
-              onChange={(event) => setBatchId(event.target.value)}
-              style={{
-                display: 'block',
-                width: '100%',
-                marginTop: 6,
-                padding: 10,
-                border: `1px solid ${T.border}`,
-                borderRadius: 8,
-              }}
-            >
-              <option value="">Select a real on-chain batch</option>
-              {ingredients
-                .filter((item) => !item.accepted)
-                .map((item) => (
-                  <option key={item.batchId} value={item.batchId}>
-                    {item.supplierName ?? 'Verified Supplier'} · {shortChainId(item.batchId)} ·{' '}
-                    {item.availableQuantity} available
-                  </option>
-                ))}
-            </select>
-          </label>
-          <Input label="Reason" maxLength={500} value={reason} onChange={setReason} required />
-          <Input
-            label="Response deadline"
-            type="date"
-            error={dueAt ? futureDateError(dueAt, 'Response deadline') : undefined}
-            value={dueAt}
-            onChange={setDueAt}
-            required
-          />
-          <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
-            <legend style={{ color: T.navy, fontWeight: 700 }}>Requested claims</legend>
-            <div style={{ fontSize: 12, color: T.text2, marginBottom: 10 }}>
-              Batch identity, ingredient name, Supplier wallet and credential ID are always shared.
-              Choose whether each additional claim is required or optional for the Supplier.
-            </div>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {selectableClaims.map(([name, label]) => (
-                <label
-                  key={name}
-                  style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 12 }}
-                >
-                  <span>{label}</span>
-                  <select
-                    aria-label={`${label} requirement`}
-                    value={claimChoices[name] ?? 'none'}
-                    onChange={(event) =>
-                      setClaimChoices((current) => ({
-                        ...current,
-                        [name]: event.target.value as 'required' | 'optional' | 'none',
-                      }))
-                    }
+      {!hideComposer && (
+        <Card>
+          <div style={{ fontWeight: 700, color: T.navy, marginBottom: 12 }}>
+            Request evidence for an active Supplier batch
+          </div>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <label style={{ fontSize: 12, color: T.text2 }}>
+              Ingredient batch
+              <select
+                value={batchId}
+                onChange={(event) => setBatchId(event.target.value)}
+                style={{
+                  display: 'block',
+                  width: '100%',
+                  marginTop: 6,
+                  padding: 10,
+                  border: `1px solid ${T.border}`,
+                  borderRadius: 8,
+                }}
+              >
+                <option value="">Select a real on-chain batch</option>
+                {ingredients
+                  .filter((item) => !item.accepted)
+                  .map((item) => (
+                    <option key={item.batchId} value={item.batchId}>
+                      {item.supplierName ?? 'Verified Supplier'} · {shortChainId(item.batchId)} ·{' '}
+                      {item.availableQuantity} available
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <Input label="Reason" maxLength={500} value={reason} onChange={setReason} required />
+            <Input
+              label="Response deadline"
+              type="date"
+              error={dueAt ? futureDateError(dueAt, 'Response deadline') : undefined}
+              value={dueAt}
+              onChange={setDueAt}
+              required
+            />
+            <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
+              <legend style={{ color: T.navy, fontWeight: 700 }}>Requested claims</legend>
+              <div style={{ fontSize: 12, color: T.text2, marginBottom: 10 }}>
+                Batch identity, ingredient name, Supplier wallet and credential ID are always
+                shared. Choose whether each additional claim is required or optional for the
+                Supplier.
+              </div>
+              <div style={{ display: 'grid', gap: 8 }}>
+                {selectableClaims.map(([name, label]) => (
+                  <label
+                    key={name}
+                    style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 12 }}
                   >
-                    <option value="none">Not requested</option>
-                    <option value="optional">Optional</option>
-                    <option value="required">Required</option>
-                  </select>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <Alert
-            type="info"
-            message="The request details and random challenge are encrypted before upload. Only their hashes and encrypted content reference are recorded on chain."
-          />
-          <Btn
-            disabled={
-              !batchId ||
-              !reason.trim() ||
-              !dueAt ||
-              !Object.values(claimChoices).some((value) => value !== 'none') ||
-              Boolean(busy)
-            }
-            onClick={() => void requestEvidence()}
-          >
-            {busy === 'request' ? 'Confirming…' : 'Request evidence with MetaMask'}
-          </Btn>
-        </div>
-      </Card>
+                    <span>{label}</span>
+                    <select
+                      aria-label={`${label} requirement`}
+                      value={claimChoices[name] ?? 'none'}
+                      onChange={(event) =>
+                        setClaimChoices((current) => ({
+                          ...current,
+                          [name]: event.target.value as 'required' | 'optional' | 'none',
+                        }))
+                      }
+                    >
+                      <option value="none">Not requested</option>
+                      <option value="optional">Optional</option>
+                      <option value="required">Required</option>
+                    </select>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <Alert
+              type="info"
+              message="The request details and random challenge are encrypted before upload. Only their hashes and encrypted content reference are recorded on chain."
+            />
+            <Btn
+              disabled={
+                !batchId ||
+                !reason.trim() ||
+                !dueAt ||
+                !Object.values(claimChoices).some((value) => value !== 'none') ||
+                Boolean(busy)
+              }
+              onClick={() => void requestEvidence()}
+            >
+              {busy === 'request' ? 'Confirming…' : 'Request evidence with MetaMask'}
+            </Btn>
+          </div>
+        </Card>
+      )}
       {requests.length === 0 ? (
         <EmptyState
           icon={<FileCheck size={42} />}

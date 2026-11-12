@@ -30,6 +30,8 @@
 
 ## Current implementation
 
+- Manufacturer uses Products (owned finished-product grid and Supplier ingredient grid), My orders (sent/received quantity-request tables) and Information requests (sent ingredient evidence and received company-proof requests). Linked product ingredients open the same Supplier ingredient detail/request view. Existing quantity, proof, verification, approval and physical-stock rules remain separate.
+
 - Supplier uses an owned ingredient grid with listing CRUD/archive/restore, a My orders table for Manufacturer requests and approve/reject decisions, and separate Received/Sent evidence tables under Information requests. There is no Supplier Browse tab. Signed ingredient fields and historical traceability remain immutable; listing amendments are distinct Supplier business metadata. Decisions never move stock or automatically grant evidence access.
 
 - Current Browse & requests UI scope is browsing, request-only quantity interest, details evidence and company proof exchange. Location/proposal/reservation/dispatch/receipt/recall controls are deferred from this page. New request-only records cannot reserve/dispatch or credit stock; existing physical-flow APIs/contracts and historical records remain intact. See docs/BROWSE_REQUESTS_README.md.

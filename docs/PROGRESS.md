@@ -1,5 +1,13 @@
 # Project Progress
 
+## 2026-11-12 — Manufacturer products, orders and information requests
+
+- Replaced Manufacturer Browse navigation with Products, My orders and Information requests. Products contains searchable owned-product and Supplier-ingredient grids, with real registered metadata, quantities/units, dates, status and available indicative prices. Product detail links open the exact linked ingredient's detail/request view. Legacy Ingredient evidence routes redirect to Information requests.
+- Reused existing preparation, MetaMask submission and encrypted evidence delivery to request ingredient information or quantities from ingredient details. My orders separates sent Supplier requests and received buyer requests in tables, with detail review, explicit seller approval/rejection confirmation and links to company-evidence management.
+- Added Manufacturer Received/Sent information-request tables. Received company proofs cover both Supplier ingredient-information and quantity-request challenges. Sent ingredient requests expose actual requested claims/reason and preserve separate View, Verify and Accept/Reject actions; sent company proofs from product buyers reuse existing order identity handling. Missing services/statuses show explicit partial-load errors rather than fabricated verification results.
+- Preserved SIWE, browser holder presentation signing, backend DIDComm, tenant checks, contract authorization and physical-stock requirements. Quantity requests/decisions never credit stock; production still requires accepted physical receipts. No contract, deployment, environment or dependency change was required.
+- Validation: all 125 frontend tests, repository-wide type checks and frontend production build passed. Browser checks of grids, detail/request forms and sent/received tables passed at 375, 768 and 1440 pixels without horizontal page overflow, using isolated synthetic service responses for layout review. Existing bundle-size/apg-js warnings remain. Live multi-wallet transactions were not sent; the manual checklist is in docs/testing/MANUFACTURER_REQUESTS.md.
+
 ## 2026-11-12 — Tailwind styling migration
 
 - Added Tailwind CSS and its official Vite plugin (tested with 4.3.5). Centralized utility generation and inline aliases for the existing public/workspace color and font tokens in `apps/web/src/styles/tailwind.css`. Kept the current reset instead of Preflight.

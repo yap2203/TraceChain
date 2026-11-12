@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { targetChainId } from '../../config/chain';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
@@ -44,10 +44,14 @@ export function OrdersPage({
   role,
   initialOrderId = '',
   evidenceOnly = false,
+  mode = 'combined',
+  initialBatchId = '',
 }: {
   role: WorkspaceRole;
   initialOrderId?: string;
   evidenceOnly?: boolean;
+  mode?: 'combined' | 'browse' | 'manage';
+  initialBatchId?: string;
 }) {
   const [data, setData] = useState<OrdersState>();
   const [error, setError] = useState('');
@@ -58,7 +62,11 @@ export function OrdersPage({
     countryOfOrigin: 'optional',
     expiryDate: 'required',
   });
-  const [tab, setTab] = useState(role === 'supplier' || evidenceOnly ? 'orders' : 'catalogue');
+  const [tab, setTab] = useState(
+    role === 'supplier' || evidenceOnly || mode === 'manage' ? 'orders' : 'catalogue',
+  );
+  const [direction, setDirection] = useState<'sent' | 'received'>('sent');
+  const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(initialOrderId);
   const [pendingDecision, setPendingDecision] = useState<1 | 2>();
   const [decisionReason, setDecisionReason] = useState('');
@@ -84,6 +92,19 @@ export function OrdersPage({
   useEffect(() => {
     load().catch((cause) => setError(cause.message));
   }, [load]);
+  useEffect(() => {
+    if (!initialBatchId || !data) return;
+    const entry = data.catalogue.find((item) =>
+      item.batches?.some((batch: string) => same(batch, initialBatchId)),
+    );
+    if (entry) {
+      setSelected(entry.itemId);
+      setForm((current) => ({ ...current, unit: entry.unit }));
+    } else
+      setError(
+        'This linked ingredient is not currently available in the registered Supplier records. Refresh or contact its Supplier.',
+      );
+  }, [initialBatchId, data]);
   const run = async (operation: () => Promise<void>) => {
     setBusy(true);
     setError('');
@@ -116,6 +137,10 @@ export function OrdersPage({
       const prepared = await prepareOrder({ ...values, action, operationId: crypto.randomUUID() });
       await sign(prepared.transaction);
       if (action === 'request') {
+        if (mode === 'browse') {
+          navigate(workspacePath(role, 'orders'));
+          return;
+        }
         setTab('orders');
         setSelected('');
         setNotice('Request submitted. The recipient can review it and ask for company evidence.');
@@ -126,6 +151,34 @@ export function OrdersPage({
   const seller = !!order && !!data && same(order.seller, data.actor);
   const buyer = !!order && !!data && same(order.buyer, data.actor);
   const activeOrder = !!order && Number(order.status) < 3 && Number(order.expiresAt) > now();
+  const managedOrders =
+    data?.orders.filter(
+      (entry) =>
+        (role === 'supplier' || direction === 'received'
+          ? same(entry.seller, data.actor)
+          : same(entry.buyer, data.actor)) &&
+        [
+          entry.orderId,
+          entry.buyerName,
+          entry.sellerName,
+          data.catalogue.find((item) => item.itemId === entry.itemId)?.name,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    ) ?? [];
+  const availableItems =
+    data?.catalogue.filter(
+      (entry) =>
+        !entry.archived &&
+        (mode !== 'browse' || Number(entry.kind) === 1) &&
+        [entry.name, entry.sellerName, entry.category]
+          .join(' ')
+          .toLowerCase()
+          .includes(search.toLowerCase()) &&
+        (role !== 'manufacturer' || Number(entry.kind) === 1 || same(entry.seller, data.actor)) &&
+        (role !== 'retailer' || Number(entry.kind) === 2),
+    ) ?? [];
   const openTab = (value: string) => {
     setTab(value);
     setSelected('');
@@ -163,11 +216,17 @@ export function OrdersPage({
         }}
       >
         <h2 style={{ color: T.navy }}>
-          {role === 'supplier'
-            ? evidenceOnly
-              ? 'Company evidence request'
-              : 'Manage orders'
-            : 'Browse & requests'}
+          {evidenceOnly
+            ? 'Company evidence request'
+            : mode === 'manage'
+              ? 'My orders'
+              : mode === 'browse'
+                ? 'Supplier ingredients'
+                : role === 'supplier'
+                  ? evidenceOnly
+                    ? 'Company evidence request'
+                    : 'Manage orders'
+                  : 'Browse & requests'}
         </h2>
         <Btn
           variant="outline"
@@ -179,13 +238,17 @@ export function OrdersPage({
         </Btn>
       </header>
       <p>
-        {role === 'supplier'
-          ? evidenceOnly
-            ? 'Manage company evidence linked to this request. Verification does not approve the order automatically.'
-            : 'Review incoming Manufacturer requests, record a decision, or ask for company evidence. No payment or stock movement takes place.'
-          : 'Browse registered ingredients and products, request quantities or additional details, and exchange company evidence. No payment or fulfilment steps are included.'}
+        {mode === 'manage'
+          ? 'Manage ingredient requests sent to Suppliers and product requests received from buyers. Orders record requests only; no payment or stock movement takes place.'
+          : mode === 'browse'
+            ? 'Open an ingredient to see its registered details, request evidence or send a quantity request to its Supplier.'
+            : role === 'supplier'
+              ? evidenceOnly
+                ? 'Manage company evidence linked to this request. Verification does not approve the order automatically.'
+                : 'Review incoming Manufacturer requests, record a decision, or ask for company evidence. No payment or stock movement takes place.'
+              : 'Browse registered ingredients and products, request quantities or additional details, and exchange company evidence. No payment or fulfilment steps are included.'}
       </p>
-      {role !== 'supplier' && (
+      {role !== 'supplier' && mode === 'combined' && !evidenceOnly && (
         <nav aria-label="Browse and requests" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <Btn
             variant={tab === 'catalogue' ? 'primary' : 'outline'}
@@ -208,11 +271,21 @@ export function OrdersPage({
       {!data && !error && <p role="status">Loading on-chain order ledger…</p>}
       {data && role !== 'supplier' && tab === 'catalogue' && (
         <>
+          {!item && (
+            <Input
+              label="Search ingredients"
+              type="search"
+              icon={<Search size={18} />}
+              placeholder="Search ingredient name, Supplier or category…"
+              value={search}
+              onChange={setSearch}
+            />
+          )}
           {item && !order ? (
             <Btn variant="outline" onClick={() => setSelected('')}>
               Back to items
             </Btn>
-          ) : (
+          ) : mode !== 'browse' ? (
             <div>
               <h3>Registered ingredients & products</h3>
               <p>
@@ -223,49 +296,44 @@ export function OrdersPage({
                     : 'Browse the registered items and review requests available to your company.'}
               </p>
             </div>
-          )}
-          {!data.catalogue.length && (
+          ) : null}
+          {!availableItems.length && !item && (
             <p>
-              No registered ingredients or products found. They appear here automatically after
-              registration.
+              {search
+                ? 'No registered items match your search.'
+                : mode === 'browse'
+                  ? 'No Supplier ingredients are currently available. Registered ingredients appear here automatically.'
+                  : 'No registered ingredients or products found. They appear here automatically after registration.'}
             </p>
           )}
           {!item && (
             <div className="request-item-grid">
-              {data.catalogue
-                .filter(
-                  (entry) =>
-                    !entry.archived &&
-                    (role !== 'manufacturer' ||
-                      Number(entry.kind) === 1 ||
-                      same(entry.seller, data.actor)) &&
-                    (role !== 'retailer' || Number(entry.kind) === 2),
-                )
-                .map((entry) => (
-                  <Card key={entry.itemId}>
-                    <span>{Number(entry.kind) === 1 ? 'Ingredient' : 'Product'}</span>
-                    <h3>{entry.name}</h3>
-                    <p>{entry.sellerName ?? 'Company name unavailable'}</p>
-                    <p>
-                      {entry.price !== undefined
-                        ? entry.currency + ' ' + entry.price + ' / ' + entry.unit
-                        : 'Price unavailable'}
-                    </p>
-                    <p>
-                      {entry.category ?? 'Category unavailable'} |{' '}
-                      {entry.active === false ? 'Unavailable for requests' : 'Registered batch'}
-                    </p>
-                    <Btn
-                      variant="outline"
-                      onClick={() => {
-                        setSelected(entry.itemId);
-                        setForm((current) => ({ ...current, unit: entry.unit }));
-                      }}
-                    >
-                      View details
-                    </Btn>
-                  </Card>
-                ))}
+              {availableItems.map((entry) => (
+                <Card key={entry.itemId}>
+                  <span>{Number(entry.kind) === 1 ? 'Ingredient' : 'Product'}</span>
+                  <h3>{entry.name}</h3>
+                  <p>{entry.sellerName ?? 'Company name unavailable'}</p>
+                  <p>
+                    {entry.price !== undefined
+                      ? entry.currency + ' ' + entry.price + ' / ' + entry.unit
+                      : 'Price unavailable'}
+                  </p>
+                  <p>
+                    {entry.category ?? 'Category unavailable'} |{' '}
+                    {entry.active === false ? 'Unavailable for requests' : 'Registered batch'}
+                  </p>
+                  <Btn
+                    variant="outline"
+                    onClick={() => {
+                      setSelected(entry.itemId);
+                      setDetailsRequestOpen(false);
+                      setForm({ quantity: '', unit: entry.unit });
+                    }}
+                  >
+                    View details
+                  </Btn>
+                </Card>
+              ))}
             </div>
           )}
           {item && !order && (
@@ -383,14 +451,21 @@ export function OrdersPage({
                           await getEvidenceDetails(prepared.requestId),
                         );
                         setNotice(
-                          'Details requested. Open Ingredient evidence to review the response; verification and acceptance remain separate.',
+                          'Evidence requested. Open Information requests to review the response; verification and acceptance remain separate.',
                         );
                       })
                     }
                   >
                     Send details request
                   </Btn>
-                  <Btn variant="outline" onClick={() => navigate(workspacePath(role, 'evidence'))}>
+                  <Btn
+                    variant="outline"
+                    onClick={() =>
+                      navigate(
+                        workspacePath(role, role === 'manufacturer' ? 'requests' : 'evidence'),
+                      )
+                    }
+                  >
                     Open evidence responses
                   </Btn>
                 </section>
@@ -398,7 +473,9 @@ export function OrdersPage({
               {((role === 'manufacturer' && Number(item.kind) === 1) ||
                 (role === 'retailer' && Number(item.kind) === 2)) && (
                 <details className="orders-stage">
-                  <summary>Request a quantity</summary>
+                  <summary>
+                    {mode === 'browse' ? 'Request ingredient quantity' : 'Request a quantity'}
+                  </summary>
                   <p>
                     Enter the quantity you are interested in, a deadline and an optional note. The
                     recipient can review your request and ask for company evidence.
@@ -458,6 +535,32 @@ export function OrdersPage({
       )}
       {data && tab === 'orders' && (
         <>
+          {mode === 'manage' && !order && (
+            <>
+              <nav aria-label="Order direction" className="flex flex-wrap gap-[8px]">
+                <Btn
+                  variant={direction === 'sent' ? 'primary' : 'outline'}
+                  onClick={() => setDirection('sent')}
+                >
+                  Sent to Suppliers
+                </Btn>
+                <Btn
+                  variant={direction === 'received' ? 'primary' : 'outline'}
+                  onClick={() => setDirection('received')}
+                >
+                  Received from buyers
+                </Btn>
+              </nav>
+              <Input
+                label="Search orders"
+                type="search"
+                icon={<Search size={18} />}
+                placeholder="Search company, item or request ID…"
+                value={search}
+                onChange={setSearch}
+              />
+            </>
+          )}
           <h3>
             {order
               ? 'Request details'
@@ -475,74 +578,82 @@ export function OrdersPage({
             </Btn>
           )}
           {!data.orders.length && <p>No requests for your wallet.</p>}
-          {!order && role === 'supplier' && (
+          {!order && (role === 'supplier' || mode === 'manage') && (
             <Card padding="0">
               <Table
                 headers={[
-                  'Manufacturer',
-                  'Ingredient',
+                  mode === 'manage' ? 'Company' : 'Manufacturer',
+                  mode === 'manage' ? 'Item' : 'Ingredient',
                   'Requested quantity',
                   'Deadline',
                   'Decision',
                   '',
                 ]}
               >
-                {data.orders
-                  .filter((entry) => same(entry.seller, data.actor))
-                  .map((entry) => (
-                    <TR
-                      key={entry.orderId}
-                      onClick={() => {
-                        setSelected(entry.orderId);
-                        setPendingDecision(undefined);
-                      }}
-                    >
-                      <TD bold>{entry.buyerName ?? short(entry.buyer)}</TD>
-                      <TD>
-                        {data.catalogue.find((item) => item.itemId === entry.itemId)?.name ??
-                          'Unavailable'}
-                      </TD>
-                      <TD>
-                        {entry.requested}{' '}
-                        {data.catalogue.find((item) => item.itemId === entry.itemId)?.unit ?? ''}
-                      </TD>
-                      <TD muted>{timestamp(entry.expiresAt)}</TD>
-                      <TD>
-                        <Badge
-                          label={
-                            Number(entry.decision?.status) === 1
-                              ? 'Approved'
-                              : Number(entry.decision?.status) === 2
-                                ? 'Rejected'
-                                : Number(entry.expiresAt) <= now()
-                                  ? 'Expired'
-                                  : Number(entry.status) === 3
-                                    ? 'Closed'
-                                    : 'Awaiting review'
-                          }
-                          variant={Number(entry.decision?.status) === 1 ? 'active' : 'pending'}
-                        />
-                      </TD>
-                      <TD>
-                        <Btn
-                          size="sm"
-                          variant="outline"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelected(entry.orderId);
-                            setPendingDecision(undefined);
-                          }}
-                        >
-                          View request
-                        </Btn>
-                      </TD>
-                    </TR>
-                  ))}
+                {managedOrders.map((entry) => (
+                  <TR
+                    key={entry.orderId}
+                    onClick={() => {
+                      setSelected(entry.orderId);
+                      setPendingDecision(undefined);
+                    }}
+                  >
+                    <TD bold>
+                      {same(entry.seller, data.actor)
+                        ? (entry.buyerName ?? short(entry.buyer))
+                        : (entry.sellerName ?? short(entry.seller))}
+                    </TD>
+                    <TD>
+                      {data.catalogue.find((item) => item.itemId === entry.itemId)?.name ??
+                        'Unavailable'}
+                    </TD>
+                    <TD>
+                      {entry.requested}{' '}
+                      {data.catalogue.find((item) => item.itemId === entry.itemId)?.unit ?? ''}
+                    </TD>
+                    <TD muted>{timestamp(entry.expiresAt)}</TD>
+                    <TD>
+                      <Badge
+                        label={
+                          Number(entry.decision?.status) === 1
+                            ? 'Approved'
+                            : Number(entry.decision?.status) === 2
+                              ? 'Rejected'
+                              : Number(entry.expiresAt) <= now()
+                                ? 'Expired'
+                                : Number(entry.status) === 3
+                                  ? 'Closed'
+                                  : 'Awaiting review'
+                        }
+                        variant={Number(entry.decision?.status) === 1 ? 'active' : 'pending'}
+                      />
+                    </TD>
+                    <TD>
+                      <Btn
+                        size="sm"
+                        variant="outline"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSelected(entry.orderId);
+                          setPendingDecision(undefined);
+                        }}
+                      >
+                        View request
+                      </Btn>
+                    </TD>
+                  </TR>
+                ))}
               </Table>
+              {managedOrders.length === 0 && (
+                <p className="p-[16px]">
+                  No matching {role === 'supplier' ? 'received' : direction} requests.
+                </p>
+              )}
             </Card>
           )}
           {!order &&
             role !== 'supplier' &&
+            mode !== 'manage' &&
             data.orders.map((entry) => (
               <Card key={entry.orderId}>
                 <h3>
@@ -595,19 +706,34 @@ export function OrdersPage({
                 Requested quantity: {order.requested} {item?.unit ?? ''}
               </p>
               <p>Request ID: {order.orderId}</p>
-              <p>Private note: {order.details?.note || 'No note recorded'}</p>
-              {order.decision?.reason && <p>Supplier decision reason: {order.decision.reason}</p>}
               <p>
-                {order.details?.requestOnly
+                Requester: {order.buyerName ?? short(order.buyer)} · Recipient:{' '}
+                {order.sellerName ?? short(order.seller)}
+              </p>
+              <p>Deadline: {timestamp(order.expiresAt)}</p>
+              {buyer && mode === 'manage' && !evidenceOnly && (
+                <Btn
+                  variant="outline"
+                  onClick={() =>
+                    navigate(
+                      workspacePath(role, 'requests') +
+                        '?direction=received&orderId=' +
+                        encodeURIComponent(order.orderId),
+                    )
+                  }
+                >
+                  Manage company evidence
+                </Btn>
+              )}
+              <p>Private note: {order.details?.note || 'No note recorded'}</p>
+              {order.decision?.reason && <p>Seller decision reason: {order.decision.reason}</p>}
+              <p>
+                {order.isRequestOnly || order.details?.requestOnly
                   ? 'This request does not reserve stock, dispatch goods or confirm delivery.'
                   : 'Earlier physical-flow records are preserved. Removing fulfilment controls does not undo any existing reservations or shipments.'}
               </p>
-              {seller && role === 'supplier' && !evidenceOnly && (
+              {seller && (role === 'supplier' || mode === 'manage') && !evidenceOnly && (
                 <>
-                  <p>
-                    Requester: {order.buyerName ?? short(order.buyer)} ({order.buyer})
-                  </p>
-                  <p>Deadline: {timestamp(order.expiresAt)}</p>
                   <p>
                     Decision:{' '}
                     {Number(order.decision?.status) === 1
@@ -657,7 +783,7 @@ export function OrdersPage({
                       disabled={!activeOrder}
                       onClick={() =>
                         navigate(
-                          workspacePath('supplier', 'requests') +
+                          workspacePath(role, 'requests') +
                             '?direction=sent&orderId=' +
                             encodeURIComponent(order.orderId),
                         )
@@ -717,241 +843,253 @@ export function OrdersPage({
                   )}
                 </>
               )}
-              {(seller || buyer) && activeOrder && (role !== 'supplier' || evidenceOnly) && (
-                <details className="orders-stage" open>
-                  <summary>Company identity evidence</summary>
-                  <p>
-                    Seller requests a proof → buyer previews and approves sharing → seller verifies
-                    and records the result. This can happen before ingredient evidence is shared.
-                  </p>
-                  <p>
-                    Request necessary company claims. The presenter chooses optional claims in an
-                    authority-signed selective proof linked to its current Company Role Credential.
-                    Wallet, role and subject binding stay visible. This does not grant access to
-                    ingredient evidence.
-                  </p>
-                  {seller && (
-                    <>
-                      <div style={fields}>
-                        <Input
-                          label="Identity proof purpose"
-                          value={form.purpose ?? ''}
-                          onChange={change('purpose')}
-                          maxLength={500}
-                        />
-                        <Input
-                          label="Identity proof deadline"
-                          type="datetime-local"
-                          value={form.identityDeadline ?? ''}
-                          onChange={change('identityDeadline')}
-                        />
-                      </div>
-
-                      <fieldset>
-                        <legend>Required signed company claims</legend>
-                        {[
-                          'companyId',
-                          'companyName',
-                          'companyRegistrationNumber',
-                          'role',
-                          'walletAddress',
-                          'id',
-                          'applicationReference',
-                        ].map((claim) => (
-                          <label key={claim} style={{ display: 'inline-block', marginRight: 14 }}>
-                            <input
-                              type="checkbox"
-                              checked={requiredClaims.includes(claim)}
-                              disabled={['id', 'walletAddress', 'role'].includes(claim)}
-                              onChange={(event) =>
-                                setRequiredClaims((current) =>
-                                  event.target.checked
-                                    ? [...current, claim]
-                                    : current.filter((value) => value !== claim),
-                                )
-                              }
-                            />
-                            {claim}
-                          </label>
-                        ))}
-                      </fieldset>
-                      <p>
-                        Other claims are optional. The presenter can omit them; the subject DID,
-                        wallet and role are mandatory for holder and authorization checks. Legacy
-                        full-credential presentations are labelled separately.
-                      </p>
-                      <Btn
-                        disabled={busy || !form.purpose?.trim() || !form.identityDeadline}
-                        onClick={() =>
-                          void run(async () => {
-                            const result = await orderIdentity(order.orderId, {
-                              action: 'request',
-                              purpose: form.purpose,
-                              expiresAt: Math.floor(Date.parse(form.identityDeadline) / 1000),
-                              required: false,
-                              requiredClaims,
-                              optionalClaims: [
-                                'companyId',
-                                'companyName',
-                                'companyRegistrationNumber',
-                                'role',
-                                'walletAddress',
-                                'id',
-                                'applicationReference',
-                              ].filter((claim) => !requiredClaims.includes(claim)),
-                            });
-                            await sign(result.transaction);
-                          })
-                        }
-                      >
-                        Request company identity proof
-                      </Btn>
-                      <Btn
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            const result = await orderIdentity(order.orderId, { action: 'verify' });
-                            if (result.transaction) await sign(result.transaction);
-                            else
-                              setNotice(
-                                'Company identity verification is already recorded on-chain.',
-                              );
-                            setIdentityStatus(
-                              await orderIdentity(order.orderId, { action: 'status' }),
-                            );
-                          })
-                        }
-                      >
-                        Verify company identity & record result
-                      </Btn>
-                    </>
-                  )}
-                  <Btn disabled={busy} onClick={refreshIdentity}>
-                    Check identity status
-                  </Btn>
-                  {identityStatus && (
-                    <p role="status">
-                      Identity proof: {identityStatus.status}. {identityStatus.checks?.join(', ')}
+              {(seller || buyer) &&
+                activeOrder &&
+                (evidenceOnly || (role !== 'supplier' && mode !== 'manage')) && (
+                  <details className="orders-stage" open>
+                    <summary>Company identity evidence</summary>
+                    <p>
+                      Seller requests a proof → buyer previews and approves sharing → seller
+                      verifies and records the result. This can happen before ingredient evidence is
+                      shared.
                     </p>
-                  )}
-                  {identityStatus?.credential && (
-                    <dl>
-                      {Object.entries(identityStatus.credential).map(([key, value]) => (
-                        <div key={key}>
-                          <dt>{key}</dt>
-                          <dd style={{ overflowWrap: 'anywhere' }}>{String(value)}</dd>
+                    <p>
+                      Request necessary company claims. The presenter chooses optional claims in an
+                      authority-signed selective proof linked to its current Company Role
+                      Credential. Wallet, role and subject binding stay visible. This does not grant
+                      access to ingredient evidence.
+                    </p>
+                    {seller && (
+                      <>
+                        <div style={fields}>
+                          <Input
+                            label="Identity proof purpose"
+                            value={form.purpose ?? ''}
+                            onChange={change('purpose')}
+                            maxLength={500}
+                          />
+                          <Input
+                            label="Identity proof deadline"
+                            type="datetime-local"
+                            value={form.identityDeadline ?? ''}
+                            onChange={change('identityDeadline')}
+                          />
                         </div>
-                      ))}
-                    </dl>
-                  )}
-                  {buyer && (
-                    <>
-                      <Btn
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            const material = await orderIdentity(order.orderId, {
-                              action: 'material',
-                            });
-                            setIdentitySelectedClaims(material.requiredClaims ?? []);
-                            setIdentityMaterial(material);
-                          })
-                        }
-                      >
-                        Preview requested Company Role VP
-                      </Btn>
-                      <Btn
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            await orderIdentity(order.orderId, { action: 'decline' });
-                            setIdentityStatus({ status: 'DECLINED' });
-                          })
-                        }
-                      >
-                        Decline identity request
-                      </Btn>
-                    </>
-                  )}
-                  {identityMaterial && (
-                    <>
-                      <Alert
-                        type="warning"
-                        message={
-                          identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
-                            ? 'Select optional claims to share. Required claims and cryptographic binding remain visible. This authority-derived proof references your existing credential; it does not alter that credential.'
-                            : 'Full disclosure: this legacy request shares the entire signed Company Role Credential. Optional fields cannot be hidden in this format.'
-                        }
-                      />
-                      <p>
-                        Verifier: {short(identityMaterial.audience)} · Purpose:{' '}
-                        {identityMaterial.purpose} · Expires:{' '}
-                        {timestamp(identityMaterial.expiresAt)}
+
+                        <fieldset>
+                          <legend>Required signed company claims</legend>
+                          {[
+                            'companyId',
+                            'companyName',
+                            'companyRegistrationNumber',
+                            'role',
+                            'walletAddress',
+                            'id',
+                            'applicationReference',
+                          ].map((claim) => (
+                            <label key={claim} style={{ display: 'inline-block', marginRight: 14 }}>
+                              <input
+                                type="checkbox"
+                                checked={requiredClaims.includes(claim)}
+                                disabled={['id', 'walletAddress', 'role'].includes(claim)}
+                                onChange={(event) =>
+                                  setRequiredClaims((current) =>
+                                    event.target.checked
+                                      ? [...current, claim]
+                                      : current.filter((value) => value !== claim),
+                                  )
+                                }
+                              />
+                              {claim}
+                            </label>
+                          ))}
+                        </fieldset>
+                        <p>
+                          Other claims are optional. The presenter can omit them; the subject DID,
+                          wallet and role are mandatory for holder and authorization checks. Legacy
+                          full-credential presentations are labelled separately.
+                        </p>
+                        <Btn
+                          disabled={busy || !form.purpose?.trim() || !form.identityDeadline}
+                          onClick={() =>
+                            void run(async () => {
+                              const result = await orderIdentity(order.orderId, {
+                                action: 'request',
+                                purpose: form.purpose,
+                                expiresAt: Math.floor(Date.parse(form.identityDeadline) / 1000),
+                                required: false,
+                                requiredClaims,
+                                optionalClaims: [
+                                  'companyId',
+                                  'companyName',
+                                  'companyRegistrationNumber',
+                                  'role',
+                                  'walletAddress',
+                                  'id',
+                                  'applicationReference',
+                                ].filter((claim) => !requiredClaims.includes(claim)),
+                              });
+                              await sign(result.transaction);
+                            })
+                          }
+                        >
+                          Request company identity proof
+                        </Btn>
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              const result = await orderIdentity(order.orderId, {
+                                action: 'verify',
+                              });
+                              if (result.transaction) await sign(result.transaction);
+                              else
+                                setNotice(
+                                  'Company identity verification is already recorded on-chain.',
+                                );
+                              setIdentityStatus(
+                                await orderIdentity(order.orderId, { action: 'status' }),
+                              );
+                            })
+                          }
+                        >
+                          Verify company identity & record result
+                        </Btn>
+                      </>
+                    )}
+                    <Btn disabled={busy} onClick={refreshIdentity}>
+                      Check identity status
+                    </Btn>
+                    {identityStatus && (
+                      <p role="status">
+                        Identity proof: {identityStatus.status}. {identityStatus.checks?.join(', ')}
                       </p>
+                    )}
+                    {identityStatus?.credential && (
                       <dl>
-                        {Object.entries(
-                          identityMaterial.claims ?? identityMaterial.credential.credentialSubject,
-                        ).map(([key, value]) => (
+                        {Object.entries(identityStatus.credential).map(([key, value]) => (
                           <div key={key}>
                             <dt>{key}</dt>
-                            {identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' && (
-                              <label>
-                                <input
-                                  type="checkbox"
-                                  aria-label={`Share ${key}`}
-                                  checked={identitySelectedClaims.includes(key)}
-                                  disabled={identityMaterial.requiredClaims.includes(key)}
-                                  onChange={(event) =>
-                                    setIdentitySelectedClaims((current) =>
-                                      event.target.checked
-                                        ? [...current, key]
-                                        : current.filter((claim) => claim !== key),
-                                    )
-                                  }
-                                />
-                                {identityMaterial.requiredClaims.includes(key)
-                                  ? 'Necessary'
-                                  : 'Optional'}
-                              </label>
-                            )}
                             <dd style={{ overflowWrap: 'anywhere' }}>{String(value)}</dd>
                           </div>
                         ))}
                       </dl>
-                      <PresentationSigningSettingsLink role={role} />
-                      <Btn
-                        disabled={busy}
-                        onClick={() =>
-                          void run(async () => {
-                            const holder = getActiveMessagingAgent();
-                            if (!holder || holder.did !== identityMaterial.holderDid)
-                              throw new Error(
-                                'Restore the holder signing key bound to your wallet.',
-                              );
-                            const presentation =
-                              identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
-                                ? await createSelectiveCompanyIdentityPresentation(
-                                    holder,
-                                    identityMaterial.sdJwt,
-                                    {
-                                      audience: identityMaterial.audience,
-                                      nonce: identityMaterial.challenge,
-                                      claims: identitySelectedClaims,
-                                    },
-                                  )
-                                : await createCompanyIdentityPresentation(holder, identityMaterial);
-                            await orderIdentity(order.orderId, { action: 'present', presentation });
-                            setIdentityMaterial(undefined);
-                            setIdentityStatus({ status: 'PRESENTED' });
-                          })
-                        }
-                      >
-                        Approve selected claims & send proof
-                      </Btn>
-                    </>
-                  )}
-                </details>
-              )}
+                    )}
+                    {buyer && (
+                      <>
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              const material = await orderIdentity(order.orderId, {
+                                action: 'material',
+                              });
+                              setIdentitySelectedClaims(material.requiredClaims ?? []);
+                              setIdentityMaterial(material);
+                            })
+                          }
+                        >
+                          Preview requested Company Role VP
+                        </Btn>
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await orderIdentity(order.orderId, { action: 'decline' });
+                              setIdentityStatus({ status: 'DECLINED' });
+                            })
+                          }
+                        >
+                          Decline identity request
+                        </Btn>
+                      </>
+                    )}
+                    {identityMaterial && (
+                      <>
+                        <Alert
+                          type="warning"
+                          message={
+                            identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
+                              ? 'Select optional claims to share. Required claims and cryptographic binding remain visible. This authority-derived proof references your existing credential; it does not alter that credential.'
+                              : 'Full disclosure: this legacy request shares the entire signed Company Role Credential. Optional fields cannot be hidden in this format.'
+                          }
+                        />
+                        <p>
+                          Verifier: {short(identityMaterial.audience)} · Purpose:{' '}
+                          {identityMaterial.purpose} · Expires:{' '}
+                          {timestamp(identityMaterial.expiresAt)}
+                        </p>
+                        <dl>
+                          {Object.entries(
+                            identityMaterial.claims ??
+                              identityMaterial.credential.credentialSubject,
+                          ).map(([key, value]) => (
+                            <div key={key}>
+                              <dt>{key}</dt>
+                              {identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' && (
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Share ${key}`}
+                                    checked={identitySelectedClaims.includes(key)}
+                                    disabled={identityMaterial.requiredClaims.includes(key)}
+                                    onChange={(event) =>
+                                      setIdentitySelectedClaims((current) =>
+                                        event.target.checked
+                                          ? [...current, key]
+                                          : current.filter((claim) => claim !== key),
+                                      )
+                                    }
+                                  />
+                                  {identityMaterial.requiredClaims.includes(key)
+                                    ? 'Necessary'
+                                    : 'Optional'}
+                                </label>
+                              )}
+                              <dd style={{ overflowWrap: 'anywhere' }}>{String(value)}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                        <PresentationSigningSettingsLink role={role} />
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              const holder = getActiveMessagingAgent();
+                              if (!holder || holder.did !== identityMaterial.holderDid)
+                                throw new Error(
+                                  'Restore the holder signing key bound to your wallet.',
+                                );
+                              const presentation =
+                                identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
+                                  ? await createSelectiveCompanyIdentityPresentation(
+                                      holder,
+                                      identityMaterial.sdJwt,
+                                      {
+                                        audience: identityMaterial.audience,
+                                        nonce: identityMaterial.challenge,
+                                        claims: identitySelectedClaims,
+                                      },
+                                    )
+                                  : await createCompanyIdentityPresentation(
+                                      holder,
+                                      identityMaterial,
+                                    );
+                              await orderIdentity(order.orderId, {
+                                action: 'present',
+                                presentation,
+                              });
+                              setIdentityMaterial(undefined);
+                              setIdentityStatus({ status: 'PRESENTED' });
+                            })
+                          }
+                        >
+                          Approve selected claims & send proof
+                        </Btn>
+                      </>
+                    )}
+                  </details>
+                )}
 
               {!activeOrder && (
                 <p>

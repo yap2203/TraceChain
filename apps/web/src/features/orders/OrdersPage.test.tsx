@@ -240,4 +240,79 @@ describe('browse and request-only UI', () => {
     await screen.findByText('Service unavailable');
     expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();
   });
+  it('embeds Supplier ingredient details in Products without Browse or order tabs', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      catalogue: [
+        {
+          itemId: 'ingredient',
+          name: 'Real ingredient',
+          seller: 'supplier',
+          sellerName: 'Supplier A',
+          kind: 1,
+          unit: 'kg',
+          batches: ['batch'],
+        },
+        {
+          itemId: 'product',
+          name: 'Own finished product',
+          seller: actor,
+          kind: 2,
+          batches: ['finished'],
+        },
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="browse" initialBatchId="batch" />
+      </MemoryRouter>,
+    );
+    await screen.findByRole('button', { name: 'Request ingredient details' });
+    expect(screen.getByText('Request ingredient quantity')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'My requests' })).toBeNull();
+    expect(screen.queryByText('Own finished product')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to items' }));
+    expect(screen.getByRole('searchbox', { name: 'Search ingredients' })).toBeTruthy();
+    expect(screen.queryByText('Own finished product')).toBeNull();
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+  });
+  it('separates Manufacturer sent and received orders and exposes seller decisions', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      catalogue: [{ itemId: 'item', name: 'Registered item', unit: 'kg' }],
+      orders: [
+        { ...order, orderId: 'sent-order', sellerName: 'Supplier A' },
+        {
+          ...order,
+          orderId: 'incoming',
+          seller: actor,
+          buyer: 'retailer',
+          buyerName: 'Retailer A',
+          isRequestOnly: true,
+          decision: { status: 0 },
+        },
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="manage" />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Supplier A');
+    expect(screen.queryByText('Retailer A')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
+    expect(screen.getByRole('table')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Received from buyers' }));
+    expect(screen.getByText('Retailer A')).toBeTruthy();
+    expect(screen.queryByText('Supplier A')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'View request' }));
+    expect(screen.getByRole('button', { name: 'Approve' }).hasAttribute('disabled')).toBe(false);
+    expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(screen.getByRole('button', { name: 'Confirm approval' })).toBeTruthy();
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+  });
 });

@@ -189,8 +189,8 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           </select>
         </label>
         <p>
-          Production consumes only accepted ingredient stock at this location. Register locations
-          and receive ingredients under Catalogue & orders first.
+          Production consumes only accepted ingredient stock already received at this location.
+          Quantity requests and evidence acceptance do not add usable stock.
         </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
           <Input

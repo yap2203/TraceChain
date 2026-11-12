@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   reviewEvidence: vi.fn(),
   verifyEvidence: vi.fn(),
   prepareEvidenceAcceptance: vi.fn(),
+  getEvidenceDetails: vi.fn(),
 }));
 
 vi.mock('../../../production-flow/production-flow.api', async (importOriginal) => ({
@@ -27,6 +28,42 @@ afterEach(() => {
 });
 
 describe('Manufacturer received evidence review', () => {
+  it('opens only the selected sent request, shows its actual claims and omits the new-request form', async () => {
+    mocks.listEvidenceRequests.mockResolvedValue({
+      requests: [
+        {
+          requestId: 'selected',
+          supplier: 'supplier-a',
+          supplierName: 'Selected Supplier',
+          dueAt: 2000000000,
+          status: 1,
+        },
+        {
+          requestId: 'other',
+          supplier: 'supplier-b',
+          supplierName: 'Other Supplier',
+          dueAt: 2000000000,
+          status: 1,
+        },
+      ],
+    });
+    mocks.getEvidenceDetails.mockResolvedValue({
+      batchId: 'exact-batch',
+      reason: 'Verify origin',
+      claims: ['countryOfOrigin', 'expiryDate'],
+      requiredClaims: ['expiryDate'],
+    });
+    render(<IngredientEvidence onNav={vi.fn()} hideComposer requestId="selected" />);
+    await screen.findByText('Selected Supplier');
+    expect(await screen.findByText('Reason: Verify origin')).toBeTruthy();
+    expect(screen.getByText('Necessary claims: expiryDate')).toBeTruthy();
+    expect(screen.getByText('Optional claims: countryOfOrigin')).toBeTruthy();
+    expect(screen.queryByText('Other Supplier')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Request evidence with MetaMask' })).toBeNull();
+    expect(mocks.listProductionIngredients).not.toHaveBeenCalled();
+    expect(mocks.getEvidenceDetails).toHaveBeenCalledWith('selected');
+    expect(mocks.verifyEvidence).not.toHaveBeenCalled();
+  });
   it('shows authorized full-disclosure claims and keeps view, verify and acceptance separate', async () => {
     const requestId = `0x${'11'.repeat(32)}`;
     mocks.listProductionIngredients.mockResolvedValue({ batches: [] });

@@ -2,6 +2,8 @@
 
 ## Repository and implementation
 
+- Manufacturer browsing belongs inside Products, alongside owned product batches. Provide separate My orders and Information requests pages with sent/received tables. Supplier requests for company evidence may be linked to either ingredient information or quantity requests; a valid proof must not automatically approve or fulfil either request (user-confirmed scope, 2026-11-12).
+
 - Use Tailwind CSS for web styling while preserving the existing TraceChain visual design, as requested on 2026-11-12. Use its official Vite integration, reuse the existing theme tokens and retain the current reset rather than introducing Preflight layout changes.
 
 - Supplier navigation separates owned Ingredient batches, incoming My orders, and Received/Sent Information requests. Supplier does not need a separate Browse function. Order decisions and company evidence review are separate actions and do not initiate payment or physical fulfilment.

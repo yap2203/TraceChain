@@ -10,7 +10,8 @@ const paths: Record<WorkspaceRole, Record<string, string>> = {
     audit: 'reports',
   },
   manufacturer: {
-    evidence: 'ingredient-evidence',
+    requests: 'information-requests',
+    evidence: 'information-requests',
     products: 'product-batches',
     mycredential: 'credentials',
     audit: 'reports',
@@ -31,5 +32,7 @@ export function workspacePath(role: WorkspaceRole, page: string) {
 }
 
 export function workspacePage(role: WorkspaceRole, path: string) {
+  if (role === 'manufacturer' && (path === 'ingredient-evidence' || path === 'evidence'))
+    return 'requests';
   return Object.entries(paths[role]).find(([, value]) => value === path)?.[0] ?? path;
 }

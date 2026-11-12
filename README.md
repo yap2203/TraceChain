@@ -1,5 +1,13 @@
 # TraceChain
 
+Manufacturer navigation now uses **Products**, **My orders** and **Information requests**.
+Products contains a searchable **My products** grid and **Supplier ingredients** grid. Open an
+ingredient to request information/evidence or a quantity; linked ingredients in product details
+open that same request view. My orders separates requests sent to Suppliers from requests received
+from product buyers. Information requests separates sent ingredient evidence from received company
+proof requests, including Supplier challenges linked to either an ingredient-information or quantity
+request. Review [the Manufacturer flow and test checklist](docs/testing/MANUFACTURER_REQUESTS.md).
+
 The web application uses **Tailwind CSS 4** through the official Vite plugin, preserving the
 existing TraceChain navy/teal theme, typography, page layouts and dark/light workspace themes.
 Run `npm install` at the repository root after updating dependencies, then `npm run dev` as usual.
