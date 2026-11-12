@@ -2,6 +2,8 @@
 
 ## Repository and implementation
 
+- Supplier approval alone never credits Manufacturer stock. For an approved ingredient quantity request, require the Manufacturer's explicit physical receipt confirmation at its own registered location before crediting usable stock (confirmed by the user on 2026-11-12). Allow partial receipts within the approved amount; debit Supplier stock and credit Manufacturer stock atomically. Product creation consumes one or more received batches; ingredient evidence requests/presentations are optional after receipt (user-confirmed follow-up on 2026-11-12). Valid registered ingredients, active Ingredient Credentials, current participant authorization and received-stock limits remain mandatory; optional evidence is never automatically marked verified. Unit choices may convert compatible units exactly into whole registered units, without implicit rounding or cross-dimension conversion. This adds a receipt step to request-only flows while leaving legacy reservation/dispatch controls deferred.
+
 - Manufacturer browsing belongs inside Products, alongside owned product batches. Provide separate My orders and Information requests pages with sent/received tables. Supplier requests for company evidence may be linked to either ingredient information or quantity requests; a valid proof must not automatically approve or fulfil either request (user-confirmed scope, 2026-11-12).
 
 - Use Tailwind CSS for web styling while preserving the existing TraceChain visual design, as requested on 2026-11-12. Use its official Vite integration, reuse the existing theme tokens and retain the current reset rather than introducing Preflight layout changes.

@@ -1,5 +1,29 @@
 # TraceChain
 
+**Supplier remaining stock:** Ingredient batches and Supplier order details calculate remaining
+stock after open requests automatically: current on-chain stock minus pending and approved quantities
+not yet received. Partial receipts are not deducted twice. Rejected, expired and completed requests
+are excluded; excess demand shows a shortfall. This is a demand estimate, not a stock reservation.
+Actual Supplier stock decreases only on Manufacturer receipt confirmation. Use **Refresh** to load
+requests or receipts submitted by another company. No contract deployment is needed for this display.
+
+**Production ingredients:** Supplier approval does not add usable stock. In Manufacturer **My orders
+→ Sent to Suppliers → View request**, register/select your receiving location and explicitly confirm
+the quantity physically received. Ingredient evidence is optional for production from that received
+stock; it can still be requested and verified separately when more information is needed.
+Under **Products → Create product batch**, select that location, choose multiple ingredients and
+their quantities/compatible units, and review automatically calculated remaining balances. Product
+confirmation deducts each ingredient atomically on-chain; remaining stock is reloaded afterward.
+Order preparation simulates against the pending block, so a real receipt time after an idle local
+chain's last block is not falsely rejected. This does not mine a block or alter the recorded time.
+See [the receipt and production test flow](docs/testing/MANUFACTURER_REQUESTS.md#receipt-and-multi-ingredient-production).
+
+This receipt action requires the updated `SupplyChainOrders` contract (`approvedReceiptPolicy() = 1`),
+and optional-evidence production requires `ProductRegistry.receivedProductionPolicy() = 1`.
+Existing deployments show an explicit update message; they are not modified automatically. The suite's
+one-time immutable wiring requires a fresh full-suite deployment and matching root `.env` addresses.
+Preserve your existing journals/keys and register test participants and requests against the new suite.
+
 Manufacturer navigation now uses **Products**, **My orders** and **Information requests**.
 Products contains a searchable **My products** grid and **Supplier ingredients** grid. Open an
 ingredient to request information/evidence or a quantity; linked ingredients in product details
@@ -44,10 +68,18 @@ messaging key setup or backup panel. Presentation signature settings are separat
 **My company credential → Presentation signing settings**, with links from presentation flows.
 Those browser keys sign approved VPs; they are not used for DIDComm message encryption.
 
-**Current review scope:** Browse & requests contains only item browsing, quantity/detail requests
-and company evidence exchange. The numbered workflow, location setup, proposals, reservations,
-dispatch, receipts and recall controls have been removed from this page. New request-only records
-do not change stock and cannot enter the retained reservation/dispatch methods.
+Company-agent role/name metadata follows current authenticated authorization while preserving its
+messaging DID and encrypted key. If the original ingredient-request notification was never delivered,
+a Supplier can still request company evidence as a new encrypted thread anchored to the exact current
+on-chain evidence request and its live identity challenge. Replies must reference that actual company
+request message. Stale local workflow records after a chain reset do not authorize delivery; create a
+new valid evidence request instead. Retrying a pending company request keeps its existing challenge.
+
+**Current review scope:** Browsing, quantity/detail requests and company evidence remain separate.
+Manufacturer My orders now adds explicit physical receipt after Supplier approval, with receiving
+location setup when needed. Request/approval alone never changes stock. The earlier proposal,
+reservation, dispatch and recall controls remain outside this page; request-only records cannot
+enter those older reservation/dispatch methods.
 
 Read [Browse & requests — current functions and deferred work](docs/BROWSE_REQUESTS_README.md)
 for the active five-part flow, the purpose of each retained physical-flow function and the checks
@@ -533,6 +565,9 @@ genuine.
 Set `VITE_PUBLIC_APP_URL` to the externally reachable HTTPS application origin when generating
 production labels. A normal phone camera can open that HTTPS link. Another phone cannot open a
 developer machine's `localhost`; local phone testing needs a reachable LAN/HTTPS configuration.
+For local browser testing, set `VITE_PUBLIC_APP_URL=http://localhost:5173` in the root `.env` and
+restart Vite after editing it. A missing or invalid QR configuration displays an error in the QR
+section while the Manufacturer's on-chain product details remain available.
 
 ## Ingredient selective disclosure
 

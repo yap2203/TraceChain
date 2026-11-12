@@ -89,6 +89,32 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('Supplier ingredient and request management', () => {
+  it('shows remaining stock after open requests in both ingredient cards and order details', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      supplierStock: [
+        {
+          batchId,
+          unit: 'g',
+          availableQuantity: '100',
+          pendingQuantity: '12',
+          approvedQuantity: '0',
+          outstandingQuantity: '12',
+          remainingAfterRequests: '88',
+          shortfall: '0',
+          requestCount: 1,
+        },
+      ],
+    });
+    const grid = mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
+    await screen.findByText('88 g');
+    expect(screen.getByText('Remaining after open requests')).toBeTruthy();
+    expect(screen.getByText('100 g')).toBeTruthy();
+    grid.unmount();
+    mount(<OrdersPage role="supplier" mode="manage" initialOrderId="order" />);
+    await screen.findByText('88 g');
+    expect(screen.getByText(/Actual stock decreases on confirmed receipt/)).toBeTruthy();
+  });
   it('edits only listing fields and requires confirmation before archiving', async () => {
     mount(<IngredientBatches onNew={vi.fn()} onDetail={vi.fn()} />);
     await screen.findByText('Supplier cocoa');

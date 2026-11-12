@@ -30,7 +30,7 @@ The local simulated networks require no wallet key. Sepolia configuration reads 
 
 - Company Role Credentials issued before an administrator transfer remain valid when their current status, expiry, subject, type, stakeholder lifecycle, and hash link remain valid. The former administrator is revoked and cannot issue new credentials.
 - Evidence acceptance requires the exact credential registered for the requested ingredient batch, the expected Supplier, Ingredient type, valid lifecycle, unexpired presentation, and an unconsumed request challenge.
-- Retailer evidence acceptance records request completion but never sets the Manufacturer-only product-creation flag.
+- Retailer evidence acceptance records request completion but never sets the Manufacturer-only evidence-acceptance flag. Receipt-backed product creation no longer requires that flag: Ingredient evidence is optional, while valid source/credential status and Manufacturer received stock remain mandatory. `ProductRegistry.receivedProductionPolicy() = 1` identifies this policy; an older deployed suite must be replaced to use it. Legacy integrations without a receipt ledger retain their previous evidence gate.
 - Ingredient Credentials still require an authorized Supplier issuer.
 - Complete credentials and private evidence remain off-chain; contracts store only identifiers, hashes, CIDs, statuses, timestamps, quantities, and relationships.
 

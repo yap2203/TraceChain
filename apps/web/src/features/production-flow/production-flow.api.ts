@@ -25,7 +25,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export interface ProductionIngredient {
-  accepted: boolean;
+  accepted?: boolean;
   availableQuantity: string;
   batchId: string;
   expiresAt: number;
@@ -71,8 +71,10 @@ export interface WorkflowResponse {
   transferId?: string;
 }
 
-export const listProductionIngredients = () =>
-  request<{ batches: ProductionIngredient[] }>('/ingredients');
+export const listProductionIngredients = (location?: string, purpose?: 'production') =>
+  request<{ batches: ProductionIngredient[] }>(
+    `/ingredients${location || purpose ? '?' + new URLSearchParams({ ...(location ? { location } : {}), ...(purpose ? { purpose } : {}) }) : ''}`,
+  );
 export const listEvidenceRequests = () =>
   request<{ requests: ProductionEvidenceRequest[] }>('/evidence-requests');
 export interface RetailerEvidenceOption {

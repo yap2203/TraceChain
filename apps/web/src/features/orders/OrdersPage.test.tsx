@@ -488,4 +488,73 @@ describe('browse and request-only UI', () => {
     expect(screen.getByRole('button', { name: 'Confirm approval' })).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
   });
+  it('does not credit approved ingredients until the Manufacturer explicitly confirms a receipt', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      approvedReceiptsSupported: true,
+      catalogue: [{ itemId: 'item', name: 'Cocoa', kind: 1, unit: 'g' }],
+      orders: [
+        { ...order, decision: { status: 1 }, isRequestOnly: true, approvedReceivedQuantity: '0' },
+      ],
+      locations: [{ company: actor, location: 'factory', label: 'Factory' }],
+    });
+    api.prepareOrder.mockResolvedValue({
+      transaction: { chainId: 31337, to: actor, data: '0x1234', value: '0x0' },
+    });
+    Object.defineProperty(window, 'ethereum', { configurable: true, value: { request: vi.fn() } });
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="manage" initialOrderId="request" />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Confirm ingredients received');
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText(/Receiving \/ production location/), {
+      target: { value: 'factory' },
+    });
+    fireEvent.change(screen.getByLabelText(/Quantity received/), { target: { value: '12' } });
+    fireEvent.change(screen.getByLabelText(/Actual receipt date and time/), {
+      target: { value: '2026-01-01T10:00:00' },
+    });
+    const confirm = screen.getByRole('button', { name: 'Confirm receipt with MetaMask' });
+    expect(confirm.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(screen.getByLabelText(/I confirm these ingredients physically arrived/));
+    fireEvent.click(confirm);
+    await waitFor(() =>
+      expect(api.prepareOrder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'approved-receipt',
+          orderId: 'request',
+          location: 'factory',
+          quantity: '12',
+        }),
+      ),
+    );
+  });
+  it('shows why receipt is unavailable on an older deployment and hides unrelated company evidence controls', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      approvedReceiptsSupported: false,
+      orders: [
+        {
+          ...order,
+          decision: { status: 1, reason: 'Request approved' },
+          identityChallenge: '0x0000',
+        },
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="manage" initialOrderId="request" />
+      </MemoryRouter>,
+    );
+    await screen.findByText('Supplier decision: Approved');
+    expect(screen.getByText('Confirm ingredients received')).toBeTruthy();
+    expect(
+      screen.getByText(/Deploy the updated registry suite to enable receipt confirmation/),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /company evidence request/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm receipt with MetaMask' })).toBeNull();
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+  });
 });

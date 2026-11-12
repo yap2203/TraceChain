@@ -56,7 +56,15 @@ export class BackendDidCommAgentService {
     const existing = await this.findByWallet(input.wallet);
     if (existing) {
       await this.agentFor(existing.did);
-      return existing;
+      if (existing.role !== input.role || existing.companyName !== input.companyName) {
+        await this.update((state) => {
+          const record = state.identities.find((item) => item.did === existing.did);
+          if (!record) throw new Error('The existing company messaging identity is unavailable.');
+          record.role = input.role;
+          record.companyName = input.companyName;
+        });
+      }
+      return { ...existing, role: input.role, companyName: input.companyName };
     }
 
     const privateKey = randomBytes(32);

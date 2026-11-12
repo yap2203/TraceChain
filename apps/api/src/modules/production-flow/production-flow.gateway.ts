@@ -40,6 +40,7 @@ const evidenceAbi = [
   'function close(bytes32,uint8,bytes32)',
 ] as const;
 const productAbi = [
+  'function receivedProductionPolicy() view returns (uint8)',
   'function productionRecordedAt(bytes32) view returns (uint64)',
   'function productionLocation(bytes32) view returns (bytes32)',
   'function createProductAt(bytes32,bytes32,string,uint256,bytes32,uint64,uint64,bytes32[],uint256[],bytes32)',
@@ -64,6 +65,7 @@ const ingredientInterface = new Interface(ingredientAbi);
 const credentialInterface = new Interface(credentialAbi);
 
 export interface ProductionFlowGateway {
+  supportsOptionalProductionEvidence?(): Promise<boolean>;
   getProductionRecord?(batchId: string): Promise<{ location: string; recordedAt: number }>;
   listProposedProductBatchIds?(wallet: string): Promise<string[]>;
   getReceivedAvailable?(batchId: string, wallet: string, location?: string): Promise<string | null>;
@@ -140,6 +142,19 @@ export interface ProductionFlowGateway {
 }
 
 export class EthersProductionFlowGateway implements ProductionFlowGateway {
+  async supportsOptionalProductionEvidence() {
+    try {
+      return Number(await this.products.receivedProductionPolicy()) === 1;
+    } catch (error) {
+      const failure = error as { code?: string; data?: string; value?: string };
+      if (
+        (failure.code === 'CALL_EXCEPTION' && failure.data === '0x') ||
+        (failure.code === 'BAD_DATA' && failure.value === '0x')
+      )
+        return false;
+      throw error;
+    }
+  }
   async getProductionRecord(batchId: string) {
     return {
       location: String(await this.products.productionLocation(batchId)),

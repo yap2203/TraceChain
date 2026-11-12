@@ -11,7 +11,7 @@ import {
   type OrdersState,
   type OrderRecord,
 } from './orders.api';
-import { Alert, Btn, Card, Input, T, TechnicalDetails } from '../workspaces/shared/ui';
+import { Alert, Btn, Card, Input, SelectField, T, TechnicalDetails } from '../workspaces/shared/ui';
 import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import {
@@ -24,6 +24,7 @@ import { getEvidenceDetails, prepareEvidenceRequest } from '../production-flow/p
 import { sendEvidenceRequestMessage } from '../production-flow/evidence-didcomm';
 import { CatalogueBrowser, CatalogueSkeleton } from './CatalogueBrowser';
 import { RequestsOverview } from './RequestsOverview';
+import { SupplierStockSummary } from './SupplierStockSummary';
 
 const short = (value?: string) =>
   value ? `${value.slice(0, 10)}…${value.slice(-6)}` : 'Unavailable';
@@ -56,6 +57,10 @@ export function OrdersPage({
   const [selected, setSelected] = useState(initialOrderId);
   const [pendingDecision, setPendingDecision] = useState<1 | 2>();
   const [decisionReason, setDecisionReason] = useState('');
+  const [receiptConfirmed, setReceiptConfirmed] = useState(false);
+  useEffect(() => {
+    setReceiptConfirmed(false);
+  }, [selected]);
   const [form, setForm] = useState<Record<string, string>>({
     quantity: '',
     unit: 'g',
@@ -127,6 +132,7 @@ export function OrdersPage({
     run(async () => {
       const prepared = await prepareOrder({ ...values, action, operationId: crypto.randomUUID() });
       await sign(prepared.transaction);
+      if (action === 'approved-receipt') setReceiptConfirmed(false);
       if (action === 'request') {
         if (mode === 'browse') {
           navigate(workspacePath(role, 'orders'));
@@ -142,6 +148,7 @@ export function OrdersPage({
   const seller = !!order && !!data && same(order.seller, data.actor);
   const buyer = !!order && !!data && same(order.buyer, data.actor);
   const activeOrder = !!order && Number(order.status) < 3 && Number(order.expiresAt) > now();
+  const receiptOccurredAt = form.receivedAt ? Math.floor(Date.parse(form.receivedAt) / 1000) : 0;
   const managedOrders =
     data?.orders.filter((entry) =>
       role === 'supplier' || direction === 'received'
@@ -345,21 +352,152 @@ export function OrdersPage({
                 {order.sellerName ?? short(order.seller)}
               </p>
               <p>Deadline: {timestamp(order.expiresAt)}</p>
-              {buyer && mode === 'manage' && !evidenceOnly && (
-                <Btn
-                  variant="outline"
-                  onClick={() =>
-                    navigate(
-                      workspacePath(role, 'requests') +
-                        '?direction=received&orderId=' +
-                        encodeURIComponent(order.orderId),
-                    )
-                  }
-                >
-                  Manage company evidence
-                </Btn>
-              )}
+              {buyer &&
+                mode === 'manage' &&
+                !evidenceOnly &&
+                order.identityChallenge &&
+                !/^0x0+$/.test(order.identityChallenge) && (
+                  <Btn
+                    variant="outline"
+                    onClick={() =>
+                      navigate(
+                        workspacePath(role, 'requests') +
+                          '?direction=received&orderId=' +
+                          encodeURIComponent(order.orderId),
+                      )
+                    }
+                  >
+                    Respond to company evidence request
+                  </Btn>
+                )}
               <p>Private note: {order.details?.note || 'No note recorded'}</p>
+              {buyer && role === 'manufacturer' && mode === 'manage' && !evidenceOnly && (
+                <section className="orders-stage grid gap-[12px]">
+                  <h3>Confirm ingredients received</h3>
+                  <p>
+                    Supplier decision:{' '}
+                    {Number(order.decision?.status) === 1
+                      ? 'Approved'
+                      : Number(order.decision?.status) === 2
+                        ? 'Rejected'
+                        : order.decision
+                          ? 'Awaiting approval'
+                          : 'Unavailable — refresh the request'}
+                  </p>
+                  <p>
+                    Supplier approved: {order.requested} {item?.unit}. Received so far:{' '}
+                    {order.approvedReceivedQuantity ?? 'Unavailable'} {item?.unit}. Only confirmed
+                    receipt adds stock for production.
+                  </p>
+                  {Number(order.decision?.status) !== 1 ? (
+                    <Alert
+                      type="info"
+                      message="Receipt confirmation becomes available after the Supplier approves this quantity request."
+                    />
+                  ) : !data.approvedReceiptsSupported ? (
+                    <Alert
+                      type="warning"
+                      message="Deploy the updated registry suite to enable receipt confirmation for approved requests."
+                    />
+                  ) : Number(item?.kind) !== 1 ? (
+                    <Alert
+                      type="warning"
+                      message="Ingredient details are unavailable. Refresh before confirming receipt."
+                    />
+                  ) : (
+                    activeOrder && (
+                      <>
+                        <SelectField
+                          label="Receiving / production location"
+                          value={form.receiptLocation ?? ''}
+                          onChange={change('receiptLocation')}
+                          required
+                          options={[
+                            { value: '', label: 'Select your receiving location' },
+                            ...data.locations
+                              .filter((location) => same(location.company, data.actor))
+                              .map((location) => ({
+                                value: location.location,
+                                label: location.label ?? short(location.location),
+                              })),
+                          ]}
+                        />
+                        {!data.locations.some((location) => same(location.company, data.actor)) && (
+                          <div className="grid gap-[8px]">
+                            <Input
+                              label="New receiving location name"
+                              value={form.locationLabel ?? ''}
+                              onChange={change('locationLabel')}
+                              maxLength={160}
+                            />
+                            <Btn
+                              disabled={busy || !form.locationLabel?.trim()}
+                              onClick={() =>
+                                void submit('location', { label: form.locationLabel.trim() })
+                              }
+                            >
+                              Register receiving location
+                            </Btn>
+                          </div>
+                        )}
+                        <Input
+                          label={`Quantity received (${item?.unit})`}
+                          type="number"
+                          min="1"
+                          max={(
+                            BigInt(order.requested) - BigInt(order.approvedReceivedQuantity ?? '0')
+                          ).toString()}
+                          step="1"
+                          value={form.receiptQuantity ?? ''}
+                          onChange={change('receiptQuantity')}
+                          required
+                        />
+                        <Input
+                          label="Actual receipt date and time"
+                          type="datetime-local"
+                          step="1"
+                          value={form.receivedAt ?? ''}
+                          onChange={change('receivedAt')}
+                          required
+                        />
+                        <label className="flex items-start gap-[8px]">
+                          <input
+                            type="checkbox"
+                            disabled={busy}
+                            checked={receiptConfirmed}
+                            onChange={(event) => setReceiptConfirmed(event.target.checked)}
+                          />
+                          I confirm these ingredients physically arrived at my receiving location.
+                        </label>
+                        <Btn
+                          disabled={
+                            busy ||
+                            !receiptConfirmed ||
+                            !form.receiptLocation ||
+                            !/^[1-9]\d*$/.test(form.receiptQuantity ?? '') ||
+                            !form.receivedAt ||
+                            !Number.isFinite(receiptOccurredAt) ||
+                            receiptOccurredAt > now() ||
+                            BigInt(form.receiptQuantity || '0') >
+                              BigInt(order.requested) -
+                                BigInt(order.approvedReceivedQuantity ?? '0')
+                          }
+                          onClick={() =>
+                            void submit('approved-receipt', {
+                              orderId: order.orderId,
+                              quantity: form.receiptQuantity,
+                              location: form.receiptLocation,
+                              occurredAt: receiptOccurredAt,
+                            })
+                          }
+                        >
+                          Confirm receipt with MetaMask
+                        </Btn>
+                      </>
+                    )
+                  )}
+                </section>
+              )}
               {order.decision?.reason && <p>Seller decision reason: {order.decision.reason}</p>}
               <p>
                 {order.isRequestOnly || order.details?.requestOnly
@@ -368,6 +506,16 @@ export function OrdersPage({
               </p>
               {seller && (role === 'supplier' || mode === 'manage') && !evidenceOnly && (
                 <>
+                  {role === 'supplier' &&
+                    data.supplierStock
+                      ?.filter((stock) =>
+                        same(
+                          stock.batchId,
+                          order.requestedBatch ??
+                            (item?.batches?.length === 1 ? item.batches[0] : undefined),
+                        ),
+                      )
+                      .map((stock) => <SupplierStockSummary key={stock.batchId} stock={stock} />)}
                   <p>
                     Decision:{' '}
                     {Number(order.decision?.status) === 1

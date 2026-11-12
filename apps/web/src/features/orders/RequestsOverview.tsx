@@ -177,6 +177,14 @@ export function RequestsOverview({
 }
 
 function requestStatus(order: OrderRecord) {
+  if (
+    /^\d+$/.test(String(order.approvedReceivedQuantity)) &&
+    BigInt(order.approvedReceivedQuantity) > 0n
+  ) {
+    return BigInt(order.approvedReceivedQuantity) >= BigInt(order.requested)
+      ? { key: 'completed', label: 'Received', variant: 'verified' as const }
+      : { key: 'approved', label: 'Partially received', variant: 'accepted' as const };
+  }
   if (Number(order.decision?.status) === 1)
     return { key: 'approved', label: 'Approved', variant: 'accepted' as const };
   if (Number(order.decision?.status) === 2)

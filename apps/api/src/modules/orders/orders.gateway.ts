@@ -123,7 +123,9 @@ export class EthersOrdersGateway implements OrdersGateway {
     if (Number(BigInt(await this.provider.send('eth_chainId', []))) !== this.chainId)
       throw new Error('The configured RPC chain does not match CHAIN_ID.');
     const contract = this.contract(name);
-    await contract.getFunction(method).staticCall(...args, { from: actor });
+    // An idle automining chain's latest block may predate a real receipt/dispatch.
+    // Simulate the next transaction state without mining or changing the reported time.
+    await contract.getFunction(method).staticCall(...args, { from: actor, blockTag: 'pending' });
     return {
       chainId: this.chainId,
       to: String(contract.target),

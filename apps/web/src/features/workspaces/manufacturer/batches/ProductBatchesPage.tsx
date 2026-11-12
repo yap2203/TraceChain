@@ -107,7 +107,7 @@ function OwnedProducts({
         <EmptyState
           icon={<Package size={44} />}
           title={search ? 'No matching products' : 'No on-chain product batches'}
-          sub="Create a product after accepting ingredient evidence, or open Supplier ingredients to request it."
+          sub="Confirm ingredient receipt to create a product, or open Supplier ingredients to request stock. Ingredient evidence is optional."
         />
       )}
       <div className="request-item-grid">

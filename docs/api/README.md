@@ -335,3 +335,16 @@ Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend
 ## Storage and production limitations
 
 Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Nonces are wallet-bound, expire after five minutes, and are atomically single-use in the supported single-process model. Nonce creation and verification are rate-limited per wallet, expired records are cleaned opportunistically, and state-changing browser requests with an unexpected `Origin` are rejected. Cookies are HttpOnly, SameSite=Lax, explicitly expiring, and Secure in production. Production deployment still requires shared atomic repositories, trusted proxy configuration, HTTPS, monitoring, and stronger distributed rate limiting.
+## Production stock and optional evidence
+
+`GET /api/production-flow/ingredients?purpose=production&location=<bytes32>` reads the authenticated
+Manufacturer's received stock at the selected location using REGISTER_PRODUCT permission. It does
+not read evidence acceptance or require REQUEST_EVIDENCE permission. Without a received-stock
+ledger it returns no usable production quantity, rather than substituting Supplier inventory.
+The default ingredient query retains the existing evidence-request behavior.
+
+Product preparation does not require an accepted ingredient presentation when consuming received
+stock. Valid source status/credentials, location, stock bounds and contract policy still apply.
+An old ProductRegistry returns `OPTIONAL_EVIDENCE_DEPLOYMENT_REQUIRED` before metadata preparation;
+update the full suite and configured addresses. Evidence verification/acceptance endpoints remain
+separate and never run automatically during production.

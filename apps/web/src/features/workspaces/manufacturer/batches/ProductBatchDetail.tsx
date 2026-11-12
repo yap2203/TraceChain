@@ -53,7 +53,8 @@ export function ProductBatchDetail({
     let active = true;
     setTraceability(undefined);
     if (!productBatchId) return () => undefined;
-    void resolveProductTraceability(createProductQrPayload(productBatchId))
+    void Promise.resolve()
+      .then(() => resolveProductTraceability(createProductQrPayload(productBatchId)))
       .then((result) => {
         if (active) setTraceability(result);
       })

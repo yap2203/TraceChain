@@ -4,6 +4,9 @@ import { requestDateSchema } from '../../config/input-validation.js';
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 const positiveInteger = z.string().regex(/^[1-9]\d{0,38}$/);
+export const productionIngredientsQuerySchema = z
+  .object({ location: bytes32.optional(), purpose: z.literal('production').optional() })
+  .strict();
 
 export const evidenceRequestSchema = z
   .object({

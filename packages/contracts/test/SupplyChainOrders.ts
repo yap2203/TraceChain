@@ -8,6 +8,330 @@ function signed<T extends BaseContract>(contract: T, actor: ContractRunner): T {
 }
 
 describe('Orders, physical ingredient inventory and downstream recall links', function () {
+  it('prepares an actual receipt after the latest block using pending state without mining or rewriting its time', async function () {
+    const f = await networkHelpers.loadFixture(fixture),
+      order = ethers.id('idle-chain-approved-order');
+    await signed(f.orders, f.manufacturer).requestInterest(
+      order,
+      1,
+      f.batchId,
+      10,
+      f.expiry - 1,
+      ethers.id('details'),
+      'encrypted',
+    );
+    await signed(f.orders, f.supplier).decideRequest(order, 1, ethers.id('approved'), 'encrypted');
+    const latest = await networkHelpers.time.latest(),
+      receiptTime = latest + 60;
+    await networkHelpers.time.setNextBlockTimestamp(receiptTime);
+    const receiptId = ethers.id('idle-chain-receipt');
+    const args: [string, string, string, string, number] = [
+      receiptId,
+      order,
+      '10',
+      f.destination,
+      receiptTime,
+    ];
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt.staticCall(...args, {
+        blockTag: 'latest',
+      }),
+    ).to.be.revertedWithCustomError(f.orders, 'InvalidInput');
+    const { EthersOrdersGateway } = await import(
+      new URL('../../../apps/api/src/modules/orders/orders.gateway.ts', import.meta.url).href
+    );
+    const gateway = new EthersOrdersGateway(
+      31337,
+      await f.orders.getAddress(),
+      'http://127.0.0.1:1',
+      {
+        ingredients: await f.ingredients.getAddress(),
+        products: await f.products.getAddress(),
+        custody: await f.custody.getAddress(),
+        evidence: await f.evidence.getAddress(),
+        stakeholders: await f.stakeholders.getAddress(),
+        credentials: await f.credentials.getAddress(),
+      },
+    );
+    Object.defineProperty(gateway, 'provider', { value: ethers.provider });
+    const prepared = await gateway.prepare(
+      f.manufacturer.address,
+      'orders',
+      'confirmApprovedIngredientReceipt',
+      args,
+    );
+    const decoded = f.orders.interface.decodeFunctionData(
+      'confirmApprovedIngredientReceipt',
+      prepared.data,
+    );
+    expect(decoded[4]).to.equal(BigInt(receiptTime));
+    expect(await networkHelpers.time.latest()).to.equal(latest);
+    expect(await f.orders.approvedReceivedQuantity(order)).to.equal(0n);
+    expect(await f.ingredients.manufacturerUsable(f.batchId, f.manufacturer.address)).to.equal(0n);
+  });
+  it('produces from confirmed received stock without any ingredient evidence request', async function () {
+    const f = await networkHelpers.loadFixture(fixture),
+      batch = ethers.id('no-evidence-batch'),
+      order = ethers.id('no-evidence-order');
+    await signed(f.ingredients, f.supplier).registerBatch(
+      batch,
+      ethers.id('metadata'),
+      'encrypted',
+      f.credentialId,
+      10,
+      ethers.encodeBytes32String('kg'),
+      f.time,
+      f.expiry,
+    );
+    expect(await f.evidence.acceptedForManufacturer(batch, f.manufacturer.address)).to.equal(false);
+    const create = (product: string, quantity: number) =>
+      signed(f.products, f.manufacturer).createProductAt(
+        ethers.id(product),
+        ethers.id('meta'),
+        'encrypted',
+        5,
+        ethers.encodeBytes32String('each'),
+        f.time,
+        f.expiry,
+        [batch],
+        [quantity],
+        f.destination,
+      );
+    await expect(create('before-receipt', 2)).to.be.revertedWithCustomError(
+      f.ingredients,
+      'InvalidState',
+    );
+    await signed(f.orders, f.manufacturer).requestInterest(
+      order,
+      1,
+      batch,
+      10,
+      f.expiry - 1,
+      ethers.id('details'),
+      'encrypted',
+    );
+    await signed(f.orders, f.supplier).decideRequest(order, 1, ethers.id('approved'), 'encrypted');
+    await expect(create('approved-only', 2)).to.be.revertedWithCustomError(
+      f.ingredients,
+      'InvalidState',
+    );
+    await signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+      ethers.id('physical-receipt'),
+      order,
+      10,
+      f.destination,
+      await networkHelpers.time.latest(),
+    );
+    await create('without-evidence', 2);
+    expect(
+      (await f.ingredients.getReceivedStock(batch, f.manufacturer.address, f.destination)).usable,
+    ).to.equal(8n);
+    expect(await f.evidence.acceptedForManufacturer(batch, f.manufacturer.address)).to.equal(false);
+    await expect(create('excess-no-evidence', 9)).to.be.revertedWithCustomError(
+      f.ingredients,
+      'InvalidState',
+    );
+    await signed(f.ingredients, f.supplier).setStatus(batch, 3, ethers.id('recall'));
+    await expect(create('recalled-no-evidence', 1)).to.be.revertedWithCustomError(
+      f.products,
+      'InvalidState',
+    );
+  });
+  it('credits only Manufacturer-confirmed approved receipts and consumes multiple ingredients atomically', async function () {
+    const f = await networkHelpers.loadFixture(fixture);
+    const second = ethers.id('second-received-ingredient');
+    await signed(f.ingredients, f.supplier).registerBatch(
+      second,
+      ethers.id('second-meta'),
+      'encrypted',
+      f.credentialId,
+      3000,
+      ethers.encodeBytes32String('ml'),
+      f.time,
+      f.expiry,
+    );
+    const proof = ethers.id('second-evidence');
+    await signed(f.evidence, f.manufacturer).requestEvidence(
+      proof,
+      f.supplier.address,
+      second,
+      ethers.id('claims'),
+      ethers.id('challenge-2'),
+      'encrypted',
+      f.expiry - 1,
+    );
+    await signed(f.evidence, f.supplier).respond(
+      proof,
+      ethers.id('vp-2'),
+      'encrypted',
+      f.expiry - 1,
+    );
+    await signed(f.evidence, f.manufacturer).accept(proof, f.credentialId);
+    const firstOrder = ethers.id('approved-first'),
+      secondOrder = ethers.id('approved-second');
+    for (const [order, batch, quantity] of [
+      [firstOrder, f.batchId, 5000],
+      [secondOrder, second, 3000],
+    ] as const) {
+      await signed(f.orders, f.manufacturer).requestInterest(
+        order,
+        1,
+        batch,
+        quantity,
+        f.expiry - 1,
+        ethers.id('private'),
+        'encrypted',
+      );
+      const before = (await f.ingredients.getBatch(batch)).availableQuantity;
+      await signed(f.orders, f.supplier).decideRequest(
+        order,
+        1,
+        ethers.id('approved'),
+        'encrypted',
+      );
+      expect(await f.ingredients.manufacturerUsable(batch, f.manufacturer.address)).to.equal(0n);
+      expect((await f.ingredients.getBatch(batch)).availableQuantity).to.equal(before);
+      const receipt = ethers.id(`receipt:${order}`);
+      await expect(
+        signed(f.orders, f.supplier).confirmApprovedIngredientReceipt(
+          receipt,
+          order,
+          quantity,
+          f.destination,
+          await networkHelpers.time.latest(),
+        ),
+      ).to.be.revertedWithCustomError(f.orders, 'Unauthorized');
+      await signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        receipt,
+        order,
+        quantity,
+        f.destination,
+        await networkHelpers.time.latest(),
+      );
+      expect((await f.ingredients.getBatch(batch)).availableQuantity).to.equal(
+        before - BigInt(quantity),
+      );
+      expect(await f.ingredients.manufacturerUsable(batch, f.manufacturer.address)).to.equal(
+        BigInt(quantity),
+      );
+      await expect(
+        signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+          receipt,
+          order,
+          quantity,
+          f.destination,
+          await networkHelpers.time.latest(),
+        ),
+      ).to.be.revertedWithCustomError(f.orders, 'InvalidState');
+    }
+    const product = ethers.id('mixed-product');
+    await signed(f.products, f.manufacturer).createProductAt(
+      product,
+      ethers.id('product-meta'),
+      'encrypted',
+      50,
+      ethers.encodeBytes32String('each'),
+      await networkHelpers.time.latest(),
+      f.expiry,
+      [f.batchId, second],
+      [1250, 500],
+      f.destination,
+    );
+    expect((await f.products.getIngredientLinks(product)).length).to.equal(2);
+    expect(
+      (await f.ingredients.getReceivedStock(f.batchId, f.manufacturer.address, f.destination))
+        .usable,
+    ).to.equal(3750n);
+    expect(
+      (await f.ingredients.getReceivedStock(second, f.manufacturer.address, f.destination)).usable,
+    ).to.equal(2500n);
+    await expect(
+      signed(f.products, f.manufacturer).createProductAt(
+        ethers.id('overspend'),
+        ethers.id('meta'),
+        'encrypted',
+        1,
+        ethers.encodeBytes32String('each'),
+        await networkHelpers.time.latest(),
+        f.expiry,
+        [f.batchId, second],
+        [1, 2501],
+        f.destination,
+      ),
+    ).to.be.revertedWithCustomError(f.ingredients, 'InvalidState');
+    expect(
+      (await f.ingredients.getReceivedStock(f.batchId, f.manufacturer.address, f.destination))
+        .usable,
+    ).to.equal(3750n);
+  });
+  it('rejects unapproved, excessive, wrong-location and repeated receipt credit', async function () {
+    const f = await networkHelpers.loadFixture(fixture),
+      order = ethers.id('partial-approved');
+    await signed(f.orders, f.manufacturer).requestInterest(
+      order,
+      1,
+      f.batchId,
+      10,
+      f.expiry - 1,
+      ethers.id('details'),
+      'encrypted',
+    );
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id('r0'),
+        order,
+        1,
+        f.destination,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.orders, 'InvalidState');
+    await signed(f.orders, f.supplier).decideRequest(order, 1, ethers.id('approved'), 'encrypted');
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id('r1'),
+        order,
+        11,
+        f.destination,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.orders, 'InvalidInput');
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id('r2'),
+        order,
+        1,
+        f.source,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.orders, 'InvalidInput');
+    const first = ethers.id('first-receipt');
+    await signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+      first,
+      order,
+      4,
+      f.destination,
+      await networkHelpers.time.latest(),
+    );
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        first,
+        order,
+        4,
+        f.destination,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.orders, 'InvalidInput');
+    expect(await f.orders.approvedReceivedQuantity(order)).to.equal(4n);
+    await signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+      ethers.id('second-receipt'),
+      order,
+      6,
+      f.destination,
+      await networkHelpers.time.latest(),
+    );
+    expect(await f.orders.approvedReceivedQuantity(order)).to.equal(10n);
+    expect((await f.orders.getOrder(order)).status).to.equal(3n);
+  });
   it('allows Supplier listing edits and reversible archive without altering signed claims or history', async function () {
     const f = await networkHelpers.loadFixture(fixture);
     const before = await f.ingredients.getBatch(f.batchId);

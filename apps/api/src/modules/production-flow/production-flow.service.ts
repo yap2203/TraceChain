@@ -18,7 +18,7 @@ import {
 import { CompanyRole } from '@tracechain/shared';
 import { Resolver } from 'did-resolver';
 import { verifyJWT } from 'did-jwt';
-import { getAddress, id } from 'ethers';
+import { decodeBytes32String, getAddress, id } from 'ethers';
 import { getResolver } from 'key-did-resolver';
 
 import type { AuthService } from '../auth/auth.service.js';
@@ -88,6 +88,22 @@ interface EvidenceRequestPrivatePayload {
 }
 
 export class ProductionFlowService {
+  async resolveEvidenceMessagingParticipants(requestId: string) {
+    const workflow = await this.dependencies.repository.findEvidence(requestId);
+    if (!workflow || workflow.orderContext) return undefined;
+    const chain = await this.dependencies.gateway.getEvidenceRequest(requestId);
+    if (!chain || ![1, 2, 3].includes(chain.status) || chain.dueAt <= this.nowSeconds())
+      return undefined;
+    this.assertRequestMatches(chain, workflow);
+    return {
+      requester: chain.requester,
+      supplier: chain.supplier,
+      identityRequestAllowed:
+        chain.status === 1 &&
+        workflow.identityProof?.status === 'REQUESTED' &&
+        workflow.identityProof.expiresAt > this.nowSeconds(),
+    };
+  }
   async validateOrderIdentityPresentation(
     sessionId: string | undefined,
     orderId: string,
@@ -210,8 +226,12 @@ export class ProductionFlowService {
     this.clock = dependencies.clock ?? (() => new Date());
   }
 
-  async listIngredients(sessionId?: string) {
-    const session = await this.requireRole(sessionId, CompanyRole.MANUFACTURER, 'REQUEST_EVIDENCE');
+  async listIngredients(sessionId?: string, location?: string, purpose?: 'production') {
+    const session = await this.requireRole(
+      sessionId,
+      CompanyRole.MANUFACTURER,
+      purpose === 'production' ? 'REGISTER_PRODUCT' : 'REQUEST_EVIDENCE',
+    );
     const now = this.nowSeconds();
     const records = await this.safeGateway(() => this.dependencies.gateway.listIngredients());
     const batches = await Promise.all(
@@ -234,19 +254,23 @@ export class ProductionFlowService {
         ) {
           return null;
         }
+        const received = await this.dependencies.gateway.getReceivedAvailable?.(
+          batch.batchId,
+          session.address,
+          location,
+        );
         return {
-          accepted: await this.safeGateway(() =>
-            this.dependencies.gateway.getAccepted(batch.batchId, session.address),
-          ),
-          availableQuantity:
-            (await this.dependencies.gateway.getReceivedAvailable?.(
-              batch.batchId,
-              session.address,
-            )) ?? batch.availableQuantity,
+          accepted:
+            purpose === 'production'
+              ? undefined
+              : await this.safeGateway(() =>
+                  this.dependencies.gateway.getAccepted(batch.batchId, session.address),
+                ),
+          availableQuantity: received ?? (purpose === 'production' ? '0' : batch.availableQuantity),
           batchId: batch.batchId,
           expiresAt: batch.expiresAt,
           supplier: batch.supplier,
-          unit: batch.unit,
+          unit: /^0x[0-9a-f]{64}$/i.test(batch.unit) ? decodeBytes32String(batch.unit) : batch.unit,
         };
       }),
     );
@@ -630,6 +654,11 @@ export class ProductionFlowService {
         409,
       );
     if (workflow.identityProof?.status === 'VERIFIED') return this.identityProofSummary(workflow);
+    if (
+      workflow.identityProof?.status === 'REQUESTED' &&
+      workflow.identityProof.expiresAt > this.nowSeconds()
+    )
+      return this.identityProofSummary(workflow);
     const requesterSessionRole = await this.requesterRole(workflow);
     if (![CompanyRole.MANUFACTURER, CompanyRole.RETAILER].includes(requesterSessionRole))
       throw new ProductionFlowApiError(
@@ -1098,9 +1127,34 @@ export class ProductionFlowService {
     ) {
       throw new ProductionFlowApiError('INVALID_PRODUCT_DATES', 'Product dates are invalid.', 400);
     }
+    const batchIds = input.ingredientLinks.map((link) => link.batchId.toLowerCase());
+    if (new Set(batchIds).size !== batchIds.length)
+      throw new ProductionFlowApiError(
+        'DUPLICATE_INGREDIENT',
+        'Select each ingredient batch only once.',
+        400,
+      );
     for (const link of input.ingredientLinks) {
       const batch = await this.requireActiveIngredient(link.batchId);
+      const received = await this.dependencies.gateway.getReceivedAvailable?.(
+        link.batchId,
+        session.address,
+        input.productionLocation,
+      );
       if (
+        received != null &&
+        this.dependencies.gateway.supportsOptionalProductionEvidence &&
+        !(await this.safeGateway(() =>
+          this.dependencies.gateway.supportsOptionalProductionEvidence!(),
+        ))
+      )
+        throw new ProductionFlowApiError(
+          'OPTIONAL_EVIDENCE_DEPLOYMENT_REQUIRED',
+          'Deploy the updated registry suite to create products from received stock without mandatory ingredient evidence.',
+          409,
+        );
+      if (
+        received == null &&
         !(await this.safeGateway(() =>
           this.dependencies.gateway.getAccepted(link.batchId, session.address),
         ))
@@ -1111,11 +1165,6 @@ export class ProductionFlowService {
           409,
         );
       }
-      const received = await this.dependencies.gateway.getReceivedAvailable?.(
-        link.batchId,
-        session.address,
-        input.productionLocation,
-      );
       if (received !== null && received !== undefined && !input.productionLocation) {
         throw new ProductionFlowApiError(
           'PRODUCTION_LOCATION_REQUIRED',

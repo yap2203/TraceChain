@@ -1,5 +1,10 @@
 # Browse & requests
 
+Manufacturer receipt confirmation is now available after Supplier approval, before production.
+See [receipt and multi-ingredient production](testing/MANUFACTURER_REQUESTS.md#receipt-and-multi-ingredient-production)
+for deployment requirements and the test flow. Approval alone still does not move stock; the
+explicit Manufacturer receipt action debits Supplier stock and credits its selected receiving location.
+
 ## Current scope
 
 The Manufacturer, Distributor and Retailer catalogue is a request-only B2B discovery experience.

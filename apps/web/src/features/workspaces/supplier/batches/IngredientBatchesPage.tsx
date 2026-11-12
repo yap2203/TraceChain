@@ -11,6 +11,7 @@ import {
 } from '../../../orders/orders.api';
 import { submitProductionTransaction } from '../../../production-flow/production-flow.transaction';
 import { CatalogueImage } from '../../../orders/CatalogueMedia';
+import { SupplierStockSummary } from '../../../orders/SupplierStockSummary';
 
 export function IngredientBatches({
   onNew,
@@ -345,6 +346,11 @@ export function IngredientBatches({
             <p>
               Available: {item.batchDetails?.[0]?.supplierAvailable ?? 'Unavailable'} {item.unit}
             </p>
+            {data?.supplierStock
+              ?.filter((stock) => stock.batchId.toLowerCase() === item.batches[0].toLowerCase())
+              .map((stock) => (
+                <SupplierStockSummary key={stock.batchId} stock={stock} />
+              ))}
             {item.nameSource && (
               <p>
                 Listing name is Supplier metadata; signed credential claims are in the batch

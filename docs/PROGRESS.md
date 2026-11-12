@@ -1,5 +1,66 @@
 # Project Progress
 
+## 2026-11-12 — Product detail QR configuration error
+
+- Added the missing public application origin to the ignored local root environment for browser testing. Production labels still require an explicitly configured, externally reachable origin; no automatic production URL is invented.
+- Fixed Manufacturer product-detail metadata loading to catch synchronous QR configuration failures as well as asynchronous resolver failures. The existing QR section reports configuration errors while on-chain product records and ingredient navigation remain usable.
+- Added regressions for missing QR configuration, resolver outages and successful metadata/QR rendering. No contract changes or redeployment are required; restart Vite to pick up environment edits.
+
+## 2026-11-12 — Supplier remaining stock after ingredient requests
+
+- Added Supplier-only stock projections to authenticated Orders state and displayed them in owned ingredient cards and Supplier order details using the existing theme and responsive layout. Values come from registered batch balances and current on-chain request decisions, batch bindings, expiry and confirmed received quantities, with exact bigint arithmetic.
+- Show current stock, pending demand, approved quantities awaiting receipt, remaining after open requests and any demand shortfall. Rejecting, expiring or completing a request removes its outstanding demand. Partial receipts count only the unreceived remainder, avoiding double deductions. Legacy physical orders already reserving stock are excluded, and legacy multi-batch requests without a trustworthy binding show an unavailable projection rather than guessed stock.
+- This is a read-only demand estimate: requests/approvals still do not reserve or transfer stock. Manufacturer physical receipt continues to debit Supplier stock atomically. No contracts, credentials, keys, root environment or live-chain records were changed.
+- Validation: Supplier demand arithmetic and privacy regressions, ingredient-card/order-detail integration, full frontend suite, root type checks and production builds. Existing dependency directive/chunk-size build warnings remain. Manual receipt/partial-receipt/shortfall checks are documented in `docs/testing/MANUFACTURER_REQUESTS.md`.
+
+## 2026-11-12 — Receipt preparation on an idle local chain
+
+- Reproduced the Manufacturer receipt conflict using read-only calls: the latest local block predated wall clock by over two minutes, so latest-state staticCall rejected the actual receipt timestamp as future. The identical receipt succeeds against pending state and normal gas estimation. Order approval, location and stock were valid.
+- Changed the Orders gateway preflight to pending-state simulation. Kept the supplied receipt time, contract future-time checks, role/location/stock validation and explicit wallet confirmation; no clock clamping, manual mining, contract change or running-chain transaction was performed.
+- Added an isolated end-to-end gateway regression with a receipt later than the latest block, asserting that preparation preserves the timestamp and neither mines nor credits stock. Validation: 65 Orders API tests, 19 scoped contract tests, API build and API/web/contracts type checking passed. No redeployment is required for this API-only fix.
+
+## 2026-11-12 — Optional ingredient evidence after receipt
+
+- Updated the user-confirmed production rule: confirmed received ingredients can be selected and consumed without requesting or accepting an Ingredient presentation. The API and receipt-backed ProductRegistry path no longer gate production on accepted evidence; valid ingredient/credential lifecycle, Manufacturer permission, owned production location, available received quantities and atomic deductions remain mandatory. Existing optional evidence request, verification and acceptance flows are unchanged and no verification result is fabricated.
+- Added a production-purpose ingredient query that requires REGISTER_PRODUCT instead of REQUEST_EVIDENCE and does not load evidence acceptance. The product form lists received balances directly, supports multiple unverified-by-presentation inputs and keeps stock/unit validation. Legacy integrations with no receipt ledger preserve their previous security gate.
+- Added ProductRegistry.receivedProductionPolicy and a preparation-time capability check with a specific deployment-update error. Existing deployed bytecode is unchanged; this policy requires the updated full suite with fresh deployment ID/addresses because the existing contract wiring is configured once. Existing accounts, credentials, keys, .env and running chain are untouched.
+- Validation: 139 frontend tests, 211 API tests, 39 isolated contract tests, root type checks and production builds passed. Tests include no evidence permission/query, production without any Ingredient evidence request, unchanged evidence status, rejection before physical receipt, quantity limits and recall blocking. The first compiler process failed to start; retry compiled and passed the complete suite. Existing bundler warnings remain.
+
+## 2026-11-12 — Register four local test stakeholder roles
+
+- Re-ran local restoration at the user's follow-up request after the optional-evidence changes. All four existing signed test credentials were verified and all four wallets again passed normal login authorization against the currently configured local registry; no IPFS uploads, public transactions, key changes or configuration changes were made.
+
+- Registered the user-listed wallets in order as Manufacturer (0x70997970C51812dc3A010C7d01b50e0d17dc79C8), Supplier (0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC), Distributor (0x90F79bf6EB2c4f870365E785982E1f101E93b906) and Retailer (0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65) against the currently configured local chain-31337 registry, where all four were unregistered.
+- Reused the existing Manufacturer/Supplier credentials and encrypted application profiles without overwriting history. Issued and verified synthetic temporary Distributor/Retailer Company Role credentials, encrypted them locally and completed application/credential registration and approval using unlocked local accounts. New credentials expire after approximately 30 days; existing credential expiries were preserved.
+- The normal GatewayLoginAuthorizationResolver returned AUTHORIZED with the correct role for all four accounts. No wallet private keys were imported, no IPFS upload or public-chain transaction occurred, and contract addresses/configuration were unchanged. Local chain resets remove these registrations; changing registries requires registration against that registry.
+
+## 2026-11-12 — Explain unavailable Manufacturer receipt action
+
+- Read-only diagnosis confirmed the user's 12 g request is approved on local chain 31337, while the running SupplyChainOrders has no approvedReceiptPolicy capability. The updated receipt source is served by the web dev server; no chain, environment or deployment changes were made.
+- Made Manufacturer receipt status visible even when ingredient metadata is missing or approval is still pending, with an explicit deployment-update explanation for the old contract. Company-evidence navigation is now shown only when a nonzero identity challenge exists and is labelled Respond to company evidence request, rather than appearing as an unrelated action on every order.
+- Added a regression for the approved/old-deployment/missing-metadata case. Receipt and company identity remain separate; no approval or receipt is fabricated.
+- Validation: 139 frontend tests and frontend production build/type checking passed, with the existing bundler warnings.
+
+## 2026-11-12 — Confirmed receipts and multiple production ingredients
+
+- The user confirmed that Supplier approval must not credit stock until the Manufacturer confirms physical receipt. Added an explicit approved-request receipt action with an owned receiving location, quantity, occurrence time and confirmation declaration. Supplier stock debit, Manufacturer credit and request totals update atomically; partial receipts are capped by the outstanding approved amount, and receipt IDs cannot be reused. Legacy reservation/dispatch behavior is preserved.
+- Added the SupplyChainOrders receipt policy getter, exact requested-batch binding, receipt totals and audit event. API preparation validates role/ownership, approval/state/deadline, source validity/stock, event time, owned location and outstanding amount; older deployments return a specific update message instead of fabricated stock.
+- Product creation now offers explicit multiple-ingredient selection, separate output-unit choice, exact compatible input-unit conversion and per-ingredient remaining previews. It reads the authenticated Manufacturer's stock at the selected production location, decodes registered units, rejects duplicate links/overspending and reloads real balances after confirmation. Supplier approval and physical receipt remain separate from credential/evidence verification and acceptance.
+- Validation: 138 frontend tests, 210 API tests and 38 isolated contract tests passed; root type checks and builds passed. New tests cover exact g/kg and ml/litre conversion, multiple ingredient debit with atomic rollback, location-specific balances, duplicate ingredients/receipts, role isolation and explicit receipt confirmation. Existing bundle/apg-js warnings remain. Live deployment and wallet transactions were not performed.
+- Deployment: the new receipt capability requires a fresh full suite because ledger wiring is configured once. Existing chain state, journals, root .env, credentials and keys are untouched. Updated README and docs/testing/MANUFACTURER_REQUESTS.md include the deployment prerequisite and the 5000 g / 3000 ml consumption test flow.
+
+## 2026-11-12 — Company-evidence messaging recovery
+
+- Diagnosed the Supplier's missing-thread error: stored backend company agents retained reversed historical roles, while the earlier ingredient-request notification was absent for the new request. Updated agent role/name metadata from current authenticated participants without replacing the DID, encrypted key or history.
+- Allowed company-identity requests to start an encrypted business-linked thread when the ingredient notification is missing, only after confirming the exact current on-chain request, matching persisted request hashes/reference/batch/parties, current authorization and an unexpired REQUESTED identity challenge. Explicit wrong parents, unrelated recipients/threads and response replay remain rejected. Replies must bind to the real newly delivered identity-request message; no Manufacturer message or VP is fabricated.
+- Added current-chain validation to ingredient messaging context resolution so old workflow records after chain reset cannot authorize delivery. Retrying an existing pending identity request preserves its challenge instead of invalidating an in-progress presentation.
+- Validation: 206 API tests and API type checking passed, including real encrypted request/reply packing, metadata refresh with historical decryption, missing source notification, idempotent delivery, invalid participants/parent/thread/expiry and stale/cancelled on-chain context. No contract, login, key reset or deployment change. Restart the API and retry Request Company Identity Proof; the live user's action still requires their session.
+
+## 2026-11-12 — Restore temporary test accounts after local chain reset
+
+- Confirmed both requested wallets were unregistered on the current local chain 31337. Cryptographically verified and reused their existing locally encrypted Company Role credentials, then submitted applications, registered the credentials and approved the Manufacturer (0x70997970C51812dc3A010C7d01b50e0d17dc79C8) and Supplier (0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC) through unlocked local test accounts.
+- Preserved credential expiry, existing issuance history, secrets and deployment configuration. Saved only encrypted synthetic application profiles locally; no IPFS upload or public-chain transaction occurred. The normal login authorization resolver confirmed AUTHORIZED for both requested roles. Resetting the local chain removes these registrations again.
+
 ## 2026-11-12 — Resolve Orders page merge
 
 - Reconciled the Manufacturer Products/My orders changes with the catalogue/media and responsive request-summary redesign. Preserved browse/manage modes, ingredient-only discovery in Products, linked-batch detail opening, sent/received filtering, Supplier and Manufacturer decisions, company-proof handling, duplicate-submit protection and collapsed technical identifiers.
@@ -13,6 +74,7 @@
 - Added Manufacturer Received/Sent information-request tables. Received company proofs cover both Supplier ingredient-information and quantity-request challenges. Sent ingredient requests expose actual requested claims/reason and preserve separate View, Verify and Accept/Reject actions; sent company proofs from product buyers reuse existing order identity handling. Missing services/statuses show explicit partial-load errors rather than fabricated verification results.
 - Preserved SIWE, browser holder presentation signing, backend DIDComm, tenant checks, contract authorization and physical-stock requirements. Quantity requests/decisions never credit stock; production still requires accepted physical receipts. No contract, deployment, environment or dependency change was required.
 - Validation: all 125 frontend tests, repository-wide type checks and frontend production build passed. Browser checks of grids, detail/request forms and sent/received tables passed at 375, 768 and 1440 pixels without horizontal page overflow, using isolated synthetic service responses for layout review. Existing bundle-size/apg-js warnings remain. Live multi-wallet transactions were not sent; the manual checklist is in docs/testing/MANUFACTURER_REQUESTS.md.
+
 ## 2026-11-12 — B2B Browse & requests catalogue redesign
 
 - Replaced the sparse Browse & requests grid with a responsive one-to-four-column catalogue containing search, item type/category/origin/credential/availability filters, sorting, clear filters, result counts, lifecycle and credential summaries, verified company names, long-name handling, image/logo fallbacks, safe empty/error/loading states and an accessible detail dialog. Quantity and evidence requests remain separate and reuse the existing MetaMask and consent/verification flows.

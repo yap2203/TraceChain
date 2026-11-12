@@ -63,6 +63,7 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
             : [],
     ),
     read: vi.fn(async (_contract: string, method: string) => {
+      if (method === 'approvedReceiptPolicy') return 0;
       if (method === 'getItem')
         return {
           seller,
@@ -152,6 +153,77 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
   return { app, gateway, service, store, repository };
 }
 describe('order API and private metadata', () => {
+  it('includes demand-adjusted stock only for the authenticated Supplier', async () => {
+    const supplier = fixture(seller, true, CompanyRole.SUPPLIER);
+    const response = await request(supplier.app).get('/api/orders');
+    expect(response.status).toBe(200);
+    expect(response.body.supplierStock).toEqual([
+      expect.objectContaining({
+        batchId,
+        availableQuantity: '200000',
+        pendingQuantity: '100000',
+        remainingAfterRequests: '100000',
+      }),
+    ]);
+    const manufacturer = fixture();
+    const buyerResponse = await request(manufacturer.app).get('/api/orders');
+    expect(buyerResponse.status).toBe(200);
+    expect(buyerResponse.body).not.toHaveProperty('supplierStock');
+  });
+  it('prepares approved receipt only for the intended Manufacturer and outstanding quantity', async () => {
+    const f = fixture(),
+      read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (method === 'approvedReceiptPolicy') return 1;
+      if (method === 'requestDecision') return { status: '1', recordedAt: '1' };
+      if (method === 'approvedReceivedQuantity') return '99500';
+      if (method === 'requestedBatch') return batchId;
+      if (method === 'locationOwner') return buyer;
+      return read(contract, method, args);
+    });
+    const input = {
+      action: 'approved-receipt' as const,
+      operationId,
+      orderId,
+      quantity: '500',
+      location: id('factory'),
+      occurredAt: Math.floor(Date.now() / 1000) - 60,
+    };
+    await f.service.prepare('session', input);
+    expect(f.gateway.prepare).toHaveBeenCalledWith(
+      buyer,
+      'orders',
+      'confirmApprovedIngredientReceipt',
+      expect.arrayContaining([orderId, '500', id('factory')]),
+    );
+    f.gateway.prepare.mockClear();
+    await expect(f.service.prepare('session', { ...input, quantity: '501' })).rejects.toMatchObject(
+      { code: 'RECEIPT_EXCEEDS_APPROVAL' },
+    );
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+    const unauthorized = fixture(outsider);
+    const otherRead = unauthorized.gateway.read.getMockImplementation()!;
+    unauthorized.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'approvedReceiptPolicy' ? 1 : otherRead(contract, method, args),
+    );
+    await expect(unauthorized.service.prepare('session', input)).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+    });
+  });
+  it('reports the required receipt deployment update instead of inventing received stock', async () => {
+    const f = fixture();
+    await expect(
+      f.service.prepare('session', {
+        action: 'approved-receipt',
+        operationId,
+        orderId,
+        quantity: '1',
+        location: id('factory'),
+        occurredAt: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'APPROVED_RECEIPT_UPGRADE_REQUIRED' });
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
   const png =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
 
@@ -836,6 +908,7 @@ describe('order API and private metadata', () => {
       method === 'getBatch'
         ? {
             supplier: seller,
+            availableQuantity: '200000',
             unit: encodeBytes32String('litre'),
             status: '1',
             expiresAt: '2000000000',
