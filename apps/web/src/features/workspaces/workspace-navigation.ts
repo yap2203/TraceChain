@@ -34,7 +34,7 @@ export const workspaceNavigation = {
   ],
   supplier: [
     ['overview', 'Overview', LayoutDashboard],
-    ['orders', 'Manage orders', ClipboardList],
+    ['orders', 'Order requests', ClipboardList],
     ['batches', 'Ingredient batches', Layers],
     ['requests', 'Information requests', Inbox],
     ['mycredential', 'My company credential', ContactRound],

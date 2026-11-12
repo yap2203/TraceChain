@@ -8,6 +8,7 @@ import {
 } from './ingredient-batch.api';
 import { submitIngredientBatchTransaction } from './ingredient-batch-transaction';
 import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
+import { imageFilePayload, uploadIngredientCatalogueImage } from '../../../orders/orders.api';
 import {
   textError,
   quantityError,
@@ -43,6 +44,8 @@ export function RegisterBatch({
   const [unit, setUnit] = useState('g');
   const [allergen, setAllergen] = useState('');
   const [certifications, setCertifications] = useState('');
+  const [imageFile, setImageFile] = useState<File>();
+  const [imageNotice, setImageNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [complete, setComplete] = useState(false);
@@ -108,6 +111,7 @@ export function RegisterBatch({
     activeSubmission.current = true;
     setBusy(true);
     setError('');
+    setImageNotice('');
     setComplete(false);
     try {
       let workflow = await prepareWorkflow(buildInput());
@@ -121,6 +125,20 @@ export function RegisterBatch({
         applyState(workflow);
       }
       setComplete(true);
+      if (imageFile) {
+        try {
+          await uploadIngredientCatalogueImage(workflow.batchId, await imageFilePayload(imageFile));
+          setImageNotice('Supplier-provided presentation image uploaded successfully.');
+        } catch (imageError) {
+          setError(
+            `The batch was registered successfully, but its optional image could not be uploaded. ${
+              imageError instanceof Error
+                ? imageError.message
+                : 'Add the image later from View details.'
+            }`,
+          );
+        }
+      }
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : 'The ingredient batch could not be registered.',
@@ -150,27 +168,28 @@ export function RegisterBatch({
             <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 20 }}>
               Ingredient information
             </div>
-            <div style={{ display: 'grid', gap: 14 }}>
-              <div className="workspace-form-grid">
-                <Input
-                  label="Ingredient name"
-                  maxLength={160}
-                  placeholder="Cocoa Powder"
-                  value={name}
-                  onChange={setName}
-                  required
-                />
-                <Input
-                  label="Batch reference"
-                  maxLength={120}
-                  pattern="[A-Za-z0-9._:/-]+"
-                  placeholder="COCOA-2026-001"
-                  value={batchReference}
-                  onChange={setBatchReference}
-                  required
-                />
-              </div>
-              <div className="workspace-form-grid">
+            <div className="ingredient-registration-form">
+              <fieldset className="ingredient-form-section">
+                <legend>Basic ingredient information</legend>
+                <div className="workspace-form-grid">
+                  <Input
+                    label="Ingredient name"
+                    maxLength={160}
+                    placeholder="Cocoa Powder"
+                    value={name}
+                    onChange={setName}
+                    required
+                  />
+                  <Input
+                    label="Batch reference"
+                    maxLength={120}
+                    pattern="[A-Za-z0-9._:/-]+"
+                    placeholder="COCOA-2026-001"
+                    value={batchReference}
+                    onChange={setBatchReference}
+                    required
+                  />
+                </div>
                 <SelectField
                   label="Category"
                   value={category}
@@ -183,84 +202,135 @@ export function RegisterBatch({
                     { value: 'other', label: 'Other' },
                   ]}
                 />
+              </fieldset>
+
+              <fieldset className="ingredient-form-section">
+                <legend>Origin and dates</legend>
+                <div className="workspace-form-grid">
+                  <Input
+                    label="Country / location of origin"
+                    maxLength={160}
+                    placeholder="Ghana"
+                    value={origin}
+                    onChange={setOrigin}
+                    required
+                  />
+                  <Input
+                    label="Production date"
+                    max={new Date().toISOString().slice(0, 10)}
+                    type="date"
+                    value={producedAt}
+                    onChange={setProducedAt}
+                    required
+                  />
+                  <Input
+                    label="Expiry date"
+                    type="date"
+                    value={expiresAt}
+                    onChange={setExpiresAt}
+                    required
+                  />
+                </div>
+              </fieldset>
+
+              <fieldset className="ingredient-form-section">
+                <legend>Quantity and indicative price</legend>
+                <div className="workspace-form-grid workspace-form-grid--quantity">
+                  <Input
+                    label="Quantity"
+                    inputMode="numeric"
+                    pattern="[1-9][0-9]{0,38}"
+                    maxLength={39}
+                    placeholder="500"
+                    value={quantity}
+                    onChange={setQuantity}
+                    required
+                  />
+                  <SelectField
+                    label="Unit"
+                    value={unit}
+                    onChange={setUnit}
+                    options={[
+                      { value: 'kg', label: 'kg' },
+                      { value: 'g', label: 'g (integer grams; 1000 g = 1 kg)' },
+                      { value: 'each', label: 'each (individual items)' },
+                      { value: 'litre', label: 'litre' },
+                      { value: 'unit', label: 'unit' },
+                    ]}
+                  />
+                  <Input
+                    label={`Price per ${unit} (optional)`}
+                    value={price}
+                    onChange={setPrice}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                  />
+                  <Input
+                    label="Currency code"
+                    value={currency}
+                    onChange={(value) => setCurrency(value.toUpperCase())}
+                    maxLength={3}
+                  />
+                </div>
+              </fieldset>
+
+              <fieldset className="ingredient-form-section">
+                <legend>Credential claims</legend>
+                <p>
+                  These values become part of the signed Ingredient Credential and cannot be changed
+                  through listing edits.
+                </p>
                 <Input
-                  label="Country / location of origin"
-                  maxLength={160}
-                  placeholder="Ghana"
-                  value={origin}
-                  onChange={setOrigin}
-                  required
-                />
-              </div>
-              <div className="workspace-form-grid">
-                <Input
-                  label="Production date"
-                  max={new Date().toISOString().slice(0, 10)}
-                  type="date"
-                  value={producedAt}
-                  onChange={setProducedAt}
-                  required
+                  label="Allergen information"
+                  maxLength={500}
+                  placeholder="None"
+                  value={allergen}
+                  onChange={setAllergen}
                 />
                 <Input
-                  label="Expiry date"
-                  type="date"
-                  value={expiresAt}
-                  onChange={setExpiresAt}
-                  required
+                  label="Certifications"
+                  placeholder="Organic, Halal, Fair Trade"
+                  value={certifications}
+                  onChange={setCertifications}
+                  hint="Separate multiple certifications with commas"
                 />
-              </div>
-              <div className="workspace-form-grid workspace-form-grid--quantity">
-                <Input
-                  label="Quantity"
-                  inputMode="numeric"
-                  pattern="[1-9][0-9]{0,38}"
-                  maxLength={39}
-                  placeholder="500"
-                  value={quantity}
-                  onChange={setQuantity}
-                  required
+              </fieldset>
+
+              <fieldset className="ingredient-form-section">
+                <legend>Optional ingredient image</legend>
+                <p>
+                  Supplier-provided presentation information only. It is not a credential claim or
+                  laboratory evidence. PNG, JPEG or WebP, maximum 2 MB.
+                </p>
+                <input
+                  aria-label="Choose optional ingredient image"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  disabled={busy}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) {
+                      setImageFile(undefined);
+                      return;
+                    }
+                    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+                      setError('Choose a PNG, JPEG or WebP image.');
+                      setImageFile(undefined);
+                      event.currentTarget.value = '';
+                      return;
+                    }
+                    if (file.size > 2 * 1024 * 1024) {
+                      setError('Images must not exceed 2 MB.');
+                      setImageFile(undefined);
+                      event.currentTarget.value = '';
+                      return;
+                    }
+                    setError('');
+                    setImageFile(file);
+                  }}
                 />
-                <Input
-                  label={`Price per ${unit} (optional)`}
-                  value={price}
-                  onChange={setPrice}
-                  type="number"
-                  min="0"
-                  step="0.01"
-                />
-                <Input
-                  label="Currency code"
-                  value={currency}
-                  onChange={(value) => setCurrency(value.toUpperCase())}
-                  maxLength={3}
-                />
-                <SelectField
-                  label="Unit"
-                  value={unit}
-                  onChange={setUnit}
-                  options={[
-                    { value: 'kg', label: 'kg' },
-                    { value: 'g', label: 'g (integer grams; 1000 g = 1 kg)' },
-                    { value: 'each', label: 'each (individual items)' },
-                    { value: 'litre', label: 'litre' },
-                    { value: 'unit', label: 'unit' },
-                  ]}
-                />
-              </div>
-              <Input
-                label="Allergen information"
-                maxLength={500}
-                placeholder="None"
-                value={allergen}
-                onChange={setAllergen}
-              />
-              <Input
-                label="Certifications"
-                placeholder="Organic, Halal, Fair Trade"
-                value={certifications}
-                onChange={setCertifications}
-                hint="Separate multiple certifications with commas"
-              />
+              </fieldset>
               <Btn
                 onClick={() => {
                   if (!isFormComplete) setError(validationError);
@@ -285,6 +355,10 @@ export function RegisterBatch({
               <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
                 Review batch
               </div>
+              <Alert
+                type="warning"
+                message="Ingredient name, batch reference, origin, category, quantity, unit, dates, allergens and certifications become signed or blockchain records. A separate catalogue listing copy of the name and category, plus its description, indicative price and image, can later be edited without changing those signed claims."
+              />
               <div className="workspace-review-grid">
                 {[
                   ['Ingredient', name],
@@ -295,6 +369,7 @@ export function RegisterBatch({
                   ['Expiry date', expiresAt],
                   ['Quantity', `${quantity} ${unit}`],
                   ['Certifications', certifications || 'None'],
+                  ['Optional image', imageFile?.name || 'None selected'],
                 ].map(([label, value]) => (
                   <div
                     key={label}
@@ -325,6 +400,7 @@ export function RegisterBatch({
                 message="The Ingredient Credential and ingredient batch are registered and verified on-chain."
               />
             )}
+            {imageNotice && <Alert type="success" message={imageNotice} />}
 
             <div style={{ display: 'flex', gap: 10 }}>
               {!complete && (

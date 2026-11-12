@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { PreparedTransaction } from '../../../blockchain/blockchain.api';
@@ -22,6 +22,7 @@ const BASE_WORKFLOW = {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -100,43 +101,40 @@ describe('Supplier ingredient batch workflow', () => {
 
   it('loads the Supplier-owned ingredient grid and opens real batch details', async () => {
     const wallet = '0x2000000000000000000000000000000000000002';
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          actor: wallet,
-          catalogue: [
-            {
-              itemId: 'item',
-              kind: 1,
-              seller: wallet,
-              name: 'Cocoa Powder',
-              category: 'cocoa',
-              batchReference: 'COCOA-2026-001',
-              unit: 'kg',
-              batches: [BASE_WORKFLOW.batchId],
-              batchDetails: [
-                {
-                  batchId: BASE_WORKFLOW.batchId,
-                  supplierAvailable: '500',
-                  status: 1,
-                  expiresAt: 2000000000,
-                },
-              ],
-              listingSupported: true,
-              listingHash: '0x' + '0'.repeat(64),
-            },
-          ],
-          orders: [],
-          locations: [],
-          shipments: [],
-        }),
-      });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        actor: wallet,
+        catalogue: [
+          {
+            itemId: 'item',
+            kind: 1,
+            seller: wallet,
+            name: 'Cocoa Powder',
+            category: 'cocoa',
+            batchReference: 'COCOA-2026-001',
+            unit: 'kg',
+            batches: [BASE_WORKFLOW.batchId],
+            batchDetails: [
+              {
+                batchId: BASE_WORKFLOW.batchId,
+                supplierAvailable: '500',
+                status: 1,
+                expiresAt: 2000000000,
+              },
+            ],
+            listingSupported: true,
+            listingHash: '0x' + '0'.repeat(64),
+          },
+        ],
+        orders: [],
+        locations: [],
+        shipments: [],
+      }),
+    });
     vi.stubGlobal('fetch', fetchMock);
-    const onDetail = vi.fn();
-    render(<IngredientBatches onNew={vi.fn()} onDetail={onDetail} />);
+    render(<IngredientBatches onNew={vi.fn()} />);
     expect(await screen.findByText('Cocoa Powder')).toBeTruthy();
     expect(screen.getByText(/COCOA-2026-001/)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
@@ -144,9 +142,249 @@ describe('Supplier ingredient batch workflow', () => {
       expect.objectContaining({ credentials: 'include' }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
-    expect(onDetail).toHaveBeenCalledWith(BASE_WORKFLOW.batchId);
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(
+      screen.getByText('Supplier-provided presentation information', { exact: false }),
+    ).toBeTruthy();
+  });
+
+  it('calculates real summaries without combining different quantity units', async () => {
+    const wallet = BASE_WORKFLOW.supplierWallet;
+    mockOrders({
+      actor: wallet,
+      catalogue: [
+        catalogueItem({
+          itemId: 'cocoa',
+          name: 'Cocoa powder',
+          unit: 'kg',
+          available: '125',
+          registeredBlock: 30,
+        }),
+        catalogueItem({
+          itemId: 'milk',
+          name: 'Milk concentrate',
+          unit: 'litre',
+          available: '40',
+          registeredBlock: 20,
+        }),
+        catalogueItem({
+          itemId: 'archived',
+          name: 'Archived sugar',
+          unit: 'kg',
+          available: '10',
+          archived: true,
+          registeredBlock: 10,
+        }),
+      ],
+    });
+    render(<IngredientBatches onNew={vi.fn()} />);
+
+    const summary = await screen.findByLabelText('Ingredient inventory summary');
+    expect(summary.textContent).toContain('Active batches2');
+    expect(summary.textContent).toContain('Across 2 batches');
+    expect(summary.textContent).toContain('Multiple units are not combined');
+    expect(summary.textContent).toContain('Archived batches1');
+  });
+
+  it('searches, filters, sorts and clears filters using authoritative batches', async () => {
+    const wallet = BASE_WORKFLOW.supplierWallet;
+    mockOrders({
+      actor: wallet,
+      catalogue: [
+        catalogueItem({
+          itemId: 'zulu',
+          name: 'Zulu cocoa',
+          category: 'Cocoa',
+          reference: 'ZULU-001',
+          registeredBlock: 20,
+        }),
+        catalogueItem({
+          itemId: 'alpha',
+          name: 'Alpha grain',
+          category: 'Grain',
+          reference: 'ALPHA-001',
+          registeredBlock: 10,
+        }),
+      ],
+    });
+    const { container } = render(<IngredientBatches onNew={vi.fn()} />);
+    await screen.findByText('Zulu cocoa');
+
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'name' } });
+    expect(
+      [...container.querySelectorAll('.ingredient-card__identity h3')].map(
+        (heading) => heading.textContent,
+      ),
+    ).toEqual(['Alpha grain', 'Zulu cocoa']);
+
+    fireEvent.change(screen.getByLabelText('Search batches'), {
+      target: { value: 'ZULU-001' },
+    });
+    expect(screen.getByText('Zulu cocoa')).toBeTruthy();
+    expect(screen.queryByText('Alpha grain')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(screen.getByText('Alpha grain')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'Grain' } });
+    expect(screen.getByText('Alpha grain')).toBeTruthy();
+    expect(screen.queryByText('Zulu cocoa')).toBeNull();
+  });
+
+  it('shows image fallback, quantity, expiry and credential state without technical identifiers', async () => {
+    const wallet = BASE_WORKFLOW.supplierWallet;
+    const longName = 'Single origin fermented cocoa nibs '.repeat(4).trim();
+    const longReference = `COCOA-${'LONG-'.repeat(15)}2026`;
+    mockOrders({
+      actor: wallet,
+      catalogue: [
+        catalogueItem({
+          itemId: 'long',
+          name: longName,
+          reference: longReference,
+          available: '77',
+          expiresAt: Math.floor(Date.now() / 1000) + 10 * 86_400,
+          credentialStatus: 1,
+        }),
+      ],
+    });
+    const { container } = render(<IngredientBatches onNew={vi.fn()} />);
+    await screen.findByText(longName);
+
+    expect(screen.getByRole('img', { name: 'Cocoa image placeholder' })).toBeTruthy();
+    expect(screen.getByText(longReference)).toBeTruthy();
+    expect(screen.getByText('77 kg')).toBeTruthy();
+    expect(screen.getByText('Expires in 10 days')).toBeTruthy();
+    expect(screen.getAllByText('Active').length).toBeGreaterThan(1);
+    const gridText = container.querySelector('.ingredient-grid')?.textContent ?? '';
+    expect(gridText).not.toContain(wallet);
+    expect(gridText).not.toContain('0x' + '0'.repeat(64));
+  });
+
+  it('keeps technical details collapsed and rejects an invalid replacement image safely', async () => {
+    const wallet = BASE_WORKFLOW.supplierWallet;
+    mockOrders({ actor: wallet, catalogue: [catalogueItem({ itemId: 'cocoa' })] });
+    render(<IngredientBatches onNew={vi.fn()} />);
+    await screen.findByText('Cocoa Powder');
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+
+    const technical = screen.getByText('Technical details').closest('details');
+    expect(technical?.open).toBe(false);
+    expect(within(screen.getByRole('dialog')).getByText('Authenticated Supplier')).toBeTruthy();
+
+    const invalid = new File(['unsafe'], 'ingredient.svg', { type: 'image/svg+xml' });
+    fireEvent.change(screen.getByLabelText('Choose ingredient image'), {
+      target: { files: [invalid] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Upload image' }));
+    expect(await screen.findByText('Choose a PNG, JPEG or WebP image.')).toBeTruthy();
+    expect(screen.getAllByRole('img', { name: 'Cocoa image placeholder' })).toHaveLength(2);
+  });
+
+  it('shows distinct loading, empty and unavailable-service states without fixture batches', async () => {
+    let resolveOrders!: (value: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise((resolve) => (resolveOrders = resolve))),
+    );
+    const view = render(<IngredientBatches onNew={vi.fn()} />);
+    expect(screen.getByLabelText('Loading ingredient batches')).toBeTruthy();
+    resolveOrders(
+      new Response(
+        JSON.stringify({
+          actor: BASE_WORKFLOW.supplierWallet,
+          catalogue: [],
+          orders: [],
+          locations: [],
+          shipments: [],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    expect(await screen.findByText('No registered ingredients')).toBeTruthy();
+    expect(screen.queryByText(/sample|fixture/i)).toBeNull();
+
+    view.unmount();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ error: { message: 'RPC provider unavailable' } }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+    render(<IngredientBatches onNew={vi.fn()} />);
+    expect(await screen.findByText(/Blockchain\/RPC unavailable/)).toBeTruthy();
+    expect(screen.queryByText('Cocoa Powder')).toBeNull();
   });
 });
+
+function mockOrders({ actor, catalogue }: { actor: string; catalogue: unknown[] }) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ actor, catalogue, orders: [], locations: [], shipments: [] }),
+    }),
+  );
+}
+
+function catalogueItem({
+  itemId,
+  name = 'Cocoa Powder',
+  category = 'Cocoa',
+  reference = 'COCOA-2026-001',
+  unit = 'kg',
+  available = '500',
+  archived = false,
+  expiresAt = 2_000_000_000,
+  registeredBlock = 1,
+  credentialStatus = 1,
+}: {
+  itemId: string;
+  name?: string;
+  category?: string;
+  reference?: string;
+  unit?: string;
+  available?: string;
+  archived?: boolean;
+  expiresAt?: number;
+  registeredBlock?: number;
+  credentialStatus?: number;
+}) {
+  const batchId = `0x${itemId.padEnd(64, '1').slice(0, 64)}`;
+  return {
+    itemId,
+    kind: 1,
+    seller: BASE_WORKFLOW.supplierWallet,
+    name,
+    category,
+    batchReference: reference,
+    countryOfOrigin: 'Malaysia',
+    description: 'Supplier-provided listing description',
+    unit,
+    price: '12.50',
+    currency: 'MYR',
+    archived,
+    credentialStatus,
+    evidenceAvailability: credentialStatus === 1 ? 'Credential active' : 'Credential unavailable',
+    registeredBlock,
+    batches: [batchId],
+    batchDetails: [
+      {
+        batchId,
+        supplierAvailable: available,
+        totalQuantity: '600',
+        status: 1,
+        producedAt: 1_790_000_000,
+        expiresAt,
+      },
+    ],
+    listingSupported: true,
+    listingHash: `0x${'0'.repeat(64)}`,
+  };
+}
 
 function completeForm() {
   fireEvent.change(screen.getByLabelText(/Ingredient name/), {

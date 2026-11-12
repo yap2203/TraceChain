@@ -545,6 +545,20 @@
   .orders-page {
     @apply min-w-[0] max-w-[100%];
   }
+  .orders-page-header {
+    @apply flex items-start justify-between gap-[16px] flex-wrap;
+  }
+  .orders-page-header > div {
+    @apply grid gap-[4px] max-w-[850px];
+  }
+  .orders-page-header h2,
+  .orders-page-header p {
+    @apply m-0;
+  }
+  .orders-page-header p {
+    @apply text-[13px] leading-[1.5];
+    color: var(--c-text2);
+  }
   .catalogue-heading,
   .requests-overview__heading {
     @apply flex items-start justify-between gap-[16px] flex-wrap;
@@ -743,6 +757,266 @@
     background-size: 220% 100%;
     animation: catalogue-shimmer 1.4s ease-in-out infinite;
   }
+  .ingredient-inventory {
+    @apply grid gap-[20px] min-w-0 max-w-full;
+  }
+  .ingredient-inventory > .workspace-section-title {
+    @apply mb-0;
+  }
+  .ingredient-page-actions,
+  .ingredient-modal-actions {
+    @apply flex flex-wrap items-center gap-[8px];
+  }
+  .ingredient-page-alert {
+    @apply grid gap-[10px] justify-items-start;
+  }
+  .ingredient-summary-grid {
+    @apply grid grid-cols-4 gap-[12px];
+  }
+  .ingredient-summary-card {
+    @apply flex items-start justify-between gap-[10px] min-w-0 p-[14px_16px] rounded-[var(--radius)];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+    box-shadow: var(--shadow);
+  }
+  .ingredient-summary-card > div {
+    @apply grid gap-[3px] min-w-0;
+  }
+  .ingredient-summary-card > div > span {
+    @apply text-[12px] font-semibold;
+    color: var(--c-text2);
+  }
+  .ingredient-summary-card strong {
+    @apply text-[22px] leading-[1.1];
+    color: var(--c-navy);
+    overflow-wrap: anywhere;
+  }
+  .ingredient-summary-card small {
+    @apply text-[10px];
+    color: var(--c-text3);
+  }
+  .ingredient-summary-card > span {
+    color: var(--c-teal);
+    opacity: 0.7;
+  }
+  .ingredient-toolbar {
+    @apply grid gap-[8px] items-end p-[12px] rounded-[var(--radius)];
+    grid-template-columns: minmax(180px, 1.4fr) repeat(3, minmax(100px, 0.7fr)) auto auto;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+  }
+  .ingredient-toolbar > * {
+    @apply min-w-0 max-w-full;
+  }
+  .ingredient-archive-toggle {
+    @apply flex items-center gap-[8px] min-h-[34px] text-[12px] font-semibold cursor-pointer;
+    color: var(--c-text2);
+  }
+  .ingredient-archive-toggle input {
+    accent-color: var(--c-teal);
+  }
+  .ingredient-toolbar > button {
+    justify-self: start;
+  }
+  .ingredient-results-heading {
+    @apply flex items-center justify-between gap-[10px] text-[12px];
+    color: var(--c-text2);
+  }
+  .ingredient-results-heading strong {
+    @apply text-[13px];
+    color: var(--c-text);
+  }
+  .ingredient-grid {
+    @apply grid gap-[16px] min-w-0 items-start;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
+  }
+  .ingredient-grid > .ingredient-card:only-child {
+    @apply max-w-[760px];
+  }
+  .ingredient-card {
+    @apply flex flex-col min-w-0 overflow-hidden rounded-[var(--radius)];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+    box-shadow: var(--shadow);
+  }
+  .ingredient-card:hover {
+    border-color: var(--c-border2);
+    box-shadow: var(--shadow-md);
+  }
+  .ingredient-card__media {
+    @apply relative w-full overflow-hidden;
+    background: var(--c-surface2);
+  }
+  .ingredient-card__media > .catalogue-image {
+    @apply w-full min-h-[180px] aspect-[16/9] object-cover;
+  }
+  .ingredient-card__status {
+    @apply absolute top-[12px] right-[12px];
+  }
+  .ingredient-card__status > span {
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.2);
+  }
+  .ingredient-card__body {
+    @apply grid gap-[10px] p-[18px];
+  }
+  .ingredient-card__identity {
+    @apply grid gap-[3px];
+  }
+  .ingredient-card__identity h3 {
+    @apply m-0 text-[18px] leading-[1.3] font-bold;
+    color: var(--c-text);
+    overflow-wrap: anywhere;
+  }
+  .ingredient-card__identity p {
+    @apply m-0 text-[12px];
+    color: var(--c-text2);
+    overflow-wrap: anywhere;
+  }
+  .ingredient-card__meta {
+    @apply flex flex-wrap items-center gap-[7px];
+  }
+  .ingredient-card__meta > span:not([class]) {
+    @apply px-[8px] py-[3px] rounded-full text-[11px];
+    color: var(--c-text2);
+    background: var(--c-surface2);
+  }
+  .ingredient-card__highlights,
+  .ingredient-card__dates,
+  .ingredient-detail__summary-facts,
+  .ingredient-detail__facts dl {
+    @apply grid gap-[10px] m-0;
+  }
+  .ingredient-card__highlights {
+    @apply grid-cols-2 p-[12px] rounded-[var(--radius-sm)];
+    background: var(--c-surface2);
+  }
+  .ingredient-card__dates {
+    @apply grid-cols-2;
+  }
+  .ingredient-card__highlights > div,
+  .ingredient-card__dates > div,
+  .ingredient-detail__summary-facts > div,
+  .ingredient-detail__facts dl > div {
+    @apply grid gap-[3px] min-w-0;
+  }
+  .ingredient-card__highlights dt,
+  .ingredient-card__dates dt,
+  .ingredient-detail__summary-facts dt,
+  .ingredient-detail__facts dt {
+    @apply text-[11px];
+    color: var(--c-text2);
+  }
+  .ingredient-card__highlights dd,
+  .ingredient-card__dates dd,
+  .ingredient-detail__summary-facts dd,
+  .ingredient-detail__facts dd {
+    @apply m-0 text-[13px] font-semibold;
+    color: var(--c-text);
+    overflow-wrap: anywhere;
+  }
+  .ingredient-card__credential {
+    @apply flex justify-between items-center gap-[10px] text-[12px];
+    color: var(--c-text2);
+  }
+  .ingredient-card__notice {
+    @apply m-0 text-[12px];
+    color: var(--c-amber);
+  }
+  .ingredient-card__actions {
+    @apply flex flex-wrap items-center gap-[8px] pt-[3px];
+  }
+  .ingredient-card__actions > button:first-child {
+    @apply grow;
+  }
+  .ingredient-card--loading {
+    @apply min-h-[470px];
+    background: linear-gradient(
+      100deg,
+      var(--c-surface) 30%,
+      var(--c-surface2) 50%,
+      var(--c-surface) 70%
+    );
+    background-size: 220% 100%;
+    animation: catalogue-shimmer 1.4s ease-in-out infinite;
+  }
+  .ingredient-detail,
+  .ingredient-edit-form,
+  .ingredient-confirmation {
+    @apply grid gap-[20px] min-w-0;
+  }
+  .ingredient-registration-form {
+    @apply grid gap-[16px];
+  }
+  .ingredient-form-section {
+    @apply grid gap-[14px] m-0 p-[16px] rounded-[var(--radius-sm)] min-w-0;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .ingredient-form-section legend {
+    @apply px-[6px] text-[12px] font-bold;
+    color: var(--c-text);
+  }
+  .ingredient-form-section > p {
+    @apply m-0 text-[12px] leading-[1.5];
+    color: var(--c-text2);
+  }
+  .ingredient-form-section > input[type='file'] {
+    @apply w-full text-[12px];
+  }
+  .ingredient-detail__hero {
+    @apply grid grid-cols-2 gap-[20px] items-start;
+  }
+  .ingredient-detail__hero > .catalogue-image {
+    @apply w-full aspect-[16/9] min-h-[220px] max-h-[320px] object-cover rounded-[var(--radius)];
+  }
+  .ingredient-detail__summary {
+    @apply grid gap-[16px] min-w-0;
+  }
+  .ingredient-detail__summary h3,
+  .ingredient-detail__summary p,
+  .ingredient-detail__facts h4,
+  .ingredient-image-manager h4,
+  .ingredient-image-manager p,
+  .ingredient-confirmation p {
+    @apply m-0;
+  }
+  .ingredient-detail__summary h3 {
+    @apply text-[20px] leading-[1.3];
+    color: var(--c-text);
+    overflow-wrap: anywhere;
+  }
+  .ingredient-detail__summary p {
+    @apply mt-[4px] text-[12px];
+    color: var(--c-text2);
+    overflow-wrap: anywhere;
+  }
+  .ingredient-detail__facts {
+    @apply grid grid-cols-3 gap-[14px];
+  }
+  .ingredient-detail__facts > section {
+    @apply grid gap-[12px] content-start p-[14px] rounded-[var(--radius-sm)];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .ingredient-detail__facts h4,
+  .ingredient-image-manager h4 {
+    @apply text-[13px];
+    color: var(--c-text);
+  }
+  .ingredient-image-manager {
+    @apply grid gap-[12px] items-center p-[14px] rounded-[var(--radius-sm)];
+    grid-template-columns: minmax(220px, 1fr) minmax(180px, 0.8fr) auto;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .ingredient-image-manager p {
+    @apply mt-[4px] text-[12px] leading-[1.5];
+    color: var(--c-text2);
+  }
+  .ingredient-image-manager input {
+    @apply w-full text-[12px];
+  }
   .requests-toolbar {
     grid-template-columns: minmax(220px, 2fr) minmax(180px, 1fr);
     max-width: 720px;
@@ -763,6 +1037,194 @@
     @apply m-[0] min-w-[0];
     overflow-wrap: anywhere;
   }
+  .supplier-request-inbox {
+    @apply gap-[18px];
+  }
+  .request-summary-grid {
+    @apply grid grid-cols-5 gap-[10px] min-w-[0];
+  }
+  .request-summary-filter {
+    @apply grid gap-[2px] min-w-0 p-[12px_14px] text-left cursor-pointer rounded-[10px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+    box-shadow: var(--shadow);
+  }
+  .request-summary-filter:hover {
+    border-color: var(--c-border2);
+  }
+  .request-summary-filter[aria-pressed='true'] {
+    border-color: var(--c-teal);
+    box-shadow: 0 0 0 1px var(--c-teal);
+    background: color-mix(in srgb, var(--c-teal) 7%, var(--c-surface));
+  }
+  .request-summary-filter:focus-visible {
+    outline: 2px solid var(--c-teal);
+    outline-offset: 2px;
+  }
+  .request-summary-filter strong {
+    @apply text-[22px] leading-[1.1];
+    color: var(--c-navy);
+  }
+  .request-summary-filter span {
+    @apply text-[12px] font-semibold;
+    color: var(--c-text2);
+    overflow-wrap: anywhere;
+  }
+  .request-summary-filter--attention strong,
+  .request-summary-filter--evidence strong {
+    color: var(--c-amber);
+  }
+  .request-summary-filter--approved strong {
+    color: var(--c-green);
+  }
+  .request-summary-filter--closed strong {
+    color: var(--c-grey);
+  }
+  .supplier-request-toolbar {
+    @apply grid gap-[10px] items-end min-w-[0];
+    grid-template-columns: minmax(240px, 1.5fr) minmax(190px, 0.7fr) auto;
+  }
+  .supplier-request-toolbar > * {
+    @apply min-w-[0] max-w-[100%];
+  }
+  .supplier-request-toolbar > strong {
+    @apply pb-[9px] text-[12px] whitespace-nowrap;
+    color: var(--c-text2);
+  }
+  .supplier-requests-list,
+  .supplier-request-loading {
+    @apply grid gap-[12px] min-w-[0];
+  }
+  .supplier-request-row {
+    @apply grid gap-[16px] items-center min-w-[0];
+    grid-template-columns: 150px minmax(220px, 1.3fr) minmax(180px, 0.8fr) minmax(190px, 0.8fr);
+  }
+  .supplier-request-company,
+  .request-detail-company {
+    @apply flex items-center gap-[12px] min-w-[0];
+  }
+  .supplier-request-row > .catalogue-image {
+    @apply w-[150px] h-[150px] shrink-0 rounded-[12px];
+    object-fit: cover;
+  }
+  .supplier-request-item-info {
+    @apply grid gap-[12px] min-w-[0];
+  }
+  .supplier-request-item-copy,
+  .supplier-request-company > div,
+  .request-detail-company > div {
+    @apply grid gap-[2px] min-w-[0];
+  }
+  .supplier-request-item-copy h4,
+  .supplier-request-company strong,
+  .request-detail-company strong {
+    @apply m-[0] min-w-[0];
+    overflow-wrap: anywhere;
+  }
+  .supplier-request-item-copy h4 {
+    @apply text-[18px] leading-[1.3] font-bold;
+    color: var(--c-text);
+  }
+  .supplier-request-item-copy span,
+  .supplier-request-company span,
+  .request-detail-company span {
+    @apply text-[11px];
+    color: var(--c-text2);
+  }
+  .supplier-request-company .company-avatar--lg {
+    @apply size-[48px];
+  }
+  .supplier-request-company .company-avatar img {
+    object-fit: contain;
+    @apply p-[2px];
+    background: var(--c-surface2);
+  }
+  .supplier-request-facts,
+  .request-detail-facts {
+    @apply grid gap-[8px] m-[0] min-w-[0];
+  }
+  .supplier-request-facts > div,
+  .request-detail-facts > div {
+    @apply grid gap-[1px] min-w-[0];
+  }
+  .supplier-request-facts dt,
+  .request-detail-facts dt {
+    @apply text-[11px];
+    color: var(--c-text2);
+  }
+  .supplier-request-facts dd,
+  .request-detail-facts dd {
+    @apply m-[0] text-[14px] font-semibold min-w-[0];
+    overflow-wrap: anywhere;
+  }
+  .supplier-request-state {
+    @apply grid gap-[7px] justify-items-start content-center min-w-[0];
+  }
+  .supplier-request-state > span {
+    @apply max-w-[100%] whitespace-normal;
+  }
+  .supplier-request-state p {
+    @apply m-0 text-[12px] leading-[1.45];
+    color: var(--c-text2);
+  }
+  .request-deadline {
+    @apply text-[11px];
+    color: var(--c-text2);
+  }
+  .request-deadline--soon {
+    color: var(--c-amber);
+  }
+  .request-deadline--overdue {
+    color: var(--c-red);
+  }
+  .supplier-request-action {
+    @apply min-w-[150px] mt-[2px];
+  }
+  .supplier-request-action button {
+    @apply min-w-[150px] w-auto whitespace-nowrap;
+  }
+  .supplier-request-card {
+    @apply min-w-[0];
+  }
+  .supplier-request-loading__row {
+    @apply min-h-[128px] rounded-[12px];
+    border: 1px solid var(--c-border);
+    background: linear-gradient(
+      100deg,
+      var(--c-surface) 30%,
+      var(--c-surface2) 50%,
+      var(--c-surface) 70%
+    );
+    background-size: 220% 100%;
+    animation: catalogue-shimmer 1.4s ease-in-out infinite;
+  }
+  .request-detail-modal {
+    @apply grid gap-[20px] min-w-[0] max-w-[100%];
+  }
+  .request-detail-summary {
+    @apply grid gap-[20px] items-start min-w-[0];
+    grid-template-columns: minmax(180px, 260px) minmax(0, 1fr);
+  }
+  .request-detail-summary > .catalogue-image {
+    @apply w-[100%] max-h-[220px];
+  }
+  .request-detail-summary > div {
+    @apply grid gap-[10px] min-w-[0];
+  }
+  .request-detail-summary h3 {
+    overflow-wrap: anywhere;
+  }
+  .request-detail-facts {
+    @apply grid-cols-2 gap-[12px];
+  }
+  .request-detail-facts > div {
+    @apply p-[12px] rounded-[8px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .request-detail-actions {
+    @apply flex flex-wrap gap-[8px];
+  }
   @keyframes catalogue-shimmer {
     to {
       background-position: -220% 0;
@@ -776,6 +1238,49 @@
       grid-template-columns: repeat(3, minmax(160px, 1fr));
     }
   }
+  @container workspace (max-width: 1023px) {
+    .ingredient-detail__facts {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .ingredient-detail__facts > section:last-child {
+      grid-column: 1 / -1;
+    }
+    .ingredient-image-manager {
+      grid-template-columns: minmax(0, 1fr) minmax(180px, 0.8fr);
+    }
+    .ingredient-image-manager > button {
+      justify-self: start;
+    }
+  }
+  @media (max-width: 1023px) {
+    .ingredient-grid,
+    .ingredient-summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .ingredient-toolbar {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .ingredient-grid > .ingredient-card:only-child {
+      grid-column: 1 / -1;
+    }
+    .supplier-request-row {
+      grid-template-columns: 140px minmax(0, 1fr);
+    }
+    .supplier-request-state .request-deadline,
+    .supplier-request-action {
+      @apply mt-[0];
+    }
+    .request-summary-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .supplier-request-toolbar {
+      grid-template-columns: minmax(0, 1fr) minmax(180px, 0.7fr);
+    }
+    .supplier-request-toolbar > strong {
+      @apply pb-[0];
+      grid-column: 1 / -1;
+    }
+  }
   @container workspace (max-width: 820px) {
     .catalogue-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -785,6 +1290,76 @@
     }
     .catalogue-detail {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @container workspace (max-width: 699px) {
+    .ingredient-detail__hero,
+    .ingredient-detail__facts,
+    .ingredient-image-manager {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ingredient-detail__facts > section:last-child {
+      grid-column: auto;
+    }
+    .ingredient-card__media > .catalogue-image {
+      @apply min-h-[160px] max-h-[260px];
+    }
+    .ingredient-page-actions,
+    .ingredient-page-actions > button,
+    .ingredient-modal-actions,
+    .ingredient-modal-actions > button,
+    .ingredient-card__actions,
+    .ingredient-card__actions > button {
+      @apply w-full;
+    }
+    .ingredient-toolbar > button,
+    .ingredient-image-manager > button {
+      @apply w-full;
+      justify-self: stretch;
+    }
+    .ingredient-detail__hero > .catalogue-image {
+      @apply min-h-[180px];
+    }
+  }
+  @media (max-width: 639px) {
+    .ingredient-grid,
+    .ingredient-summary-grid,
+    .ingredient-toolbar {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ingredient-results-heading {
+      @apply flex-col items-start gap-[4px];
+    }
+    .supplier-request-row {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .supplier-request-row > .catalogue-image {
+      @apply w-[100%] h-auto max-h-[260px];
+      aspect-ratio: 16 / 9;
+    }
+    .supplier-request-item-info,
+    .supplier-request-facts,
+    .supplier-request-state {
+      grid-column: 1;
+    }
+    .supplier-request-facts,
+    .supplier-request-state {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .supplier-request-action {
+      @apply w-[100%];
+      justify-self: stretch;
+    }
+    .supplier-request-action button {
+      @apply w-[100%];
+    }
+    .supplier-request-toolbar,
+    .request-detail-facts,
+    .request-detail-summary {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .request-detail-actions > button {
+      @apply w-[100%];
     }
   }
   @container workspace (max-width: 560px) {
@@ -812,7 +1387,9 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .catalogue-skeleton {
+    .catalogue-skeleton,
+    .ingredient-card--loading,
+    .supplier-request-loading__row {
       animation: none;
     }
   }

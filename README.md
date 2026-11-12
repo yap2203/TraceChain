@@ -25,13 +25,15 @@ specialized effects, animations, print styles and runtime/data-dependent inline 
 where needed. Existing media/container breakpoints are retained. To validate styling changes,
 run `npm run test:frontend`, `npm run typecheck` and `npm run build --workspace @tracechain/web`.
 
-Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid), **My orders**
-(incoming Manufacturer requests in a table), and **Information requests** (separate Received and
-Sent evidence tables). There is no Supplier Browse tab. Ingredients support create/read,
+Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid), **Order
+requests** (a responsive Manufacturer quantity-request inbox), and **Information requests**
+(separate Received and Sent evidence tables). The request inbox provides calculated status
+summaries, search, workflow filters, sorting and structured review dialogs while keeping wallets and
+technical identifiers collapsed. There is no Supplier Browse tab. Ingredients support create/read,
 version-checked listing edits, archive/delete and restore. Listing edits change the business name,
 category, description and indicative price; signed credential claims, quantities and units stay
 intact. Suppliers can also attach an optional validated presentation image to an owned batch.
-Supplier decisions are recorded on-chain and never reserve stock or process payment.
+Supplier decisions are recorded on-chain and never reserve stock, process payment or dispatch goods.
 See [the Supplier management flow](docs/BROWSE_REQUESTS_README.md#supplier-management).
 
 The updated IngredientRegistry and SupplyChainOrders require a fresh complete suite deployment

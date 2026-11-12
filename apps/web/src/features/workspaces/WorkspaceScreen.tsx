@@ -87,12 +87,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
         );
       if (subView === 'batch-detail')
         return <IngredientBatchDetail batchId={activeId} onBack={() => setSearchParams({})} />;
-      return (
-        <IngredientBatches
-          onNew={() => goTo('batches-new')}
-          onDetail={(id) => goTo('batch-detail', id)}
-        />
-      );
+      return <IngredientBatches onNew={() => goTo('batches-new')} />;
     }
     if (tab === 'requests') {
       if (discReq) return <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />;

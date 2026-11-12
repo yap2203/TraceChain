@@ -22,6 +22,7 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   const exists = workspaceNavigation[role].some(([id]) => id === page);
   const canonicalPath = workspacePath(role, page);
   const authenticated = state.phase === 'authenticated';
+  const compactSupplierPage = role === 'supplier' && (page === 'batches' || page === 'orders');
   const status =
     state.phase === 'restoring'
       ? 'Checking session'
@@ -33,9 +34,11 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
 
   const content = (
     <fieldset disabled={!state.authorizationReady} className="workspace-pending-workflows">
-      <legend>
+      <legend className={state.authorizationReady && compactSupplierPage ? 'sr-only' : undefined}>
         {state.authorizationReady
-          ? 'Connected to the configured local blockchain.'
+          ? compactSupplierPage
+            ? 'Authorized workspace content'
+            : 'Connected to the configured local blockchain.'
           : 'Blockchain authorization is required.'}
       </legend>
       <Suspense fallback={<LoadingIndicator fullScreen label="Loading page…" />}>

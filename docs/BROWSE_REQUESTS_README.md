@@ -19,9 +19,11 @@ Opening a card shows the available safe batch facts and keeps two actions separa
 2. **Request evidence or information** uses the existing claim-selection, Supplier consent and
    verification flow. Confidential evidence is not disclosed merely because an item is listed.
 
-My requests uses a compact desktop table and mobile cards. It shows verified company names,
-quantity/unit, dates, status and the next expected action. Approving or rejecting a request records
-the Supplier decision only; it does not process payment or initiate fulfilment.
+Manufacturer My requests uses a compact desktop table and mobile cards. The Supplier **Order
+requests** page uses one responsive row-card list with calculated review/evidence/approved/closed
+summaries, workflow filters, search, sorting and a structured review dialog. Both show verified
+company names, quantity/unit, dates, status and the next expected action. Approving or rejecting a
+request records the Supplier decision only; it does not process payment or initiate fulfilment.
 
 ## Presentation images and logos
 
@@ -42,8 +44,9 @@ physical quality or origin of an ingredient.
 Ingredient batches remain the Supplier's owned management surface. A Supplier can edit the listing
 name, category, description and indicative price, archive/restore a listing, and upload/replace its
 presentation image. Signed Ingredient Credential claims, the registered quantity/unit and historical
-records remain unchanged. My orders and Information requests continue to separate quantity decisions,
-company proof exchange and ingredient evidence consent.
+records remain unchanged. Order requests and Information requests continue to separate quantity
+decisions, company proof exchange and ingredient evidence consent. Wallets, request IDs, batch IDs
+and transaction identifiers remain inside collapsed Technical details.
 
 ## Deferred work
 
@@ -61,4 +64,6 @@ for their dedicated workflows; they are not silently triggered by catalogue brow
 4. Open an item and verify Supplier-provided/indicative warnings and collapsed technical details.
 5. Submit a quantity request and an evidence request separately. Confirm neither action exposes a
    cart, takes payment, reserves stock or bypasses Supplier consent.
-6. Review My requests on desktop and mobile, then check API failure and MetaMask rejection states.
+6. Review Supplier Order requests at 320, 375, 768, 1024, 1440 and 1920 px. Check summary counts,
+   status filters, sorting, the responsive review dialog, API/RPC failure states and MetaMask
+   rejection behavior.
