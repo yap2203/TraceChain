@@ -28,6 +28,38 @@ export interface IngredientBatchWorkflow {
   transaction?: PreparedTransaction;
 }
 
+export type ExtractionConfidence = 'High' | 'Review required' | 'Missing';
+
+export interface ExtractedIngredientField {
+  confidence: ExtractionConfidence;
+  value: string;
+}
+
+export interface IngredientDocumentExtraction {
+  document: {
+    filename: string;
+    format: 'pdf' | 'docx' | 'png' | 'jpeg';
+    mimeType: string;
+    pageCount?: number;
+    size: number;
+  };
+  fields: {
+    allergenInformation: ExtractedIngredientField;
+    batchReference: ExtractedIngredientField;
+    category: ExtractedIngredientField;
+    certifications: ExtractedIngredientField;
+    currency: ExtractedIngredientField;
+    expiryDate: ExtractedIngredientField;
+    ingredientName: ExtractedIngredientField;
+    origin: ExtractedIngredientField;
+    price: ExtractedIngredientField;
+    productionDate: ExtractedIngredientField;
+    quantity: ExtractedIngredientField;
+    unit: ExtractedIngredientField;
+  };
+  warnings: string[];
+}
+
 export interface RegisteredIngredientBatch {
   allergenInformation: string;
   availableQuantity: string;
@@ -67,6 +99,27 @@ export function prepareIngredientBatch(input: IngredientBatchInput) {
 
 export function getIngredientBatches() {
   return ingredientBatchRequest<{ batches: RegisteredIngredientBatch[] }>('/');
+}
+
+export async function extractIngredientDocument(file: File) {
+  const body = new FormData();
+  body.append('document', file);
+  const response = await fetch(`${API_BASE_URL}/api/ingredients/extract-document`, {
+    body,
+    credentials: 'include',
+    method: 'POST',
+  });
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: { code?: string; message?: string };
+    };
+    throw new IngredientBatchRequestError(
+      payload.error?.code ?? 'DOCUMENT_EXTRACTION_FAILED',
+      payload.error?.message ?? 'The document could not be processed.',
+      response.status,
+    );
+  }
+  return response.json() as Promise<IngredientDocumentExtraction>;
 }
 
 async function ingredientBatchRequest<T>(path: string, init?: RequestInit): Promise<T> {

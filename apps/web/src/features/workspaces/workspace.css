@@ -948,6 +948,136 @@
   .ingredient-registration-form {
     @apply grid gap-[16px];
   }
+  .ingredient-entry-heading,
+  .ingredient-form-heading {
+    @apply flex items-start justify-between gap-[16px] mb-[20px] min-w-0;
+  }
+  .ingredient-entry-heading h3,
+  .ingredient-entry-heading p,
+  .ingredient-form-heading strong,
+  .ingredient-form-heading span,
+  .ingredient-document-privacy {
+    @apply m-0;
+  }
+  .ingredient-entry-heading h3,
+  .ingredient-form-heading strong {
+    @apply block text-[15px] font-bold;
+    color: var(--c-text);
+  }
+  .ingredient-entry-heading p,
+  .ingredient-form-heading span,
+  .ingredient-document-privacy {
+    @apply block mt-[4px] text-[12px] leading-[1.5];
+    color: var(--c-text2);
+  }
+  .ingredient-entry-options {
+    @apply grid grid-cols-2 gap-[14px];
+  }
+  .ingredient-entry-option {
+    @apply grid gap-[8px] items-start text-left p-[18px] rounded-[var(--radius-sm)] cursor-pointer min-w-0;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+    color: var(--c-text2);
+  }
+  .ingredient-entry-option:hover,
+  .ingredient-entry-option:focus-visible {
+    border-color: var(--c-teal);
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--c-teal) 14%, transparent);
+  }
+  .ingredient-entry-option svg {
+    color: var(--c-teal);
+  }
+  .ingredient-entry-option strong {
+    @apply text-[14px];
+    color: var(--c-text);
+  }
+  .ingredient-entry-option span {
+    @apply text-[12px] leading-[1.5];
+  }
+  .ingredient-document-dropzone {
+    @apply grid justify-items-center gap-[8px] p-[28px] rounded-[var(--radius-sm)] text-center;
+    border: 1px dashed var(--c-border2);
+    background: var(--c-surface2);
+    color: var(--c-text2);
+  }
+  .ingredient-document-dropzone.is-dragging {
+    border-color: var(--c-teal);
+    background: color-mix(in srgb, var(--c-teal) 8%, var(--c-surface2));
+  }
+  .ingredient-document-dropzone > svg {
+    color: var(--c-teal);
+  }
+  .ingredient-document-dropzone > strong {
+    @apply text-[14px];
+    color: var(--c-text);
+  }
+  .ingredient-document-dropzone > span {
+    @apply text-[12px];
+  }
+  .ingredient-document-picker {
+    @apply inline-flex items-center justify-center mt-[6px] px-[16px] py-[8px] rounded-[8px] text-[12px] font-semibold cursor-pointer;
+    border: 1px solid var(--c-teal);
+    color: var(--c-on-accent);
+    background: var(--c-teal);
+  }
+  .ingredient-document-picker:focus-within {
+    outline: 2px solid var(--c-teal);
+    outline-offset: 2px;
+  }
+  .ingredient-document-picker input {
+    @apply sr-only;
+  }
+  .ingredient-document-progress {
+    @apply w-[22px] h-[22px] rounded-full;
+    border: 2px solid var(--c-border2);
+    border-top-color: var(--c-teal);
+    animation: ingredient-document-spin 0.8s linear infinite;
+  }
+  .ingredient-document-privacy {
+    @apply mb-[14px];
+  }
+  .ingredient-form-heading {
+    @apply mb-[16px];
+  }
+  .ingredient-extracted-field {
+    @apply grid gap-[5px] min-w-0 p-[8px] rounded-[8px];
+    border: 1px solid transparent;
+  }
+  .ingredient-extracted-field.is-high {
+    border-color: color-mix(in srgb, var(--c-green) 28%, transparent);
+    background: color-mix(in srgb, var(--c-green) 6%, transparent);
+  }
+  .ingredient-extracted-field.is-review-required,
+  .ingredient-extracted-field.is-missing {
+    border-color: color-mix(in srgb, var(--c-amber) 35%, transparent);
+    background: color-mix(in srgb, var(--c-amber) 7%, transparent);
+  }
+  .ingredient-extracted-field__status,
+  .ingredient-extracted-field__required {
+    @apply text-[11px] font-semibold;
+  }
+  .ingredient-extracted-field__status {
+    color: var(--c-text2);
+  }
+  .ingredient-extracted-field__required {
+    color: var(--c-red);
+  }
+  .ingredient-extraction-confirmation {
+    @apply grid gap-[10px];
+  }
+  .ingredient-extraction-confirmation > label {
+    @apply flex items-start gap-[9px] text-[12px] leading-[1.5] cursor-pointer;
+    color: var(--c-text);
+  }
+  .ingredient-extraction-confirmation input {
+    @apply mt-[2px] shrink-0;
+  }
+  @keyframes ingredient-document-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
   .ingredient-form-section {
     @apply grid gap-[14px] m-0 p-[16px] rounded-[var(--radius-sm)] min-w-0;
     border: 1px solid var(--c-border);
@@ -1363,6 +1493,13 @@
     }
   }
   @container workspace (max-width: 560px) {
+    .ingredient-entry-options {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .ingredient-entry-heading,
+    .ingredient-form-heading {
+      @apply flex-col;
+    }
     .catalogue-grid,
     .catalogue-toolbar,
     .requests-toolbar,
@@ -1389,6 +1526,7 @@
   @media (prefers-reduced-motion: reduce) {
     .catalogue-skeleton,
     .ingredient-card--loading,
+    .ingredient-document-progress,
     .supplier-request-loading__row {
       animation: none;
     }

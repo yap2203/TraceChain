@@ -1,5 +1,13 @@
 # Project Progress
 
+## 2026-11-12 — Supplier document-assisted ingredient registration
+
+- Added an authenticated Supplier-only `POST /api/ingredients/extract-document` endpoint with the existing current-role, Company Role credential and ingredient permission checks. Uploads are limited to one 10 MB file, processed in memory, signature/MIME/extension checked and never persisted or uploaded to IPFS.
+- Added modular embedded-text extraction for text PDFs, paragraph/table text extraction for DOCX, bundled local English OCR for PNG/JPEG, independent alias-based ingredient-field mapping, registration-schema validation, per-field High/Review required/Missing confidence and safe warnings. Scanned PDFs without usable embedded text return an explicit PNG/JPG or manual-entry instruction.
+- Added a drag-and-drop/manual choice to Supplier registration, extraction progress and failure states, editable prefilling, missing-field highlighting, safe filename metadata, the required accuracy confirmation and the supplier-claim limitation. The existing credential issuance, MetaMask transactions and on-chain verification do not start during extraction.
+- Added focused API and frontend coverage for formats, OCR confidence, aliases, invalid values, authentication/role denial, size/type mismatch, in-memory cleanup, no registration side effects, manual fallback, loading/errors and the review-confirmation gate.
+- Validation: 10 document-extraction API tests, 6 existing ingredient-batch API tests, 23 SSI package tests, 12 SSI API tests and all 149 frontend tests passed. Repository-wide type checks and production builds passed, changed-file formatting and diff checks passed, and a local bundled-OCR smoke check completed without a network service. Existing Vite bundle-size/directive warnings remain. `npm audit --omit=dev` reports the existing moderate transitive Veramo/MetaMask findings; the new extraction dependencies were not in those advisory paths.
+
 ## 2026-11-12 — Supplier page density refinement
 
 - Compacted the Ingredient batches summary, filter toolbar, result heading and card internals with page-scoped styles. The ingredient grid now uses auto-fit tracks at desktop widths so one or two records use the available row sensibly, while tablet and mobile layouts retain two and one columns without changing inventory, listing or image behavior.

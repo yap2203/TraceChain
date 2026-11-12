@@ -2,6 +2,8 @@
 
 ## Repository and implementation
 
+- Treat Supplier document extraction as local, assistive data entry only. Accept signature-validated PDF, DOCX, PNG and JPEG files up to 10 MB in memory; use embedded-text extraction or bundled local English OCR, return per-field confidence, and require editable Supplier review plus explicit confirmation. Never persist the extraction upload, send it to an external AI service, infer missing values, register a batch, issue a credential, prepare a transaction or describe extracted claims as independently verified (user-confirmed scope, 2026-11-12).
+
 - Manufacturer browsing belongs inside Products, alongside owned product batches. Provide separate My orders and Information requests pages with sent/received tables. Supplier requests for company evidence may be linked to either ingredient information or quantity requests; a valid proof must not automatically approve or fulfil either request (user-confirmed scope, 2026-11-12).
 
 - Use Tailwind CSS for web styling while preserving the existing TraceChain visual design, as requested on 2026-11-12. Use its official Vite integration, reuse the existing theme tokens and retain the current reset rather than introducing Preflight layout changes.

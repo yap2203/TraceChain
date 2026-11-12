@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PreparedTransaction } from '../../../blockchain/blockchain.api';
 import { IngredientBatches } from './IngredientBatchesPage';
 import { RegisterBatch } from './RegisterBatchPage';
-import type { IngredientBatchWorkflow } from './ingredient-batch.api';
+import type { IngredientBatchWorkflow, IngredientDocumentExtraction } from './ingredient-batch.api';
 
 const TRANSACTION: PreparedTransaction = {
   chainId: 31_337,
@@ -28,6 +28,86 @@ afterEach(() => {
 });
 
 describe('Supplier ingredient batch workflow', () => {
+  it('supports manual entry without running document extraction', () => {
+    const extractDocument = vi.fn();
+    render(<RegisterBatch onBack={vi.fn()} extractDocument={extractDocument} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Enter information manually' }));
+    expect(screen.getAllByText('Ingredient information').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/Ingredient name/)).toBeTruthy();
+    expect(extractDocument).not.toHaveBeenCalled();
+  });
+
+  it('shows extraction progress, prefills fields and requires supplier review confirmation', async () => {
+    let finishExtraction!: (value: IngredientDocumentExtraction) => void;
+    const extractDocument = vi.fn(
+      () => new Promise<IngredientDocumentExtraction>((resolve) => (finishExtraction = resolve)),
+    );
+    const prepareWorkflow = vi.fn();
+    render(
+      <RegisterBatch
+        onBack={vi.fn()}
+        extractDocument={extractDocument}
+        prepareWorkflow={prepareWorkflow}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Upload supply document' }));
+    const file = new File(['pdf'], 'supplier-lot.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByLabelText('Choose supply document'), {
+      target: { files: [file] },
+    });
+    expect(screen.getByRole('status')).toBeTruthy();
+    expect(screen.getByText('Extracting document information…')).toBeTruthy();
+
+    finishExtraction(EXTRACTION);
+    expect((await screen.findAllByText('Review extracted information')).length).toBeGreaterThan(0);
+    expect((screen.getByLabelText(/Ingredient name/) as HTMLInputElement).value).toBe(
+      'Cocoa Powder',
+    );
+    expect((screen.getByLabelText(/Batch reference/) as HTMLInputElement).value).toBe(
+      'COCOA-2026-001',
+    );
+    expect(screen.getAllByText('High').length).toBeGreaterThan(1);
+    expect(screen.getByText('Review required')).toBeTruthy();
+    expect(
+      screen.getByText('Required field not found. Enter a value before continuing.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Extracted information is supplier-provided and has not been independently certified by TraceChain.',
+      ),
+    ).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/Category/), { target: { value: 'cocoa' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to review' }));
+    expect(
+      screen.getByText(
+        'Review every extracted value and confirm that the information is accurate.',
+      ),
+    ).toBeTruthy();
+    expect(prepareWorkflow).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole('checkbox', {
+        name: 'I have reviewed the extracted information and confirm that it is accurate.',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to review' }));
+    expect(screen.getByText('Review batch')).toBeTruthy();
+    expect(prepareWorkflow).not.toHaveBeenCalled();
+  });
+
+  it('shows extraction failures and keeps manual entry available', async () => {
+    const extractDocument = vi.fn().mockRejectedValue(new Error('No readable text was found.'));
+    render(<RegisterBatch onBack={vi.fn()} extractDocument={extractDocument} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Upload supply document' }));
+    fireEvent.change(screen.getByLabelText('Choose supply document'), {
+      target: { files: [new File(['image'], 'label.png', { type: 'image/png' })] },
+    });
+    expect(await screen.findByText('No readable text was found.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Enter information manually instead' }));
+    expect(screen.getByLabelText(/Ingredient name/)).toBeTruthy();
+  });
+
   it('submits the credential and batch sequentially without duplicate clicks', async () => {
     const prepareWorkflow = vi
       .fn<() => Promise<IngredientBatchWorkflow>>()
@@ -387,6 +467,8 @@ function catalogueItem({
 }
 
 function completeForm() {
+  const manualEntry = screen.queryByRole('button', { name: 'Enter information manually' });
+  if (manualEntry) fireEvent.click(manualEntry);
   fireEvent.change(screen.getByLabelText(/Ingredient name/), {
     target: { value: 'Cocoa Powder' },
   });
@@ -404,3 +486,36 @@ function completeForm() {
   });
   fireEvent.change(screen.getByLabelText(/Quantity/), { target: { value: '500' } });
 }
+
+const extractedField = (
+  value: string,
+  confidence: 'High' | 'Review required' | 'Missing' = 'High',
+) => ({
+  confidence,
+  value,
+});
+
+const EXTRACTION: IngredientDocumentExtraction = {
+  document: {
+    filename: 'supplier-lot.pdf',
+    format: 'pdf',
+    mimeType: 'application/pdf',
+    pageCount: 1,
+    size: 1_024,
+  },
+  fields: {
+    allergenInformation: extractedField('None', 'Review required'),
+    batchReference: extractedField('COCOA-2026-001'),
+    category: extractedField('', 'Missing'),
+    certifications: extractedField('Organic'),
+    currency: extractedField('MYR'),
+    expiryDate: extractedField('2030-01-01'),
+    ingredientName: extractedField('Cocoa Powder'),
+    origin: extractedField('Ghana'),
+    price: extractedField('12.50'),
+    productionDate: extractedField('2026-10-01'),
+    quantity: extractedField('500'),
+    unit: extractedField('kg'),
+  },
+  warnings: [],
+};

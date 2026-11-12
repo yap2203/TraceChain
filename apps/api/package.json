@@ -15,6 +15,7 @@
     "test:blockchain": "vitest run src/modules/blockchain",
     "test:custody-transfers": "vitest run src/modules/custody-transfers/custody-transfer.test.ts",
     "test:ingredient-batches": "vitest run src/modules/ingredient-batches/ingredient-batch.test.ts",
+    "test:document-extraction": "vitest run src/modules/document-extraction",
     "test:production-flow": "vitest run src/modules/production-flow/production-flow.test.ts",
     "test:product-traceability": "vitest run src/modules/product-traceability/product-traceability.test.ts",
     "test:stakeholder-directory": "vitest run src/modules/stakeholder-directory/stakeholder-directory.test.ts",
@@ -22,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
+    "@tesseract.js-data/eng": "^1.0.0",
     "@tracechain/shared": "^0.1.0",
     "@tracechain/ssi": "^0.1.0",
     "@veramo/core": "^7.0.2",
@@ -38,14 +40,21 @@
     "dotenv": "^18.0.7",
     "ethers": "^6.17.0",
     "express": "^5.3.0",
+    "file-type": "^22.3.0",
+    "image-size": "^2.1.0",
     "key-did-resolver": "^4.0.0",
+    "mammoth": "^1.13.0",
+    "multer": "^2.5.0",
+    "pdfjs-dist": "^6.5.438",
     "siwe": "^3.0.0",
+    "tesseract.js": "^7.0.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/multer": "^2.3.0",
     "@types/node": "^26.6.5",
     "@types/supertest": "^7.2.1",
     "supertest": "^7.3.1",

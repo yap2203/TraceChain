@@ -52,13 +52,18 @@ export class IngredientBatchService {
     this.clock = dependencies.clock ?? (() => new Date());
   }
 
-  async prepare(sessionId: string | undefined, input: IngredientBatchRequest) {
+  async requireSupplierDocumentAccess(sessionId: string | undefined) {
     const session = await this.requireSupplier(sessionId);
     const supplierWallet = getAddress(session.address);
     await this.requireChainAuthorization(
       supplierWallet,
       session.onChainAuthorization!.credentialHash!,
     );
+    return { supplierWallet };
+  }
+
+  async prepare(sessionId: string | undefined, input: IngredientBatchRequest) {
+    const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
 
     const normalized = this.issueInput(input, supplierWallet);
     const batchId = id(input.batchReference);
@@ -94,12 +99,7 @@ export class IngredientBatchService {
   }
 
   async list(sessionId: string | undefined) {
-    const session = await this.requireSupplier(sessionId);
-    const supplierWallet = getAddress(session.address);
-    await this.requireChainAuthorization(
-      supplierWallet,
-      session.onChainAuthorization!.credentialHash!,
-    );
+    const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
     const batchIds = await this.safeGateway(() =>
       this.dependencies.gateway.listBatchIds(supplierWallet),
     );

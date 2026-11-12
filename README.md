@@ -36,6 +36,15 @@ intact. Suppliers can also attach an optional validated presentation image to an
 Supplier decisions are recorded on-chain and never reserve stock, process payment or dispatch goods.
 See [the Supplier management flow](docs/BROWSE_REQUESTS_README.md#supplier-management).
 
+Supplier ingredient registration also supports document-assisted data entry. An authorized Supplier
+may upload one PDF, DOCX, PNG or JPG/JPEG document up to 10 MB; the API extracts embedded text or
+runs local English OCR, then prefills the existing registration form with per-field confidence
+labels. The Supplier must review, edit and explicitly confirm every extracted value before the
+existing credential and MetaMask registration workflow can continue. Extraction does not register a
+batch, issue a credential, submit a transaction, store the source document, upload it to IPFS or
+independently verify that its claims are truthful. Scanned PDFs without embedded text should be
+uploaded as PNG/JPG pages or entered manually.
+
 The updated IngredientRegistry and SupplyChainOrders require a fresh complete suite deployment
 to enable listing management and approve/reject. Missing capabilities produce explicit update
 messages; existing source credentials, keys, deployment journals and `.env` are preserved.
