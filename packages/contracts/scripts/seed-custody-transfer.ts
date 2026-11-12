@@ -318,6 +318,7 @@ async function main() {
   const qrPayload = encodeTransferQrPayload({
     chainId,
     custodyTransferAddress: custodyAddress,
+    publicAppUrl: required('VITE_PUBLIC_APP_URL'),
     transferId: transferId as `0x${string}`,
     version: 1,
   });

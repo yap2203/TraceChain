@@ -133,6 +133,15 @@ export function transferResolutionMessage(error: unknown) {
     TRANSFER_LOOKUP_UNAVAILABLE:
       'The blockchain transfer service is temporarily unavailable. Try again later.',
     TRANSFER_NOT_AWAITING_RECEIPT: 'This transfer has already been processed or is no longer open.',
+    TRANSFER_ALREADY_RECEIVED: 'This shipment has already been received on-chain.',
+    TRANSFER_CANCELLED: 'This shipment was cancelled and cannot be received.',
+    TRANSFER_REJECTED: 'This shipment was rejected and cannot be received.',
+    TRANSFER_DISCREPANCY_REPORTED: 'A receipt discrepancy is already under review.',
+    RECEIPT_ROLE_REQUIRED: 'An active Distributor or Retailer recipient credential is required.',
+    RECEIVE_TRANSFER_PERMISSION_REQUIRED:
+      'Your company is not currently permitted to receive transfers.',
+    RECEIPT_AUTHORIZATION_UNAVAILABLE:
+      'TraceChain could not check receipt permission. Try again later.',
     TRANSFER_NOT_FOUND: 'The referenced custody transfer was not found.',
   };
 

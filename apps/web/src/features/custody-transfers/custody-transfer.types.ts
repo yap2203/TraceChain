@@ -64,4 +64,5 @@ export interface PreparedDiscrepancyResolution {
 export interface TransferQrConfiguration {
   chainId: number;
   contractAddress: string;
+  publicAppUrl: string;
 }

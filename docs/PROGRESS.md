@@ -334,6 +334,13 @@
 - Added recipient-only receipt confirmation: the API revalidates authorization and returns unsigned
   calldata, MetaMask submits it, the UI waits for the receipt, and the API refreshes the confirmed
   contract record. QR scanning remains read-only.
+- Replaced newly generated custody custom-URI locators with canonical HTTPS
+  `/receive/transfer` links tied to `VITE_PUBLIC_APP_URL`; added the public responsive phone route,
+  SIWE session restoration, MetaMask Mobile login, exact origin/path validation, copy/PNG/print
+  actions, real-ID-only generation, and explicit lifecycle error states. Legacy custom URIs remain
+  available only through manual paste.
+- Receipt resolution and transaction preparation now also require an active Distributor or Retailer
+  credential and effective on-chain `RECEIVE_TRANSFER` permission; opening a QR remains read-only.
 - Expanded the custody-transfer API suite to 16 injected-gateway tests, including exact
   `confirmReceipt` calldata encoding without a live RPC.
 - Implemented the real Manufacturer-to-Distributor production workflow: encrypted challenge-bound

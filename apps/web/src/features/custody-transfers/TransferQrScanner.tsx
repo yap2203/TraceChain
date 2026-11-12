@@ -24,6 +24,7 @@ import type {
 } from './custody-transfer.types';
 import { cameraErrorMessage, type TransferQrReader, ZxingTransferQrReader } from './qr-reader';
 import { receiptConfirmationMessage, submitReceiptConfirmation } from './receipt-confirmation';
+import { normalizeManualTransferQrPayload } from './transfer-qr';
 import {
   ReceiptReconciliationForm,
   type ReceiptReconciliationInput,
@@ -34,6 +35,7 @@ import './custody-transfer.css';
 type ScanMethod = 'camera' | 'upload' | 'manual';
 
 interface TransferQrScannerProps {
+  initialPayload?: string;
   onClose?: () => void;
   onResolved?: (transfer: ResolvedCustodyTransfer) => void;
   prepareConfirmation?: (input: ReceiptReconciliationInput) => Promise<PreparedReceiptAction>;
@@ -48,6 +50,7 @@ interface TransferQrScannerProps {
 }
 
 export function TransferQrScanner({
+  initialPayload,
   onClose,
   onResolved,
   prepareConfirmation = prepareReceiptConfirmation,
@@ -76,6 +79,7 @@ export function TransferQrScanner({
   const receiptMinedRef = useRef(false);
   const readerRef = useRef(reader ?? new ZxingTransferQrReader());
   const mountedRef = useRef(true);
+  const initialPayloadSubmittedRef = useRef(false);
 
   const stopCamera = useCallback(() => {
     stopCameraRef.current?.();
@@ -129,6 +133,12 @@ export function TransferQrScanner({
     },
     [onResolved, resolvePayload, stopCamera],
   );
+
+  useEffect(() => {
+    if (!initialPayload || initialPayloadSubmittedRef.current) return;
+    initialPayloadSubmittedRef.current = true;
+    void submitPayload(initialPayload);
+  }, [initialPayload, submitPayload]);
 
   const startCamera = async () => {
     if (cameraState !== 'idle' || requestActiveRef.current || !videoRef.current) return;
@@ -286,108 +296,132 @@ export function TransferQrScanner({
 
       {!resolved ? (
         <>
-          <div className="transfer-scanner-tabs" role="tablist" aria-label="QR input method">
-            {(
-              [
-                ['camera', Camera, 'Camera'],
-                ['upload', FileImage, 'Image upload'],
-                ['manual', Keyboard, 'Manual paste'],
-              ] as const
-            ).map(([value, Icon, label]) => (
-              <button
-                aria-selected={method === value}
-                key={value}
-                onClick={() => selectMethod(value)}
-                role="tab"
-                type="button"
-              >
-                <Icon aria-hidden="true" size={16} />
-                {label}
-              </button>
-            ))}
-          </div>
+          {!initialPayload && (
+            <>
+              <div className="transfer-scanner-tabs" role="tablist" aria-label="QR input method">
+                {(
+                  [
+                    ['camera', Camera, 'Camera'],
+                    ['upload', FileImage, 'Image upload'],
+                    ['manual', Keyboard, 'Manual paste'],
+                  ] as const
+                ).map(([value, Icon, label]) => (
+                  <button
+                    aria-selected={method === value}
+                    key={value}
+                    onClick={() => selectMethod(value)}
+                    role="tab"
+                    type="button"
+                  >
+                    <Icon aria-hidden="true" size={16} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
           <div className="transfer-scanner-panel">
-            {method === 'camera' && (
-              <div className="transfer-camera-panel" role="tabpanel">
-                <div className="transfer-camera-preview">
-                  <video aria-label="Camera preview" muted playsInline ref={videoRef} />
-                  {cameraState !== 'active' && (
-                    <div className="transfer-camera-placeholder">
-                      <ScanLine aria-hidden="true" size={36} />
-                      <strong>
-                        {cameraState === 'starting' ? 'Starting camera…' : 'Camera is off'}
-                      </strong>
-                      <span>Permission is requested only after you select Start camera.</span>
+            {initialPayload && !error && (
+              <div className="transfer-direct-resolution-copy">
+                <strong>Checking this shipment</strong>
+                <p>TraceChain is validating the link and your recipient access.</p>
+              </div>
+            )}
+            {!initialPayload && (
+              <>
+                {method === 'camera' && (
+                  <div className="transfer-camera-panel" role="tabpanel">
+                    <div className="transfer-camera-preview">
+                      <video aria-label="Camera preview" muted playsInline ref={videoRef} />
+                      {cameraState !== 'active' && (
+                        <div className="transfer-camera-placeholder">
+                          <ScanLine aria-hidden="true" size={36} />
+                          <strong>
+                            {cameraState === 'starting' ? 'Starting camera…' : 'Camera is off'}
+                          </strong>
+                          <span>Permission is requested only after you select Start camera.</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="transfer-scanner-actions">
-                  {cameraState === 'active' ? (
-                    <button className="transfer-qr-secondary" onClick={stopCamera} type="button">
-                      Stop camera
-                    </button>
-                  ) : (
+                    <div className="transfer-scanner-actions">
+                      {cameraState === 'active' ? (
+                        <button
+                          className="transfer-qr-secondary"
+                          onClick={stopCamera}
+                          type="button"
+                        >
+                          Stop camera
+                        </button>
+                      ) : (
+                        <button
+                          className="transfer-qr-button"
+                          disabled={cameraState === 'starting' || resolving}
+                          onClick={() => void startCamera()}
+                          type="button"
+                        >
+                          <Camera aria-hidden="true" size={16} />
+                          Start camera
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {method === 'upload' && (
+                  <div className="transfer-upload-panel" role="tabpanel">
+                    <FileImage aria-hidden="true" size={34} />
+                    <strong>Choose a QR image</strong>
+                    <p>Use a clear PNG, JPG, or WebP image containing one QR code.</p>
                     <button
                       className="transfer-qr-button"
-                      disabled={cameraState === 'starting' || resolving}
-                      onClick={() => void startCamera()}
+                      disabled={resolving}
+                      onClick={() => fileRef.current?.click()}
                       type="button"
                     >
-                      <Camera aria-hidden="true" size={16} />
-                      Start camera
+                      Browse image
                     </button>
-                  )}
-                </div>
-              </div>
-            )}
+                    <input
+                      accept="image/png,image/jpeg,image/webp"
+                      aria-label="Choose QR image"
+                      className="transfer-file-input"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (file) void readImage(file);
+                      }}
+                      ref={fileRef}
+                      type="file"
+                    />
+                  </div>
+                )}
 
-            {method === 'upload' && (
-              <div className="transfer-upload-panel" role="tabpanel">
-                <FileImage aria-hidden="true" size={34} />
-                <strong>Choose a QR image</strong>
-                <p>Use a clear PNG, JPG, or WebP image containing one QR code.</p>
-                <button
-                  className="transfer-qr-button"
-                  disabled={resolving}
-                  onClick={() => fileRef.current?.click()}
-                  type="button"
-                >
-                  Browse image
-                </button>
-                <input
-                  accept="image/png,image/jpeg,image/webp"
-                  aria-label="Choose QR image"
-                  className="transfer-file-input"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) void readImage(file);
-                  }}
-                  ref={fileRef}
-                  type="file"
-                />
-              </div>
-            )}
-
-            {method === 'manual' && (
-              <div className="transfer-manual-panel" role="tabpanel">
-                <label htmlFor="transfer-qr-payload">Complete TraceChain QR payload</label>
-                <textarea
-                  id="transfer-qr-payload"
-                  onChange={(event) => setManualPayload(event.target.value)}
-                  placeholder="tracechain://transfer/v1?chainId=…"
-                  rows={5}
-                  value={manualPayload}
-                />
-                <button
-                  className="transfer-qr-button"
-                  disabled={resolving || !manualPayload.trim()}
-                  onClick={() => void submitPayload(manualPayload)}
-                  type="button"
-                >
-                  Verify transfer
-                </button>
-              </div>
+                {method === 'manual' && (
+                  <div className="transfer-manual-panel" role="tabpanel">
+                    <label htmlFor="transfer-qr-payload">Complete TraceChain QR payload</label>
+                    <textarea
+                      id="transfer-qr-payload"
+                      onChange={(event) => setManualPayload(event.target.value)}
+                      placeholder="https://tracechain.example/receive/transfer?v=1&chainId=…"
+                      rows={5}
+                      value={manualPayload}
+                    />
+                    <button
+                      className="transfer-qr-button"
+                      disabled={resolving || !manualPayload.trim()}
+                      onClick={() => {
+                        try {
+                          void submitPayload(normalizeManualTransferQrPayload(manualPayload));
+                        } catch {
+                          setError('This is not a valid TraceChain custody-transfer QR code.');
+                        }
+                      }}
+                      type="button"
+                    >
+                      Verify transfer
+                    </button>
+                  </div>
+                )}
+              </>
             )}
 
             {resolving && (
@@ -400,6 +434,19 @@ export function TransferQrScanner({
               <div className="transfer-scanner-error" role="alert">
                 {error}
               </div>
+            )}
+            {initialPayload && error && (
+              <button
+                className="transfer-qr-secondary"
+                onClick={() => {
+                  initialPayloadSubmittedRef.current = true;
+                  setError(null);
+                  void submitPayload(initialPayload);
+                }}
+                type="button"
+              >
+                Try again
+              </button>
             )}
           </div>
         </>

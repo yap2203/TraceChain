@@ -629,11 +629,13 @@ function createDefaultCustodyTransferService(
 ) {
   let blockchainEnvironment: ReturnType<typeof loadBlockchainEnvironment> | undefined;
   let gateway: CustodyTransferGateway | undefined;
+  let permissionGateway: BlockchainGatewayService | undefined;
   const configuration = () => {
     blockchainEnvironment ??= loadBlockchainEnvironment();
     return {
       chainId: env.CHAIN_ID,
       contractAddress: blockchainEnvironment.CUSTODY_TRANSFER_ADDRESS,
+      publicAppUrl: env.VITE_PUBLIC_APP_URL,
     };
   };
 
@@ -737,6 +739,10 @@ function createDefaultCustodyTransferService(
     configuration,
     contentStore,
     gateway: lazyGateway,
+    hasReceiptPermission: async (address, permission) => {
+      permissionGateway ??= createDefaultBlockchainGateway();
+      return (await permissionGateway.getPersonalPermission(address, permission)).effective;
+    },
     productMetadata,
     receiptRepository: new JsonReceiptWorkflowRepository(
       fileURLToPath(new URL('custody-receipts.json', repositoryRoot)),

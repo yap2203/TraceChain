@@ -20,6 +20,7 @@ describe('frontend test environment', () => {
     expect(loadTransferQrConfiguration()).toEqual({
       chainId: 31_337,
       contractAddress: '0x4000000000000000000000000000000000000004',
+      publicAppUrl: 'http://localhost:5173',
     });
   });
 });

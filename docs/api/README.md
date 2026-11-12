@@ -52,40 +52,40 @@ Company registration numbers, raw credentials, encrypted payloads, private profi
 
 Copy the repository-root `.env.example` to the repository-root `.env`. The API loads this file using a repository-relative absolute path, independent of the terminal working directory. Available API values are:
 
-| Variable                         | Default example          | Purpose                               |
-| -------------------------------- | ------------------------ | ------------------------------------- |
-| `PORT`                           | `3000`                   | HTTP port                             |
-| `FRONTEND_URL`                   | `http://localhost:5173`  | Exact CORS origin                     |
-| `NODE_ENV`                       | `development`            | Controls production cookie security   |
-| `SIWE_DOMAIN`                    | `localhost:5173`         | Expected ERC-4361 domain              |
-| `SIWE_URI`                       | `http://localhost:5173`  | Expected ERC-4361 URI                 |
-| `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID     |
-| `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name          |
-| `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads   |
-| `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol   |
-| `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry         |
-| `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry          |
-| `INGREDIENT_REGISTRY_ADDRESS`    | Address placeholder      | Deployed ingredient registry          |
-| `EVIDENCE_REGISTRY_ADDRESS`      | Address placeholder      | Deployed evidence registry            |
-| `PRODUCT_REGISTRY_ADDRESS`       | Address placeholder      | Deployed product registry             |
-| `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract    |
-| `VITE_PUBLIC_APP_URL`            | `http://localhost:5173`  | Canonical public product-QR origin    |
-| `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                   |
-| `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds           |
-| `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider    |
-| `VERAMO_KMS_SECRET_KEY`          | Placeholder only         | 32-byte hex SecretBox encryption key  |
-| `TRACECHAIN_AUTHORITY_DID_ALIAS` | `tracechain-authority`   | Authority DID lookup alias            |
-| `BOOTSTRAP_ADMIN_WALLET`         | Zero-address placeholder | Public Admin wallet address           |
-| `IPFS_PINNING_API_URL`           | Placeholder URL          | Encrypted credential pinning endpoint |
-| `IPFS_PINNING_TOKEN`             | Placeholder only         | Scoped server-side pinning token      |
-| `IPFS_ENCRYPTION_KEY`            | Placeholder only         | 32-byte hex credential encryption key |
+| Variable                         | Default example          | Purpose                                        |
+| -------------------------------- | ------------------------ | ---------------------------------------------- |
+| `PORT`                           | `3000`                   | HTTP port                                      |
+| `FRONTEND_URL`                   | `http://localhost:5173`  | Exact CORS origin                              |
+| `NODE_ENV`                       | `development`            | Controls production cookie security            |
+| `SIWE_DOMAIN`                    | `localhost:5173`         | Expected ERC-4361 domain                       |
+| `SIWE_URI`                       | `http://localhost:5173`  | Expected ERC-4361 URI                          |
+| `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID              |
+| `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name                   |
+| `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads            |
+| `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol            |
+| `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry                  |
+| `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry                   |
+| `INGREDIENT_REGISTRY_ADDRESS`    | Address placeholder      | Deployed ingredient registry                   |
+| `EVIDENCE_REGISTRY_ADDRESS`      | Address placeholder      | Deployed evidence registry                     |
+| `PRODUCT_REGISTRY_ADDRESS`       | Address placeholder      | Deployed product registry                      |
+| `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract             |
+| `VITE_PUBLIC_APP_URL`            | `http://localhost:5173`  | Canonical public product and receipt-QR origin |
+| `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                            |
+| `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds                    |
+| `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider             |
+| `VERAMO_KMS_SECRET_KEY`          | Placeholder only         | 32-byte hex SecretBox encryption key           |
+| `TRACECHAIN_AUTHORITY_DID_ALIAS` | `tracechain-authority`   | Authority DID lookup alias                     |
+| `BOOTSTRAP_ADMIN_WALLET`         | Zero-address placeholder | Public Admin wallet address                    |
+| `IPFS_PINNING_API_URL`           | Placeholder URL          | Encrypted credential pinning endpoint          |
+| `IPFS_PINNING_TOKEN`             | Placeholder only         | Scoped server-side pinning token               |
+| `IPFS_ENCRYPTION_KEY`            | Placeholder only         | 32-byte hex credential encryption key          |
 
 `FRONTEND_URL`, `SIWE_DOMAIN`, and `SIWE_URI` must match the frontend origin used in the browser.
 
 The root template also contains `DEV_DISTRIBUTOR_WALLET` for the chain-31337 seed command. It is a
 public unlocked Hardhat address consumed by the CLI, not an API runtime secret.
 
-For deployed product labels, `VITE_PUBLIC_APP_URL` must be the externally reachable HTTPS
+For deployed product and receipt labels, `VITE_PUBLIC_APP_URL` must be the externally reachable HTTPS
 application origin. Its URL parameters never choose the API's RPC endpoint.
 
 SSI variables are loaded lazily when an SSI operation needs them. Blockchain RPC and registry configuration are required for direct login authorization, although injected SIWE unit tests do not require a live chain. The API and frontend both use `CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. The example KMS value and zero addresses intentionally fail SSI operations or command validation. Never provide or store the Admin wallet private key.
@@ -227,12 +227,15 @@ Workflow retries reuse ignored metadata under `.tracechain/issuance/production-f
 Requires a SIWE session currently authorized against the blockchain registries. The request contains only the Stage 1 locator:
 
 ```json
-{ "qrPayload": "tracechain://transfer/v1?chainId=31337&contract=0x...&transferId=0x..." }
+{
+  "qrPayload": "https://tracechain.example/receive/transfer?v=1&chainId=11155111&contract=0x...&transferId=0x..."
+}
 ```
 
-The API verifies the configured chain and `CUSTODY_TRANSFER_ADDRESS`, reads
-`getTransfer(transferId)`, requires status `1` (`AwaitingReceipt`), and requires the SIWE wallet to
-equal the on-chain recipient. A successful response contains the safe transfer fields plus readable
+The API verifies the exact configured application origin, chain and `CUSTODY_TRANSFER_ADDRESS`,
+reads `getTransfer(transferId)`, requires status `1` (`AwaitingReceipt`), requires the SIWE wallet
+to equal the on-chain recipient, and rechecks the active Distributor/Retailer credential and
+effective `RECEIVE_TRANSFER` permission. A successful response contains safe fields plus readable
 product/company presentation and current usable, damaged, and rejected totals. Technical IDs and
 wallets are kept in the frontend's collapsed Technical details.
 

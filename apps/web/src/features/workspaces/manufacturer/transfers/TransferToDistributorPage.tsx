@@ -164,7 +164,7 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
                 message="Transfer confirmed with Awaiting Receipt status. Share this QR with the intended Distributor."
               />
               <div style={{ marginTop: 14 }}>
-                <TransferQrDisplay transferId={transferId} />
+                <TransferQrDisplay shipmentReference={shipmentReference} transferId={transferId} />
               </div>
             </>
           ) : (

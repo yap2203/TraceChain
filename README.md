@@ -460,24 +460,25 @@ Private company documents and evidence are encrypted before being sent to a conf
 
 ## Custody-transfer QR locator
 
-TraceChain uses this canonical version 1 reference:
+TraceChain uses this canonical phone-camera-compatible version 1 reference:
 
 ```text
-tracechain://transfer/v1?chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}
+{publicAppUrl}/receive/transfer?v=1&chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}
 ```
 
 The QR payload is only an untrusted locator for an existing on-chain transfer. It never contains
 quantity, product, credential, company, private-document, key, wallet-secret, or receipt data.
-The frontend generates the QR only from a successful on-chain `bytes32` transfer ID, using the
-configured `CHAIN_ID` and `CUSTODY_TRANSFER_ADDRESS`. It supports live camera scanning, PNG/JPG/WebP
-QR upload, and manual payload paste. Decoded QR fields are never treated as transfer data or shown
-as verified data.
+The frontend generates the QR only from a successful on-chain `bytes32` transfer ID, using
+`VITE_PUBLIC_APP_URL`, the configured `CHAIN_ID`, and `CUSTODY_TRANSFER_ADDRESS`. The public
+`/receive/transfer` route validates that exact origin and path, restores an existing SIWE session,
+or opens the existing MetaMask Mobile flow on a phone. Legacy `tracechain://` payloads are accepted
+only by manual paste for backwards compatibility. Decoded fields are never treated as verified data.
 
 `POST /api/custody-transfers/resolve-qr` requires a fully credential-authorized SIWE session,
 resolves `getTransfer(transferId)` through a read-only gateway, and verifies the configured chain,
-contract deployment, `AwaitingReceipt` status, and intended recipient before returning a minimal
-transfer summary. The frontend displays that summary only after this response succeeds. Scanning
-never prepares or sends a transaction.
+contract deployment, `AwaitingReceipt` status, intended Distributor/Retailer recipient, and current
+`RECEIVE_TRANSFER` permission before returning a minimal transfer summary. The frontend displays
+that summary only after this response succeeds. Scanning never prepares or sends a transaction.
 
 After resolution, the intended recipient records actual, damaged, and rejected quantities; usable
 quantity is calculated as `actual - damaged - rejected`. Receipt notes and optional PNG, JPEG,
@@ -543,7 +544,10 @@ genuine.
 
 Set `VITE_PUBLIC_APP_URL` to the externally reachable HTTPS application origin when generating
 production labels. A normal phone camera can open that HTTPS link. Another phone cannot open a
-developer machine's `localhost`; local phone testing needs a reachable LAN/HTTPS configuration.
+developer machine's `localhost`. A complete phone test needs an externally reachable HTTPS
+frontend and API, reachable RPC, configured deployed contracts, an onboarded recipient wallet, and
+a real `AwaitingReceipt` transfer; Sepolia is recommended for the final demonstration. Keep the
+session cookie HttpOnly, Secure in production, and SameSite=Lax for a same-site frontend/API.
 
 ## Ingredient selective disclosure
 

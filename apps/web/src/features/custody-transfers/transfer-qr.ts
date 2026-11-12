@@ -1,4 +1,4 @@
-import { encodeTransferQrPayload } from '@tracechain/shared';
+import { decodeTransferQrPayload, encodeTransferQrPayload } from '@tracechain/shared';
 import { getAddress, isHexString } from 'ethers';
 import qrcode from 'qrcode-generator';
 
@@ -12,13 +12,18 @@ export interface TransferQrModel {
 
 export function loadTransferQrConfiguration(): TransferQrConfiguration {
   const contractAddress = import.meta.env.VITE_CUSTODY_TRANSFER_ADDRESS;
+  const publicAppUrl = import.meta.env.VITE_PUBLIC_APP_URL;
   if (!contractAddress) {
     throw new Error('CUSTODY_TRANSFER_ADDRESS is not configured for the frontend.');
+  }
+  if (!publicAppUrl) {
+    throw new Error('VITE_PUBLIC_APP_URL is not configured for transfer QR generation.');
   }
 
   return {
     chainId: chainConfig.chainId,
     contractAddress: getAddress(contractAddress),
+    publicAppUrl,
   };
 }
 
@@ -34,6 +39,7 @@ export function createTransferQrPayload(
   return encodeTransferQrPayload({
     chainId: resolvedConfiguration.chainId,
     custodyTransferAddress: resolvedConfiguration.contractAddress,
+    publicAppUrl: resolvedConfiguration.publicAppUrl,
     transferId: transferId as `0x${string}`,
     version: 1,
   });
@@ -54,4 +60,17 @@ export function createTransferQrModel(
     ),
     payload,
   };
+}
+
+export function normalizeManualTransferQrPayload(value: string) {
+  const configuration = loadTransferQrConfiguration();
+  if (!value.trim().startsWith('tracechain://')) return value.trim();
+  const legacy = decodeTransferQrPayload(value.trim(), {
+    allowLegacy: true,
+    publicAppUrl: configuration.publicAppUrl,
+  });
+  return encodeTransferQrPayload({
+    ...legacy,
+    publicAppUrl: configuration.publicAppUrl,
+  });
 }

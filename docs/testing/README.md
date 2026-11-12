@@ -59,6 +59,16 @@ The Hardhat suite covers stakeholder authorization, administrator transfer with 
 
 Targeted browser checks have validated all integrated stakeholder pages at 320, 390, 768, and 1440 pixel widths, including canonical navigation, local-development access, production access denial, responsive dialogs, loading indicators, table pagination, filters, and page-size controls. These browser checks currently live as local development scripts rather than a committed browser-test package.
 
+## Mobile receipt-confirmation demonstration
+
+A phone cannot open the development machine's `localhost` URL. Use an externally reachable HTTPS
+frontend and API, a phone-reachable RPC, configured deployed contracts, an onboarded Distributor or
+Retailer wallet with `RECEIVE_TRANSFER`, and a real `AwaitingReceipt` transfer for that wallet.
+Set `VITE_PUBLIC_APP_URL` to the exact frontend origin before generating the Receipt Confirmation
+QR. Sepolia is recommended for the final demonstration. Keep the production session cookie
+HttpOnly, Secure, and SameSite=Lax on a same-site frontend/API deployment. Scanning should open
+`/receive/transfer`; MetaMask Mobile performs SIWE and the later transaction signature separately.
+
 ## Required future coverage
 
 - API persistence, concurrency, and failure recovery

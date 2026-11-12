@@ -6,159 +6,100 @@ import {
   TransferQrError,
   TransferQrErrorCode,
   type TransferQrErrorCodeValue,
-  type TransferQrPayload,
 } from '../src/qr/transfer-qr.js';
 
-const contractAddress = '0x5fbdb2315678afecb367f032d93f642f64180aa3';
-const checksummedContractAddress = getAddress(contractAddress);
+const publicAppUrl = 'https://tracechain.example';
+const localAppUrl = 'http://localhost:5173';
+const contract = getAddress('0x5fbdb2315678afecb367f032d93f642f64180aa3');
 const transferId = `0x${'ab'.repeat(32)}` as const;
+const canonical = `${publicAppUrl}/receive/transfer?v=1&chainId=11155111&contract=${contract}&transferId=${transferId}`;
 
-const localPayload: TransferQrPayload = {
-  version: 1,
-  chainId: 31_337,
-  custodyTransferAddress: contractAddress,
-  transferId,
-};
-
-function expectError(value: string, code: TransferQrErrorCodeValue): void {
-  try {
-    decodeTransferQrPayload(value);
-    throw new Error('Expected decodeTransferQrPayload to reject the payload.');
-  } catch (error) {
-    expect(error).toBeInstanceOf(TransferQrError);
-    expect((error as TransferQrError).code).toBe(code);
-  }
+function error(value: string, code: TransferQrErrorCodeValue, app = publicAppUrl) {
+  expect(() => decodeTransferQrPayload(value, { publicAppUrl: app })).toThrowError(
+    expect.objectContaining<Partial<TransferQrError>>({ code }),
+  );
 }
 
-describe('transfer custody QR payloads', () => {
-  it('encodes a canonical Hardhat local-chain payload', () => {
-    expect(encodeTransferQrPayload(localPayload)).toBe(
-      `tracechain://transfer/v1?chainId=31337&contract=${checksummedContractAddress}&transferId=${transferId}`,
-    );
-  });
-
-  it('encodes and decodes a Sepolia payload', () => {
-    const encoded = encodeTransferQrPayload({ ...localPayload, chainId: 11_155_111 });
-
-    expect(decodeTransferQrPayload(encoded)).toEqual({
-      ...localPayload,
+describe('HTTPS custody-transfer QR payloads', () => {
+  it('generates a canonical phone-camera-compatible HTTPS URL', () => {
+    expect(
+      encodeTransferQrPayload({
+        version: 1,
+        chainId: 11_155_111,
+        custodyTransferAddress: contract.toLowerCase(),
+        transferId,
+        publicAppUrl,
+      }),
+    ).toBe(canonical);
+    expect(decodeTransferQrPayload(canonical, { publicAppUrl })).toEqual({
+      version: 1,
       chainId: 11_155_111,
-      custodyTransferAddress: checksummedContractAddress,
+      custodyTransferAddress: contract,
+      transferId,
     });
   });
 
-  it('normalizes address checksum and transfer ID case', () => {
-    const encoded = encodeTransferQrPayload({
-      ...localPayload,
-      transferId: transferId.toUpperCase().replace('0X', '0x') as `0x${string}`,
+  it('allows localhost HTTP for development', () => {
+    const value = encodeTransferQrPayload({
+      version: 1,
+      chainId: 31_337,
+      custodyTransferAddress: contract,
+      transferId,
+      publicAppUrl: localAppUrl,
     });
-
-    expect(encoded).toContain(`contract=${checksummedContractAddress}`);
-    expect(encoded).toContain(`transferId=${transferId}`);
-  });
-
-  it('round trips without changing the canonical payload', () => {
-    const encoded = encodeTransferQrPayload(localPayload);
-
-    expect(encodeTransferQrPayload(decodeTransferQrPayload(encoded))).toBe(encoded);
+    expect(value.startsWith('http://localhost:5173/receive/transfer?')).toBe(true);
+    expect(decodeTransferQrPayload(value, { publicAppUrl: localAppUrl }).chainId).toBe(31_337);
   });
 
   it.each([
-    [
-      'incorrect protocol',
-      `https://transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-    ],
-    [
-      'incorrect protocol case',
-      `Tracechain://transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-    ],
-    [
-      'incorrect resource',
-      `tracechain://product/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-    ],
-    [
-      'incorrect resource case',
-      `tracechain://Transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-    ],
-    [
-      'username',
-      `tracechain://user@transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-    ],
-    [
-      'password',
-      `tracechain://user:secret@transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-    ],
-    [
-      'port',
-      `tracechain://transfer:1234/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-    ],
-    [
-      'fragment',
-      `tracechain://transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}#receipt`,
-    ],
-  ])('rejects %s', (_name, value) => {
-    expectError(value, TransferQrErrorCode.MALFORMED_QR_PAYLOAD);
+    'http://tracechain.example',
+    'ftp://tracechain.example',
+    'https://user@tracechain.example',
+    'https://tracechain.example/path',
+  ])('rejects an unsafe public application URL: %s', (value) => {
+    expect(() =>
+      encodeTransferQrPayload({
+        version: 1,
+        chainId: 1,
+        custodyTransferAddress: contract,
+        transferId,
+        publicAppUrl: value,
+      }),
+    ).toThrowError(expect.objectContaining({ code: TransferQrErrorCode.INVALID_PUBLIC_APP_URL }));
   });
 
-  it('rejects unsupported versions', () => {
-    expectError(
-      `tracechain://transfer/v2?chainId=31337&contract=${contractAddress}&transferId=${transferId}`,
-      TransferQrErrorCode.UNSUPPORTED_QR_VERSION,
+  it('requires the configured origin including its port', () => {
+    error(canonical, TransferQrErrorCode.PUBLIC_APP_ORIGIN_MISMATCH, 'https://other.example');
+    error(
+      canonical,
+      TransferQrErrorCode.PUBLIC_APP_ORIGIN_MISMATCH,
+      'https://tracechain.example:444',
     );
   });
 
-  it('rejects a missing query parameter', () => {
-    expectError(
-      `tracechain://transfer/v1?chainId=31337&contract=${contractAddress}`,
-      TransferQrErrorCode.MISSING_PARAMETER,
-    );
-  });
+  it.each([
+    [canonical.replace('/receive/transfer', '/receipt'), TransferQrErrorCode.MALFORMED_QR_PAYLOAD],
+    [canonical.replace('?v=1', '?'), TransferQrErrorCode.MISSING_PARAMETER],
+    [`${canonical}&chainId=1`, TransferQrErrorCode.DUPLICATE_PARAMETER],
+    [`${canonical}&rpcUrl=https://rpc.example`, TransferQrErrorCode.UNKNOWN_PARAMETER],
+    [`${canonical}#receipt`, TransferQrErrorCode.MALFORMED_QR_PAYLOAD],
+    [
+      canonical.replace('?v=1&chainId=11155111', '?chainId=11155111&v=1'),
+      TransferQrErrorCode.NON_CANONICAL_PARAMETER_ORDER,
+    ],
+    [canonical.replace('chainId=11155111', 'chainId=0'), TransferQrErrorCode.INVALID_CHAIN_ID],
+    [canonical.replace(contract, '0x1234'), TransferQrErrorCode.INVALID_CONTRACT_ADDRESS],
+    [
+      canonical.replace(transferId, `0x${'ab'.repeat(31)}`),
+      TransferQrErrorCode.INVALID_TRANSFER_ID,
+    ],
+  ])('rejects malformed or non-canonical transfer links', (value, code) => error(value, code));
 
-  it('rejects a duplicate query parameter', () => {
-    expectError(
-      `tracechain://transfer/v1?chainId=31337&chainId=11155111&contract=${contractAddress}&transferId=${transferId}`,
-      TransferQrErrorCode.DUPLICATE_PARAMETER,
-    );
-  });
-
-  it.each(['credential', 'privateKey', 'company', 'quantity', 'receipt'])(
-    'rejects the unexpected %s parameter',
-    (parameter) => {
-      expectError(
-        `tracechain://transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${transferId}&${parameter}=secret`,
-        TransferQrErrorCode.UNKNOWN_PARAMETER,
-      );
-    },
-  );
-
-  it.each(['0', '-1', '1.5', '9007199254740992'])('rejects invalid chain ID %s', (chainId) => {
-    expectError(
-      `tracechain://transfer/v1?chainId=${chainId}&contract=${contractAddress}&transferId=${transferId}`,
-      TransferQrErrorCode.INVALID_CHAIN_ID,
-    );
-  });
-
-  it('rejects an invalid Ethereum address', () => {
-    expectError(
-      `tracechain://transfer/v1?chainId=31337&contract=0x1234&transferId=${transferId}`,
-      TransferQrErrorCode.INVALID_CONTRACT_ADDRESS,
-    );
-  });
-
-  it.each([`0x${'ab'.repeat(31)}`, `0x${'ab'.repeat(33)}`, `0x${'zz'.repeat(32)}`])(
-    'rejects invalid transfer ID %s',
-    (invalidTransferId) => {
-      expectError(
-        `tracechain://transfer/v1?chainId=31337&contract=${contractAddress}&transferId=${invalidTransferId}`,
-        TransferQrErrorCode.INVALID_TRANSFER_ID,
-      );
-    },
-  );
-
-  it('rejects an oversized payload before parsing it', () => {
-    expectError(
-      `tracechain://transfer/v1?${'x'.repeat(513)}`,
-      TransferQrErrorCode.PAYLOAD_TOO_LONG,
+  it('accepts the legacy custom URI only when explicitly enabled for manual paste', () => {
+    const legacy = `tracechain://transfer/v1?chainId=31337&contract=${contract}&transferId=${transferId}`;
+    error(legacy, TransferQrErrorCode.MALFORMED_QR_PAYLOAD);
+    expect(decodeTransferQrPayload(legacy, { allowLegacy: true, publicAppUrl }).chainId).toBe(
+      31_337,
     );
   });
 });

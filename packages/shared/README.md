@@ -15,20 +15,22 @@ This package contains small TypeScript definitions that are safe to share across
 The custody-transfer QR module exports:
 
 - `TransferQrPayload`
-- `encodeTransferQrPayload(payload)`
-- `decodeTransferQrPayload(value)`
+- `encodeTransferQrPayload(payloadWithPublicAppUrl)`
+- `decodeTransferQrPayload(value, options)`
 - `TransferQrError` and `TransferQrErrorCode`
 
 The version 1 canonical locator is:
 
 ```text
-tracechain://transfer/v1?chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}
+{publicAppUrl}/receive/transfer?v=1&chainId={chainId}&contract={custodyTransferAddress}&transferId={transferId}
 ```
 
-The query order is always `chainId`, `contract`, then `transferId`. Encoding normalizes the
+The query order is always `v`, `chainId`, `contract`, then `transferId`. Encoding normalizes the
 contract to its EIP-55 checksum and the bytes32 transfer ID to lowercase hexadecimal. Decoding
-rejects unsupported locations or versions, missing, duplicate, or unknown parameters, invalid
-values, fragments, credentials, and oversized payloads.
+requires the exact configured HTTPS origin and `/receive/transfer` path (localhost HTTP is allowed
+for development) and rejects unsupported versions, missing, duplicate, unknown or reordered
+parameters, invalid values, fragments, credentials, unexpected origins/ports, and oversized
+payloads. The legacy custom URI requires the explicit manual-paste compatibility option.
 
 This QR value is only an untrusted locator. It contains no quantity, product, credential, JWT,
 company, private document, encryption key, wallet secret, or receipt information. A successful

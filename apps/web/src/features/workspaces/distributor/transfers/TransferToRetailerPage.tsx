@@ -340,7 +340,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
             message={`Transfer created for ${retailer?.companyName ?? 'the selected Retailer'} and verified on chain with Awaiting Receipt status.`}
           />
           <div style={{ marginTop: 18 }}>
-            <TransferQrDisplay transferId={transferId} />
+            <TransferQrDisplay shipmentReference={shipmentReference} transferId={transferId} />
           </div>
           <TechnicalDetails
             fields={[

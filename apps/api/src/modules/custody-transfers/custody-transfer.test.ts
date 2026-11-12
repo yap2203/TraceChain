@@ -37,6 +37,7 @@ const CUSTODY_TRANSFER_ADDRESS = getAddress('0x400000000000000000000000000000000
 const OTHER_CONTRACT_ADDRESS = getAddress('0x5000000000000000000000000000000000000005');
 const TRANSFER_ID = `0x${'11'.repeat(32)}` as const;
 const PRODUCT_BATCH_ID = `0x${'22'.repeat(32)}`;
+const PUBLIC_APP_URL = 'http://localhost:5173';
 
 const awaitingTransfer: CustodyTransferRecord = {
   damaged: 0n,
@@ -76,6 +77,7 @@ describe('custody-transfer QR resolution API', () => {
   let decrypt: ReturnType<typeof vi.fn>;
   let sessionRepository: InMemorySessionRepository;
   let receiptRepository: InMemoryReceiptWorkflowRepository;
+  let hasReceiptPermission: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     sessionRepository = new InMemorySessionRepository();
@@ -200,6 +202,7 @@ describe('custody-transfer QR resolution API', () => {
     }));
     getReceiptEvidenceReference = vi.fn().mockResolvedValue(null);
     getRejectionEvidenceReference = vi.fn().mockResolvedValue(null);
+    hasReceiptPermission = vi.fn().mockResolvedValue(true);
     const gateway: CustodyTransferGateway = {
       getDiscrepancy,
       getReceiptEvidenceReference,
@@ -217,8 +220,10 @@ describe('custody-transfer QR resolution API', () => {
       configuration: () => ({
         chainId: CHAIN_ID,
         contractAddress: CUSTODY_TRANSFER_ADDRESS,
+        publicAppUrl: PUBLIC_APP_URL,
       }),
       gateway,
+      hasReceiptPermission,
       contentStore: {
         decrypt,
         encryptAndStore,
@@ -242,6 +247,7 @@ describe('custody-transfer QR resolution API', () => {
       chainId: overrides.chainId ?? CHAIN_ID,
       custodyTransferAddress: overrides.contractAddress ?? CUSTODY_TRANSFER_ADDRESS,
       transferId: overrides.transferId ?? TRANSFER_ID,
+      publicAppUrl: PUBLIC_APP_URL,
       version: 1,
     });
   }
@@ -327,7 +333,7 @@ describe('custody-transfer QR resolution API', () => {
 
     const response = await resolve().expect(409);
 
-    expect(response.body.error.code).toBe('TRANSFER_NOT_AWAITING_RECEIPT');
+    expect(response.body.error.code).toBe('TRANSFER_ALREADY_RECEIVED');
   });
 
   it('rejects a wallet that is not the on-chain recipient', async () => {
@@ -336,6 +342,19 @@ describe('custody-transfer QR resolution API', () => {
     const response = await resolve().expect(403);
 
     expect(response.body.error.code).toBe('INTENDED_RECIPIENT_REQUIRED');
+  });
+
+  it('rejects an authenticated company with the wrong recipient role', async () => {
+    const response = await resolve(qrPayload(), SENDER_SESSION_ID).expect(403);
+    expect(response.body.error.code).toBe('RECEIPT_ROLE_REQUIRED');
+    expect(getTransfer).not.toHaveBeenCalled();
+  });
+
+  it('rejects a recipient whose effective RECEIVE_TRANSFER permission is disabled', async () => {
+    hasReceiptPermission.mockResolvedValueOnce(false);
+    const response = await resolve().expect(403);
+    expect(response.body.error.code).toBe('RECEIVE_TRANSFER_PERMISSION_REQUIRED');
+    expect(getTransfer).not.toHaveBeenCalled();
   });
 
   it('returns only the safe transfer summary after every check succeeds', async () => {

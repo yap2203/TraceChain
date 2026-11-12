@@ -49,6 +49,7 @@ export interface CustodyDiscrepancyRecord {
 export interface CustodyTransferConfiguration {
   chainId: number;
   contractAddress: string;
+  publicAppUrl: string;
 }
 
 export interface PreparedCustodyTransferTransaction {

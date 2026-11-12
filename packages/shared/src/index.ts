@@ -5,7 +5,12 @@ export {
   TransferQrError,
   TransferQrErrorCode,
 } from './qr/transfer-qr.js';
-export type { TransferQrErrorCodeValue, TransferQrPayload } from './qr/transfer-qr.js';
+export type {
+  TransferQrDecodingOptions,
+  TransferQrEncodingInput,
+  TransferQrErrorCodeValue,
+  TransferQrPayload,
+} from './qr/transfer-qr.js';
 export {
   decodeProductQrPayload,
   encodeProductQrPayload,

@@ -1,0 +1,102 @@
+.receive-transfer-page {
+  min-height: 100vh;
+  background: var(--c-bg, #07111f);
+  color: var(--c-text, #cdd9e5);
+}
+.receive-transfer-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 14px clamp(18px, 4vw, 56px);
+  border-bottom: 1px solid var(--c-border, #1c2c40);
+  background: color-mix(in srgb, var(--c-bg, #07111f) 92%, transparent);
+  backdrop-filter: blur(14px);
+}
+.receive-transfer-shell {
+  width: min(820px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: clamp(36px, 7vw, 72px) 0;
+}
+.receive-transfer-intro {
+  max-width: 650px;
+  margin-bottom: 26px;
+}
+.receive-transfer-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--c-teal, #00e5ff);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.receive-transfer-intro h1 {
+  margin: 12px 0 10px;
+  font-size: clamp(30px, 6vw, 48px);
+  line-height: 1.08;
+  color: var(--c-text, #f6fbff);
+}
+.receive-transfer-intro p,
+.receive-transfer-login p,
+.receive-transfer-state p {
+  color: var(--c-text2, #7792aa);
+  line-height: 1.65;
+}
+.receive-transfer-login,
+.receive-transfer-state {
+  border: 1px solid var(--c-border, #1c2c40);
+  border-radius: 16px;
+  background: var(--c-surface, #0c1624);
+  padding: clamp(22px, 5vw, 34px);
+  box-shadow: var(--shadow-md, 0 8px 28px rgba(0, 0, 0, 0.35));
+}
+.receive-transfer-login {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+}
+.receive-transfer-login h2,
+.receive-transfer-state h2 {
+  margin: 0;
+  font-size: 20px;
+}
+.receive-transfer-login p,
+.receive-transfer-state p {
+  margin: 0;
+  max-width: 58ch;
+}
+.receive-transfer-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.receive-transfer-feedback {
+  font-size: 13px;
+}
+.receive-transfer-spinner {
+  animation: receive-spin 0.9s linear infinite;
+}
+@keyframes receive-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 560px) {
+  .receive-transfer-shell {
+    width: min(100% - 22px, 820px);
+    padding-top: 28px;
+  }
+  .receive-transfer-state {
+    padding: 18px;
+  }
+  .receive-transfer-login .transfer-qr-button,
+  .receive-transfer-login .transfer-qr-secondary {
+    width: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .receive-transfer-spinner {
+    animation: none;
+  }
+}

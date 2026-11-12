@@ -11,10 +11,12 @@ import { ReceiptConfirmationError } from './receipt-confirmation';
 import { ResolvedTransferCard } from './ResolvedTransferCard';
 import { createTransferQrModel, createTransferQrPayload } from './transfer-qr';
 import { TransferQrScanner } from './TransferQrScanner';
+import { TransferQrDisplay } from './TransferQrDisplay';
 
 const TRANSFER_ID = `0x${'11'.repeat(32)}`;
 const CONTRACT_ADDRESS = '0x4000000000000000000000000000000000000004';
-const QR_PAYLOAD = `tracechain://transfer/v1?chainId=31337&contract=${CONTRACT_ADDRESS}&transferId=${TRANSFER_ID}`;
+const PUBLIC_APP_URL = 'http://localhost:5173';
+const QR_PAYLOAD = `${PUBLIC_APP_URL}/receive/transfer?v=1&chainId=31337&contract=${CONTRACT_ADDRESS}&transferId=${TRANSFER_ID}`;
 const TRANSFER: ResolvedCustodyTransfer = {
   damaged: '0',
   dispatchedAt: 1_762_416_000,
@@ -56,7 +58,11 @@ afterEach(() => {
 
 describe('custody-transfer QR frontend', () => {
   it('generates the canonical QR payload with no shipment or wallet data', () => {
-    const configuration = { chainId: 31_337, contractAddress: CONTRACT_ADDRESS };
+    const configuration = {
+      chainId: 31_337,
+      contractAddress: CONTRACT_ADDRESS,
+      publicAppUrl: PUBLIC_APP_URL,
+    };
     const payload = createTransferQrPayload(TRANSFER_ID, configuration);
     const model = createTransferQrModel(TRANSFER_ID, configuration);
 
@@ -68,6 +74,27 @@ describe('custody-transfer QR frontend', () => {
     expect(payload).not.toContain('credential');
   });
 
+  it('copies the exact HTTPS payload rendered by the Receipt Confirmation QR', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    render(
+      <TransferQrDisplay
+        configuration={{
+          chainId: 31_337,
+          contractAddress: CONTRACT_ADDRESS,
+          publicAppUrl: PUBLIC_APP_URL,
+        }}
+        transferId={TRANSFER_ID}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(QR_PAYLOAD));
+    expect(screen.getByLabelText('TraceChain Receipt Confirmation QR code')).toBeTruthy();
+  });
+
   it('submits a manually pasted payload exactly once', async () => {
     const resolvePayload = vi.fn().mockResolvedValue(TRANSFER);
     render(<TransferQrScanner reader={reader()} resolvePayload={resolvePayload} />);
@@ -77,6 +104,26 @@ describe('custody-transfer QR frontend', () => {
 
     await waitFor(() => expect(resolvePayload).toHaveBeenCalledWith(QR_PAYLOAD));
     expect(resolvePayload).toHaveBeenCalledOnce();
+  });
+
+  it('automatically resolves a direct receipt link once without preparing a transaction', async () => {
+    const resolvePayload = vi.fn().mockResolvedValue(TRANSFER);
+    const prepareConfirmation = vi.fn();
+    render(
+      <StrictMode>
+        <TransferQrScanner
+          initialPayload={QR_PAYLOAD}
+          prepareConfirmation={prepareConfirmation}
+          reader={reader()}
+          resolvePayload={resolvePayload}
+        />
+      </StrictMode>,
+    );
+
+    expect(await screen.findByText('Custody transfer found')).toBeTruthy();
+    expect(resolvePayload).toHaveBeenCalledOnce();
+    expect(resolvePayload).toHaveBeenCalledWith(QR_PAYLOAD);
+    expect(prepareConfirmation).not.toHaveBeenCalled();
   });
 
   it('displays only the API-verified transfer after successful resolution', async () => {

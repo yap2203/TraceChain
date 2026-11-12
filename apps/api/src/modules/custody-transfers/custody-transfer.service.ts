@@ -1,6 +1,6 @@
 import { CompanyRole, TransferQrError, decodeTransferQrPayload } from '@tracechain/shared';
 import { randomUUID } from 'node:crypto';
-import { getAddress, sha256, toUtf8Bytes } from 'ethers';
+import { getAddress, id, sha256, toUtf8Bytes } from 'ethers';
 
 import type { AuthService } from '../auth/auth.service.js';
 import type { TraceabilityMetadataReader } from '../product-traceability/product-traceability.types.js';
@@ -46,6 +46,7 @@ interface CustodyTransferServiceDependencies {
   configuration: () => CustodyTransferConfiguration;
   contentStore?: CredentialContentStore;
   gateway: CustodyTransferGateway;
+  hasReceiptPermission: (address: string, permission: string) => Promise<boolean>;
   productMetadata?: Pick<TraceabilityMetadataReader, 'product'>;
   receiptRepository?: ReceiptWorkflowRepository;
   stakeholderDirectory?: StakeholderDirectory;
@@ -60,13 +61,16 @@ export class CustodyTransferService {
   }
 
   async resolveQr(sessionId: string | undefined, body: unknown): Promise<CustodyTransferSummary> {
-    const session = await this.requireAuthorizedSession(sessionId);
+    const session = await this.requireReceiptAuthorizedSession(sessionId);
     const inputResult = resolveTransferQrRequestSchema.safeParse(body);
     if (!inputResult.success)
       throw new CustodyTransferApiError('INVALID_REQUEST', 'The QR request is invalid.', 400);
     let qr;
     try {
-      qr = decodeTransferQrPayload(inputResult.data.qrPayload);
+      const configuration = this.dependencies.configuration();
+      qr = decodeTransferQrPayload(inputResult.data.qrPayload, {
+        publicAppUrl: configuration.publicAppUrl,
+      });
     } catch (error) {
       if (error instanceof TransferQrError)
         throw new CustodyTransferApiError(
@@ -90,12 +94,7 @@ export class CustodyTransferService {
         400,
       );
     const transfer = await this.lookupTransfer(qr.transferId);
-    if (transfer.status !== AWAITING_RECEIPT_STATUS)
-      throw new CustodyTransferApiError(
-        'TRANSFER_NOT_AWAITING_RECEIPT',
-        'The custody transfer is not awaiting receipt.',
-        409,
-      );
+    if (transfer.status !== AWAITING_RECEIPT_STATUS) throw transferStatusError(transfer.status);
     this.requireRecipient(session.address, transfer.recipient);
     return this.safeSummary(qr.transferId, transfer);
   }
@@ -116,7 +115,7 @@ export class CustodyTransferService {
   }
 
   async prepareReceiptConfirmation(sessionId: string | undefined, body: unknown) {
-    const session = await this.requireAuthorizedSession(sessionId);
+    const session = await this.requireReceiptAuthorizedSession(sessionId);
     const parsed = prepareReceiptConfirmationRequestSchema.safeParse(body);
     if (!parsed.success)
       throw new CustodyTransferApiError(
@@ -190,7 +189,7 @@ export class CustodyTransferService {
   }
 
   async prepareRejection(sessionId: string | undefined, body: unknown) {
-    const session = await this.requireAuthorizedSession(sessionId);
+    const session = await this.requireReceiptAuthorizedSession(sessionId);
     const parsed = rejectTransferRequestSchema.safeParse(body);
     if (!parsed.success)
       throw new CustodyTransferApiError('INVALID_REJECTION', 'Rejection details are invalid.', 400);
@@ -448,6 +447,42 @@ export class CustodyTransferService {
     return session;
   }
 
+  private async requireReceiptAuthorizedSession(sessionId: string | undefined) {
+    const session = await this.requireAuthorizedSession(sessionId);
+    const authorization = session.onChainAuthorization;
+    const role = authorization?.role;
+    if (
+      !authorization?.credentialId ||
+      !authorization.credentialHash ||
+      (role !== CompanyRole.DISTRIBUTOR && role !== CompanyRole.RETAILER)
+    )
+      throw new CustodyTransferApiError(
+        'RECEIPT_ROLE_REQUIRED',
+        'An active Distributor or Retailer Company Role Credential is required.',
+        403,
+      );
+    let hasPermission = true;
+    try {
+      hasPermission = await this.dependencies.hasReceiptPermission(
+        session.address,
+        id('RECEIVE_TRANSFER'),
+      );
+    } catch {
+      throw new CustodyTransferApiError(
+        'RECEIPT_AUTHORIZATION_UNAVAILABLE',
+        'Receipt authorization could not be checked. Try again later.',
+        502,
+      );
+    }
+    if (!hasPermission)
+      throw new CustodyTransferApiError(
+        'RECEIVE_TRANSFER_PERMISSION_REQUIRED',
+        'The receiving company does not currently have receipt-confirmation permission.',
+        403,
+      );
+    return session;
+  }
+
   private async requireAdmin(sessionId: string | undefined) {
     const session = await this.requireAuthorizedSession(sessionId);
     if (session.onChainAuthorization?.role !== CompanyRole.SYSTEM_ADMIN)
@@ -604,4 +639,18 @@ function sameAddress(left: string, right: string) {
   } catch {
     return false;
   }
+}
+
+function transferStatusError(status: number) {
+  const states: Record<number, [string, string]> = {
+    2: ['TRANSFER_ALREADY_RECEIVED', 'This custody transfer has already been received.'],
+    3: ['TRANSFER_REJECTED', 'This custody transfer was rejected.'],
+    4: ['TRANSFER_CANCELLED', 'This custody transfer was cancelled.'],
+    5: ['TRANSFER_DISCREPANCY_REPORTED', 'This custody transfer has a discrepancy under review.'],
+  };
+  const [code, message] = states[status] ?? [
+    'TRANSFER_NOT_AWAITING_RECEIPT',
+    'The custody transfer is not awaiting receipt.',
+  ];
+  return new CustodyTransferApiError(code, message, 409);
 }

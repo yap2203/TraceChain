@@ -1,5 +1,5 @@
-import { Download, QrCode } from 'lucide-react';
-import { useMemo } from 'react';
+import { Check, Copy, Download, Printer, QrCode } from 'lucide-react';
+import { useMemo, useState } from 'react';
 
 import type { TransferQrConfiguration } from './custody-transfer.types';
 import { createTransferQrModel, type TransferQrModel } from './transfer-qr';
@@ -7,6 +7,7 @@ import './custody-transfer.css';
 
 interface TransferQrDisplayProps {
   configuration?: TransferQrConfiguration;
+  shipmentReference?: string;
   transferId: string;
 }
 
@@ -42,7 +43,12 @@ function downloadPng(model: TransferQrModel, transferId: string) {
   link.click();
 }
 
-export function TransferQrDisplay({ configuration, transferId }: TransferQrDisplayProps) {
+export function TransferQrDisplay({
+  configuration,
+  shipmentReference,
+  transferId,
+}: TransferQrDisplayProps) {
+  const [copied, setCopied] = useState(false);
   const result = useMemo(() => {
     try {
       return { model: createTransferQrModel(transferId, configuration) };
@@ -64,10 +70,14 @@ export function TransferQrDisplay({ configuration, transferId }: TransferQrDispl
 
   const size = result.model.modules.length;
   return (
-    <section className="transfer-qr-display" aria-label="Custody transfer QR code">
+    <section className="transfer-qr-display" aria-label="Receipt Confirmation QR">
+      <div className="transfer-qr-heading">
+        <strong>Receipt Confirmation QR</strong>
+        {shipmentReference && <span>{shipmentReference}</span>}
+      </div>
       <div className="transfer-qr-canvas">
         <svg
-          aria-label="TraceChain custody-transfer QR code"
+          aria-label="TraceChain Receipt Confirmation QR code"
           role="img"
           viewBox={`-4 -4 ${size + 8} ${size + 8}`}
         >
@@ -88,15 +98,32 @@ export function TransferQrDisplay({ configuration, transferId }: TransferQrDispl
           )}
         </svg>
       </div>
-      <button
-        className="transfer-qr-button"
-        onClick={() => downloadPng(result.model!, transferId)}
-        type="button"
-      >
-        <Download aria-hidden="true" size={16} />
-        Download PNG
-      </button>
-      <p>Contains only the chain, CustodyTransfer contract, and transfer ID.</p>
+      <div className="transfer-qr-actions">
+        <button
+          className="transfer-qr-button"
+          onClick={() => downloadPng(result.model!, transferId)}
+          type="button"
+        >
+          <Download aria-hidden="true" size={16} /> Download PNG
+        </button>
+        <button
+          className="transfer-qr-secondary"
+          onClick={() =>
+            void navigator.clipboard.writeText(result.model!.payload).then(() => setCopied(true))
+          }
+          type="button"
+        >
+          {copied ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}
+          {copied ? 'Copied' : 'Copy link'}
+        </button>
+        <button className="transfer-qr-secondary" onClick={() => window.print()} type="button">
+          <Printer aria-hidden="true" size={16} /> Print label
+        </button>
+      </div>
+      <p>
+        Only the intended recipient can sign in and confirm receipt. This is separate from the
+        Product Traceability QR.
+      </p>
     </section>
   );
 }
