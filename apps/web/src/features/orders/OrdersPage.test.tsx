@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({
@@ -78,7 +78,7 @@ describe('browse and request-only UI', () => {
         },
       ],
     });
-    render(
+    const { container } = render(
       <MemoryRouter>
         <OrdersPage role="manufacturer" />
       </MemoryRouter>,
@@ -86,9 +86,16 @@ describe('browse and request-only UI', () => {
     await screen.findByText('Ingredient from chain records');
     expect(screen.queryByRole('button', { name: 'Publish catalogue entry' })).toBeNull();
     expect(screen.getByText('MYR 12.50 / litre')).toBeTruthy();
+    expect(container.querySelector('.workspace-shell')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    expect(container.querySelectorAll('.workspace-dialog__body')).toHaveLength(1);
+    expect(container.querySelector('.catalogue-dialog-content')).toBeTruthy();
+    expect(container.querySelector('.catalogue-dialog-summary')).toBeTruthy();
+    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(1);
     expect(screen.getByText(/does not independently prove physical quality/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Request evidence or information' }));
+    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(2);
+    expect(container.querySelector('.catalogue-request-form')).toBeTruthy();
     expect(screen.getByLabelText('expiryDate disclosure')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request quantity' })).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
@@ -301,6 +308,18 @@ describe('browse and request-only UI', () => {
     expect(container.querySelector('.catalogue-card h4')?.textContent).toBe(
       'Refined Sunflower Oil',
     );
+    const longName = screen.getByText(
+      'Single Origin Fermented Cocoa Beans With A Deliberately Long Catalogue Name',
+    );
+    const longNameCard = longName.closest('.catalogue-card');
+    expect(longNameCard).toBeTruthy();
+    fireEvent.click(within(longNameCard as HTMLElement).getByRole('button', { name: 'View details' }));
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.querySelector('.catalogue-detail')).toBeTruthy();
+    expect(dialog.textContent).toContain(
+      'Single Origin Fermented Cocoa Beans With A Deliberately Long Catalogue Name',
+    );
+    expect(dialog.textContent).toContain('Sabah Cocoa Cooperative');
   });
   it('keeps invalid quantity requests disabled and presents desktop and mobile request views', async () => {
     api.getOrders.mockResolvedValue({

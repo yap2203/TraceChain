@@ -345,218 +345,232 @@ function CatalogueDetail({
       onClose={onClose}
       width={760}
     >
-      <div className="catalogue-detail">
-        <CatalogueImage
-          path={item.imagePath}
-          category={item.category}
-          alt={`Supplier-provided image of ${item.name}`}
-          large
-        />
-        <div className="catalogue-detail__summary">
-          <div className="catalogue-company catalogue-company--large">
-            <CompanyAvatar name={company} logoPath={item.sellerLogoPath} size="lg" />
-            <div>
-              <strong>{company}</strong>
-              <span>
-                {item.sellerRole
-                  ? String(item.sellerRole).replaceAll('_', ' ')
-                  : 'Verified company'}
-              </span>
+      <div className="catalogue-dialog-content">
+        <section className="catalogue-dialog-summary" aria-label="Item summary">
+          <div className="catalogue-detail">
+            <CatalogueImage
+              path={item.imagePath}
+              category={item.category}
+              alt={`Supplier-provided image of ${item.name}`}
+              large
+            />
+            <div className="catalogue-detail__summary">
+              <div className="catalogue-company catalogue-company--large">
+                <CompanyAvatar name={company} logoPath={item.sellerLogoPath} size="lg" />
+                <div>
+                  <strong>{company}</strong>
+                  <span>
+                    {item.sellerRole
+                      ? String(item.sellerRole).replaceAll('_', ' ')
+                      : 'Verified company'}
+                  </span>
+                </div>
+              </div>
+              <Badge label={itemState(item).label} variant={itemState(item).variant} />
+              <dl className="catalogue-detail__facts">
+                <Fact
+                  label="Item type"
+                  value={Number(item.kind) === 1 ? 'Ingredient' : 'Product'}
+                />
+                <Fact label="Category" value={item.category || 'Not disclosed'} />
+                <Fact label="Country of origin" value={item.countryOfOrigin || 'Not disclosed'} />
+                <Fact label="Batch reference" value={item.batchReference || 'Not disclosed'} />
+                <Fact
+                  label="Registered quantity"
+                  value={
+                    batch.totalQuantity !== undefined
+                      ? `${batch.totalQuantity} ${item.unit}`
+                      : 'Unavailable'
+                  }
+                />
+                <Fact
+                  label="Safe available quantity"
+                  value={
+                    batch.supplierAvailable !== undefined
+                      ? `${batch.supplierAvailable} ${item.unit}`
+                      : 'Not published'
+                  }
+                />
+                <Fact label="Production date" value={date(batch.producedAt)} />
+                <Fact label="Expiry date" value={date(batch.expiresAt)} />
+                <Fact label="Indicative price" value={`${price(item)} — Indicative only`} />
+                <Fact
+                  label="Credential lifecycle"
+                  value={item.evidenceAvailability || 'Status unavailable'}
+                />
+              </dl>
             </div>
           </div>
-          <Badge label={itemState(item).label} variant={itemState(item).variant} />
-          <dl className="catalogue-detail__facts">
-            <Fact label="Item type" value={Number(item.kind) === 1 ? 'Ingredient' : 'Product'} />
-            <Fact label="Category" value={item.category || 'Not disclosed'} />
-            <Fact label="Country of origin" value={item.countryOfOrigin || 'Not disclosed'} />
-            <Fact label="Batch reference" value={item.batchReference || 'Not disclosed'} />
-            <Fact
-              label="Registered quantity"
-              value={
-                batch.totalQuantity !== undefined
-                  ? `${batch.totalQuantity} ${item.unit}`
-                  : 'Unavailable'
-              }
-            />
-            <Fact
-              label="Safe available quantity"
-              value={
-                batch.supplierAvailable !== undefined
-                  ? `${batch.supplierAvailable} ${item.unit}`
-                  : 'Not published'
-              }
-            />
-            <Fact label="Production date" value={date(batch.producedAt)} />
-            <Fact label="Expiry date" value={date(batch.expiresAt)} />
-            <Fact label="Indicative price" value={`${price(item)} — Indicative only`} />
-            <Fact
-              label="Credential lifecycle"
-              value={item.evidenceAvailability || 'Status unavailable'}
-            />
-          </dl>
-        </div>
-      </div>
-      <Alert
-        type="warning"
-        message="Ingredient details and images are supplied by the Supplier. Credential verification confirms the signed digital record and current blockchain status; it does not independently prove physical quality or laboratory certification."
-      />
-      {mode === 'details' && (
-        <div className="catalogue-detail__actions">
-          <Btn disabled={!item.active} onClick={() => onMode('quantity')}>
-            Request quantity
-          </Btn>
-          <Btn variant="outline" onClick={() => onMode('evidence')}>
-            Request evidence or information
-          </Btn>
-        </div>
-      )}
-      {mode === 'quantity' && (
-        <form
-          className="catalogue-request-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (validQuantity) void onQuantityRequest(item, { quantity, deadline, note });
-          }}
-        >
+        </section>
+        <div className="catalogue-dialog-alert catalogue-dialog-alert--warning">
           <Alert
-            type="info"
-            message={`This sends a request for ${item.unit}. It does not reserve stock, create a purchase, take payment or dispatch goods.`}
+            type="warning"
+            message="Ingredient details and images are supplied by the Supplier. Credential verification confirms the signed digital record and current blockchain status; it does not independently prove physical quality or laboratory certification."
           />
-          <Input
-            label={`Requested quantity (${item.unit})`}
-            type="number"
-            min="1"
-            step="1"
-            value={quantity}
-            onChange={setQuantity}
-            required
-          />
-          <Input
-            label="Response deadline"
-            type="datetime-local"
-            value={deadline}
-            onChange={setDeadline}
-            required
-          />
-          <Input label="Private note" value={note} onChange={setNote} maxLength={500} />
+        </div>
+        {mode === 'details' && (
           <div className="catalogue-detail__actions">
-            <Btn type="submit" disabled={busy || !validQuantity}>
-              {busy ? 'Submitting…' : 'Submit request'}
+            <Btn disabled={!item.active} onClick={() => onMode('quantity')}>
+              Request quantity
             </Btn>
-            <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
-              Back
+            <Btn variant="outline" onClick={() => onMode('evidence')}>
+              Request evidence or information
             </Btn>
           </div>
-        </form>
-      )}
-      {mode === 'evidence' && (
-        <form
-          className="catalogue-request-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (
-              evidenceReason.trim() &&
-              evidenceDeadline &&
-              evidenceBatch &&
-              requestedClaims.length
-            )
-              void onEvidenceRequest(item, {
-                batchId: evidenceBatch,
-                claims: requestedClaims,
-                deadline: evidenceDeadline,
-                reason: evidenceReason,
-                requiredClaims: requestedClaims.filter((claim) => claims[claim] === 'required'),
-              });
-          }}
-        >
-          <Alert
-            type="info"
-            message="Evidence remains confidential until the existing Supplier consent and verification workflow authorizes disclosure."
-          />
-          {Number(item.kind) === 2 && (
-            <SelectField
-              label="Ingredient in this product"
-              value={evidenceBatch}
-              onChange={setEvidenceBatch}
+        )}
+        {mode === 'quantity' && (
+          <form
+            className="catalogue-request-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (validQuantity) void onQuantityRequest(item, { quantity, deadline, note });
+            }}
+          >
+            <div className="catalogue-dialog-alert catalogue-dialog-alert--info">
+              <Alert
+                type="info"
+                message={`This sends a request for ${item.unit}. It does not reserve stock, create a purchase, take payment or dispatch goods.`}
+              />
+            </div>
+            <Input
+              label={`Requested quantity (${item.unit})`}
+              type="number"
+              min="1"
+              step="1"
+              value={quantity}
+              onChange={setQuantity}
               required
-              options={[
-                { value: '', label: 'Select ingredient' },
-                ...(
-                  item.batchDetails?.flatMap((entry: OrderRecord) => entry.ingredientLinks ?? []) ??
-                  []
-                ).map((link: OrderRecord) => ({
-                  value: link.batchId,
-                  label: link.batchReference || short(link.batchId),
-                })),
-              ]}
             />
-          )}
-          <Input
-            label="Reason for requesting information"
-            value={evidenceReason}
-            onChange={setEvidenceReason}
-            maxLength={500}
-            required
-          />
-          <Input
-            label="Response deadline"
-            type="datetime-local"
-            value={evidenceDeadline}
-            onChange={setEvidenceDeadline}
-            required
-          />
-          <div className="catalogue-claim-grid">
-            {[
-              'countryOfOrigin',
-              'productionDate',
-              'expiryDate',
-              'allergenDeclaration',
-              'certificationDetails',
-              'qualityTestSummary',
-            ].map((claim) => (
+            <Input
+              label="Response deadline"
+              type="datetime-local"
+              value={deadline}
+              onChange={setDeadline}
+              required
+            />
+            <Input label="Private note" value={note} onChange={setNote} maxLength={500} />
+            <div className="catalogue-detail__actions">
+              <Btn type="submit" disabled={busy || !validQuantity}>
+                {busy ? 'Submitting…' : 'Submit request'}
+              </Btn>
+              <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
+                Back
+              </Btn>
+            </div>
+          </form>
+        )}
+        {mode === 'evidence' && (
+          <form
+            className="catalogue-request-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (
+                evidenceReason.trim() &&
+                evidenceDeadline &&
+                evidenceBatch &&
+                requestedClaims.length
+              )
+                void onEvidenceRequest(item, {
+                  batchId: evidenceBatch,
+                  claims: requestedClaims,
+                  deadline: evidenceDeadline,
+                  reason: evidenceReason,
+                  requiredClaims: requestedClaims.filter((claim) => claims[claim] === 'required'),
+                });
+            }}
+          >
+            <div className="catalogue-dialog-alert catalogue-dialog-alert--info">
+              <Alert
+                type="info"
+                message="Evidence remains confidential until the existing Supplier consent and verification workflow authorizes disclosure."
+              />
+            </div>
+            {Number(item.kind) === 2 && (
               <SelectField
-                key={claim}
-                label={`${claim} disclosure`}
-                value={claims[claim] ?? 'not-requested'}
-                onChange={(value) => setClaims((current) => ({ ...current, [claim]: value }))}
+                label="Ingredient in this product"
+                value={evidenceBatch}
+                onChange={setEvidenceBatch}
+                required
                 options={[
-                  { value: 'not-requested', label: 'Do not request' },
-                  { value: 'optional', label: 'Optional' },
-                  { value: 'required', label: 'Necessary' },
+                  { value: '', label: 'Select ingredient' },
+                  ...(
+                    item.batchDetails?.flatMap(
+                      (entry: OrderRecord) => entry.ingredientLinks ?? [],
+                    ) ?? []
+                  ).map((link: OrderRecord) => ({
+                    value: link.batchId,
+                    label: link.batchReference || short(link.batchId),
+                  })),
                 ]}
               />
-            ))}
-          </div>
-          <div className="catalogue-detail__actions">
-            <Btn
-              disabled={
-                busy ||
-                !evidenceReason.trim() ||
-                !evidenceDeadline ||
-                !evidenceBatch ||
-                !requestedClaims.length
-              }
-              type="submit"
-            >
-              {busy ? 'Submitting…' : 'Send information request'}
-            </Btn>
-            <Btn type="button" variant="outline" onClick={onOpenEvidence}>
-              Open evidence responses
-            </Btn>
-            <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
-              Back
-            </Btn>
-          </div>
-        </form>
-      )}
-      <TechnicalDetails
-        fields={[
-          { label: 'Item ID', value: item.itemId },
-          { label: 'Batch ID', value: item.batches?.[0] ?? '' },
-          { label: 'Supplier wallet', value: item.seller },
-          { label: 'Listing hash', value: item.listingHash ?? '' },
-        ]}
-      />
+            )}
+            <Input
+              label="Reason for requesting information"
+              value={evidenceReason}
+              onChange={setEvidenceReason}
+              maxLength={500}
+              required
+            />
+            <Input
+              label="Response deadline"
+              type="datetime-local"
+              value={evidenceDeadline}
+              onChange={setEvidenceDeadline}
+              required
+            />
+            <div className="catalogue-claim-grid">
+              {[
+                'countryOfOrigin',
+                'productionDate',
+                'expiryDate',
+                'allergenDeclaration',
+                'certificationDetails',
+                'qualityTestSummary',
+              ].map((claim) => (
+                <SelectField
+                  key={claim}
+                  label={`${claim} disclosure`}
+                  value={claims[claim] ?? 'not-requested'}
+                  onChange={(value) => setClaims((current) => ({ ...current, [claim]: value }))}
+                  options={[
+                    { value: 'not-requested', label: 'Do not request' },
+                    { value: 'optional', label: 'Optional' },
+                    { value: 'required', label: 'Necessary' },
+                  ]}
+                />
+              ))}
+            </div>
+            <div className="catalogue-detail__actions">
+              <Btn
+                disabled={
+                  busy ||
+                  !evidenceReason.trim() ||
+                  !evidenceDeadline ||
+                  !evidenceBatch ||
+                  !requestedClaims.length
+                }
+                type="submit"
+              >
+                {busy ? 'Submitting…' : 'Send information request'}
+              </Btn>
+              <Btn type="button" variant="outline" onClick={onOpenEvidence}>
+                Open evidence responses
+              </Btn>
+              <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
+                Back
+              </Btn>
+            </div>
+          </form>
+        )}
+        <TechnicalDetails
+          fields={[
+            { label: 'Item ID', value: item.itemId },
+            { label: 'Batch ID', value: item.batches?.[0] ?? '' },
+            { label: 'Supplier wallet', value: item.seller },
+            { label: 'Listing hash', value: item.listingHash ?? '' },
+          ]}
+        />
+      </div>
     </Modal>
   );
 }

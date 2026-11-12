@@ -15,6 +15,8 @@ export function TechnicalDetails({ fields }: { fields: TechnicalField[] }) {
         padding: '12px 14px',
         border: `1px solid ${T.border}`,
         borderRadius: 8,
+        maxWidth: '100%',
+        overflow: 'hidden',
       }}
     >
       <summary style={{ color: T.text2, cursor: 'pointer', fontSize: 12 }}>
@@ -24,8 +26,21 @@ export function TechnicalDetails({ fields }: { fields: TechnicalField[] }) {
         {visible.map((field) => (
           <div key={field.label} style={{ display: 'grid', gap: 4 }}>
             <dt style={{ color: T.text2, fontSize: 11 }}>{field.label}</dt>
-            <dd style={{ display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
-              <code title={field.value} style={{ overflowWrap: 'anywhere' }}>
+            <dd
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 10,
+                margin: 0,
+                minWidth: 0,
+                maxWidth: '100%',
+              }}
+            >
+              <code
+                title={field.value}
+                style={{ flex: '1 1 180px', minWidth: 0, overflowWrap: 'anywhere' }}
+              >
                 {shortIdentifier(field.value)}
               </code>
               <button
