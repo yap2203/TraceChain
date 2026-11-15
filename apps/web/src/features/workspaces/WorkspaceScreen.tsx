@@ -19,18 +19,10 @@ import {
   CreateProductBatch,
   ProductBatches,
   ProductBatchDetail,
-  TransferToDistributor,
   ManufacturerCredential,
 } from './manufacturer';
 import { ManufacturerInformationRequests } from './manufacturer/evidence/ManufacturerInformationRequests';
-import {
-  DistributorOverview,
-  IncomingShipmentsList,
-  IncomingShipment,
-  CustodyInventory,
-  DistributorTransferToRetailer,
-  DistributorCredential,
-} from './distributor';
+import { DistributorOverview, DistributorCredential } from './distributor';
 import {
   RetailerOverview,
   ReceiveProductList,
@@ -43,6 +35,9 @@ import {
 import AuditReport from './reports/AuditReportPage';
 import { ScanReceiptFlow, ReceiptGatedFlow } from './receipts';
 import { OrdersPage } from '../orders/OrdersPage';
+import { ShipmentsWorkspace } from '../orders/ShipmentsWorkspace';
+import { CustodyInventoryPage } from '../orders/CustodyInventoryPage';
+import { InformationRequestsWorkspace } from '../orders/InformationRequestsWorkspace';
 
 export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page: string }) {
   const navigate = useNavigate();
@@ -58,7 +53,40 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     navigate(`${workspacePath(role, page)}${newView ? '?view=' + tab : ''}`);
   };
   const goTo = (view: string, id = '') => setSearchParams({ view, ...(id ? { id } : {}) });
-  if (tab === 'orders')
+  if (tab === 'inventory' && (role === 'supplier' || role === 'distributor'))
+    return <CustodyInventoryPage role={role} />;
+  if (tab === 'requests' || (['manufacturer', 'retailer'].includes(role) && tab === 'evidence'))
+    return (
+      <InformationRequestsWorkspace role={role}>
+        {role === 'supplier' ? (
+          discReq ? (
+            <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />
+          ) : (
+            <InformationRequests onRespond={setDiscReq} />
+          )
+        ) : role === 'manufacturer' ? (
+          <ManufacturerInformationRequests />
+        ) : role === 'retailer' ? (
+          <RetailerEvidenceRequests />
+        ) : undefined}
+      </InformationRequestsWorkspace>
+    );
+  if (
+    ['supplier', 'manufacturer', 'distributor', 'retailer'].includes(role) &&
+    (['shipments', 'transfers'].includes(tab) ||
+      (role === 'distributor' && ['incoming', 'ingredient-deliveries', 'orders'].includes(tab)))
+  )
+    return (
+      <ShipmentsWorkspace
+        key={`${role}-${tab}`}
+        role={role}
+        initialView={tab === 'transfers' ? 'transfer' : 'shipments'}
+        initialShipmentId={params.get('shipmentId') ?? ''}
+        initialOrderId={params.get('orderId') ?? ''}
+        initialBatchId={params.get('batchId') ?? ''}
+      />
+    );
+  if (tab === 'orders' && role !== 'distributor')
     return (
       <OrdersPage
         role={role}
@@ -66,6 +94,8 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
         mode={role === 'manufacturer' ? 'manage' : 'combined'}
       />
     );
+  if (role === 'distributor' && (tab === 'ingredient-deliveries' || tab === 'orders'))
+    return <OrdersPage role={role} mode="manage" initialOrderId={params.get('orderId') ?? ''} />;
   if (role === 'admin') {
     if (tab === 'overview') return <AdminOverview onNav={nav} />;
     if (tab === 'applications') return <Applications />;
@@ -89,31 +119,12 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
         return <IngredientBatchDetail batchId={activeId} onBack={() => setSearchParams({})} />;
       return <IngredientBatches onNew={() => goTo('batches-new')} />;
     }
-    if (tab === 'requests') {
-      if (discReq) return <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />;
-      return (
-        <InformationRequests
-          onRespond={(req) => setDiscReq(req)}
-          initialOrderId={params.get('orderId') ?? undefined}
-          initialDirection={params.get('direction') === 'sent' ? 'sent' : 'received'}
-          onClearSelection={() => setSearchParams({ direction: 'sent' })}
-        />
-      );
-    }
     if (tab === 'mycredential') return <SupplierCredential />;
     if (tab === 'audit') return <AuditReport />;
   }
 
   if (role === 'manufacturer') {
     if (tab === 'overview') return <ManufacturerOverview onNav={nav} />;
-    if (tab === 'requests' || tab === 'evidence')
-      return (
-        <ManufacturerInformationRequests
-          initialOrderId={params.get('orderId') ?? undefined}
-          initialDirection={params.get('direction') === 'received' ? 'received' : 'sent'}
-          onClearSelection={(direction) => setSearchParams({ direction })}
-        />
-      );
     if (tab === 'products') {
       if (subView === 'products-new')
         return <CreateProductBatch onBack={() => setSearchParams({})} />;
@@ -139,37 +150,12 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
         />
       );
     }
-    if (tab === 'transfers') return <TransferToDistributor onBack={() => nav('products')} />;
     if (tab === 'mycredential') return <ManufacturerCredential />;
     if (tab === 'audit') return <AuditReport />;
   }
 
   if (role === 'distributor') {
     if (tab === 'overview') return <DistributorOverview onNav={nav} />;
-    if (tab === 'incoming') {
-      if (subView === 'shipment-detail')
-        return <IncomingShipment shipmentId={activeId} onBack={() => setSearchParams({})} />;
-      if (subView === 'scan-receipt')
-        return <ScanReceiptFlow role="distributor" onDone={() => setSearchParams({})} />;
-      if (subView === 'qr-gate')
-        return (
-          <ReceiptGatedFlow
-            role="distributor"
-            expectedTransferId={activeId || undefined}
-            onDone={() => setSearchParams({})}
-          />
-        );
-      return (
-        <IncomingShipmentsList
-          onSelect={(id) => goTo('shipment-detail', id)}
-          onAccept={(_id, transferRef) => goTo('qr-gate', transferRef)}
-          onScanReceipt={() => goTo('scan-receipt')}
-        />
-      );
-    }
-    if (tab === 'inventory') return <CustodyInventory onTransfer={() => nav('transfers')} />;
-    if (tab === 'transfers')
-      return <DistributorTransferToRetailer onBack={() => nav('inventory')} />;
     if (tab === 'mycredential') return <DistributorCredential />;
     if (tab === 'audit') return <AuditReport />;
   }
@@ -214,7 +200,6 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
         return <QRVerification initialBatch={activeId} onBack={() => setSearchParams({})} />;
       return <ProductHistory onView={(batch) => goTo('history-detail', batch)} />;
     }
-    if (tab === 'evidence') return <RetailerEvidenceRequests />;
     if (tab === 'mycredential') return <RetailerCredential />;
     if (tab === 'audit') return <AuditReport />;
   }

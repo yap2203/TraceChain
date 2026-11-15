@@ -76,7 +76,7 @@ export class ProductTraceabilityService {
         400,
       );
 
-    const authorized = await this.isAuthorized(sessionId);
+    const viewer = await this.authorizedViewer(sessionId);
     try {
       const product = await this.dependencies.gateway.getProduct(qr.batchId);
       if (!product)
@@ -90,6 +90,15 @@ export class ProductTraceabilityService {
         this.dependencies.gateway.getIngredientLinks(qr.batchId),
         this.dependencies.gateway.listTransfers(qr.batchId),
       ]);
+      const authorized =
+        !!viewer &&
+        (viewer.role === CompanyRole.SYSTEM_ADMIN ||
+          sameAddress(viewer.address, product.manufacturer) ||
+          transfers.some(
+            (transfer) =>
+              sameAddress(viewer.address, transfer.sender) ||
+              sameAddress(viewer.address, transfer.recipient),
+          ));
       const ingredientRecords = await Promise.all(
         ingredientIds.map(async (batchId) => {
           const batch = await this.dependencies.gateway.getIngredient(batchId);
@@ -285,12 +294,14 @@ export class ProductTraceabilityService {
     return events.sort((left, right) => left.timestamp - right.timestamp);
   }
 
-  private async isAuthorized(sessionId?: string) {
+  private async authorizedViewer(sessionId?: string) {
     try {
       const session = await this.dependencies.authService.getSession(sessionId);
-      return session.authenticated && session.authorizationReady;
+      return session.authenticated && session.authorizationReady && session.address
+        ? session
+        : undefined;
     } catch {
-      return false;
+      return undefined;
     }
   }
 }

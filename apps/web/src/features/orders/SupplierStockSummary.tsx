@@ -28,7 +28,7 @@ export function SupplierStockSummary({ stock }: { stock: SupplierStock }) {
           </dd>
         </div>
         <div>
-          <dt>Approved, awaiting receipt</dt>
+          <dt>Approved requests still in stock</dt>
           <dd className="m-0 break-words">
             {stock.approvedQuantity} {stock.unit}
           </dd>
@@ -41,8 +41,8 @@ export function SupplierStockSummary({ stock }: { stock: SupplierStock }) {
         </p>
       )}
       <p className="mb-0">
-        Request estimates include unexpired pending and approved quantities not yet received. Actual
-        stock decreases on confirmed receipt; requests do not reserve stock.
+        Requests alone do not reserve stock. Collected deliveries are already deducted from current
+        stock and excluded from this estimate. Legacy direct receipts deduct stock at receipt.
       </p>
     </section>
   );

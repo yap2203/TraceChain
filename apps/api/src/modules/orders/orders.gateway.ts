@@ -18,6 +18,7 @@ export interface OrdersGateway {
 }
 const artifactNames: Record<string, string> = {
   orders: 'traceability/SupplyChainOrders',
+  delivery: 'traceability/IngredientDelivery',
   ingredients: 'traceability/IngredientRegistry',
   products: 'traceability/ProductRegistry',
   custody: 'traceability/CustodyTransfer',
@@ -70,7 +71,7 @@ export class EthersOrdersGateway implements OrdersGateway {
   ) {
     this.provider = new JsonRpcProvider(rpc, chainId, { staticNetwork: true });
   }
-  private contract(name: string) {
+  private async contract(name: string) {
     let contract = this.contracts.get(name);
     if (!contract) {
       const artifact = JSON.parse(
@@ -82,6 +83,10 @@ export class EthersOrdersGateway implements OrdersGateway {
           'utf8',
         ),
       );
+      if (name === 'delivery' && !this.addresses.delivery)
+        this.addresses.delivery = String(
+          await (await this.contract('orders')).getFunction('ingredientDelivery')(),
+        );
       contract = new Contract(
         name === 'orders' ? this.address : this.addresses[name],
         new Interface(artifact.abi),
@@ -92,7 +97,7 @@ export class EthersOrdersGateway implements OrdersGateway {
     return contract;
   }
   async read(name: string, method: string, args: unknown[] = []) {
-    const contract = this.contract(name);
+    const contract = await this.contract(name);
     const fn = contract.getFunction(method);
     const result = await fn(...args);
     const outputs = fn.fragment.outputs;
@@ -106,7 +111,7 @@ export class EthersOrdersGateway implements OrdersGateway {
     return plain(result, outputs);
   }
   async events(name: string, event: string) {
-    const contract = this.contract(name);
+    const contract = await this.contract(name);
     const logs = await contract.queryFilter(contract.getEvent(event)());
     return logs
       .filter((log) => 'args' in log)
@@ -122,7 +127,7 @@ export class EthersOrdersGateway implements OrdersGateway {
   async prepare(actor: string, name: string, method: string, args: unknown[]) {
     if (Number(BigInt(await this.provider.send('eth_chainId', []))) !== this.chainId)
       throw new Error('The configured RPC chain does not match CHAIN_ID.');
-    const contract = this.contract(name);
+    const contract = await this.contract(name);
     // An idle automining chain's latest block may predate a real receipt/dispatch.
     // Simulate the next transaction state without mining or changing the reported time.
     await contract.getFunction(method).staticCall(...args, { from: actor, blockTag: 'pending' });

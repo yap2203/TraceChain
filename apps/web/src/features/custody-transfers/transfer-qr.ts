@@ -1,4 +1,4 @@
-import { decodeTransferQrPayload, encodeTransferQrPayload } from '@tracechain/shared';
+import { encodeTransferQrPayload } from '@tracechain/shared';
 import { getAddress, isHexString } from 'ethers';
 import qrcode from 'qrcode-generator';
 
@@ -60,17 +60,4 @@ export function createTransferQrModel(
     ),
     payload,
   };
-}
-
-export function normalizeManualTransferQrPayload(value: string) {
-  const configuration = loadTransferQrConfiguration();
-  if (!value.trim().startsWith('tracechain://')) return value.trim();
-  const legacy = decodeTransferQrPayload(value.trim(), {
-    allowLegacy: true,
-    publicAppUrl: configuration.publicAppUrl,
-  });
-  return encodeTransferQrPayload({
-    ...legacy,
-    publicAppUrl: configuration.publicAppUrl,
-  });
 }

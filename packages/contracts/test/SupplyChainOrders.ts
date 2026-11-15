@@ -8,6 +8,694 @@ function signed<T extends BaseContract>(contract: T, actor: ContractRunner): T {
 }
 
 describe('Orders, physical ingredient inventory and downstream recall links', function () {
+  async function warehouseFixture() {
+    const f = await buildFixture(7 * 86400);
+    const delivery = await ethers.getContractAt(
+      'IngredientDelivery',
+      await f.orders.ingredientDelivery(),
+    );
+    await signed(delivery, f.distributor).registerWarehouse(f.transit, 'Warehouse A');
+    const shipmentId = ethers.id('warehouse-placement');
+    const road = {
+      shipmentId,
+      referenceId: f.batchId,
+      quantity: 100,
+      fromLocation: f.source,
+      toLocation: f.transit,
+      vehicle: 'VAB 1234',
+      occurredAt: await networkHelpers.time.latest(),
+      expectedAt: f.expiry - 1,
+    };
+    await signed(delivery, f.supplier).dispatchToWarehouse(road);
+    const shipment = await delivery.getRoadShipment(shipmentId);
+    const place = (name: string, quantity: number, expiresAt = f.expiry - 1) =>
+      signed(delivery, f.manufacturer).placeCustodyOrder(
+        ethers.id(name),
+        shipment.positionId,
+        quantity,
+        f.destination,
+        expiresAt,
+        ethers.id('details'),
+        'encrypted',
+      );
+    return { ...f, delivery, shipmentId, road, positionId: shipment.positionId, place };
+  }
+  it('credits warehouse stock only after recipient receipt and rejects forged road metadata', async function () {
+    const f = await networkHelpers.loadFixture(warehouseFixture);
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(199900n);
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(0n);
+    await expect(f.place('before-warehouse-receipt', 1)).to.be.revertedWithCustomError(
+      f.delivery,
+      'InvalidState',
+    );
+    await expect(
+      signed(f.delivery, f.manufacturer).receiveRoadShipment(
+        ethers.id('wrong'),
+        f.shipmentId,
+        100,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    for (const changes of [
+      { vehicle: ' ' },
+      { occurredAt: f.expiry },
+      { fromLocation: f.destination },
+      { toLocation: f.shop },
+    ]) {
+      await expect(
+        signed(f.delivery, f.supplier).dispatchToWarehouse({
+          ...f.road,
+          shipmentId: ethers.id(JSON.stringify(changes)),
+          ...changes,
+        }),
+      ).to.revert(ethers);
+    }
+    const receiptId = ethers.id('warehouse-receipt');
+    await signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 1);
+    await signed(f.delivery, f.distributor).receiveRoadShipment(
+      receiptId,
+      f.shipmentId,
+      100,
+      await networkHelpers.time.latest(),
+    );
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(100n);
+    await expect(
+      signed(f.delivery, f.distributor).receiveRoadShipment(
+        receiptId,
+        f.shipmentId,
+        1,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    const record = await f.delivery.getRoadShipment(f.shipmentId);
+    expect(record.confirmedBy).to.equal(f.supplier.address);
+    expect(record.vehicle).to.equal('VAB 1234');
+    expect(record.unit).to.equal(ethers.encodeBytes32String('g'));
+    expect(record.recordedAt).to.be.greaterThanOrEqual(record.dispatchedAt);
+  });
+  async function twoModeFixture() {
+    const f = await warehouseFixture();
+    await signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 1);
+    await signed(f.delivery, f.distributor).receiveRoadShipment(
+      ethers.id('intake'),
+      f.shipmentId,
+      100,
+      await networkHelpers.time.latest(),
+    );
+    const requestId = ethers.id('supplier-selects-fulfilment');
+    await signed(f.orders, f.manufacturer).requestIngredientDelivery(
+      requestId,
+      f.batchId,
+      10,
+      f.expiry - 1,
+      ethers.id('request'),
+      'encrypted',
+    );
+    await signed(f.orders, f.supplier).approveIngredientDelivery(
+      requestId,
+      ethers.id('approved'),
+      'encrypted',
+    );
+    return { ...f, requestId };
+  }
+  it('lets the Supplier select sufficient custody after approval, reserve atomically and fulfil exactly once', async function () {
+    const f = await networkHelpers.loadFixture(twoModeFixture);
+    expect(await f.delivery.fulfilmentPolicy()).to.equal(2n);
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(100n);
+    await signed(f.delivery, f.supplier).arrangeFromCustody(
+      f.requestId,
+      f.positionId,
+      f.destination,
+    );
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(90n);
+    expect((await f.delivery.custodyOrders(f.requestId)).quantity).to.equal(10n);
+    expect(await f.delivery.deliveryArranged(f.requestId)).to.equal(true);
+    expect((await f.delivery.get(f.requestId)).stage).to.equal(3n);
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(199900n);
+    await expect(
+      signed(f.delivery, f.supplier).arrangeFromCustody(f.requestId, f.positionId, f.destination),
+    ).to.revert(ethers);
+    await expect(
+      signed(f.delivery, f.distributor).act(
+        2,
+        f.distributor.address,
+        f.requestId,
+        ethers.ZeroAddress,
+        ethers.ZeroHash,
+        0,
+        ethers.ZeroHash,
+        ethers.ZeroHash,
+        0,
+      ),
+    ).to.revert(ethers);
+    const shipmentId = ethers.id('from-custody');
+    await signed(f.delivery, f.distributor).dispatchCustodyOrder({
+      shipmentId,
+      referenceId: f.requestId,
+      quantity: 10,
+      fromLocation: f.transit,
+      toLocation: f.destination,
+      vehicle: 'VAB 1234',
+      occurredAt: await networkHelpers.time.latest(),
+      expectedAt: f.expiry - 1,
+    });
+    await signed(f.delivery, f.manufacturer).receiveRoadShipment(
+      ethers.id('factory-receipt'),
+      shipmentId,
+      10,
+      await networkHelpers.time.latest(),
+    );
+    expect(await f.ingredients.manufacturerUsable(f.batchId, f.manufacturer.address)).to.equal(10n);
+    expect((await f.delivery.getPosition(f.positionId)).position.quantity).to.equal(90n);
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(199900n);
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id('bypass'),
+        f.requestId,
+        1,
+        f.destination,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.revert(ethers);
+  });
+  it('rejects custody shortage, wrong parties/locations and switching after a direct carrier request', async function () {
+    const f = await networkHelpers.loadFixture(twoModeFixture);
+    await expect(
+      signed(f.delivery, f.manufacturer).arrangeFromCustody(
+        f.requestId,
+        f.positionId,
+        f.destination,
+      ),
+    ).to.revert(ethers);
+    await expect(
+      signed(f.delivery, f.supplier).arrangeFromCustody(f.requestId, f.positionId, f.source),
+    ).to.revert(ethers);
+    await f.place('competing-reservation', 95);
+    await expect(
+      signed(f.delivery, f.supplier).arrangeFromCustody(f.requestId, f.positionId, f.destination),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    expect((await f.delivery.get(f.requestId)).stage).to.equal(1n);
+    await signed(f.orders, f.manufacturer).closeOrder(ethers.id('competing-reservation'));
+    await signed(f.delivery, f.supplier).act(
+      1,
+      f.supplier.address,
+      f.requestId,
+      f.distributor.address,
+      ethers.ZeroHash,
+      0,
+      ethers.ZeroHash,
+      ethers.ZeroHash,
+      0,
+    );
+    await expect(
+      signed(f.delivery, f.supplier).arrangeFromCustody(f.requestId, f.positionId, f.destination),
+    ).to.revert(ethers);
+    await signed(f.delivery, f.distributor).act(
+      3,
+      f.distributor.address,
+      f.requestId,
+      ethers.ZeroAddress,
+      ethers.ZeroHash,
+      0,
+      ethers.ZeroHash,
+      ethers.ZeroHash,
+      0,
+    );
+    await signed(f.delivery, f.supplier).arrangeFromCustody(
+      f.requestId,
+      f.positionId,
+      f.destination,
+    );
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(90n);
+  });
+  it('rejects custody selection after the approval assignment deadline', async function () {
+    const f = await networkHelpers.loadFixture(twoModeFixture);
+    await networkHelpers.time.increaseTo((await f.delivery.get(f.requestId)).assignmentDeadline);
+    await expect(
+      signed(f.delivery, f.supplier).arrangeFromCustody(f.requestId, f.positionId, f.destination),
+    ).to.revert(ethers);
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(100n);
+  });
+  it('lets only the Distributor accept or reject custody and restores Supplier stock only after confirmed return', async function () {
+    const f = await networkHelpers.loadFixture(warehouseFixture);
+    await expect(
+      signed(f.delivery, f.distributor).receiveRoadShipment(
+        ethers.id('early'),
+        f.shipmentId,
+        100,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await expect(
+      signed(f.delivery, f.supplier).decideWarehouseShipment(f.shipmentId, 1),
+    ).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
+    await signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 2);
+    expect((await f.delivery.getRoadShipment(f.shipmentId)).status).to.equal(4n);
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(0n);
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(199900n);
+    await expect(
+      signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 1),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await expect(
+      signed(f.delivery, f.distributor).receiveRoadShipment(
+        ethers.id('rejected'),
+        f.shipmentId,
+        100,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await expect(
+      signed(f.delivery, f.manufacturer).confirmRejectedReturn(
+        ethers.id('wrong-return'),
+        f.shipmentId,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
+    await signed(f.delivery, f.supplier).confirmRejectedReturn(
+      ethers.id('returned'),
+      f.shipmentId,
+      await networkHelpers.time.latest(),
+    );
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(200000n);
+    await expect(
+      signed(f.delivery, f.supplier).confirmRejectedReturn(
+        ethers.id('duplicate-return'),
+        f.shipmentId,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+  });
+  it('requires a current requested Supplier proof before custody acceptance and receipt', async function () {
+    const f = await networkHelpers.loadFixture(warehouseFixture);
+    const challenge = ethers.id('custody-proof'),
+      until = (await networkHelpers.time.latest()) + 600;
+    const proof = (action: number, hash = ethers.ZeroHash) =>
+      signed(f.delivery, f.distributor).act(
+        action,
+        f.distributor.address,
+        f.shipmentId,
+        ethers.ZeroAddress,
+        challenge,
+        0,
+        hash,
+        action === 5 ? ethers.id('vp') : ethers.ZeroHash,
+        until,
+      );
+    await proof(4);
+    await expect(
+      signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 1),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await expect(proof(5, ethers.id('wrong-company'))).to.be.revertedWithCustomError(
+      f.delivery,
+      'InvalidState',
+    );
+    await proof(5, await f.stakeholders.credentialHashOf(f.supplier.address));
+    await signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 1);
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(0n);
+    await networkHelpers.time.increaseTo(until);
+    await expect(
+      signed(f.delivery, f.distributor).receiveRoadShipment(
+        ethers.id('stale-proof'),
+        f.shipmentId,
+        100,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+  });
+  it('reserves atomically at order placement, prevents overselling and releases rejection and expiry', async function () {
+    const f = await networkHelpers.loadFixture(warehouseFixture);
+    await signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 1);
+    await signed(f.delivery, f.distributor).receiveRoadShipment(
+      ethers.id('warehouse-receipt'),
+      f.shipmentId,
+      100,
+      await networkHelpers.time.latest(),
+    );
+    await f.place('first-custody-order', 60);
+    expect((await f.delivery.getPosition(f.positionId)).reserved).to.equal(60n);
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(40n);
+    expect((await f.orders.getOrder(ethers.id('first-custody-order'))).buyer).to.equal(
+      f.manufacturer.address,
+    );
+    expect(await f.delivery.pendingBuyer()).to.equal(ethers.ZeroAddress);
+    await expect(f.place('oversell', 41)).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await signed(f.orders, f.supplier).decideRequest(
+      ethers.id('first-custody-order'),
+      2,
+      ethers.id('reject'),
+      'encrypted',
+    );
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(100n);
+    const expiry = (await networkHelpers.time.latest()) + 100;
+    await f.place('expiring-custody-order', 70, expiry);
+    await networkHelpers.time.increaseTo(expiry);
+    expect((await f.delivery.getPosition(f.positionId)).reserved).to.equal(0n);
+    await f.place('after-expiry', 100);
+    expect((await f.delivery.getPosition(f.positionId)).available).to.equal(0n);
+  });
+  it('requires seller approval, separate Distributor dispatch and Manufacturer receipt without double debiting Supplier', async function () {
+    const f = await networkHelpers.loadFixture(warehouseFixture);
+    await signed(f.delivery, f.distributor).decideWarehouseShipment(f.shipmentId, 1);
+    await signed(f.delivery, f.distributor).receiveRoadShipment(
+      ethers.id('warehouse-receipt'),
+      f.shipmentId,
+      100,
+      await networkHelpers.time.latest(),
+    );
+    await f.place('custody-fulfilment', 60);
+    const orderId = ethers.id('custody-fulfilment');
+    const dispatch = {
+      ...f.road,
+      shipmentId: ethers.id('warehouse-to-factory'),
+      referenceId: orderId,
+      quantity: 60,
+      fromLocation: f.transit,
+      toLocation: f.destination,
+      occurredAt: await networkHelpers.time.latest(),
+    };
+    await expect(
+      signed(f.delivery, f.distributor).dispatchCustodyOrder(dispatch),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await expect(
+      signed(f.delivery, f.supplier).arrangeDelivery(orderId),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await signed(f.orders, f.supplier).approveIngredientDelivery(
+      orderId,
+      ethers.id('approve'),
+      'encrypted',
+    );
+    dispatch.occurredAt = await networkHelpers.time.latest();
+    await expect(
+      signed(f.delivery, f.distributor).dispatchCustodyOrder(dispatch),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await expect(
+      signed(f.delivery, f.distributor).arrangeDelivery(orderId),
+    ).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
+    await signed(f.delivery, f.supplier).arrangeDelivery(orderId);
+    await expect(
+      signed(f.delivery, f.supplier).arrangeDelivery(orderId),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await expect(
+      signed(f.delivery, f.distributor).dispatchCustodyOrder(dispatch),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    dispatch.occurredAt = await networkHelpers.time.latest();
+    await expect(
+      signed(f.delivery, f.supplier).dispatchCustodyOrder(dispatch),
+    ).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
+    await signed(f.delivery, f.distributor).dispatchCustodyOrder(dispatch);
+    expect((await f.delivery.getPosition(f.positionId)).position.quantity).to.equal(40n);
+    expect((await f.delivery.getPosition(f.positionId)).reserved).to.equal(0n);
+    expect(await f.ingredients.manufacturerUsable(f.batchId, f.manufacturer.address)).to.equal(0n);
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id('bypass'),
+        orderId,
+        60,
+        f.destination,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await signed(f.delivery, f.manufacturer).receiveRoadShipment(
+      ethers.id('partial'),
+      dispatch.shipmentId,
+      20,
+      await networkHelpers.time.latest(),
+    );
+    expect(await f.ingredients.manufacturerUsable(f.batchId, f.manufacturer.address)).to.equal(20n);
+    await signed(f.delivery, f.manufacturer).receiveRoadShipment(
+      ethers.id('remaining'),
+      dispatch.shipmentId,
+      40,
+      await networkHelpers.time.latest(),
+    );
+    expect(await f.ingredients.manufacturerUsable(f.batchId, f.manufacturer.address)).to.equal(60n);
+    expect((await f.orders.getOrder(orderId)).status).to.equal(3n);
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(199900n);
+    expect((await f.delivery.getRoadShipment(dispatch.shipmentId)).status).to.equal(3n);
+  });
+  it('tracks product road stock by location and restores it after cancellation and rejection', async function () {
+    const f = await networkHelpers.loadFixture(fixture);
+    const { productId } = await produced(f);
+    const send = async (name: string, quantity: number) => {
+      const id = ethers.id(name);
+      await signed(f.custody, f.manufacturer).createRoadTransfer(
+        id,
+        productId,
+        f.distributor.address,
+        quantity,
+        f.expiry - 1,
+        ethers.id('details'),
+        'encrypted',
+        f.destination,
+        f.transit,
+        await networkHelpers.time.latest(),
+        'VAB 1234',
+      );
+      return id;
+    };
+    const first = await send('cancel-road', 20);
+    expect(
+      await f.custody.locationStock(productId, f.manufacturer.address, f.destination),
+    ).to.equal(40n);
+    await signed(f.custody, f.manufacturer).cancel(first, ethers.id('cancel'));
+    expect(
+      await f.custody.locationStock(productId, f.manufacturer.address, f.destination),
+    ).to.equal(60n);
+    const second = await send('reject-road', 20);
+    await signed(f.custody, f.distributor).reject(second, ethers.id('reject'));
+    expect(
+      await f.custody.locationStock(productId, f.manufacturer.address, f.destination),
+    ).to.equal(60n);
+    const third = await send('receive-road', 20);
+    await signed(f.custody, f.distributor).confirmReceiptWithMissing(
+      third,
+      20,
+      0,
+      0,
+      0,
+      await networkHelpers.time.latest(),
+      ethers.id('receipt'),
+      'encrypted',
+    );
+    expect(await f.custody.locationStock(productId, f.distributor.address, f.transit)).to.equal(
+      20n,
+    );
+    await signed(f.custody, f.distributor).createRoadTransfer(
+      ethers.id('onward'),
+      productId,
+      f.retailer.address,
+      10,
+      f.expiry - 1,
+      ethers.id('details'),
+      'encrypted',
+      f.transit,
+      f.shop,
+      await networkHelpers.time.latest(),
+      'ABC 456',
+    );
+    expect(await f.custody.locationStock(productId, f.distributor.address, f.transit)).to.equal(
+      10n,
+    );
+  });
+  async function deliveryFixture() {
+    const f = await buildFixture(7 * 86400);
+    const delivery = await ethers.getContractAt(
+      'IngredientDelivery',
+      await f.orders.ingredientDelivery(),
+    );
+    const deliveryOrder = ethers.id('distributor-ingredient-order');
+    await signed(f.orders, f.manufacturer).requestIngredientDelivery(
+      deliveryOrder,
+      f.batchId,
+      10,
+      f.expiry - 1,
+      ethers.id('request'),
+      'encrypted',
+    );
+    await signed(f.orders, f.supplier).approveIngredientDelivery(
+      deliveryOrder,
+      ethers.id('approved'),
+      'encrypted',
+    );
+    const act = (
+      actor: typeof f.supplier,
+      action: number,
+      fields: {
+        distributor?: string;
+        challenge?: string;
+        at?: number;
+        credentialHash?: string;
+        presentationHash?: string;
+        until?: number;
+      } = {},
+    ) =>
+      signed(delivery, actor).act(
+        action,
+        actor.address,
+        deliveryOrder,
+        fields.distributor ?? ethers.ZeroAddress,
+        fields.challenge ?? ethers.ZeroHash,
+        fields.at ?? 0,
+        fields.credentialHash ?? ethers.ZeroHash,
+        fields.presentationHash ?? ethers.ZeroHash,
+        fields.until ?? 0,
+      );
+    return { ...f, delivery, deliveryOrder, act };
+  }
+  it('keeps Orders and its delivery module deployable under the actual Ethereum size limit', async function () {
+    const f = await networkHelpers.loadFixture(deliveryFixture);
+    for (const contract of [f.orders, f.delivery]) {
+      expect(
+        ((await ethers.provider.getCode(await contract.getAddress())).length - 2) / 2,
+      ).to.be.at.most(24576);
+    }
+    expect(await f.delivery.orders()).to.equal(await f.orders.getAddress());
+    expect((await f.delivery.get(f.deliveryOrder)).assignmentDeadline).to.equal(
+      BigInt(await networkHelpers.time.latest()) + 48n * 3600n,
+    );
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(200000n);
+  });
+  it('requires the assigned Distributor pickup and credits only Manufacturer-confirmed quantities without double debits', async function () {
+    const f = await networkHelpers.loadFixture(deliveryFixture);
+    const receive = (name: string, quantity: number) =>
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id(name),
+        f.deliveryOrder,
+        quantity,
+        f.destination,
+        Math.floor(Date.now() / 1000),
+      );
+    await expect(receive('too-early', 10)).to.be.revertedWithCustomError(f.orders, 'InvalidState');
+    await f.act(f.supplier, 1, { distributor: f.distributor.address });
+    await expect(f.act(f.stranger, 2)).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
+    await expect(
+      signed(f.delivery, f.stranger).act(
+        2,
+        f.distributor.address,
+        f.deliveryOrder,
+        ethers.ZeroAddress,
+        ethers.ZeroHash,
+        0,
+        ethers.ZeroHash,
+        ethers.ZeroHash,
+        0,
+      ),
+    ).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
+    await f.act(f.distributor, 2);
+    await f.act(f.distributor, 6, { at: await networkHelpers.time.latest() });
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(199990n);
+    expect(await f.ingredients.manufacturerUsable(f.batchId, f.manufacturer.address)).to.equal(0n);
+    await expect(
+      f.act(f.distributor, 6, { at: await networkHelpers.time.latest() }),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    for (const [receipt, quantity] of [
+      ['part-one', 4],
+      ['part-two', 6],
+    ] as const) {
+      await signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id(receipt),
+        f.deliveryOrder,
+        quantity,
+        f.destination,
+        await networkHelpers.time.latest(),
+      );
+    }
+    expect((await f.delivery.get(f.deliveryOrder)).stage).to.equal(5n);
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(199990n);
+    expect(await f.ingredients.manufacturerUsable(f.batchId, f.manufacturer.address)).to.equal(10n);
+    await expect(receive('duplicate', 1)).to.be.revertedWithCustomError(f.orders, 'InvalidState');
+  });
+  it('cancels at the 48-hour assignment boundary without requiring a timer transaction', async function () {
+    const f = await networkHelpers.loadFixture(deliveryFixture);
+    const deadline = (await f.delivery.get(f.deliveryOrder)).assignmentDeadline;
+    await networkHelpers.time.increaseTo(deadline);
+    expect((await f.delivery.get(f.deliveryOrder)).stage).to.equal(6n);
+    await expect(
+      f.act(f.supplier, 1, { distributor: f.distributor.address }),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await f.act(f.stranger, 7);
+    expect((await f.orders.getOrder(f.deliveryOrder)).status).to.equal(3n);
+    expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(200000n);
+  });
+  it('preserves the original assignment deadline after a Distributor declines', async function () {
+    const f = await networkHelpers.loadFixture(deliveryFixture);
+    const deadline = (await f.delivery.get(f.deliveryOrder)).assignmentDeadline;
+    await f.act(f.supplier, 1, { distributor: f.distributor.address });
+    await f.act(f.distributor, 3);
+    expect((await f.delivery.get(f.deliveryOrder)).stage).to.equal(1n);
+    expect((await f.delivery.get(f.deliveryOrder)).assignmentDeadline).to.equal(deadline);
+  });
+  it('caps assignment at request expiry and cannot bypass delivery with the older decision entry point', async function () {
+    const f = await networkHelpers.loadFixture(deliveryFixture),
+      order = ethers.id('short-delivery-request');
+    const expiry = (await networkHelpers.time.latest()) + 600;
+    await signed(f.orders, f.manufacturer).requestIngredientDelivery(
+      order,
+      f.batchId,
+      10,
+      expiry,
+      ethers.id('details'),
+      'encrypted',
+    );
+    await signed(f.orders, f.supplier).decideRequest(order, 1, ethers.id('approved'), 'encrypted');
+    expect((await f.delivery.get(order)).assignmentDeadline).to.equal(BigInt(expiry));
+    expect((await f.delivery.get(order)).stage).to.equal(1n);
+    await expect(
+      signed(f.orders, f.manufacturer).confirmApprovedIngredientReceipt(
+        ethers.id('bypass'),
+        order,
+        10,
+        f.destination,
+        await networkHelpers.time.latest(),
+      ),
+    ).to.be.revertedWithCustomError(f.orders, 'InvalidState');
+  });
+  it('blocks pickup when requested company evidence expires even after a prior verification attestation', async function () {
+    const f = await networkHelpers.loadFixture(deliveryFixture);
+    await f.act(f.supplier, 1, { distributor: f.distributor.address });
+    await f.act(f.distributor, 2);
+    const proof = {
+      challenge: ethers.id('expiring-proof'),
+      until: (await networkHelpers.time.latest()) + 60,
+      credentialHash: await f.stakeholders.credentialHashOf(f.supplier.address),
+      presentationHash: ethers.id('verified'),
+    };
+    await f.act(f.distributor, 4, proof);
+    await f.act(f.distributor, 5, proof);
+    await networkHelpers.time.increaseTo(proof.until);
+    await expect(
+      f.act(f.distributor, 6, { at: await networkHelpers.time.latest() }),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+  });
+  it('requires requested Supplier proof before pickup and rejects wrong hashes, proof replay and revoked carriers', async function () {
+    const f = await networkHelpers.loadFixture(deliveryFixture);
+    await f.act(f.supplier, 1, { distributor: f.distributor.address });
+    await f.act(f.distributor, 2);
+    const challenge = ethers.id('delivery-proof'),
+      until = (await networkHelpers.time.latest()) + 600;
+    await f.act(f.distributor, 4, { challenge, until });
+    await expect(
+      f.act(f.distributor, 6, { at: await networkHelpers.time.latest() }),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    const proof = {
+      challenge,
+      until,
+      presentationHash: ethers.id('holder-signed-proof'),
+      credentialHash: await f.stakeholders.credentialHashOf(f.supplier.address),
+    };
+    await expect(
+      f.act(f.distributor, 5, { ...proof, credentialHash: ethers.id('wrong-company') }),
+    ).to.be.revertedWithCustomError(f.delivery, 'InvalidState');
+    await f.act(f.distributor, 5, proof);
+    await expect(f.act(f.distributor, 5, proof)).to.be.revertedWithCustomError(
+      f.delivery,
+      'InvalidState',
+    );
+    await f.stakeholders.suspendStakeholder(f.distributor.address, ethers.id('suspended'));
+    await expect(
+      f.act(f.distributor, 6, { at: await networkHelpers.time.latest() }),
+    ).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
+  });
   it('prepares an actual receipt after the latest block using pending state without mining or rewriting its time', async function () {
     const f = await networkHelpers.loadFixture(fixture),
       order = ethers.id('idle-chain-approved-order');
@@ -533,6 +1221,9 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
     expect((await f.ingredients.getBatch(fresh)).availableQuantity).to.equal(400n);
   });
   async function fixture() {
+    return buildFixture(86400);
+  }
+  async function buildFixture(lifetime: number) {
     const [admin, supplier, manufacturer, distributor, retailer, stranger] =
       await ethers.getSigners();
     const stakeholders = await ethers.deployContract('StakeholderRegistry', [admin.address]);
@@ -561,7 +1252,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
     await ingredients.configureSupplyOrders(orders);
     await custody.configureSupplyOrders(orders);
     const time = await networkHelpers.time.latest();
-    const expiry = time + 86400;
+    const expiry = time + lifetime;
     for (const [actor, role] of [
       [supplier, 2],
       [manufacturer, 3],

@@ -125,7 +125,7 @@ export function transferResolutionMessage(error: unknown) {
     CREDENTIAL_AUTHORIZATION_REQUIRED:
       'Your wallet does not currently have an authorized Company Role Credential.',
     INTENDED_RECIPIENT_REQUIRED: 'This transfer is assigned to a different recipient wallet.',
-    INVALID_REQUEST: 'The QR request is invalid. Select or paste a complete QR payload.',
+    INVALID_REQUEST: 'The QR request is invalid. Scan the complete package QR or upload its image.',
     INVALID_TRANSFER_QR: 'This is not a valid TraceChain custody-transfer QR code.',
     NETWORK_ERROR: 'TraceChain could not reach the transfer service. Check your connection.',
     QR_CHAIN_MISMATCH: 'This QR code belongs to a different blockchain network.',

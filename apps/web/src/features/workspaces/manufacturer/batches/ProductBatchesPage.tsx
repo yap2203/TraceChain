@@ -84,6 +84,8 @@ function OwnedProducts({
     };
   }, []);
   const products = data.productBatches.filter((product) => {
+    if (!data.actorWallet || product.manufacturer.toLowerCase() !== data.actorWallet.toLowerCase())
+      return false;
     const item = catalogue.find((entry) => entry.batches?.includes(product.batchId));
     return [item?.name, item?.batchReference, product.batchId]
       .join(' ')

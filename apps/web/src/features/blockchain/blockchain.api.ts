@@ -140,6 +140,7 @@ export interface OperationalEvidenceRequest {
   updatedAt: number;
 }
 export interface OperationalData {
+  actorWallet?: string;
   ingredientBatches: OperationalIngredientBatch[];
   productBatches: OperationalProductBatch[];
   transfers: OperationalTransfer[];

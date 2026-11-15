@@ -1,15 +1,90 @@
 # TraceChain
 
+**Local redeployment with preserved test data (2026-11-15):** the configured chain-31337 suite
+was redeployed alongside the old contracts, and the root `.env` was updated after 25 state checks.
+The existing ingredient, 12 custody units, three locations, approved order, Admin and four temporary
+role accounts were retained, with the same credential hashes/CIDs and encrypted files. Expired proof
+attestations for the completed custody intake remain historical on the old deployment; they were
+not represented as fresh verification. The running API was reloaded and verified against the new
+addresses. Refresh/sign in again, and regenerate QR labels because registry addresses changed.
+
+`packages/contracts/scripts/redeploy-local-preserving-state.ts` is a deliberately restricted local
+migration helper, not a general production migration. With Node 26, run
+`node scripts/redeploy-local-preserving-state.ts` from `packages/contracts` for a read-only plan;
+only setting `TRACECHAIN_REDEPLOY_APPLY=1` permits writes. It requires loopback Hardhat chain 31337
+and unlocked local accounts, refuses unsupported activity, deploys alongside existing contracts,
+replays supported records and updates `.env` only after verification. It uses no private keys,
+uploads, chain resets or storage/code patching. Migration manifests in ignored `.tracechain/migrations/`
+contain old/new addresses and public state comparisons. This standalone deployment does not create
+an Ignition execution journal; existing Ignition journals are left intact.
+
+**Two ingredient delivery modes:** Manufacturer sends a quantity request to Supplier. After
+approval, Supplier chooses **direct Distributor delivery** (Distributor accepts/declines, then
+scans pickup) or **delivery from existing Distributor custody** (enough received, unreserved
+stock for the exact batch is required). New requests do not require warehouse selection by the
+Manufacturer; Supplier custody selection reserves stock atomically. Manufacturer physical receipt
+is required in both paths. See the [two-mode setup and test flow](docs/testing/TWO_MODE_INGREDIENT_DELIVERY.md).
+This requires the updated full suite with `IngredientDelivery.fulfilmentPolicy() = 2`; no running
+deployment or environment is changed automatically. Explicit older custody orders remain supported.
+
+**Company ownership:** management records are scoped to the authenticated company wallet, with
+separate permissions for actual order, evidence and custody participants. Manufacturer product
+details reject other Manufacturers' records; API transaction preparation checks resource ownership
+and location ownership before storing private workflow data. Public buyer catalogue discovery and
+public traceability summaries remain available. See the [ownership access review and two-company
+test flow](docs/OWNERSHIP_ACCESS_REVIEW.md). Restart/rebuild API and web to apply these checks;
+this review does not require an additional contract deployment. Public blockchain data remains public.
+
+**Custody inventory** is a separate navigation page for Suppliers and Distributors, with clickable
+stock details. Each Distributor receives only its own inventory through the API; Suppliers can inspect
+their own batches held by custodians. Shipments no longer contains inventory tabs. Manufacturer
+ordering uses a minimal public availability summary. On-chain balances remain publicly readable.
+
+**Information requests** is available to every stakeholder at `/{role}/information-requests`.
+Received/Sent company-proof tables cover custody/delivery, quantity-order and ingredient-information
+contexts, using existing proof signing, verification and DIDComm services. Ingredient evidence remains
+available as a separate category. Admin visibility follows existing participant permissions; this page
+does not grant new proof/credential powers. Old Supplier/Retailer evidence-request links still resolve.
+These page/privacy changes need API/web restart or rebuild, with no additional contract deployment.
+
+**Warehouse delivery:** Suppliers send ingredients to a registered Distributor warehouse.
+Custody fulfilment uses physically received, unreserved stock. For new requests, Supplier selects
+and reserves that stock after approval; older explicit warehouse orders reserve at placement.
+Rejection/expiry releases the undispatched remainder. Supplier stays seller.
+After approval, the Supplier selects **Arrange ingredient delivery** on the Manufacturer order.
+Only then can the Distributor record dispatch to the selected Manufacturer location; scanned physical receipt
+alone credits usable production stock. Each leg has its own shipment/QR. Supplier availability is
+debited once at initial dispatch, never again at Manufacturer receipt.
+
+**Shipments** replaces Distributor Incoming shipments and Ingredient deliveries, with Ingredient
+and Product types, custody balances and onward transfer from detail. Supplier and Manufacturer also
+have Transfers/Shipments. Road dispatch records vehicle, route, canonical quantity/unit, actual time,
+ETA, block time and signer on-chain. Old Distributor links redirect to Shipments. This needs a fresh
+full-suite deployment; old journals and root environment are not modified automatically.
+See [setup, limitations and step-by-step testing](docs/testing/WAREHOUSE_CUSTODY_FLOW.md).
+The older 48-hour assignment route remains documented for legacy compatibility only.
+
+Supplier **Sent shipments** tracks its outbound custody stock and delivery orders. Distributor
+**Custody & deliveries** reviews incoming Supplier custody offers: request/verify Supplier company VP,
+then accept or reject. Acceptance does not credit stock; camera scanning or QR-image upload followed
+by explicit physical receipt does. Rejection leaves stock in return-pending state until the Supplier
+scans and confirms physical return. Ingredient dispatch jobs appear only for approved orders arranged
+by their Supplier. Distributor **Product transfers** remains separate. Manual QR entry is removed
+from shipment and legacy receipt scanners. This requires `IngredientDelivery.reviewPolicy() = 1`
+in a fresh complete suite; the API reports an upgrade requirement for older deployments.
+
 **Supplier remaining stock:** Ingredient batches and Supplier order details calculate remaining
 stock after open requests automatically: current on-chain stock minus pending and approved quantities
 not yet received. Partial receipts are not deducted twice. Rejected, expired and completed requests
 are excluded; excess demand shows a shortfall. This is a demand estimate, not a stock reservation.
-Actual Supplier stock decreases only on Manufacturer receipt confirmation. Use **Refresh** to load
+Actual Supplier stock decreases at warehouse dispatch, at pickup for legacy routed deliveries, or
+at receipt for legacy direct requests. New custody orders are excluded from Supplier demand estimates
+because that stock has already left Supplier availability. Use **Refresh** to load
 requests or receipts submitted by another company. No contract deployment is needed for this display.
 
 **Production ingredients:** Supplier approval does not add usable stock. In Manufacturer **My orders
-→ Sent to Suppliers → View request**, register/select your receiving location and explicitly confirm
-the quantity physically received. Ingredient evidence is optional for production from that received
+→ View request → View shipments & receipt**, open the Distributor shipment and scan/confirm the
+quantity physically received at your selected location. Ingredient evidence is optional for production from that received
 stock; it can still be requested and verified separately when more information is needed.
 Under **Products → Create product batch**, select that location, choose multiple ingredients and
 their quantities/compatible units, and review automatically calculated remaining balances. Product

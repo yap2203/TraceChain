@@ -6,23 +6,25 @@ export default defineConfig({
   solidity: {
     profiles: {
       default: {
-        version: '0.8.34',
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200,
+        compilers: [
+          { version: '0.8.34', settings: { optimizer: { enabled: true, runs: 200 }, viaIR: true } },
+        ],
+        overrides: {
+          'contracts/traceability/SupplyChainOrders.sol': {
+            version: '0.8.34',
+            settings: { optimizer: { enabled: true, runs: 1 }, viaIR: true },
           },
-          viaIR: true,
         },
       },
       production: {
-        version: '0.8.34',
-        settings: {
-          optimizer: {
-            enabled: true,
-            runs: 200,
+        compilers: [
+          { version: '0.8.34', settings: { optimizer: { enabled: true, runs: 200 }, viaIR: true } },
+        ],
+        overrides: {
+          'contracts/traceability/SupplyChainOrders.sol': {
+            version: '0.8.34',
+            settings: { optimizer: { enabled: true, runs: 1 }, viaIR: true },
           },
-          viaIR: true,
         },
       },
     },

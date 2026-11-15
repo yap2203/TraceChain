@@ -29,7 +29,7 @@ const state = {
   catalogue: [],
   orders: [],
   shipments: [],
-  locations: [],
+  locations: [{ company: actor, location: 'factory', label: 'My factory' }],
 };
 describe('browse and request-only UI', () => {
   beforeEach(() => {
@@ -127,13 +127,12 @@ describe('browse and request-only UI', () => {
     );
     render(
       <MemoryRouter>
-        <OrdersPage role="manufacturer" />
+        <OrdersPage role="manufacturer" evidenceOnly initialOrderId={order.orderId} />
       </MemoryRouter>,
     );
-    await screen.findByText('No registered items');
-    fireEvent.click(screen.getByRole('button', { name: 'My requests' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Preview requested Company Role VP' }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Preview requested Company Role VP' }),
+    );
     await screen.findByLabelText('Share companyName');
     expect(screen.queryByLabelText('Presentation key backup password')).toBeNull();
     expect(
@@ -181,7 +180,7 @@ describe('browse and request-only UI', () => {
     expect(screen.getByText('No incoming requests')).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
   });
-  it('submits quantity interest without location, reservation or dispatch prerequisites', async () => {
+  it('submits quantity interest with the owned receiving location and leaves delivery selection to the Supplier', async () => {
     Object.defineProperty(window, 'ethereum', { configurable: true, value: { request: vi.fn() } });
     api.getOrders.mockResolvedValue({
       ...state,
@@ -214,7 +213,9 @@ describe('browse and request-only UI', () => {
     fireEvent.change(screen.getByLabelText(/Response deadline/), {
       target: { value: '2099-01-01T10:00' },
     });
-    expect(screen.queryByLabelText('Receiving location')).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Your receiving location/), {
+      target: { value: 'factory' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Submit request' }));
     await screen.findByText(/Request submitted. The recipient can review it/);
     expect(api.prepareOrder).toHaveBeenCalledWith(
@@ -227,7 +228,7 @@ describe('browse and request-only UI', () => {
         evidenceRequired: false,
       }),
     );
-    expect(api.prepareOrder.mock.calls[0][0]).not.toHaveProperty('location');
+    expect(api.prepareOrder.mock.calls[0][0].location).toBe('factory');
   });
   it('allows a recipient to request company evidence before any physical process', async () => {
     api.getOrders.mockResolvedValue({
@@ -390,6 +391,9 @@ describe('browse and request-only UI', () => {
     fireEvent.change(screen.getByLabelText(/Requested quantity/), { target: { value: '3' } });
     fireEvent.change(screen.getByLabelText(/Response deadline/), {
       target: { value: '2030-01-01T00:00' },
+    });
+    fireEvent.change(screen.getByLabelText(/Your receiving location/), {
+      target: { value: 'factory' },
     });
     const submit = screen.getByRole('button', { name: 'Submit request' });
     fireEvent.click(submit);

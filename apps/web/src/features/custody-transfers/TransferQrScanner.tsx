@@ -2,7 +2,6 @@ import {
   Camera,
   CheckCircle2,
   FileImage,
-  Keyboard,
   LoaderCircle,
   RotateCcw,
   ScanLine,
@@ -24,7 +23,6 @@ import type {
 } from './custody-transfer.types';
 import { cameraErrorMessage, type TransferQrReader, ZxingTransferQrReader } from './qr-reader';
 import { receiptConfirmationMessage, submitReceiptConfirmation } from './receipt-confirmation';
-import { normalizeManualTransferQrPayload } from './transfer-qr';
 import {
   ReceiptReconciliationForm,
   type ReceiptReconciliationInput,
@@ -32,7 +30,7 @@ import {
 import { ResolvedTransferCard } from './ResolvedTransferCard';
 import './custody-transfer.css';
 
-type ScanMethod = 'camera' | 'upload' | 'manual';
+type ScanMethod = 'camera' | 'upload';
 
 interface TransferQrScannerProps {
   initialPayload?: string;
@@ -62,7 +60,6 @@ export function TransferQrScanner({
 }: TransferQrScannerProps) {
   const [method, setMethod] = useState<ScanMethod>('camera');
   const [cameraState, setCameraState] = useState<'idle' | 'starting' | 'active'>('idle');
-  const [manualPayload, setManualPayload] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolved, setResolved] = useState<ResolvedCustodyTransfer | null>(null);
@@ -109,7 +106,7 @@ export function TransferQrScanner({
     async (payload: string) => {
       const normalized = payload.trim();
       if (!normalized) {
-        setError('Paste the complete TraceChain QR payload before continuing.');
+        setError('Scan a package QR with the camera or upload its image before continuing.');
         return;
       }
       if (requestActiveRef.current || resolvedRef.current) return;
@@ -264,7 +261,6 @@ export function TransferQrScanner({
   const reset = () => {
     resolvedRef.current = false;
     setResolved(null);
-    setManualPayload('');
     setError(null);
     setConfirmationError(null);
     setConfirming(false);
@@ -303,7 +299,6 @@ export function TransferQrScanner({
                   [
                     ['camera', Camera, 'Camera'],
                     ['upload', FileImage, 'Image upload'],
-                    ['manual', Keyboard, 'Manual paste'],
                   ] as const
                 ).map(([value, Icon, label]) => (
                   <button
@@ -392,33 +387,6 @@ export function TransferQrScanner({
                       ref={fileRef}
                       type="file"
                     />
-                  </div>
-                )}
-
-                {method === 'manual' && (
-                  <div className="transfer-manual-panel" role="tabpanel">
-                    <label htmlFor="transfer-qr-payload">Complete TraceChain QR payload</label>
-                    <textarea
-                      id="transfer-qr-payload"
-                      onChange={(event) => setManualPayload(event.target.value)}
-                      placeholder="https://tracechain.example/receive/transfer?v=1&chainId=…"
-                      rows={5}
-                      value={manualPayload}
-                    />
-                    <button
-                      className="transfer-qr-button"
-                      disabled={resolving || !manualPayload.trim()}
-                      onClick={() => {
-                        try {
-                          void submitPayload(normalizeManualTransferQrPayload(manualPayload));
-                        } catch {
-                          setError('This is not a valid TraceChain custody-transfer QR code.');
-                        }
-                      }}
-                      type="button"
-                    >
-                      Verify transfer
-                    </button>
                   </div>
                 )}
               </>

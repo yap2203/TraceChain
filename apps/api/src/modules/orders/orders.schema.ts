@@ -8,9 +8,26 @@ const time = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const base = { operationId: z.string().uuid() };
 export const orderActionSchema = z.discriminatedUnion('action', [
   z
+    .object({ ...base, action: z.literal('delivery-assign'), orderId: hash, distributor: wallet })
+    .strict(),
+  z
+    .object({ ...base, action: z.literal('delivery-respond'), orderId: hash, accept: z.boolean() })
+    .strict(),
+  z
+    .object({
+      ...base,
+      action: z.literal('delivery-pickup'),
+      orderId: hash,
+      occurredAt: time,
+      qrPayload: z.string().min(1).max(1024),
+    })
+    .strict(),
+  z.object({ ...base, action: z.literal('delivery-expire'), orderId: hash }).strict(),
+  z
     .object({
       ...base,
       action: z.literal('approved-receipt'),
+      qrPayload: z.string().max(1024).optional(),
       orderId: hash,
       quantity,
       location: hash,
@@ -78,6 +95,7 @@ export const orderActionSchema = z.discriminatedUnion('action', [
     .object({
       ...base,
       action: z.literal('request'),
+      positionId: hash.optional(),
       requestOnly: z.boolean().optional(),
       itemId: hash,
       batchId: hash.optional(),

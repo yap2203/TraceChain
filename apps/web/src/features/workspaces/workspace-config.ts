@@ -27,6 +27,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
       ['applications', 'Applications', 'applications'],
       ['credentials', 'Credentials', 'credentials'],
       ['stakeholders', 'Stakeholders', 'stakeholders'],
+      ['information-requests', 'Information requests', 'evidence'],
     ]),
   },
   supplier: {
@@ -35,14 +36,15 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     navigation: nav('supplier', [
       ['ingredients', 'Ingredients', 'ingredients'],
       ['credentials', 'Credentials', 'credentials'],
-      ['evidence-requests', 'Evidence requests', 'evidence'],
+      ['inventory', 'Custody inventory', 'inventory'],
+      ['information-requests', 'Information requests', 'evidence'],
     ]),
   },
   manufacturer: {
     roleLabel: 'Manufacturer',
     organisation: 'Manufacturer organisation',
     navigation: nav('manufacturer', [
-      ['ingredient-evidence', 'Ingredient evidence', 'evidence'],
+      ['information-requests', 'Information requests', 'evidence'],
       ['product-batches', 'Product batches', 'boxes'],
       ['transfers', 'Transfers', 'transfers'],
     ]),
@@ -51,8 +53,9 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     roleLabel: 'Distributor',
     organisation: 'Distributor organisation',
     navigation: nav('distributor', [
-      ['incoming-shipments', 'Incoming shipments', 'transfers'],
+      ['shipments', 'Shipments', 'transfers'],
       ['inventory', 'Inventory', 'inventory'],
+      ['information-requests', 'Information requests', 'evidence'],
       ['transfers', 'Transfers', 'transfers'],
     ]),
   },
@@ -63,6 +66,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
       ['incoming-products', 'Incoming products', 'boxes'],
       ['traceability', 'Traceability', 'scan'],
       ['reports', 'Reports', 'reports'],
+      ['information-requests', 'Information requests', 'evidence'],
     ]),
   },
 };
@@ -123,8 +127,8 @@ export const workspacePages: Record<string, PageDefinition> = {
     icon: 'transfers',
   },
   'distributor:incoming-shipments': {
-    title: 'Incoming shipments',
-    description: 'Review products awaiting distributor receipt confirmation.',
+    title: 'Shipments',
+    description: 'Review ingredient and product shipments, receipts and onward transfers.',
     actionLabel: 'Review shipment',
     icon: 'transfers',
   },

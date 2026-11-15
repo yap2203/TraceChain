@@ -28,6 +28,94 @@ async function fixture() {
 }
 
 describe('backend-managed DIDComm company agents', () => {
+  it('authcrypt transports Distributor-to-Supplier company-proof requests and binds the encrypted response to that thread', async () => {
+    const { service: agents } = await fixture();
+    const distributor = '0x4444444444444444444444444444444444444444',
+      supplier = '0x2222222222222222222222222222222222222222';
+    const auth = {
+      getSession: vi
+        .fn()
+        .mockResolvedValue({
+          address: distributor,
+          role: CompanyRole.DISTRIBUTOR,
+          authenticated: true,
+          authorizationReady: true,
+        }),
+    };
+    const envelopes: RelayEnvelope[] = [];
+    const repository = {
+      listEnvelopes: async () => envelopes,
+      listEnvelopesByDid: async (did: string) =>
+        envelopes.filter((message) => message.toDid === did || message.fromDid === did),
+      saveEnvelope: async (message: RelayEnvelope) => {
+        envelopes.push(message);
+      },
+    } as unknown as DidCommRepository;
+    const service = new DidCommService(
+      auth as unknown as AuthService,
+      repository,
+      'localhost',
+      31337,
+      {
+        resolve: async (wallet: string) => ({
+          active: true,
+          walletAddress: wallet,
+          role: wallet === distributor ? CompanyRole.DISTRIBUTOR : CompanyRole.SUPPLIER,
+          companyName: 'Delivery participant',
+        }),
+      },
+      () => new Date('2026-11-12T12:00:00Z'),
+      agents,
+      async (reference) =>
+        reference === 'delivery-proof'
+          ? { requester: supplier, supplier: distributor, order: true }
+          : undefined,
+    );
+    const request = {
+      messageType: 'https://tracechain.local/didcomm/order-identity-request/1.0',
+      recipientWallet: supplier,
+      businessReference: 'delivery-proof',
+      threadId: 'fresh-delivery-proof',
+      expiresAt: '2026-11-12T12:10:00Z',
+      body: { purpose: 'Check Supplier company before pickup' },
+    };
+    const sent = await service.send('session', request);
+    expect(envelopes[0].envelope).not.toContain(request.body.purpose);
+    const supplierAgent = await agents.findByWallet(supplier);
+    expect((await agents.unpack(supplierAgent!.did, envelopes[0].envelope)).body).toEqual(
+      request.body,
+    );
+    auth.getSession.mockResolvedValue({
+      address: supplier,
+      role: CompanyRole.SUPPLIER,
+      authenticated: true,
+      authorizationReady: true,
+    });
+    const response = {
+      ...request,
+      messageType: 'https://tracechain.local/didcomm/order-identity-presentation/1.0',
+      recipientWallet: distributor,
+      body: { presentation: 'holder-signed-test-presentation' },
+    };
+    await expect(
+      service.send('session', {
+        ...response,
+        recipientWallet: '0x9999999999999999999999999999999999999999',
+      }),
+    ).rejects.toMatchObject({ code: 'RECIPIENT_SUBSTITUTION_REJECTED' });
+    await service.send('session', response);
+    expect(envelopes[1].parentThreadId).toBe(sent.id);
+    const recipient = await agents.findByWallet(distributor);
+    expect((await agents.unpack(recipient!.did, envelopes[1].envelope)).body).toEqual(
+      response.body,
+    );
+    await expect(
+      service.send('session', {
+        ...response,
+        body: { presentation: 'different-replayed-presentation' },
+      }),
+    ).rejects.toMatchObject({ code: 'DELIVERY_REPLAY_CONFLICT' });
+  });
   it('refreshes authorized role metadata without replacing keys or losing historical decryption', async () => {
     const { key, path, service } = await fixture();
     const original = await service.ensureIdentity({
@@ -80,15 +168,13 @@ describe('backend-managed DIDComm company agents', () => {
       companyName: 'Old Manufacturer role',
     });
     const auth = {
-      getSession: vi
-        .fn()
-        .mockResolvedValue({
-          address: supplier,
-          role: CompanyRole.SUPPLIER,
-          authenticated: true,
-          authorizationReady: true,
-          companyName: 'Supplier',
-        }),
+      getSession: vi.fn().mockResolvedValue({
+        address: supplier,
+        role: CompanyRole.SUPPLIER,
+        authenticated: true,
+        authorizationReady: true,
+        companyName: 'Supplier',
+      }),
     } as unknown as AuthService;
     const envelopes: RelayEnvelope[] = [];
     const repository = {

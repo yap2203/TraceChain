@@ -27,6 +27,16 @@ const calculate = (orders = [order], items = catalogue) =>
   supplierStock('supplier', items, orders, 100)[0];
 
 describe('Supplier remaining-stock projection', () => {
+  it('does not subtract picked-up deliveries again from the already reduced source balance', () => {
+    const result = supplierStock(
+      'supplier',
+      [{ ...catalogue[0], batchDetails: [{ batchId: 'batch', supplierAvailable: '80' }] }],
+      [{ ...order, delivery: { stage: 4, reservedQuantity: '20' } }],
+      100,
+    )[0];
+    expect(result.remainingAfterRequests).toBe('80');
+    expect(result.outstandingQuantity).toBe('0');
+  });
   it('subtracts pending and approved demand without mutating actual stock', () => {
     const result = calculate([
       order,

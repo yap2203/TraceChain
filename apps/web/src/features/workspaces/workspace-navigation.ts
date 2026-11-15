@@ -25,6 +25,7 @@ export type WorkspaceRole = WorkspaceKey & TraceChainWorkspaceRole;
 export const workspaceNavigation = {
   admin: [
     ['overview', 'Overview', LayoutDashboard],
+    ['requests', 'Information requests', Inbox],
     ['orders', 'Requests & recall', ClipboardList],
     ['applications', 'Applications', ClipboardList],
     ['credentials', 'Credentials', BadgeCheck],
@@ -36,6 +37,9 @@ export const workspaceNavigation = {
     ['overview', 'Overview', LayoutDashboard],
     ['orders', 'Order requests', ClipboardList],
     ['batches', 'Ingredient batches', Layers],
+    ['transfers', 'Send to custody', ArrowRightLeft],
+    ['inventory', 'Custody inventory', Warehouse],
+    ['shipments', 'Sent shipments', Truck],
     ['requests', 'Information requests', Inbox],
     ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit history', ChartNoAxesCombined],
@@ -43,6 +47,7 @@ export const workspaceNavigation = {
   manufacturer: [
     ['overview', 'Overview', LayoutDashboard],
     ['products', 'Products', Package],
+    ['shipments', 'Shipments', Truck],
     ['orders', 'My orders', ClipboardList],
     ['requests', 'Information requests', Inbox],
     ['transfers', 'Transfers', ArrowRightLeft],
@@ -51,10 +56,10 @@ export const workspaceNavigation = {
   ],
   distributor: [
     ['overview', 'Overview', LayoutDashboard],
-    ['orders', 'Browse & requests', ClipboardList],
-    ['incoming', 'Incoming shipments', Truck],
+    ['requests', 'Information requests', Inbox],
+    ['shipments', 'Custody & deliveries', Truck],
     ['inventory', 'Custody inventory', Warehouse],
-    ['transfers', 'Transfers', ArrowRightLeft],
+    ['transfers', 'Product transfers', ArrowRightLeft],
     ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit reports', ChartNoAxesCombined],
   ],
@@ -64,7 +69,7 @@ export const workspaceNavigation = {
     ['receive', 'Receive products', PackageCheck],
     ['scan', 'Scan & verify', ScanQrCode],
     ['history', 'Product history', History],
-    ['evidence', 'Evidence requests', FileSearch],
+    ['requests', 'Information requests', FileSearch],
     ['mycredential', 'My company credential', ContactRound],
     ['audit', 'Audit reports', ChartNoAxesCombined],
   ],

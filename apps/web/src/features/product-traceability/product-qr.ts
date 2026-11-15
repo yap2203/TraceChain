@@ -49,6 +49,10 @@ export function createProductQrModel(
   configuration: ProductQrConfiguration = loadProductQrConfiguration(),
 ): ProductQrModel {
   const payload = createProductQrPayload(batchId, configuration);
+  return createQrModel(payload);
+}
+
+export function createQrModel(payload: string): ProductQrModel {
   const code = qrcode(0, 'M');
   code.addData(payload, 'Byte');
   code.make();

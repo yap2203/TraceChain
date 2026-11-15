@@ -2,9 +2,38 @@
 pragma solidity ^0.8.34;
 import {IStakeholderRegistry} from '../interfaces/IStakeholderRegistry.sol';
 import {IProductRegistry} from '../interfaces/IProductRegistry.sol';
+import {ProductRegistry} from './ProductRegistry.sol';
 interface IOrderLocations { function locationOwner(bytes32) external view returns (address); }
 
 contract CustodyTransfer {
+    function transportPolicy() external pure returns (uint8) { return 1; }
+    mapping(bytes32 => string) public vehicleRegistration;
+    mapping(bytes32 => address) public dispatchConfirmedBy;
+    mapping(bytes32 => mapping(address => bool)) public locationTracked;
+    mapping(bytes32 => mapping(address => mapping(bytes32 => uint256))) public locationStock;
+    event RoadTransportRecorded(bytes32 indexed transferId, bytes32 fromLocation, bytes32 toLocation, string vehicle, uint64 actualDispatch, uint64 recordedAt, address confirmedBy);
+    function createRoadTransfer(bytes32 transferId, bytes32 batchId, address recipient, uint256 quantity, uint64 expectedAt, bytes32 shipmentHash, string calldata cid, bytes32 fromLocation, bytes32 toLocation, uint64 occurredAt, string calldata vehicle) external {
+        if (IOrderLocations(supplyOrders).locationOwner(fromLocation) != msg.sender || IOrderLocations(supplyOrders).locationOwner(toLocation) != recipient || occurredAt == 0 || occurredAt > block.timestamp || expectedAt <= occurredAt || bytes(vehicle).length < 2 || bytes(vehicle).length > 32) revert InvalidInput();
+        bool meaningful;
+        for (uint256 i; i < bytes(vehicle).length; ++i) {
+            bytes1 c = bytes(vehicle)[i];
+            if (!((c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || c == 0x20 || c == 0x2d)) revert InvalidInput();
+            if (c != 0x20 && c != 0x2d) meaningful = true;
+        }
+        if (!meaningful) revert InvalidInput();
+        _initialize(batchId);
+        if (occurredAt < ProductRegistry(address(products)).getProduct(batchId).producedAt) revert InvalidInput();
+        if (!locationTracked[batchId][msg.sender]) {
+            if (products.manufacturerOf(batchId) != msg.sender || ProductRegistry(address(products)).productionLocation(batchId) != fromLocation) revert InvalidState();
+            locationTracked[batchId][msg.sender] = true; locationStock[batchId][msg.sender][fromLocation] = inventory[batchId][msg.sender].available;
+        }
+        if (locationStock[batchId][msg.sender][fromLocation] < quantity) revert InsufficientInventory();
+        locationStock[batchId][msg.sender][fromLocation] -= quantity;
+        _createTransfer(msg.sender, transferId, batchId, recipient, quantity, expectedAt, shipmentHash, cid, true);
+        _recordLocations(transferId, fromLocation, toLocation, occurredAt);
+        vehicleRegistration[transferId] = vehicle; dispatchConfirmedBy[transferId] = msg.sender;
+        emit RoadTransportRecorded(transferId, fromLocation, toLocation, vehicle, occurredAt, uint64(block.timestamp), msg.sender);
+    }
     enum Status {
         None,
         AwaitingReceipt,
@@ -105,7 +134,7 @@ contract CustodyTransfer {
         if (msg.sender != supplyOrders || orderReserved[orderId] < quantity) revert Unauthorized(msg.sender);
         orderReserved[orderId] -= quantity;
         inventory[batchId][seller].reserved -= quantity; inventory[batchId][seller].available += quantity;
-        _createTransfer(seller, transferId, batchId, distributor, quantity, expectedAt, shipmentHash, cid);
+        _createTransfer(seller, transferId, batchId, distributor, quantity, expectedAt, shipmentHash, cid, false);
         transferOrder[transferId] = orderId;
         emit OrderTransferLinked(transferId, orderId);
     }
@@ -114,7 +143,7 @@ contract CustodyTransfer {
         bytes32 orderId = transferOrder[originalTransferId];
         if (orderId == bytes32(0) || original.recipient != msg.sender || original.status != Status.Received || orderForwarded[originalTransferId] + quantity > original.usable) revert InvalidState();
         orderForwarded[originalTransferId] += quantity;
-        _createTransfer(msg.sender, transferId, original.productBatchId, orderBuyer[orderId], quantity, expectedAt, shipmentHash, cid);
+        _createTransfer(msg.sender, transferId, original.productBatchId, orderBuyer[orderId], quantity, expectedAt, shipmentHash, cid, false);
         transferOrder[transferId] = orderId;
         emit OrderTransferLinked(transferId, orderId);
     }
@@ -168,9 +197,10 @@ contract CustodyTransfer {
         bytes32 shipmentHash,
         string calldata shipmentCid
     ) external {
-        _createTransfer(msg.sender, transferId, productBatchId, recipient, quantity, expectedAt, shipmentHash, shipmentCid);
+        _createTransfer(msg.sender, transferId, productBatchId, recipient, quantity, expectedAt, shipmentHash, shipmentCid, false);
     }
-    function _createTransfer(address sender, bytes32 transferId, bytes32 productBatchId, address recipient, uint256 quantity, uint64 expectedAt, bytes32 shipmentHash, string memory shipmentCid) private {
+    function _createTransfer(address sender, bytes32 transferId, bytes32 productBatchId, address recipient, uint256 quantity, uint64 expectedAt, bytes32 shipmentHash, string memory shipmentCid, bool located) private {
+        if (!located && locationTracked[productBatchId][sender]) revert InvalidState();
         uint8 senderRole = stakeholders.roleOf(sender);
         uint8 recipientRole = stakeholders.roleOf(recipient);
         if (
@@ -223,7 +253,7 @@ contract CustodyTransfer {
         Transfer storage transfer = _transfer(transferId);
         if (msg.sender != transfer.sender) revert Unauthorized(msg.sender);
         if (transfer.status != Status.AwaitingReceipt) revert InvalidState();
-        _release(transfer);
+        _release(transferId, transfer);
         transfer.status = Status.Cancelled;
         emit TransferStatusChanged(transferId, transfer.status, reasonHash);
     }
@@ -231,7 +261,7 @@ contract CustodyTransfer {
         Transfer storage transfer = _transfer(transferId);
         if (msg.sender != transfer.recipient) revert Unauthorized(msg.sender);
         if (transfer.status != Status.AwaitingReceipt) revert InvalidState();
-        _release(transfer);
+        _release(transferId, transfer);
         transfer.rejected = transfer.quantity;
         transfer.status = Status.Rejected;
         emit TransferStatusChanged(transferId, transfer.status, reasonHash);
@@ -280,7 +310,7 @@ contract CustodyTransfer {
             revert InvalidState();
         discrepancy.resolved = true;
         if (!acceptActual) {
-            _release(transfer);
+            _release(transferId, transfer);
             transfer.status = Status.Cancelled;
             emit TransferStatusChanged(transferId, transfer.status, reasonHash);
         } else {
@@ -289,9 +319,14 @@ contract CustodyTransfer {
                 uint256 released = transfer.quantity - discrepancy.actualQuantity;
                 sender.reserved -= released;
                 sender.available += released;
+                if (bytes(vehicleRegistration[transferId]).length > 0) locationStock[transfer.productBatchId][transfer.sender][dispatchLocation[transferId]] += released;
             } else if (discrepancy.actualQuantity > transfer.quantity) {
                 uint256 extra = discrepancy.actualQuantity - transfer.quantity;
                 if (sender.available < extra) revert InsufficientInventory();
+                if (bytes(vehicleRegistration[transferId]).length > 0) {
+                    if (locationStock[transfer.productBatchId][transfer.sender][dispatchLocation[transferId]] < extra) revert InsufficientInventory();
+                    locationStock[transfer.productBatchId][transfer.sender][dispatchLocation[transferId]] -= extra;
+                }
                 sender.available -= extra;
                 sender.reserved += extra;
             }
@@ -335,6 +370,10 @@ contract CustodyTransfer {
         senderInventory.reserved -= transfer.quantity;
         Inventory storage receiverInventory = inventory[transfer.productBatchId][msg.sender];
         receiverInventory.available += usable;
+        if (bytes(vehicleRegistration[transferId]).length > 0) {
+            locationTracked[transfer.productBatchId][msg.sender] = true;
+            locationStock[transfer.productBatchId][msg.sender][receivingLocation[transferId]] += usable;
+        }
         receiverInventory.damaged += damaged;
         receiverInventory.rejected += rejectedQuantity;
         transfer.usable = usable;
@@ -375,7 +414,8 @@ contract CustodyTransfer {
             emit InventoryInitialized(batchId, manufacturer, quantity);
         }
     }
-    function _release(Transfer storage transfer) private {
+    function _release(bytes32 transferId, Transfer storage transfer) private {
+        if (bytes(vehicleRegistration[transferId]).length > 0) locationStock[transfer.productBatchId][transfer.sender][dispatchLocation[transferId]] += transfer.quantity;
         Inventory storage sender = inventory[transfer.productBatchId][transfer.sender];
         sender.reserved -= transfer.quantity;
         sender.available += transfer.quantity;

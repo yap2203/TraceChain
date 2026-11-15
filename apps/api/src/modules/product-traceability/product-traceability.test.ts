@@ -20,11 +20,15 @@ describe('product traceability service', () => {
   let gateway: ProductTraceabilityGateway;
   let service: ProductTraceabilityService;
   let authenticated = false;
+  let viewerAddress = RETAILER;
+  let viewerRole = CompanyRole.RETAILER;
   let ingredientReference: ReturnType<typeof vi.fn>;
   let productMetadata: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     authenticated = false;
+    viewerAddress = RETAILER;
+    viewerRole = CompanyRole.RETAILER;
     ingredientReference = vi.fn().mockResolvedValue('COCOA-2026-001');
     productMetadata = vi.fn().mockResolvedValue({
       name: 'Dark Chocolate Bar',
@@ -83,7 +87,7 @@ describe('product traceability service', () => {
         getSession: vi.fn().mockImplementation(async () =>
           authenticated
             ? {
-                address: RETAILER,
+                address: viewerAddress,
                 authenticated: true,
                 authorizationReady: true,
                 authorizationStatus: 'AUTHORIZED',
@@ -92,7 +96,7 @@ describe('product traceability service', () => {
                 locallyVerified: false,
                 message: 'Authorized',
                 onChainStatusChecked: true,
-                role: CompanyRole.RETAILER,
+                role: viewerRole,
               }
             : { authenticated: false },
         ),
@@ -164,7 +168,7 @@ describe('product traceability service', () => {
     expect(JSON.stringify(result)).not.toContain(PRODUCT);
   });
 
-  it('returns additional technical details only to an authorized stakeholder', async () => {
+  it('returns additional technical details to an authorized custody participant', async () => {
     authenticated = true;
     const result = await service.resolve('session', { qrPayload: qr() });
     expect(result.accessLevel).toBe('AUTHORIZED');
@@ -177,6 +181,30 @@ describe('product traceability service', () => {
     expect(result.ingredients[0]).toHaveProperty('reference', 'COCOA-2026-001');
     expect(ingredientReference).toHaveBeenCalledOnce();
   });
+
+  it('keeps an unrelated Manufacturer on the public projection even when signed in', async () => {
+    authenticated = true;
+    viewerAddress = '0x7000000000000000000000000000000000000007';
+    viewerRole = CompanyRole.MANUFACTURER;
+    const result = await service.resolve('other-company', { qrPayload: qr() });
+    expect(result.accessLevel).toBe('PUBLIC');
+    expect(result).not.toHaveProperty('technical');
+    expect(result.ingredients[0]).not.toHaveProperty('technical');
+    expect(ingredientReference).not.toHaveBeenCalled();
+    expect(result.product.name).toBe('Dark Chocolate Bar');
+  });
+
+  it.each([CompanyRole.MANUFACTURER, CompanyRole.SYSTEM_ADMIN])(
+    'preserves owner and administrator inspection: %s',
+    async (role) => {
+      authenticated = true;
+      viewerRole = role;
+      viewerAddress = role === CompanyRole.MANUFACTURER ? MANUFACTURER : REGISTRY;
+      expect((await service.resolve('session', { qrPayload: qr() })).accessLevel).toBe(
+        'AUTHORIZED',
+      );
+    },
+  );
 
   it.each([
     ['QR_CHAIN_MISMATCH', { chainId: 1, productRegistryAddress: REGISTRY }],

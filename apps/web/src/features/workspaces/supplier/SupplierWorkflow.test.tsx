@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({
   getOrders: vi.fn(),
   prepareOrder: vi.fn(),
+  prepareLogistics: vi.fn(),
   orderIdentity: vi.fn(),
   listEvidenceRequests: vi.fn(),
   getCompanyIdentityProofStatus: vi.fn(),
@@ -90,6 +91,35 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('Supplier ingredient and request management', () => {
+  it('lets the Supplier explicitly arrange an approved Manufacturer custody order', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      shipmentReviewSupported: true,
+      orders: [
+        {
+          ...order,
+          decision: { status: 1 },
+          custodyOrder: {
+            arranged: false,
+            warehouseName: 'Warehouse A',
+            dispatched: '0',
+            received: '0',
+          },
+        },
+      ],
+    });
+    api.prepareLogistics.mockResolvedValue({
+      transaction: { chainId: 31337, to: actor, data: '0x', value: '0x0' },
+    });
+    Object.defineProperty(window, 'ethereum', { configurable: true, value: { request: vi.fn() } });
+    mount(<OrdersPage role="supplier" mode="manage" initialOrderId="order" />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Arrange ingredient delivery' }));
+    await waitFor(() =>
+      expect(api.prepareLogistics).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'arrange-delivery', orderId: 'order' }),
+      ),
+    );
+  });
   it('shows remaining stock after open requests in both ingredient cards and order details', async () => {
     api.getOrders.mockResolvedValue({
       ...state,
@@ -116,7 +146,7 @@ describe('Supplier ingredient and request management', () => {
     grid.unmount();
     mount(<OrdersPage role="supplier" mode="manage" initialOrderId="order" />);
     await screen.findByText('88 g');
-    expect(screen.getByText(/Actual stock decreases on confirmed receipt/)).toBeTruthy();
+    expect(screen.getByText(/Collected deliveries are already deducted/)).toBeTruthy();
   });
 
   it('labels the Supplier navigation as Order requests', () => {

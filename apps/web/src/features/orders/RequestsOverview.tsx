@@ -399,6 +399,27 @@ function SupplierRequestCard({
 
 export function requestStatus(order: OrderRecord) {
   if (
+    order.custodyOrder &&
+    BigInt(order.custodyOrder.dispatched) < BigInt(order.requested) &&
+    Number(order.expiresAt) <= Date.now() / 1000
+  )
+    return {
+      key: 'expired',
+      group: 'closed' as const,
+      label:
+        BigInt(order.custodyOrder.dispatched) > BigInt(order.custodyOrder.received)
+          ? 'Remainder expired; shipment in transit'
+          : 'Expired',
+      variant: 'expired' as const,
+    };
+  if (Number(order.delivery?.stage) === 6)
+    return {
+      key: 'completed',
+      group: 'closed' as const,
+      label: 'Delivery cancelled',
+      variant: 'rejected' as const,
+    };
+  if (
     /^\d+$/.test(String(order.approvedReceivedQuantity)) &&
     BigInt(order.approvedReceivedQuantity) > 0n
   ) {
@@ -420,7 +441,7 @@ export function requestStatus(order: OrderRecord) {
     return {
       key: 'approved',
       group: 'approved' as const,
-      label: 'Approved',
+      label: Number(order.delivery?.stage) === 4 ? 'In transit' : 'Approved',
       variant: 'accepted' as const,
     };
   if (Number(order.decision?.status) === 2)
@@ -471,6 +492,25 @@ export function companyEvidenceStatus(order: OrderRecord) {
 
 export function nextAction(order: OrderRecord, actor: string) {
   const state = requestStatus(order);
+  if (order.delivery && !order.custodyOrder && state.group === 'approved') {
+    const stage = Number(order.delivery.stage);
+    if (stage === 1)
+      return same(actor, order.seller)
+        ? 'Choose direct Distributor delivery or sufficient received custody stock.'
+        : 'The Supplier is choosing direct delivery or custody fulfilment.';
+    if (stage === 2) return 'The requested Distributor must accept or reject direct delivery.';
+    if (stage === 3)
+      return 'The Distributor must scan the Supplier label and confirm physical pickup.';
+    if (stage === 4)
+      return 'The Manufacturer must scan the delivered label and confirm physical receipt.';
+  }
+  if (order.custodyOrder && state.group === 'approved') {
+    if (same(actor, order.buyer))
+      return 'Open Shipments, scan the package label and confirm physical receipt after delivery.';
+    if (same(actor, order.custodyOrder.distributor))
+      return 'Open Shipments to dispatch the approved reserved quantity from your warehouse.';
+    return 'The Distributor dispatches the reserved warehouse stock; track it in Shipments.';
+  }
   if (state.group === 'evidence') return 'Wait for the Manufacturer to share its company proof.';
   if (state.group === 'approved') return 'Decision recorded. Coordinate any next steps separately.';
   if (state.group === 'closed') return 'No action required.';

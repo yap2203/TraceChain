@@ -408,6 +408,7 @@ export function createApp({
       stakeholderDirectory,
       didCommRepository,
       lazyIssuanceRepository,
+      (record) => resolveOrders().deliveryIdentityParticipants(record),
     );
   const productionFlowController = new ProductionFlowController(
     resolvedProductionFlowService,
@@ -426,6 +427,10 @@ export function createApp({
         didCommStorage.productionWorkflowStorePath,
       ).findEvidence(reference);
       if (record?.orderContext) {
+        if (record.deliveryOrderId) {
+          if (!(await resolveOrders().deliveryIdentityParticipants(record))) return undefined;
+          return { requester: record.requester, supplier: record.supplier, order: true };
+        }
         const order = await resolveOrders().gateway.read('orders', 'getOrder', [reference]);
         if (
           order.status === '0' ||
@@ -813,6 +818,9 @@ function createDefaultProductionFlowService(
   stakeholderDirectory: StakeholderDirectory,
   messagingIdentityRepository: DidCommRepository,
   companyRoleRepository: CompanyRoleIssuanceRepository,
+  validateDeliveryIdentity: (
+    record: import('./modules/production-flow/production-flow.repository.js').EvidenceWorkflowRecord,
+  ) => Promise<boolean>,
 ) {
   let gateway: ProductionFlowGateway | undefined;
   let repository: ProductionFlowRepository | undefined;
@@ -833,7 +841,8 @@ function createDefaultProductionFlowService(
     return gateway;
   };
   const lazyGateway: ProductionFlowGateway = {
-    supportsOptionalProductionEvidence: () => resolveGateway().supportsOptionalProductionEvidence!(),
+    supportsOptionalProductionEvidence: () =>
+      resolveGateway().supportsOptionalProductionEvidence!(),
     getProductionRecord: (batchId) => resolveGateway().getProductionRecord!(batchId),
     listProposedProductBatchIds: (wallet) => resolveGateway().listProposedProductBatchIds!(wallet),
     getReceivedAvailable: (...input) => resolveGateway().getReceivedAvailable!(...input),
@@ -881,6 +890,7 @@ function createDefaultProductionFlowService(
     save: (input) => resolveIngredientRepository().save(input),
   };
   return new ProductionFlowService({
+    validateDeliveryIdentity,
     agentProvider,
     authService,
     companyRoleRepository,

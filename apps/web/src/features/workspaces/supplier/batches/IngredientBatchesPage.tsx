@@ -675,6 +675,20 @@ function IngredientDetailModal({
   return (
     <Modal title={item.name} onClose={onClose} width={840}>
       <div className="ingredient-detail">
+        <div className="grid gap-[8px]">
+          <a href={'/supplier/transfers?batchId=' + encodeURIComponent(item.batchId)}>
+            Send stock to a Distributor warehouse
+          </a>
+          {(item.custodyPositions ?? [])
+            .filter((position: OrderRecord) => BigInt(position.quantity) > 0n)
+            .map((position: OrderRecord) => (
+              <p key={position.positionId}>
+                <strong>{position.distributorName ?? 'Distributor'}</strong>{' '}
+                ({position.warehouseName ?? 'Warehouse'}): {position.quantity} {item.unit} in custody ·{' '}
+                {position.available} {item.unit} unreserved
+              </p>
+            ))}
+        </div>
         <div className="ingredient-detail__hero">
           <CatalogueImage
             path={item.imagePath}

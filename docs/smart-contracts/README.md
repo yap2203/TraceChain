@@ -1,6 +1,61 @@
 # Smart Contracts
 
-`packages/contracts` contains the six-contract TraceChain suite using Solidity 0.8.34, Hardhat 3, ethers, Mocha, Hardhat Ignition, and Foundry-compatible Solidity tests. The contracts implement stakeholder authorization, credential lifecycle, ingredient evidence, ingredient/product traceability, inventory, and custody transfers.
+## Two-mode ingredient fulfilment
+
+`IngredientDelivery.fulfilmentPolicy() = 2` adds `arrangeFromCustody(orderId, positionId,
+receivingLocation)`. Only the original Supplier of an approved, active direct ingredient request
+in selection stage 1 can use it. The child checks exact Supplier/batch, current authorization,
+received/unreserved quantity covering the full order and a location owned by the Manufacturer.
+It reserves atomically in `custodyOrders`/`positionOrders`, assigns the actual custodian, records
+Supplier arrangement and enables existing warehouse dispatch/receipt. Direct carrier actions cannot
+then assign/pick up that order, and legacy approved receipt cannot bypass custody accounting.
+
+Direct Supplier → Distributor → Manufacturer orders continue through existing carrier
+accept/decline, scanned pickup and confirmed receipt. No warehouse stock is credited in that mode.
+New ordinary requests leave selection to Supplier after approval; explicit earlier custody orders
+keep reservation-at-placement behavior. Selection remains subject to the original deadline.
+
+This requires a fresh complete-suite deployment because the immutable delivery child is created
+inside Orders. Current compiled runtime sizes are Orders 24,166 and delivery 23,553 bytes; Orders
+creation bytecode plus five constructor addresses is 48,960 bytes. Preserve the deployment size
+tests when extending this suite: the remaining initcode margin is small. No network was redeployed
+as part of this change. See [setup and tests](../testing/TWO_MODE_INGREDIENT_DELIVERY.md).
+
+## Custody review and Supplier arrangement
+
+The new child reports `reviewPolicy() = 1`. `decideWarehouseShipment` lets only the intended authorized
+Distributor accept/reject an unreceived Supplier offer. Requested Supplier company proof must be current
+before acceptance/receipt. Acceptance alone adds no inventory; rejection credits none. The original
+Supplier uses `confirmRejectedReturn` for an explicit physical return before its availability is restored.
+`arrangeDelivery` requires the original Supplier and an approved, active Manufacturer custody order;
+`dispatchCustodyOrder` requires that arrangement and a departure time at/after it. Distributor cannot
+arrange an ingredient order. All writes retain actor, quantity, source lifecycle and replay guards.
+These additions require a fresh full suite; the existing deployed contracts are not upgraded in place.
+
+The earlier **warehouse-first** flow remains supported. `IngredientDelivery` adds registered
+warehouses, received custody positions, immediate order reservations and two road-shipment legs.
+`SupplyChainOrders` keeps Supplier seller approval and credits Manufacturer stock through a child-only
+settlement callback. `CustodyTransfer` adds product road metadata and stock by registered location.
+Both actual and block times are recorded. New orders cannot use legacy direct receipt/pickup to bypass
+custody. This requires a fresh full-suite deployment; old journals/records are preserved.
+See [manual and automated warehouse tests](../testing/WAREHOUSE_CUSTODY_FLOW.md).
+The older 48-hour per-order assignment design below remains for compatibility only.
+
+Ingredient Distributor delivery now adds an `IngredientDelivery` child created by `SupplyChainOrders`.
+The API discovers it through `ingredientDelivery()`; no additional environment address or Ignition
+future is required. New ingredient requests are delivery-required, Supplier approval starts the
+user-selected 48-hour assignment window (capped by request expiry), carrier pickup sets stock aside,
+and Manufacturer partial/full receipt credits it once. Effective deadline cancellation is computed in
+reads/action guards; `act(7, ...)` optionally records expiry. Only Orders may initialize delivery,
+consume reserved stock or close expiry, while participant actions require the exact signing actor and
+current role/permission. Legacy evidence-source validation is delegated to the child without changing
+its acceptance rules. Full-suite redeployment is required; existing deployed contracts are unchanged.
+
+The parent uses an optimizer-runs override of 1 to remain under Ethereum's 24,576-byte runtime limit;
+other roots retain their existing configuration. Tests assert real deployed size for parent and child,
+and run with the normal size limit enabled. See [the delivery test guide](../testing/INGREDIENT_DISTRIBUTOR_DELIVERY.md).
+
+`packages/contracts` contains seven top-level TraceChain registry/ledger contracts plus the automatically created ingredient-delivery module, using Solidity 0.8.34, Hardhat 3, ethers, Mocha, Hardhat Ignition, and Foundry-compatible Solidity tests. The contracts implement stakeholder authorization, credential lifecycle, ingredient evidence, ingredient/product traceability, inventory, and custody transfers.
 
 ## Current package
 

@@ -9,6 +9,7 @@ vi.mock('../../../blockchain/useOperationalData', () => ({
     loading: false,
     error: '',
     data: {
+      actorWallet: '0x1000000000000000000000000000000000000001',
       productBatches: [
         {
           batchId: `0x${'11'.repeat(32)}`,
@@ -21,6 +22,16 @@ vi.mock('../../../blockchain/useOperationalData', () => ({
           expiresAt: 2000000000,
           metadataHash: 'recorded-hash',
           publicCid: 'recorded-cid',
+          ingredients: [],
+        },
+        {
+          batchId: `0x${'22'.repeat(32)}`,
+          manufacturer: '0x2000000000000000000000000000000000000002',
+          totalQuantity: '999',
+          unit: 'g',
+          status: 1,
+          producedAt: 1790000000,
+          expiresAt: 2000000000,
           ingredients: [],
         },
       ],
@@ -64,6 +75,20 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('Manufacturer product detail QR resilience', () => {
+  it('does not open another Manufacturer product through a direct detail reference', () => {
+    render(
+      <ProductBatchDetail
+        batchId={`0x${'22'.repeat(32)}`}
+        onBack={vi.fn()}
+        onTransfer={vi.fn()}
+        onIngredientDetail={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText('999 g')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Product Traceability QR' })).toBeNull();
+    expect(mocks.resolve).not.toHaveBeenCalled();
+    expect(mocks.payload).not.toHaveBeenCalled();
+  });
   it('keeps on-chain details usable when QR configuration throws synchronously', async () => {
     const error = new Error('VITE_PUBLIC_APP_URL is not configured for product QR generation.');
     mocks.payload.mockImplementation(() => {

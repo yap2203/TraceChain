@@ -33,21 +33,33 @@ export function ProductBatchDetail({
   onIngredientDetail: (batchId: string) => void;
 }) {
   const { data, error, loading } = useOperationalData();
-  const p = data.productBatches.find((x) => x.batchId === batchId);
+  const p = data.productBatches.find(
+    (x) =>
+      x.batchId === batchId &&
+      data.actorWallet &&
+      x.manufacturer.toLowerCase() === data.actorWallet.toLowerCase(),
+  );
   const productBatchId = p?.batchId;
   const [traceability, setTraceability] = useState<ProductTraceabilityResponse>();
   const [ingredients, setIngredients] = useState<OrderRecord[]>([]);
+  const [storage, setStorage] = useState<OrderRecord[]>([]);
   useEffect(() => {
     let active = true;
     void getOrders()
       .then((result) => {
-        if (active) setIngredients(result.catalogue);
+        if (active) {
+          setIngredients(result.catalogue);
+          setStorage(
+            result.catalogue.find((entry) => entry.batches?.includes(batchId))?.storageLocations ??
+              [],
+          );
+        }
       })
       .catch(() => undefined);
     return () => {
       active = false;
     };
-  }, []);
+  }, [batchId]);
 
   useEffect(() => {
     let active = true;
@@ -95,6 +107,14 @@ export function ProductBatchDetail({
         <Btn onClick={onTransfer}>Transfer Product</Btn>
       </div>
       <Card>
+        <p>
+          Current Distributor storage:{' '}
+          {storage.length
+            ? storage
+                .map((entry) => `${entry.warehouseName}: ${entry.available} ${p.unit ?? ''}`)
+                .join('; ')
+            : 'No received Distributor warehouse stock recorded'}
+        </p>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
           {[
             ['Manufacturer', p.manufacturerName ?? 'Verified Manufacturer'],

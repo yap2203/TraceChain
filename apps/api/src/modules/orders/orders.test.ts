@@ -1,10 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { ingredientBatchRequestSchema } from '../ingredient-batches/ingredient-batch.schema.js';
 import { productRequestSchema } from '../production-flow/production-flow.schema.js';
 import express from 'express';
 import request from 'supertest';
-import { CompanyRole } from '@tracechain/shared';
+import { CompanyRole, encodeIngredientDeliveryQr, encodeShipmentQr } from '@tracechain/shared';
 import { encodeBytes32String, id } from 'ethers';
 import { OrdersService } from './orders.service.js';
 import { createOrdersRouter } from './orders.routes.js';
@@ -21,6 +21,665 @@ const orderId = id('order'),
   itemId = id('item'),
   batchId = id('batch');
 const operationId = '00000000-0000-4000-8000-000000000001';
+afterEach(() => vi.unstubAllEnvs());
+describe('Supplier-selected direct or custody fulfilment', () => {
+  function selection() {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER),
+      read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method) => {
+      if (method === 'custodyPolicy') return 1;
+      if (method === 'getOrder') return { ...(await read(contract, method)), requested: '10' };
+      if (method === 'get') return { stage: 1 };
+      if (method === 'requestDecision') return { status: 1 };
+      if (method === 'requestedBatch') return batchId;
+      if (method === 'getPosition')
+        return { position: { supplier: seller, batchId }, available: '10' };
+      if (method === 'locationOwner') return buyer;
+      return read(contract, method);
+    });
+    return f;
+  }
+  const input = {
+    action: 'arrange-from-custody' as const,
+    operationId,
+    orderId,
+    positionId: id('stock'),
+    receivingLocation: id('factory'),
+  };
+  it('prepares custody selection only for approved owned orders with sufficient exact-batch stock', async () => {
+    const f = selection();
+    await f.service.prepareLogistics('session', input);
+    expect(f.gateway.prepare).toHaveBeenCalledWith(seller, 'delivery', 'arrangeFromCustody', [
+      orderId,
+      input.positionId,
+      input.receivingLocation,
+    ]);
+    expect(f.store.encryptAndStore).not.toHaveBeenCalled();
+  });
+  it.each([
+    [
+      'getPosition',
+      { position: { supplier: outsider, batchId }, available: '100' },
+      'INSUFFICIENT_CUSTODY_STOCK',
+    ],
+    [
+      'getPosition',
+      { position: { supplier: seller, batchId: id('foreign') }, available: '100' },
+      'INSUFFICIENT_CUSTODY_STOCK',
+    ],
+    [
+      'getPosition',
+      { position: { supplier: seller, batchId }, available: '9' },
+      'INSUFFICIENT_CUSTODY_STOCK',
+    ],
+    ['get', { stage: 2 }, 'FULFILMENT_SELECTION_CLOSED'],
+    ['requestDecision', { status: 0 }, 'FULFILMENT_SELECTION_CLOSED'],
+    ['locationOwner', outsider, 'RESOURCE_NOT_FOUND'],
+    ['getOrder', { seller: outsider }, 'RESOURCE_NOT_FOUND'],
+    ['fulfilmentPolicy', 1, 'FULFILMENT_UPGRADE_REQUIRED'],
+  ])('rejects substituted or unavailable selection: %s %j', async (method, value, code) => {
+    const f = selection(),
+      read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (c, m) => (m === method ? value : read(c, m)));
+    await expect(f.service.prepareLogistics('session', input)).rejects.toMatchObject({ code });
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
+  it('allows ingredient requests without a custody position for Supplier selection after approval', async () => {
+    const f = fixture(),
+      read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (c, m) =>
+      [
+        'ingredientDeliveryPolicy',
+        'registeredRequestPolicy',
+        'requestOnlyPolicy',
+        'custodyPolicy',
+      ].includes(m)
+        ? 1
+        : read(c, m),
+    );
+    await f.service.prepare('session', {
+      action: 'request',
+      operationId,
+      itemId,
+      batchId,
+      kind: 1,
+      quantity: '10',
+      unit: 'g',
+      location: id('factory'),
+      requestOnly: true,
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
+      evidenceRequired: false,
+      note: '',
+    });
+    expect(f.gateway.prepare).toHaveBeenCalledWith(
+      buyer,
+      'orders',
+      'requestIngredientDelivery',
+      expect.any(Array),
+    );
+    expect(f.gateway.prepare).not.toHaveBeenCalledWith(
+      buyer,
+      'delivery',
+      'placeCustodyOrder',
+      expect.anything(),
+    );
+  });
+});
+describe('cross-company management denial', () => {
+  it('rejects another company receiving location before storing a new order', async () => {
+    const f = fixture(),
+      previous = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method) =>
+      method === 'locationOwner' ? outsider : previous(contract, method),
+    );
+    await expect(
+      f.service.prepare('session', {
+        action: 'request',
+        operationId,
+        itemId,
+        kind: 1,
+        batchId,
+        quantity: '10',
+        unit: 'g',
+        location: id('foreign-factory'),
+        expiresAt: Math.floor(Date.now() / 1000) + 600,
+        note: '',
+      } as any),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    expect(f.store.encryptAndStore).not.toHaveBeenCalled();
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
+  it('rejects a Supplier attempting to order ingredients as a Manufacturer', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    await expect(
+      f.service.prepare('session', {
+        action: 'request',
+        operationId,
+        kind: 1,
+        batchId,
+        quantity: '10',
+      } as any),
+    ).rejects.toMatchObject({ code: 'BUYER_ROLE_REQUIRED', status: 403 });
+    expect(f.store.encryptAndStore).not.toHaveBeenCalled();
+  });
+  it.each([CompanyRole.MANUFACTURER, CompanyRole.DISTRIBUTOR])(
+    'preserves legitimate product dispatch by its owner or current custodian: %s',
+    async (role) => {
+      const f = fixture(outsider, true, role),
+        previous = f.gateway.read.getMockImplementation()!;
+      f.gateway.read.mockImplementation(async (contract, method) => {
+        if (method === 'custodyPolicy') return 1;
+        if (method === 'getProduct')
+          return { manufacturer: role === CompanyRole.MANUFACTURER ? outsider : buyer };
+        if (method === 'getInventory') return { available: '10' };
+        return previous(contract, method);
+      });
+      await f.service.prepareLogistics('session', {
+        action: 'product-dispatch',
+        operationId,
+        batchId,
+        quantity: '10',
+        recipient: buyer,
+        fromLocation: id('source'),
+        toLocation: id('target'),
+        vehicle: 'VAB 1234',
+        occurredAt: Math.floor(Date.now() / 1000) - 60,
+        expectedAt: Math.floor(Date.now() / 1000) + 600,
+      });
+      expect(f.gateway.prepare).toHaveBeenCalledWith(
+        outsider,
+        'custody',
+        'createRoadTransfer',
+        expect.any(Array),
+      );
+    },
+  );
+  it.each([
+    'propose',
+    'close',
+    'evidence',
+    'bind-evidence',
+    'recall',
+    'ingredient-archive',
+    'ingredient-update',
+    'list',
+    'decide-request',
+  ])('rejects foreign records before preparing or storing: %s', async (action) => {
+    const f = fixture(outsider, true, CompanyRole.SUPPLIER);
+    await expect(
+      f.service.prepare('session', {
+        action,
+        operationId,
+        orderId,
+        batchId,
+        kind: 1,
+        name: 'Foreign ingredient',
+        evidenceId: id('proof'),
+        archived: true,
+      } as any),
+    ).rejects.toMatchObject({ status: expect.any(Number) });
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+    expect(f.store.encryptAndStore).not.toHaveBeenCalled();
+  });
+  it.each([
+    'stock-dispatch',
+    'product-dispatch',
+    'warehouse-decision',
+    'arrange-delivery',
+    'order-dispatch',
+    'shipment-vehicle',
+    'warehouse',
+  ])('denies same-role resource substitution in logistics: %s', async (action) => {
+    const role =
+      action === 'product-dispatch'
+        ? CompanyRole.MANUFACTURER
+        : ['stock-dispatch', 'arrange-delivery'].includes(action)
+          ? CompanyRole.SUPPLIER
+          : CompanyRole.DISTRIBUTOR;
+    const f = fixture(outsider, true, role),
+      previous = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method) => {
+      if (method === 'custodyPolicy' || method === 'reviewPolicy') return 1;
+      if (method === 'getProduct') return { manufacturer: buyer };
+      if (method === 'getRoadShipment') return { sender: seller, recipient: buyer };
+      if (method === 'custodyOrders') return { positionId: id('position') };
+      if (method === 'getPosition') return { position: { distributor: buyer } };
+      if (method === 'locationOwner') return buyer;
+      return previous(contract, method);
+    });
+    await expect(
+      f.service.prepareLogistics('session', {
+        action,
+        operationId,
+        orderId,
+        batchId,
+        shipmentId: id('shipment'),
+        quantity: '10',
+        fromLocation: id('source'),
+        toLocation: id('destination'),
+        location: id('warehouse'),
+        occurredAt: Math.floor(Date.now() / 1000) - 60,
+        expectedAt: Math.floor(Date.now() / 1000) + 600,
+        vehicle: 'VAB 1234',
+        decision: 1,
+        name: 'Warehouse',
+        recipient: buyer,
+      } as any),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND', status: 404 });
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+    expect(f.store.encryptAndStore).not.toHaveBeenCalled();
+  });
+  it('rejects a valid QR when the shipment belongs to a different receiver', async () => {
+    vi.stubEnv('VITE_PUBLIC_APP_URL', 'http://localhost:5173');
+    const f = fixture(outsider, true, CompanyRole.DISTRIBUTOR),
+      previous = f.gateway.read.getMockImplementation()!;
+    const shipmentId = id('other-company-shipment');
+    f.gateway.read.mockImplementation(async (contract, method) =>
+      method === 'custodyPolicy'
+        ? 1
+        : method === 'getRoadShipment'
+          ? { recipient: buyer }
+          : previous(contract, method),
+    );
+    const qrPayload = encodeShipmentQr({
+      shipmentId,
+      kind: 'ingredient',
+      chainId: 31337,
+      ordersAddress: seller,
+      publicAppUrl: 'http://localhost:5173',
+    });
+    await expect(
+      f.service.prepareLogistics('session', {
+        action: 'shipment-receive',
+        operationId,
+        shipmentId,
+        kind: 'ingredient',
+        quantity: '10',
+        occurredAt: Math.floor(Date.now() / 1000),
+        qrPayload,
+      }),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
+});
+describe('private custody and company proof inbox', () => {
+  it('marks a proof from a missing or reset chain context unavailable without reusing its presentation', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER),
+      previous = f.gateway.read.getMockImplementation()!;
+    Object.assign(f.repository, {
+      listEvidence: vi.fn().mockResolvedValue([
+        {
+          requestId: id('stale'),
+          requester: buyer,
+          supplier: seller,
+          orderContext: true,
+          identityProof: {
+            purpose: 'Old order proof',
+            expiresAt: 2000000000,
+            status: 'VERIFIED',
+          },
+        },
+      ]),
+    });
+    const status = vi.fn();
+    Object.assign(f.service, { flow: { getCompanyIdentityProofStatus: status } });
+    f.gateway.read.mockImplementation(async (contract, method) =>
+      method === 'getOrder'
+        ? {
+            buyer: '0x0000000000000000000000000000000000000000',
+            seller: '0x0000000000000000000000000000000000000000',
+          }
+        : previous(contract, method),
+    );
+    expect((await f.service.informationRequests('session')).requests[0].status).toBe('UNAVAILABLE');
+    expect(status).not.toHaveBeenCalled();
+  });
+  it.each([
+    [outsider, CompanyRole.DISTRIBUTOR, 1, 1],
+    ['0x4000000000000000000000000000000000000004', CompanyRole.DISTRIBUTOR, 0, 0],
+    [seller, CompanyRole.SUPPLIER, 1, 1],
+    [buyer, CompanyRole.MANUFACTURER, 0, 1],
+  ] as const)(
+    'restricts inventory for %s / %s on the server',
+    async (actor, role, privateCount, catalogueCount) => {
+      const f = fixture(actor, true, role),
+        read = f.gateway.read.getMockImplementation()!,
+        events = f.gateway.events.getMockImplementation()!;
+      const positionId = id('private-warehouse-position');
+      f.gateway.events.mockImplementation(async (contract, event) =>
+        event === 'CustodyPositionCreated' ? [{ positionId }] : events(contract, event),
+      );
+      f.gateway.read.mockImplementation(async (contract, method) =>
+        method === 'ingredientDeliveryPolicy' || method === 'custodyPolicy'
+          ? 1
+          : method === 'getPosition'
+            ? {
+                position: {
+                  batchId,
+                  supplier: seller,
+                  distributor: outsider,
+                  location: id('warehouse'),
+                  unit: encodeBytes32String('g'),
+                  quantity: '100',
+                },
+                reserved: '60',
+                available: '40',
+              }
+            : method === 'get'
+              ? { stage: 0 }
+              : method === 'custodyOrders'
+                ? { positionId: id('other'), quantity: '0' }
+                : method === 'isAuthorized' || method === 'isValidTraceabilitySource'
+                  ? true
+                  : read(contract, method),
+      );
+      const result = await f.service.state('session');
+      expect(result.logistics?.positions).toHaveLength(privateCount);
+      expect(result.catalogue[0]?.custodyPositions ?? []).toHaveLength(catalogueCount);
+      if (role === CompanyRole.DISTRIBUTOR && !privateCount)
+        expect(result.catalogue).toHaveLength(0);
+      if (role === CompanyRole.MANUFACTURER) {
+        expect(result.catalogue[0].custodyPositions[0]).toMatchObject({ available: '40' });
+        expect(result.catalogue[0].custodyPositions[0]).not.toHaveProperty('quantity');
+        expect(result.catalogue[0].custodyPositions[0]).not.toHaveProperty('reserved');
+      }
+      if (privateCount === 0) expect(result.logistics?.productPositions).toHaveLength(0);
+    },
+  );
+  it('lists only exact participants’ company proof requests without credential payloads', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    const proof = {
+      purpose: 'Confirm company role',
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+      status: 'REQUESTED',
+      presentationPayload: { ciphertext: 'private-secret' },
+    };
+    const records = [
+      {
+        requestId: id('received'),
+        requester: seller,
+        supplier: outsider,
+        deliveryOrderId: id('incoming'),
+        identityProof: proof,
+      },
+      {
+        requestId: id('sent'),
+        requester: buyer,
+        supplier: seller,
+        orderContext: true,
+        identityProof: proof,
+      },
+      { requestId: id('foreign'), requester: buyer, supplier: outsider, identityProof: proof },
+    ];
+    const status = vi.fn().mockResolvedValue({ status: 'REQUESTED' });
+    Object.assign(f.repository, { listEvidence: vi.fn().mockResolvedValue(records) });
+    Object.assign(f.service, { flow: { getCompanyIdentityProofStatus: status } });
+    const response = await request(f.app).get('/api/orders/information-requests').expect(200);
+    expect(response.body.requests).toHaveLength(2);
+    expect(response.body.requests.map((row: any) => row.direction).sort()).toEqual([
+      'received',
+      'sent',
+    ]);
+    expect(response.body.requests.find((row: any) => row.context === 'delivery').referenceId).toBe(
+      id('incoming'),
+    );
+    expect(JSON.stringify(response.body)).not.toContain('private-secret');
+    expect(JSON.stringify(response.body)).not.toContain(id('foreign'));
+    expect(status).toHaveBeenCalledTimes(2);
+  });
+});
+describe('warehouse-first transport preparation', () => {
+  it('binds Supplier company proof to the incoming custody shipment and its exact Distributor', async () => {
+    const f = fixture(outsider, true, CompanyRole.DISTRIBUTOR),
+      previous = f.gateway.read.getMockImplementation()!;
+    const shipmentId = id('custody-offer');
+    f.gateway.read.mockImplementation(async (contract, method) =>
+      method === 'reviewPolicy'
+        ? 1
+        : method === 'getRoadShipment'
+          ? { leg: 1, sender: seller, recipient: outsider, batchId }
+          : method === 'get'
+            ? { stage: 2, distributor: outsider }
+            : previous(contract, method),
+    );
+    const status = vi.fn().mockResolvedValue({ status: 'NOT_REQUESTED' });
+    Object.assign(f.service, { flow: { getCompanyIdentityProofStatus: status }, messaging: {} });
+    await f.service.identity('session', shipmentId, { action: 'status' }, true);
+    const reference = id(
+      `ingredient-delivery-identity:${shipmentId.toLowerCase()}:${outsider.toLowerCase()}`,
+    );
+    expect(status).toHaveBeenCalledWith('session', reference);
+    const record = {
+      deliveryOrderId: shipmentId,
+      requestId: reference,
+      requester: seller,
+      supplier: outsider,
+    } as any;
+    expect(await f.service.deliveryIdentityParticipants(record)).toBe(true);
+    expect(await f.service.deliveryIdentityParticipants({ ...record, requester: buyer })).toBe(
+      false,
+    );
+  });
+  it('prepares custody decisions and Supplier arrangement only through the updated child contract', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER),
+      previous = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method) =>
+      method === 'custodyPolicy' || method === 'reviewPolicy' ? 1 : previous(contract, method),
+    );
+    await f.service.prepareLogistics('session', {
+      action: 'arrange-delivery',
+      operationId,
+      orderId,
+    });
+    expect(f.gateway.prepare).toHaveBeenCalledWith(seller, 'delivery', 'arrangeDelivery', [
+      orderId,
+    ]);
+    await expect(
+      f.service.prepareLogistics('session', {
+        action: 'warehouse-decision',
+        operationId,
+        shipmentId: id('incoming'),
+        decision: 2,
+      }),
+    ).rejects.toMatchObject({ code: 'DISTRIBUTOR_REQUIRED', status: 403 });
+    const distributor = fixture(outsider, true, CompanyRole.DISTRIBUTOR),
+      read = distributor.gateway.read.getMockImplementation()!;
+    distributor.gateway.read.mockImplementation(async (contract, method) =>
+      method === 'custodyPolicy' || method === 'reviewPolicy'
+        ? 1
+        : method === 'getRoadShipment'
+          ? { sender: seller, recipient: outsider }
+          : read(contract, method),
+    );
+    await distributor.service.prepareLogistics('session', {
+      action: 'warehouse-decision',
+      operationId,
+      shipmentId: id('incoming'),
+      decision: 2,
+    });
+    expect(distributor.gateway.prepare).toHaveBeenCalledWith(
+      outsider,
+      'delivery',
+      'decideWarehouseShipment',
+      [id('incoming'), 2],
+    );
+  });
+  it('hides buyer/seller notes from the warehouse custodian before seller approval', async () => {
+    const f = fixture(outsider, true, CompanyRole.DISTRIBUTOR);
+    const read = f.gateway.read.getMockImplementation()!,
+      events = f.gateway.events.getMockImplementation()!;
+    const positionId = id('private-position'),
+      location = id('warehouse');
+    f.gateway.events.mockImplementation((contract, event) =>
+      event === 'CustodyPositionCreated'
+        ? Promise.resolve([{ positionId }])
+        : events(contract, event),
+    );
+    f.gateway.read.mockImplementation(async (contract, method) => {
+      if (method === 'ingredientDeliveryPolicy' || method === 'custodyPolicy') return 1;
+      if (method === 'get')
+        return { stage: '0', distributor: '0x0000000000000000000000000000000000000000' };
+      if (method === 'getPosition')
+        return {
+          position: {
+            batchId,
+            supplier: seller,
+            distributor: outsider,
+            location,
+            unit: encodeBytes32String('g'),
+            quantity: '100',
+          },
+          available: '90',
+          reserved: '10',
+        };
+      if (method === 'custodyOrders')
+        return { positionId, quantity: '10', dispatched: '0', received: '0' };
+      if (method === 'isAuthorized' || method === 'isValidTraceabilitySource') return true;
+      if (method === 'getOrder')
+        return {
+          ...(await read(contract, method)),
+          detailsHash: id('private-note'),
+          detailsCid: 'encrypted-note',
+        };
+      return read(contract, method);
+    });
+    await f.repository.savePrivate('products', {
+      id: orderId,
+      contentHash: id('private-note'),
+      cid: 'encrypted-note',
+      payload: { ciphertext: JSON.stringify({ note: 'Buyer confidential note' }) },
+    });
+    const result = await f.service.state('session');
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0].custodyOrder.distributor).toBe(outsider);
+    expect(result.orders[0].details).toBeUndefined();
+    expect(JSON.stringify(result)).not.toContain('Buyer confidential note');
+  });
+  const now = Math.floor(Date.now() / 1000);
+  const road = {
+    action: 'stock-dispatch',
+    operationId,
+    batchId,
+    quantity: '10',
+    fromLocation: id('source'),
+    toLocation: id('warehouse'),
+    vehicle: 'vab 1234',
+    occurredAt: now - 60,
+    expectedAt: now + 3600,
+  };
+  function warehouse(actor = seller, authorized = true) {
+    const f = fixture(
+      actor,
+      authorized,
+      actor === seller ? CompanyRole.SUPPLIER : CompanyRole.MANUFACTURER,
+    );
+    const previous = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, ...rest) =>
+      method === 'custodyPolicy'
+        ? 1
+        : method === 'getPosition'
+          ? { position: { batchId, unit: encodeBytes32String('g') }, available: '20' }
+          : method === 'locationOwner'
+            ? actor
+            : previous(contract, method, ...rest),
+    );
+    return f;
+  }
+  it('prepares canonical road data with an authenticated sender and normalized vehicle', async () => {
+    const f = warehouse();
+    const response = await request(f.app).post('/api/orders/logistics/prepare').send(road);
+    expect(response.status).toBe(200);
+    expect(f.gateway.prepare).toHaveBeenCalledWith(seller, 'delivery', 'dispatchToWarehouse', [
+      expect.objectContaining({
+        vehicle: 'VAB 1234',
+        referenceId: batchId,
+        quantity: '10',
+        occurredAt: now - 60,
+      }),
+    ]);
+  });
+  it('rejects malformed input, future times, invalid arrival and unauthenticated access', async () => {
+    const f = warehouse();
+    for (const changes of [
+      { vehicle: ' ' },
+      { quantity: '1.5' },
+      { occurredAt: now + 3600 },
+      { expectedAt: now - 100 },
+      { fromLocation: 'invalid' },
+    ])
+      expect(
+        (
+          await request(f.app)
+            .post('/api/orders/logistics/prepare')
+            .send({ ...road, ...changes })
+        ).status,
+      ).toBe(400);
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+    expect(
+      (await request(warehouse(seller, false).app).post('/api/orders/logistics/prepare').send(road))
+        .status,
+    ).toBe(403);
+  });
+  it('requires available warehouse stock and selects the atomic reservation method', async () => {
+    const f = warehouse(buyer);
+    const input = {
+      action: 'request' as const,
+      operationId,
+      kind: 1 as const,
+      batchId,
+      quantity: '20',
+      unit: 'g',
+      positionId: id('position'),
+      location: id('factory'),
+      expiresAt: now + 3600,
+      note: '',
+    };
+    await f.service.prepare('session', input);
+    expect(f.gateway.prepare).toHaveBeenCalledWith(
+      buyer,
+      'delivery',
+      'placeCustodyOrder',
+      expect.arrayContaining([input.positionId, '20', input.location]),
+    );
+    f.gateway.prepare.mockClear();
+    await expect(f.service.prepare('session', { ...input, quantity: '21' })).rejects.toMatchObject({
+      code: 'INSUFFICIENT_CUSTODY_STOCK',
+    });
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
+  it('rejects a substituted shipment QR before preparing receipt and distinguishes RPC outages', async () => {
+    const f = warehouse(buyer);
+    const qrPayload = encodeShipmentQr({
+      shipmentId: id('other'),
+      kind: 'ingredient',
+      chainId: 31337,
+      ordersAddress: seller,
+      publicAppUrl: 'http://localhost:5173',
+    });
+    await expect(
+      f.service.prepareLogistics('session', {
+        action: 'shipment-receive',
+        operationId,
+        shipmentId: id('intended'),
+        kind: 'ingredient',
+        quantity: '10',
+        occurredAt: now,
+        qrPayload,
+      }),
+    ).rejects.toMatchObject({ code: 'SHIPMENT_QR_INVALID' });
+    const sender = warehouse();
+    sender.gateway.prepare.mockRejectedValueOnce(
+      Object.assign(new Error('revert'), { code: 'CALL_EXCEPTION' }),
+    );
+    expect(
+      (await request(sender.app).post('/api/orders/logistics/prepare').send(road)).body.error.code,
+    ).toBe('CUSTODY_TRANSITION_REJECTED');
+    sender.gateway.prepare.mockRejectedValueOnce(new Error('RPC unavailable'));
+    expect(
+      (await request(sender.app).post('/api/orders/logistics/prepare').send(road)).status,
+    ).toBe(503);
+  });
+});
 function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTURER) {
   const auth = {
     getSession: vi.fn().mockResolvedValue({
@@ -63,7 +722,10 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
             : [],
     ),
     read: vi.fn(async (_contract: string, method: string) => {
-      if (method === 'approvedReceiptPolicy') return 0;
+      if (method === 'fulfilmentPolicy') return 2;
+      if (method === 'locationOwner') return actor;
+      if (method === 'custodyPolicy' || method === 'reviewPolicy') return 0;
+      if (method === 'approvedReceiptPolicy' || method === 'ingredientDeliveryPolicy') return 0;
       if (method === 'getItem')
         return {
           seller,
@@ -153,6 +815,138 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
   return { app, gateway, service, store, repository };
 }
 describe('order API and private metadata', () => {
+  function deliveryFixture(actor = seller, role = CompanyRole.SUPPLIER, stage = 1) {
+    const f = fixture(actor, true, role),
+      read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (method === 'ingredientDeliveryPolicy' || method === 'approvedReceiptPolicy') return 1;
+      if (method === 'get')
+        return {
+          stage,
+          distributor: outsider,
+          assignmentDeadline: Math.floor(Date.now() / 1000) + 3600,
+          reservedQuantity: '10',
+          pickedUpAt: 1,
+        };
+      if (method === 'requestedBatch') return batchId;
+      if (method === 'approvedReceivedQuantity') return '0';
+      if (method === 'requestDecision')
+        return { ...(await read(contract, method, args)), status: 1, recordedAt: 1 };
+      if (method === 'locationOwner') return buyer;
+      return read(contract, method, args);
+    });
+    return f;
+  }
+  it('exposes delivery records to the exact assigned Distributor and hides them from unrelated companies', async () => {
+    const allowed = await deliveryFixture(outsider, CompanyRole.DISTRIBUTOR, 2).service.state(
+      'session',
+    );
+    expect(allowed.orders).toHaveLength(1);
+    expect(allowed.orders[0].delivery.stage).toBe(2);
+    const denied = await deliveryFixture(
+      '0x4000000000000000000000000000000000000004',
+      CompanyRole.DISTRIBUTOR,
+      2,
+    ).service.state('session');
+    expect(denied.orders).toEqual([]);
+  });
+  it('prepares assignment and carrier acceptance for the module, never as an untrusted forwarded actor', async () => {
+    const f = deliveryFixture();
+    await f.service.prepare('session', {
+      action: 'delivery-assign',
+      orderId,
+      operationId,
+      distributor: outsider,
+    });
+    expect(f.gateway.prepare).toHaveBeenCalledWith(
+      seller,
+      'delivery',
+      'act',
+      expect.arrayContaining([1, seller, orderId, outsider]),
+    );
+    const carrier = deliveryFixture(outsider, CompanyRole.DISTRIBUTOR, 2);
+    await carrier.service.prepare('session', {
+      action: 'delivery-respond',
+      orderId,
+      operationId,
+      accept: true,
+    });
+    expect(carrier.gateway.prepare).toHaveBeenCalledWith(
+      outsider,
+      'delivery',
+      'act',
+      expect.arrayContaining([2, outsider, orderId]),
+    );
+    await expect(
+      deliveryFixture(buyer, CompanyRole.MANUFACTURER, 2).service.prepare('session', {
+        action: 'delivery-respond',
+        orderId,
+        operationId,
+        accept: true,
+      }),
+    ).rejects.toMatchObject({ code: 'DELIVERY_RESPONSE_UNAVAILABLE' });
+  });
+  it('requires an exact scanned delivery locator before preparing pickup or receipt', async () => {
+    const carrier = deliveryFixture(outsider, CompanyRole.DISTRIBUTOR, 3);
+    await expect(
+      carrier.service.prepare('session', {
+        action: 'delivery-pickup',
+        orderId,
+        operationId,
+        occurredAt: 1,
+        qrPayload: 'https://attacker.example',
+      }),
+    ).rejects.toMatchObject({ code: 'DELIVERY_QR_INVALID' });
+    expect(carrier.gateway.prepare).not.toHaveBeenCalled();
+    const manufacturer = deliveryFixture(buyer, CompanyRole.MANUFACTURER, 4);
+    await expect(
+      manufacturer.service.prepare('session', {
+        action: 'approved-receipt',
+        orderId,
+        operationId,
+        quantity: '10',
+        location: id('factory'),
+        occurredAt: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'DELIVERY_QR_INVALID' });
+  });
+  it('uses reserved transit stock at receipt instead of requiring the same stock still available at the Supplier', async () => {
+    const f = deliveryFixture(buyer, CompanyRole.MANUFACTURER, 4),
+      read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getBatch'
+        ? { ...(await read(contract, method, args)), availableQuantity: '0' }
+        : read(contract, method, args),
+    );
+    const previous = process.env.VITE_PUBLIC_APP_URL;
+    process.env.VITE_PUBLIC_APP_URL = 'https://tracechain.example';
+    try {
+      const qrPayload = encodeIngredientDeliveryQr({
+        orderId: orderId as `0x${string}`,
+        chainId: 31337,
+        ordersAddress: seller,
+        publicAppUrl: process.env.VITE_PUBLIC_APP_URL,
+      });
+      await f.service.prepare('session', {
+        action: 'approved-receipt',
+        operationId,
+        orderId,
+        quantity: '10',
+        location: id('factory'),
+        occurredAt: 1,
+        qrPayload,
+      });
+      expect(f.gateway.prepare).toHaveBeenCalledWith(
+        buyer,
+        'orders',
+        'confirmApprovedIngredientReceipt',
+        expect.arrayContaining([orderId, '10']),
+      );
+    } finally {
+      if (previous === undefined) delete process.env.VITE_PUBLIC_APP_URL;
+      else process.env.VITE_PUBLIC_APP_URL = previous;
+    }
+  });
   it('includes demand-adjusted stock only for the authenticated Supplier', async () => {
     const supplier = fixture(seller, true, CompanyRole.SUPPLIER);
     const response = await request(supplier.app).get('/api/orders');
@@ -1014,7 +1808,12 @@ describe('order API and private metadata', () => {
   });
   it('keeps a litre request quantity and unit exactly as submitted', async () => {
     const { app, gateway } = fixture();
-    gateway.read.mockResolvedValue({ seller, unit: encodeBytes32String('litre') } as any);
+    const previous = gateway.read.getMockImplementation()!;
+    gateway.read.mockImplementation(async (contract, method) =>
+      method === 'getItem'
+        ? { seller, kind: 1, unit: encodeBytes32String('litre') }
+        : previous(contract, method),
+    );
     await request(app)
       .post('/api/orders/prepare')
       .send({

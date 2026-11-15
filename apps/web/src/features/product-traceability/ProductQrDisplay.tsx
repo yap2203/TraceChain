@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 
 import {
   createProductQrModel,
+  createQrModel,
   productQrPngFilename,
   type ProductQrConfiguration,
   type ProductQrModel,
@@ -14,22 +15,32 @@ export function ProductQrDisplay({
   batchReference,
   configuration,
   productName,
+  encodedPayload,
+  labelTitle = 'Product Traceability QR',
+  instruction = 'Scan with a phone camera to view the blockchain traceability record.',
 }: {
   batchId: string;
   batchReference: string;
   configuration?: ProductQrConfiguration;
   productName: string;
+  encodedPayload?: string;
+  labelTitle?: string;
+  instruction?: string;
 }) {
   const [copied, setCopied] = useState(false);
   const result = useMemo(() => {
     try {
-      return { model: createProductQrModel(batchId, configuration) };
+      return {
+        model: encodedPayload
+          ? createQrModel(encodedPayload)
+          : createProductQrModel(batchId, configuration),
+      };
     } catch (error) {
       return {
         error: error instanceof Error ? error.message : 'The product QR could not be created.',
       };
     }
-  }, [batchId, configuration]);
+  }, [batchId, configuration, encodedPayload]);
   if (!result.model)
     return (
       <div className="product-trace-error" role="alert">
@@ -38,19 +49,19 @@ export function ProductQrDisplay({
     );
   const model = result.model;
   return (
-    <section className="product-qr-label" aria-label="Product Traceability QR">
+    <section className="product-qr-label" aria-label={labelTitle}>
       <div>
         <span className="product-trace-eyebrow">TraceChain</span>
-        <h3>Product Traceability QR</h3>
+        <h3>{labelTitle}</h3>
         <div className="product-qr-identity">
           <strong>{productName || 'Registered product'}</strong>
           <span>{batchReference || 'Batch reference unavailable'}</span>
         </div>
       </div>
-      <QrSvg model={model} />
-      <p>Scan with a phone camera to view the blockchain traceability record.</p>
+      <QrSvg model={model} delivery={!!encodedPayload} />
+      <p>{instruction}</p>
       <div className="product-qr-actions">
-        <button type="button" onClick={() => downloadPng(model, batchReference)}>
+        <button type="button" onClick={() => downloadPng(model, batchReference, !!encodedPayload)}>
           <Download size={15} /> Download PNG
         </button>
         <button
@@ -66,17 +77,25 @@ export function ProductQrDisplay({
           <Printer size={15} /> Print label
         </button>
       </div>
-      <small>Contains only version, chain, ProductRegistry address, and product batch ID.</small>
+      <small>
+        {encodedPayload
+          ? 'Contains only version, chain, Orders registry address and request ID. Scanning alone does not confirm receipt.'
+          : 'Contains only version, chain, ProductRegistry address, and product batch ID.'}
+      </small>
     </section>
   );
 }
 
-function QrSvg({ model }: { model: ProductQrModel }) {
+function QrSvg({ model, delivery }: { model: ProductQrModel; delivery?: boolean }) {
   const size = model.modules.length;
   return (
     <svg
       className="product-qr-svg"
-      aria-label="TraceChain product traceability QR code"
+      aria-label={
+        delivery
+          ? 'TraceChain ingredient delivery QR code'
+          : 'TraceChain product traceability QR code'
+      }
       role="img"
       viewBox={`-4 -4 ${size + 8} ${size + 8}`}
     >
@@ -99,7 +118,7 @@ function QrSvg({ model }: { model: ProductQrModel }) {
   );
 }
 
-function downloadPng(model: ProductQrModel, batchReference: string) {
+function downloadPng(model: ProductQrModel, batchReference: string, delivery = false) {
   const quiet = 4;
   const scale = 10;
   const canvas = document.createElement('canvas');
@@ -117,7 +136,12 @@ function downloadPng(model: ProductQrModel, batchReference: string) {
     }),
   );
   const link = document.createElement('a');
-  link.download = productQrPngFilename(batchReference);
+  link.download = delivery
+    ? productQrPngFilename(batchReference).replace(
+        'tracechain-product-',
+        'tracechain-ingredient-delivery-',
+      )
+    : productQrPngFilename(batchReference);
   link.href = canvas.toDataURL('image/png');
   link.click();
 }

@@ -256,11 +256,35 @@ export class BlockchainController {
           503,
         );
       const data = await this.gateway.listOperationalData(session.address);
-      response.json(
-        this.stakeholderDirectory
-          ? await enrichOperationalData(data, this.stakeholderDirectory)
-          : data,
+      const same = (value: unknown) =>
+        typeof value === 'string' && value.toLowerCase() === session.address.toLowerCase();
+      const transfers = data.transfers.filter(
+        (record) => same(record.sender) || same(record.recipient),
       );
+      const receivedProducts = new Set(transfers.map((record) => record.productBatchId));
+      const scoped =
+        session.role === CompanyRole.SYSTEM_ADMIN
+          ? data
+          : {
+              ingredientBatches: data.ingredientBatches.filter((record) => same(record.supplier)),
+              productBatches: data.productBatches.filter(
+                (record) =>
+                  same(record.manufacturer) ||
+                  ((session.role === CompanyRole.DISTRIBUTOR ||
+                    session.role === CompanyRole.RETAILER) &&
+                    receivedProducts.has(record.batchId)),
+              ),
+              transfers,
+              evidenceRequests: data.evidenceRequests.filter(
+                (record) => same(record.requester) || same(record.supplier),
+              ),
+            };
+      response.json({
+        ...(this.stakeholderDirectory
+          ? await enrichOperationalData(scoped, this.stakeholderDirectory)
+          : scoped),
+        actorWallet: session.address,
+      });
     } catch (error) {
       this.handleError(error, response, next);
     }

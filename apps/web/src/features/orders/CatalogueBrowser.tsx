@@ -18,6 +18,9 @@ export interface QuantityRequestInput {
   deadline: string;
   note: string;
   quantity: string;
+  positionId?: string;
+  location?: string;
+  batchId?: string;
 }
 
 export interface EvidenceRequestInput {
@@ -37,12 +40,16 @@ export function CatalogueBrowser({
   onOpenEvidence,
   onQuantityRequest,
   initialBatchId,
+  locations = [],
+  onRegisterLocation,
 }: {
   actor: string;
   busy: boolean;
   items: OrderRecord[];
   role: WorkspaceRole;
   initialBatchId?: string;
+  locations?: OrderRecord[];
+  onRegisterLocation?: (label: string) => Promise<void>;
   onEvidenceRequest: (item: OrderRecord, input: EvidenceRequestInput) => Promise<void>;
   onOpenEvidence: () => void;
   onQuantityRequest: (item: OrderRecord, input: QuantityRequestInput) => Promise<void>;
@@ -97,7 +104,12 @@ export function CatalogueBrowser({
           (kind === 'all' || String(entry.kind) === kind) &&
           (category === 'all' || entry.category === category) &&
           (country === 'all' || entry.countryOfOrigin === country) &&
-          (!availableOnly || (entry.active && Number(batch?.supplierAvailable ?? 0) > 0)) &&
+          (!availableOnly ||
+            (entry.active &&
+              (BigInt(batch?.supplierAvailable ?? '0') > 0n ||
+                (entry.custodyPositions ?? []).some(
+                  (position: OrderRecord) => position.orderable && BigInt(position.available) > 0n,
+                )))) &&
           (credential === 'all' ||
             (credential === 'active'
               ? Number(entry.credentialStatus) === 1
@@ -248,6 +260,8 @@ export function CatalogueBrowser({
           onEvidenceRequest={onEvidenceRequest}
           onOpenEvidence={onOpenEvidence}
           onQuantityRequest={onQuantityRequest}
+          locations={locations}
+          onRegisterLocation={onRegisterLocation}
         />
       )}
     </section>
@@ -290,11 +304,7 @@ function CatalogueCard({
           </div>
           <div>
             <dt>Available</dt>
-            <dd>
-              {batch?.supplierAvailable !== undefined
-                ? `${batch.supplierAvailable} ${item.unit}`
-                : 'Not published'}
-            </dd>
+            <dd>{availability(item, batch)}</dd>
           </div>
           <div>
             <dt>Indicative price</dt>
@@ -330,7 +340,11 @@ function CatalogueDetail({
   onEvidenceRequest,
   onOpenEvidence,
   onQuantityRequest,
+  locations,
+  onRegisterLocation,
 }: {
+  locations: OrderRecord[];
+  onRegisterLocation?: (label: string) => Promise<void>;
   item: OrderRecord;
   mode: 'details' | 'quantity' | 'evidence';
   busy: boolean;
@@ -354,7 +368,12 @@ function CatalogueDetail({
     countryOfOrigin: 'optional',
     expiryDate: 'required',
   });
-  const validQuantity = /^[1-9]\d*$/.test(quantity) && Boolean(deadline);
+  const [receiving, setReceiving] = useState(''),
+    [locationName, setLocationName] = useState('');
+  const requiresLocation = Number(item.kind) === 1;
+
+  const validQuantity =
+    /^[1-9]\d*$/.test(quantity) && Boolean(deadline) && (!requiresLocation || !!receiving);
   const requestedClaims = Object.keys(claims).filter((claim) => claims[claim] !== 'not-requested');
   return (
     <Modal
@@ -400,12 +419,25 @@ function CatalogueDetail({
                       : 'Unavailable'
                   }
                 />
+                <Fact label="Safe available quantity" value={availability(item, batch)} />
                 <Fact
-                  label="Safe available quantity"
+                  label="Current storage"
                   value={
-                    batch.supplierAvailable !== undefined
-                      ? `${batch.supplierAvailable} ${item.unit}`
-                      : 'Not published'
+                    [
+                      ...(item.custodyPositions ?? [])
+                        .filter(
+                          (entry: OrderRecord) =>
+                            BigInt(entry.quantity ?? entry.available ?? '0') > 0n,
+                        )
+                        .map(
+                          (entry: OrderRecord) =>
+                            `${entry.warehouseName}: ${entry.quantity === undefined ? 'Public availability' : 'Physical stock'} ${entry.quantity ?? entry.available} ${item.unit} (${entry.available} unreserved)`,
+                        ),
+                      ...(item.storageLocations ?? []).map(
+                        (entry: OrderRecord) =>
+                          `${entry.warehouseName}: ${entry.available} ${item.unit}`,
+                      ),
+                    ].join('; ') || 'No received Distributor warehouse stock recorded'
                   }
                 />
                 <Fact label="Production date" value={date(batch.producedAt)} />
@@ -440,15 +472,59 @@ function CatalogueDetail({
             className="catalogue-request-form"
             onSubmit={(event) => {
               event.preventDefault();
-              if (validQuantity) void onQuantityRequest(item, { quantity, deadline, note });
+              if (validQuantity)
+                void onQuantityRequest(item, {
+                  quantity,
+                  deadline,
+                  note,
+                  ...(requiresLocation ? { location: receiving } : {}),
+                });
             }}
           >
             <div className="catalogue-dialog-alert catalogue-dialog-alert--info">
               <Alert
                 type="info"
-                message={`This sends a request for ${item.unit}. It does not reserve stock, create a purchase, take payment or dispatch goods.`}
+                message={
+                  requiresLocation
+                    ? 'The Supplier approves or rejects your request, then chooses direct Distributor delivery or available custody stock. No goods move and no payment is taken at this step.'
+                    : `This sends a request for ${item.unit}. It does not reserve stock, create a purchase, take payment or dispatch goods.`
+                }
               />
             </div>
+            {requiresLocation && (
+              <>
+                <SelectField
+                  label="Your receiving location"
+                  value={receiving}
+                  onChange={setReceiving}
+                  required
+                  options={[
+                    { value: '', label: 'Select your factory / receiving location' },
+                    ...locations.map((entry) => ({
+                      value: entry.location,
+                      label: entry.label ?? entry.location,
+                    })),
+                  ]}
+                />
+                {!locations.length && onRegisterLocation && (
+                  <>
+                    <Input
+                      label="New receiving location name"
+                      value={locationName}
+                      onChange={setLocationName}
+                      maxLength={160}
+                    />
+                    <Btn
+                      type="button"
+                      disabled={busy || !locationName.trim()}
+                      onClick={() => void onRegisterLocation(locationName.trim())}
+                    >
+                      Register receiving location
+                    </Btn>
+                  </>
+                )}
+              </>
+            )}
             <Input
               label={`Requested quantity (${item.unit})`}
               type="number"
@@ -657,4 +733,15 @@ function same(left: string, right: string) {
 
 function short(value: string) {
   return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
+}
+
+function availability(item: OrderRecord, batch: OrderRecord | undefined) {
+  if (Number(item.kind) !== 1)
+    return batch?.supplierAvailable !== undefined
+      ? `${batch.supplierAvailable} ${item.unit}`
+      : 'Not published';
+  const custody = (item.custodyPositions ?? [])
+    .filter((entry: OrderRecord) => entry.orderable)
+    .reduce((sum: bigint, entry: OrderRecord) => sum + BigInt(entry.available), 0n);
+  return `Supplier: ${batch?.supplierAvailable ?? 'Unavailable'} ${item.unit} ? Distributor custody: ${custody} ${item.unit}`;
 }

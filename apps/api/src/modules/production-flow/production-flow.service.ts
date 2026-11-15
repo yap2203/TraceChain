@@ -61,6 +61,7 @@ export class ProductionFlowApiError extends Error {
 }
 
 interface Dependencies {
+  validateDeliveryIdentity?: (workflow: EvidenceWorkflowRecord) => Promise<boolean>;
   agentProvider: TraceChainAgentProvider;
   authService: AuthService;
   clock?: () => Date;
@@ -109,7 +110,7 @@ export class ProductionFlowService {
     orderId: string,
     presentation: string,
   ) {
-    const session = await this.requireEvidenceRequester(sessionId);
+    const session = await this.requireIdentitySession(sessionId, orderId, true);
     const workflow = await this.requireWorkflow(orderId);
     if (
       !workflow.orderContext ||
@@ -127,6 +128,7 @@ export class ProductionFlowService {
     sessionId: string | undefined,
     context: {
       orderId: string;
+      deliveryOrderId?: string;
       buyer: string;
       seller: string;
       batchId: string;
@@ -137,16 +139,20 @@ export class ProductionFlowService {
       selectiveDisclosure?: boolean;
     },
   ) {
-    const session = await this.requireEitherRole(sessionId);
+    const session = context.deliveryOrderId
+      ? await this.requireRole(sessionId, CompanyRole.DISTRIBUTOR, 'RECEIVE_TRANSFER')
+      : await this.requireEitherRole(sessionId);
     if (!sameAddress(session.address, context.seller))
       throw new ProductionFlowApiError(
         'ACCESS_DENIED',
         'Only the order seller may request buyer identity.',
         403,
       );
-    const currentRole = (await this.dependencies.gateway.isRoleAuthorized(context.buyer, 3))
-      ? CompanyRole.MANUFACTURER
-      : CompanyRole.RETAILER;
+    const currentRole = context.deliveryOrderId
+      ? CompanyRole.SUPPLIER
+      : (await this.dependencies.gateway.isRoleAuthorized(context.buyer, 3))
+        ? CompanyRole.MANUFACTURER
+        : CompanyRole.RETAILER;
     const previous = await this.dependencies.repository.findEvidence(context.orderId);
     if (previous?.identityProof && previous.identityProof.expiresAt > this.nowSeconds()) {
       if (
@@ -187,6 +193,7 @@ export class ProductionFlowService {
     );
     await this.dependencies.repository.saveEvidence({
       orderContext: true,
+      deliveryOrderId: context.deliveryOrderId,
       batchId: context.batchId,
       requestId: context.orderId,
       requester: context.buyer,
@@ -305,11 +312,28 @@ export class ProductionFlowService {
         const chain = await this.safeGateway(() =>
           this.dependencies.gateway.getEvidenceRequest(record.requestId),
         );
+        if (
+          !chain ||
+          (!sameAddress(session.address, chain.requester) &&
+            !sameAddress(session.address, chain.supplier))
+        )
+          return null;
+        try {
+          this.assertRequestMatches(chain, record);
+        } catch {
+          return null;
+        }
         let context: { productBatchId?: string; requesterRole?: CompanyRole } = {};
         try {
-          context = JSON.parse(
+          const stored = JSON.parse(
             await this.dependencies.contentStore.decrypt(record.requestPayload),
           ) as typeof context;
+          context = {
+            ...(typeof stored.productBatchId === 'string'
+              ? { productBatchId: stored.productBatchId }
+              : {}),
+            ...(stored.requesterRole ? { requesterRole: stored.requesterRole } : {}),
+          };
         } catch {
           // Legacy requests do not carry requester/product context.
         }
@@ -400,6 +424,7 @@ export class ProductionFlowService {
         404,
       );
     const chain = await this.requireChainRequest(requestId);
+    this.assertRequestMatches(chain, workflow);
     const request = JSON.parse(
       await this.dependencies.contentStore.decrypt(workflow.requestPayload),
     ) as { claims?: string[]; requiredClaims?: string[]; reason?: string };
@@ -441,13 +466,14 @@ export class ProductionFlowService {
   async reviewEvidence(sessionId: string | undefined, requestId: string) {
     const session = await this.requireEvidenceRequester(sessionId);
     const workflow = await this.requireWorkflow(requestId);
-    const chain = await this.requireChainRequest(requestId);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError(
         'REQUEST_NOT_FOUND',
         'The evidence request was not found.',
         404,
       );
+    const chain = await this.requireChainRequest(requestId);
+    this.assertRequestMatches(chain, workflow);
     if (!workflow.response || chain.status < 2)
       throw new ProductionFlowApiError(
         'EVIDENCE_NOT_RECEIVED',
@@ -680,7 +706,7 @@ export class ProductionFlowService {
   }
 
   async getCompanyIdentityProofMaterial(sessionId: string | undefined, requestId: string) {
-    const session = await this.requireEvidenceRequester(sessionId);
+    const session = await this.requireIdentitySession(sessionId, requestId, true);
     const workflow = await this.requireWorkflow(requestId);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError(
@@ -793,7 +819,7 @@ export class ProductionFlowService {
     requestId: string,
     presentation: string,
   ) {
-    const session = await this.requireEvidenceRequester(sessionId);
+    const session = await this.requireIdentitySession(sessionId, requestId, true);
     const workflow = await this.requireWorkflow(requestId);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError('IDENTITY_PROOF_ACCESS_DENIED', 'Wrong presenter.', 403);
@@ -815,7 +841,7 @@ export class ProductionFlowService {
   }
 
   async verifyCompanyIdentityProof(sessionId: string | undefined, requestId: string) {
-    const session = await this.requireEitherRole(sessionId);
+    const session = await this.requireIdentitySession(sessionId, requestId, false);
     const workflow = await this.requireWorkflow(requestId);
     if (
       !sameAddress(session.address, workflow.supplier) ||
@@ -843,7 +869,7 @@ export class ProductionFlowService {
   }
 
   async declineCompanyIdentityProof(sessionId: string | undefined, requestId: string) {
-    const session = await this.requireEvidenceRequester(sessionId);
+    const session = await this.requireIdentitySession(sessionId, requestId, true);
     const workflow = await this.requireWorkflow(requestId);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError('IDENTITY_PROOF_ACCESS_DENIED', 'Wrong presenter.', 403);
@@ -859,7 +885,7 @@ export class ProductionFlowService {
   }
 
   async getCompanyIdentityProofStatus(sessionId: string | undefined, requestId: string) {
-    const session = await this.requireEitherRole(sessionId);
+    const session = await this.requireIdentitySession(sessionId, requestId, false);
     const workflow = await this.requireWorkflow(requestId);
     if (
       !sameAddress(session.address, workflow.requester) &&
@@ -870,6 +896,7 @@ export class ProductionFlowService {
     if (
       sameAddress(session.address, workflow.supplier) &&
       workflow.identityProof?.status === 'VERIFIED' &&
+      (!workflow.deliveryOrderId || workflow.identityProof.expiresAt > this.nowSeconds()) &&
       workflow.identityProof.presentationPayload
     ) {
       const checked = await this.verifyCompanyIdentityPresentation(
@@ -1945,6 +1972,27 @@ export class ProductionFlowService {
     return session;
   }
 
+  private async requireIdentitySession(
+    sessionId: string | undefined,
+    requestId: string,
+    presenter: boolean,
+  ) {
+    const workflow = await this.requireWorkflow(requestId);
+    if (!workflow.deliveryOrderId)
+      return presenter
+        ? this.requireEvidenceRequester(sessionId)
+        : this.requireEitherRole(sessionId);
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    if (sameAddress(session.address, workflow.requester))
+      return this.requireRole(sessionId, CompanyRole.SUPPLIER, 'ISSUE_INGREDIENT_CREDENTIAL');
+    if (!presenter && sameAddress(session.address, workflow.supplier))
+      return this.requireRole(sessionId, CompanyRole.DISTRIBUTOR, 'RECEIVE_TRANSFER');
+    throw new ProductionFlowApiError(
+      'IDENTITY_PROOF_ACCESS_DENIED',
+      'This delivery proof belongs to other participants.',
+      404,
+    );
+  }
   private async requireEitherRole(sessionId?: string) {
     const session = await this.dependencies.authService.requireSession(sessionId);
     const role = session.onChainAuthorization?.role;
@@ -1988,6 +2036,12 @@ export class ProductionFlowService {
       throw new ProductionFlowApiError(
         'REQUEST_NOT_FOUND',
         'The evidence request was not found.',
+        404,
+      );
+    if (record.deliveryOrderId && !(await this.dependencies.validateDeliveryIdentity?.(record)))
+      throw new ProductionFlowApiError(
+        'IDENTITY_PROOF_ACCESS_DENIED',
+        'The delivery identity binding is no longer current.',
         404,
       );
     return record;
@@ -2143,11 +2197,13 @@ export class ProductionFlowService {
       presenterRole: proof?.presenterRole,
       presenterWallet: proof?.presenterWallet,
       purpose: proof?.purpose,
+      requiredClaims: proof?.requiredClaims,
+      optionalClaims: proof?.optionalClaims,
       requestId: workflow.requestId,
       status:
         proof &&
         proof.status !== 'DECLINED' &&
-        proof.status !== 'VERIFIED' &&
+        (workflow.deliveryOrderId || proof.status !== 'VERIFIED') &&
         proof.expiresAt <= this.nowSeconds()
           ? 'EXPIRED'
           : (proof?.status ?? 'NOT_REQUESTED'),
@@ -2347,7 +2403,8 @@ export class ProductionFlowService {
         'The Company Role Credential signature, wallet, role, or hash did not verify.',
         409,
       );
-    const expectedRole = proof.presenterRole as CompanyRole.MANUFACTURER | CompanyRole.RETAILER;
+    const expectedRole = proof.presenterRole as
+      CompanyRole.SUPPLIER | CompanyRole.MANUFACTURER | CompanyRole.RETAILER;
     if (checked.role !== expectedRole)
       throw new ProductionFlowApiError(
         'COMPANY_ROLE_MISMATCH',
@@ -2359,7 +2416,7 @@ export class ProductionFlowService {
         proof.presenterWallet,
         presentedHash,
         ROLE_NUMBERS[expectedRole],
-        'REQUEST_EVIDENCE',
+        expectedRole === CompanyRole.SUPPLIER ? 'ISSUE_INGREDIENT_CREDENTIAL' : 'REQUEST_EVIDENCE',
       ),
     );
     if (!allowed)

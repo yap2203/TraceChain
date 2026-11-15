@@ -169,6 +169,43 @@ describe('Supplier ingredient-batch API', () => {
     service = new IngredientBatchService(dependencies);
   });
 
+  it('filters a foreign Supplier batch from management reads before decryption', async () => {
+    vi.mocked(gateway.listBatchIds).mockResolvedValue([`0x${'11'.repeat(32)}`]);
+    batch = { supplier: '0x5000000000000000000000000000000000000005' } as ChainIngredientBatch;
+    const decrypt = vi.fn();
+    const reader = new IngredientBatchService({
+      ...dependencies,
+      contentStore: { ...dependencies.contentStore, decrypt },
+    });
+    expect((await reader.list('session')).batches).toEqual([]);
+    expect(decrypt).not.toHaveBeenCalled();
+  });
+
+  it('does not decrypt another Supplier stored metadata when a batch ID is reused on chain', async () => {
+    await service.prepare('session', {
+      ...BODY,
+      productionDate: new Date(BODY.productionDate),
+      expiryDate: new Date(BODY.expiryDate),
+    });
+    const record = [...records.values()][0]!;
+    record.supplierWallet = '0x5000000000000000000000000000000000000005';
+    batch = {
+      supplier: SUPPLIER,
+      credentialId: record.credentialId,
+      metadataHash: record.metadataHash,
+      encryptedCid: record.encryptedCid,
+    } as ChainIngredientBatch;
+    vi.mocked(gateway.listBatchIds).mockResolvedValue([record.batchId]);
+    const decrypt = vi.fn();
+    const reader = new IngredientBatchService({
+      ...dependencies,
+      contentStore: { ...dependencies.contentStore, decrypt },
+    });
+    const result = await reader.list('session');
+    expect(result.batches[0].ingredientName).toBe('Registered ingredient');
+    expect(decrypt).not.toHaveBeenCalled();
+  });
+
   it('requires an authenticated SIWE session and authorized Supplier credential', async () => {
     const unauthenticated = new IngredientBatchService({
       ...dependencies,

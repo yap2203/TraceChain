@@ -85,10 +85,10 @@ export function cameraErrorMessage(error: unknown) {
   const name = error instanceof Error ? error.name : '';
   const message = error instanceof Error ? error.message : '';
   if (name === 'NotAllowedError' || name === 'SecurityError') {
-    return 'Camera permission was denied. Use image upload or manual paste instead.';
+    return 'Camera permission was denied. Upload a QR image instead.';
   }
   if (message === 'CAMERA_UNSUPPORTED' || name === 'NotFoundError') {
-    return 'No supported camera is available. Use image upload or manual paste instead.';
+    return 'No supported camera is available. Upload a QR image instead.';
   }
   return 'The camera stopped unexpectedly. Restart it or use another scan method.';
 }

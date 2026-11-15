@@ -8,6 +8,7 @@ import { submitProductionTransaction } from '../production-flow/production-flow.
 import {
   getOrders,
   prepareOrder,
+  prepareLogistics,
   orderIdentity,
   type OrdersState,
   type OrderRecord,
@@ -35,6 +36,7 @@ import { getEvidenceDetails, prepareEvidenceRequest } from '../production-flow/p
 import { sendEvidenceRequestMessage } from '../production-flow/evidence-didcomm';
 import { CatalogueBrowser, CatalogueSkeleton } from './CatalogueBrowser';
 import { SupplierStockSummary } from './SupplierStockSummary';
+import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
 import {
   companyEvidenceStatus,
@@ -109,6 +111,16 @@ export function OrdersPage({
   useEffect(() => {
     load().catch((cause) => setError(orderError(cause)));
   }, [load]);
+  const hasActiveDelivery = data?.orders.some(
+    (entry) => entry.delivery && Number(entry.delivery.stage) < 5,
+  );
+  useEffect(() => {
+    if (!hasActiveDelivery) return;
+    const timer = setInterval(() => {
+      void load().catch((cause) => setError(orderError(cause)));
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [hasActiveDelivery, load]);
   useEffect(() => {
     if (!initialBatchId || !data) return;
     const entry = data.catalogue.find((item) =>
@@ -173,13 +185,19 @@ export function OrdersPage({
   const item = data?.catalogue.find((entry) => entry.itemId === (order?.itemId ?? selected));
   const seller = !!order && !!data && same(order.seller, data.actor);
   const buyer = !!order && !!data && same(order.buyer, data.actor);
-  const activeOrder = !!order && Number(order.status) < 3 && Number(order.expiresAt) > now();
+  const activeOrder =
+    !!order &&
+    Number(order.status) < 3 &&
+    Number(order.expiresAt) > now() &&
+    Number(order.delivery?.stage) !== 6;
   const receiptOccurredAt = form.receivedAt ? Math.floor(Date.parse(form.receivedAt) / 1000) : 0;
   const managedOrders =
     data?.orders.filter((entry) =>
-      role === 'supplier' || direction === 'received'
-        ? same(entry.seller, data.actor)
-        : same(entry.buyer, data.actor),
+      role === 'distributor'
+        ? same(entry.delivery?.distributor, data.actor)
+        : role === 'supplier' || direction === 'received'
+          ? same(entry.seller, data.actor)
+          : same(entry.buyer, data.actor),
     ) ?? [];
   const availableItems =
     data?.catalogue.filter(
@@ -213,7 +231,9 @@ export function OrdersPage({
             {evidenceOnly
               ? 'Company evidence request'
               : mode === 'manage'
-                ? 'My orders'
+                ? role === 'distributor'
+                  ? 'Ingredient deliveries'
+                  : 'My orders'
                 : mode === 'browse'
                   ? 'Supplier ingredients'
                   : role === 'supplier'
@@ -224,7 +244,9 @@ export function OrdersPage({
           </h2>
           <p>
             {mode === 'manage'
-              ? 'Manage ingredient requests sent to Suppliers and product requests received from buyers. Orders record requests only; no payment or stock movement takes place.'
+              ? role === 'distributor'
+                ? 'Review delivery offers, optionally verify the Supplier company proof, then scan the package label to confirm physical pickup.'
+                : 'Manage ingredient requests and track Supplier → Distributor → Manufacturer delivery. Confirm physical receipt by scanning the ingredient label. Payments are not processed.'
               : mode === 'browse'
                 ? 'Open an ingredient to see its registered details, request evidence or send a quantity request to its Supplier.'
                 : role === 'supplier'
@@ -269,6 +291,13 @@ export function OrdersPage({
         </nav>
       )}
       {error && <Alert type="error" message={error} />}
+      {data?.ingredientDeliverySupported === false &&
+        ['supplier', 'manufacturer', 'distributor'].includes(role) && (
+          <Alert
+            type="warning"
+            message="Distributor ingredient delivery requires the updated contract suite. This deployment still uses the legacy request/receipt workflow. Deploy the new suite and update registry addresses before testing QR handoffs."
+          />
+        )}
       {notice && <Alert type="success" message={notice} />}
       {!data && !error && (role === 'supplier' ? <RequestsLoading /> : <CatalogueSkeleton />)}
       {data && role !== 'supplier' && tab === 'catalogue' && (
@@ -281,6 +310,8 @@ export function OrdersPage({
           onOpenEvidence={() =>
             navigate(workspacePath(role, role === 'manufacturer' ? 'requests' : 'evidence'))
           }
+          locations={data.locations.filter((location) => same(location.company, data.actor))}
+          onRegisterLocation={(label) => submit('location', { label })}
           onQuantityRequest={(selectedItem, input) =>
             submit('request', {
               itemId: selectedItem.itemId,
@@ -292,6 +323,7 @@ export function OrdersPage({
               expiresAt: Math.floor(Date.parse(input.deadline) / 1000),
               evidenceRequired: false,
               note: input.note,
+              ...(input.location ? { location: input.location } : {}),
             })
           }
           onEvidenceRequest={(selectedItem, input) =>
@@ -320,7 +352,7 @@ export function OrdersPage({
       )}
       {data && tab === 'orders' && (
         <>
-          {mode === 'manage' && !order && (
+          {mode === 'manage' && role !== 'distributor' && !order && (
             <>
               <nav aria-label="Order direction" className="flex flex-wrap gap-[8px]">
                 <Btn
@@ -442,141 +474,220 @@ export function OrdersPage({
                     </Btn>
                   )}
                 <p>Private note: {order.details?.note || 'No note recorded'}</p>
-                {buyer && role === 'manufacturer' && mode === 'manage' && !evidenceOnly && (
-                  <section className="orders-stage grid gap-[12px]">
-                    <h3>Confirm ingredients received</h3>
+                {order.custodyOrder && (
+                  <section className="grid gap-[12px] rounded-lg border border-[var(--c-border)] p-[16px]">
+                    <h3>Distributor warehouse fulfilment</h3>
                     <p>
-                      Supplier decision:{' '}
+                      Supplier → {order.custodyOrder.warehouseName || 'Distributor warehouse'} →
+                      Manufacturer
+                    </p>
+                    <p>
+                      Reserved at order placement: {order.requested} {item?.unit}. Dispatched:{' '}
+                      {order.custodyOrder.dispatched} {item?.unit}. Physically received:{' '}
+                      {order.custodyOrder.received} {item?.unit}.
+                    </p>
+                    <p>
                       {Number(order.decision?.status) === 1
-                        ? 'Approved'
+                        ? 'Supplier approved. The Distributor dispatches from the warehouse; the Manufacturer scans the shipment QR and confirms physical receipt.'
                         : Number(order.decision?.status) === 2
-                          ? 'Rejected'
-                          : order.decision
-                            ? 'Awaiting approval'
-                            : 'Unavailable — refresh the request'}
+                          ? 'Supplier rejected. Undispatched stock is available again.'
+                          : 'Awaiting Supplier approval. The requested quantity is reserved until rejection or expiry.'}
                     </p>
-                    <p>
-                      Supplier approved: {order.requested} {item?.unit}. Received so far:{' '}
-                      {order.approvedReceivedQuantity ?? 'Unavailable'} {item?.unit}. Only confirmed
-                      receipt adds stock for production.
-                    </p>
-                    {Number(order.decision?.status) !== 1 ? (
-                      <Alert
-                        type="info"
-                        message="Receipt confirmation becomes available after the Supplier approves this quantity request."
-                      />
-                    ) : !data.approvedReceiptsSupported ? (
-                      <Alert
-                        type="warning"
-                        message="Deploy the updated registry suite to enable receipt confirmation for approved requests."
-                      />
-                    ) : Number(item?.kind) !== 1 ? (
-                      <Alert
-                        type="warning"
-                        message="Ingredient details are unavailable. Refresh before confirming receipt."
-                      />
-                    ) : (
+                    <Btn
+                      variant="outline"
+                      onClick={() =>
+                        navigate(
+                          workspacePath(role, 'shipments') +
+                            '?orderId=' +
+                            encodeURIComponent(order.orderId),
+                        )
+                      }
+                    >
+                      View shipments & receipt
+                    </Btn>
+                    {!evidenceOnly &&
+                      seller &&
+                      Number(order.decision?.status) === 1 &&
+                      !order.custodyOrder.arranged &&
                       activeOrder && (
-                        <>
-                          <SelectField
-                            label="Receiving / production location"
-                            value={form.receiptLocation ?? ''}
-                            onChange={change('receiptLocation')}
-                            required
-                            options={[
-                              { value: '', label: 'Select your receiving location' },
-                              ...data.locations
-                                .filter((location) => same(location.company, data.actor))
-                                .map((location) => ({
-                                  value: location.location,
-                                  label: location.label ?? short(location.location),
-                                })),
-                            ]}
-                          />
-                          {!data.locations.some((location) =>
-                            same(location.company, data.actor),
-                          ) && (
-                            <div className="grid gap-[8px]">
-                              <Input
-                                label="New receiving location name"
-                                value={form.locationLabel ?? ''}
-                                onChange={change('locationLabel')}
-                                maxLength={160}
-                              />
-                              <Btn
-                                disabled={busy || !form.locationLabel?.trim()}
-                                onClick={() =>
-                                  void submit('location', { label: form.locationLabel.trim() })
-                                }
-                              >
-                                Register receiving location
-                              </Btn>
-                            </div>
-                          )}
-                          <Input
-                            label={`Quantity received (${item?.unit})`}
-                            type="number"
-                            min="1"
-                            max={(
-                              BigInt(order.requested) -
-                              BigInt(order.approvedReceivedQuantity ?? '0')
-                            ).toString()}
-                            step="1"
-                            value={form.receiptQuantity ?? ''}
-                            onChange={change('receiptQuantity')}
-                            required
-                          />
-                          <Input
-                            label="Actual receipt date and time"
-                            type="datetime-local"
-                            step="1"
-                            value={form.receivedAt ?? ''}
-                            onChange={change('receivedAt')}
-                            required
-                          />
-                          <label className="flex items-start gap-[8px]">
-                            <input
-                              type="checkbox"
-                              disabled={busy}
-                              checked={receiptConfirmed}
-                              onChange={(event) => setReceiptConfirmed(event.target.checked)}
-                            />
-                            I confirm these ingredients physically arrived at my receiving location.
-                          </label>
-                          <Btn
-                            disabled={
-                              busy ||
-                              !receiptConfirmed ||
-                              !form.receiptLocation ||
-                              !/^[1-9]\d*$/.test(form.receiptQuantity ?? '') ||
-                              !form.receivedAt ||
-                              !Number.isFinite(receiptOccurredAt) ||
-                              receiptOccurredAt > now() ||
-                              BigInt(form.receiptQuantity || '0') >
-                                BigInt(order.requested) -
-                                  BigInt(order.approvedReceivedQuantity ?? '0')
-                            }
-                            onClick={() =>
-                              void submit('approved-receipt', {
+                        <Btn
+                          disabled={busy || !data.shipmentReviewSupported}
+                          onClick={() =>
+                            void run(async () => {
+                              const prepared = await prepareLogistics({
+                                action: 'arrange-delivery',
+                                operationId: crypto.randomUUID(),
                                 orderId: order.orderId,
-                                quantity: form.receiptQuantity,
-                                location: form.receiptLocation,
-                                occurredAt: receiptOccurredAt,
-                              })
-                            }
-                          >
-                            Confirm receipt with MetaMask
-                          </Btn>
-                        </>
-                      )
+                              });
+                              await sign(prepared.transaction);
+                            })
+                          }
+                        >
+                          Arrange ingredient delivery
+                        </Btn>
+                      )}
+                    {order.custodyOrder.arranged && (
+                      <p>
+                        Delivery arranged by the Supplier. The Distributor can now record physical
+                        dispatch.
+                      </p>
                     )}
                   </section>
                 )}
+                {order.delivery && !order.custodyOrder && (
+                  <IngredientDeliveryPanel
+                    key={order.orderId}
+                    data={data}
+                    order={order}
+                    item={item}
+                    onChanged={load}
+                  />
+                )}
+                {buyer &&
+                  role === 'manufacturer' &&
+                  mode === 'manage' &&
+                  !evidenceOnly &&
+                  !order.delivery &&
+                  !order.custodyOrder && (
+                    <section className="orders-stage grid gap-[12px]">
+                      <h3>Confirm ingredients received</h3>
+                      <p>
+                        Supplier decision:{' '}
+                        {Number(order.decision?.status) === 1
+                          ? 'Approved'
+                          : Number(order.decision?.status) === 2
+                            ? 'Rejected'
+                            : order.decision
+                              ? 'Awaiting approval'
+                              : 'Unavailable — refresh the request'}
+                      </p>
+                      <p>
+                        Supplier approved: {order.requested} {item?.unit}. Received so far:{' '}
+                        {order.approvedReceivedQuantity ?? 'Unavailable'} {item?.unit}. Only
+                        confirmed receipt adds stock for production.
+                      </p>
+                      {Number(order.decision?.status) !== 1 ? (
+                        <Alert
+                          type="info"
+                          message="Receipt confirmation becomes available after the Supplier approves this quantity request."
+                        />
+                      ) : !data.approvedReceiptsSupported ? (
+                        <Alert
+                          type="warning"
+                          message="Deploy the updated registry suite to enable receipt confirmation for approved requests."
+                        />
+                      ) : Number(item?.kind) !== 1 ? (
+                        <Alert
+                          type="warning"
+                          message="Ingredient details are unavailable. Refresh before confirming receipt."
+                        />
+                      ) : (
+                        activeOrder && (
+                          <>
+                            <SelectField
+                              label="Receiving / production location"
+                              value={form.receiptLocation ?? ''}
+                              onChange={change('receiptLocation')}
+                              required
+                              options={[
+                                { value: '', label: 'Select your receiving location' },
+                                ...data.locations
+                                  .filter((location) => same(location.company, data.actor))
+                                  .map((location) => ({
+                                    value: location.location,
+                                    label: location.label ?? short(location.location),
+                                  })),
+                              ]}
+                            />
+                            {!data.locations.some((location) =>
+                              same(location.company, data.actor),
+                            ) && (
+                              <div className="grid gap-[8px]">
+                                <Input
+                                  label="New receiving location name"
+                                  value={form.locationLabel ?? ''}
+                                  onChange={change('locationLabel')}
+                                  maxLength={160}
+                                />
+                                <Btn
+                                  disabled={busy || !form.locationLabel?.trim()}
+                                  onClick={() =>
+                                    void submit('location', { label: form.locationLabel.trim() })
+                                  }
+                                >
+                                  Register receiving location
+                                </Btn>
+                              </div>
+                            )}
+                            <Input
+                              label={`Quantity received (${item?.unit})`}
+                              type="number"
+                              min="1"
+                              max={(
+                                BigInt(order.requested) -
+                                BigInt(order.approvedReceivedQuantity ?? '0')
+                              ).toString()}
+                              step="1"
+                              value={form.receiptQuantity ?? ''}
+                              onChange={change('receiptQuantity')}
+                              required
+                            />
+                            <Input
+                              label="Actual receipt date and time"
+                              type="datetime-local"
+                              step="1"
+                              value={form.receivedAt ?? ''}
+                              onChange={change('receivedAt')}
+                              required
+                            />
+                            <label className="flex items-start gap-[8px]">
+                              <input
+                                type="checkbox"
+                                disabled={busy}
+                                checked={receiptConfirmed}
+                                onChange={(event) => setReceiptConfirmed(event.target.checked)}
+                              />
+                              I confirm these ingredients physically arrived at my receiving
+                              location.
+                            </label>
+                            <Btn
+                              disabled={
+                                busy ||
+                                !receiptConfirmed ||
+                                !form.receiptLocation ||
+                                !/^[1-9]\d*$/.test(form.receiptQuantity ?? '') ||
+                                !form.receivedAt ||
+                                !Number.isFinite(receiptOccurredAt) ||
+                                receiptOccurredAt > now() ||
+                                BigInt(form.receiptQuantity || '0') >
+                                  BigInt(order.requested) -
+                                    BigInt(order.approvedReceivedQuantity ?? '0')
+                              }
+                              onClick={() =>
+                                void submit('approved-receipt', {
+                                  orderId: order.orderId,
+                                  quantity: form.receiptQuantity,
+                                  location: form.receiptLocation,
+                                  occurredAt: receiptOccurredAt,
+                                })
+                              }
+                            >
+                              Confirm receipt with MetaMask
+                            </Btn>
+                          </>
+                        )
+                      )}
+                    </section>
+                  )}
                 {order.decision?.reason && <p>Seller decision reason: {order.decision.reason}</p>}
                 <p>
-                  {order.isRequestOnly || order.details?.requestOnly
-                    ? 'This request does not reserve stock, dispatch goods or confirm delivery.'
-                    : 'Earlier physical-flow records are preserved. Removing fulfilment controls does not undo any existing reservations or shipments.'}
+                  {order.custodyOrder
+                    ? 'Warehouse stock is reserved at request placement. Supplier approval permits Distributor dispatch; only Manufacturer physical receipt credits production stock.'
+                    : order.delivery
+                      ? 'Approval is separate from custody. Distributor pickup sets goods aside; only Manufacturer receipt credits usable production stock.'
+                      : order.isRequestOnly || order.details?.requestOnly
+                        ? 'This request does not reserve stock, dispatch goods or confirm delivery.'
+                        : 'Earlier physical-flow records are preserved. Removing fulfilment controls does not undo any existing reservations or shipments.'}
                 </p>
                 {seller && (role === 'supplier' || mode === 'manage') && !evidenceOnly && (
                   <>
@@ -712,257 +823,251 @@ export function OrdersPage({
                     },
                   ]}
                 />
-                {(seller || buyer) &&
-                  activeOrder &&
-                  (evidenceOnly || (role !== 'supplier' && mode !== 'manage')) && (
-                    <details className="orders-stage" open>
-                      <summary>Company identity evidence</summary>
-                      <p>
-                        Seller requests a proof → buyer previews and approves sharing → seller
-                        verifies and records the result. This can happen before ingredient evidence
-                        is shared.
-                      </p>
-                      <p>
-                        Request necessary company claims. The presenter chooses optional claims in
-                        an authority-signed selective proof linked to its current Company Role
-                        Credential. Wallet, role and subject binding stay visible. This does not
-                        grant access to ingredient evidence.
-                      </p>
-                      {seller && (
-                        <>
-                          <div style={fields}>
-                            <Input
-                              label="Identity proof purpose"
-                              value={form.purpose ?? ''}
-                              onChange={change('purpose')}
-                              maxLength={500}
-                            />
-                            <Input
-                              label="Identity proof deadline"
-                              type="datetime-local"
-                              value={form.identityDeadline ?? ''}
-                              onChange={change('identityDeadline')}
-                            />
-                          </div>
+                {(seller || buyer) && activeOrder && evidenceOnly && (
+                  <details className="orders-stage" open>
+                    <summary>Company identity evidence</summary>
+                    <p>
+                      Seller requests a proof → buyer previews and approves sharing → seller
+                      verifies and records the result. This can happen before ingredient evidence is
+                      shared.
+                    </p>
+                    <p>
+                      Request necessary company claims. The presenter chooses optional claims in an
+                      authority-signed selective proof linked to its current Company Role
+                      Credential. Wallet, role and subject binding stay visible. This does not grant
+                      access to ingredient evidence.
+                    </p>
+                    {seller && (
+                      <>
+                        <div style={fields}>
+                          <Input
+                            label="Identity proof purpose"
+                            value={form.purpose ?? ''}
+                            onChange={change('purpose')}
+                            maxLength={500}
+                          />
+                          <Input
+                            label="Identity proof deadline"
+                            type="datetime-local"
+                            value={form.identityDeadline ?? ''}
+                            onChange={change('identityDeadline')}
+                          />
+                        </div>
 
-                          <fieldset>
-                            <legend>Required signed company claims</legend>
-                            {[
-                              'companyId',
-                              'companyName',
-                              'companyRegistrationNumber',
-                              'role',
-                              'walletAddress',
-                              'id',
-                              'applicationReference',
-                            ].map((claim) => (
-                              <label
-                                key={claim}
-                                style={{ display: 'inline-block', marginRight: 14 }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={requiredClaims.includes(claim)}
-                                  disabled={['id', 'walletAddress', 'role'].includes(claim)}
-                                  onChange={(event) =>
-                                    setRequiredClaims((current) =>
-                                      event.target.checked
-                                        ? [...current, claim]
-                                        : current.filter((value) => value !== claim),
-                                    )
-                                  }
-                                />
-                                {claim}
-                              </label>
-                            ))}
-                          </fieldset>
-                          <p>
-                            Other claims are optional. The presenter can omit them; the subject DID,
-                            wallet and role are mandatory for holder and authorization checks.
-                            Legacy full-credential presentations are labelled separately.
-                          </p>
-                          <Btn
-                            disabled={busy || !form.purpose?.trim() || !form.identityDeadline}
-                            onClick={() =>
-                              void run(async () => {
-                                const result = await orderIdentity(order.orderId, {
-                                  action: 'request',
-                                  purpose: form.purpose,
-                                  expiresAt: Math.floor(Date.parse(form.identityDeadline) / 1000),
-                                  required: false,
-                                  requiredClaims,
-                                  optionalClaims: [
-                                    'companyId',
-                                    'companyName',
-                                    'companyRegistrationNumber',
-                                    'role',
-                                    'walletAddress',
-                                    'id',
-                                    'applicationReference',
-                                  ].filter((claim) => !requiredClaims.includes(claim)),
-                                });
-                                await sign(result.transaction);
-                              })
-                            }
-                          >
-                            Request company identity proof
-                          </Btn>
-                          <Btn
-                            disabled={busy}
-                            onClick={() =>
-                              void run(async () => {
-                                const result = await orderIdentity(order.orderId, {
-                                  action: 'verify',
-                                });
-                                if (result.transaction) await sign(result.transaction);
-                                else
-                                  setNotice(
-                                    'Company identity verification is already recorded on-chain.',
-                                  );
-                                setIdentityStatus(
-                                  await orderIdentity(order.orderId, { action: 'status' }),
-                                );
-                              })
-                            }
-                          >
-                            Verify company identity & record result
-                          </Btn>
-                        </>
-                      )}
-                      <Btn disabled={busy} onClick={refreshIdentity}>
-                        Check identity status
-                      </Btn>
-                      {identityStatus && (
-                        <p role="status">
-                          Identity proof: {identityStatus.status}.{' '}
-                          {identityStatus.checks?.join(', ')}
+                        <fieldset>
+                          <legend>Required signed company claims</legend>
+                          {[
+                            'companyId',
+                            'companyName',
+                            'companyRegistrationNumber',
+                            'role',
+                            'walletAddress',
+                            'id',
+                            'applicationReference',
+                          ].map((claim) => (
+                            <label key={claim} style={{ display: 'inline-block', marginRight: 14 }}>
+                              <input
+                                type="checkbox"
+                                checked={requiredClaims.includes(claim)}
+                                disabled={['id', 'walletAddress', 'role'].includes(claim)}
+                                onChange={(event) =>
+                                  setRequiredClaims((current) =>
+                                    event.target.checked
+                                      ? [...current, claim]
+                                      : current.filter((value) => value !== claim),
+                                  )
+                                }
+                              />
+                              {claim}
+                            </label>
+                          ))}
+                        </fieldset>
+                        <p>
+                          Other claims are optional. The presenter can omit them; the subject DID,
+                          wallet and role are mandatory for holder and authorization checks. Legacy
+                          full-credential presentations are labelled separately.
                         </p>
-                      )}
-                      {identityStatus?.credential && (
+                        <Btn
+                          disabled={busy || !form.purpose?.trim() || !form.identityDeadline}
+                          onClick={() =>
+                            void run(async () => {
+                              const result = await orderIdentity(order.orderId, {
+                                action: 'request',
+                                purpose: form.purpose,
+                                expiresAt: Math.floor(Date.parse(form.identityDeadline) / 1000),
+                                required: false,
+                                requiredClaims,
+                                optionalClaims: [
+                                  'companyId',
+                                  'companyName',
+                                  'companyRegistrationNumber',
+                                  'role',
+                                  'walletAddress',
+                                  'id',
+                                  'applicationReference',
+                                ].filter((claim) => !requiredClaims.includes(claim)),
+                              });
+                              await sign(result.transaction);
+                            })
+                          }
+                        >
+                          Request company identity proof
+                        </Btn>
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              const result = await orderIdentity(order.orderId, {
+                                action: 'verify',
+                              });
+                              if (result.transaction) await sign(result.transaction);
+                              else
+                                setNotice(
+                                  'Company identity verification is already recorded on-chain.',
+                                );
+                              setIdentityStatus(
+                                await orderIdentity(order.orderId, { action: 'status' }),
+                              );
+                            })
+                          }
+                        >
+                          Verify company identity & record result
+                        </Btn>
+                      </>
+                    )}
+                    <Btn disabled={busy} onClick={refreshIdentity}>
+                      Check identity status
+                    </Btn>
+                    {identityStatus && (
+                      <p role="status">
+                        Identity proof: {identityStatus.status}. {identityStatus.checks?.join(', ')}
+                      </p>
+                    )}
+                    {identityStatus?.credential && (
+                      <dl>
+                        {Object.entries(identityStatus.credential).map(([key, value]) => (
+                          <div key={key}>
+                            <dt>{key}</dt>
+                            <dd style={{ overflowWrap: 'anywhere' }}>{String(value)}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    )}
+                    {buyer && (
+                      <>
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              const material = await orderIdentity(order.orderId, {
+                                action: 'material',
+                              });
+                              setIdentitySelectedClaims(material.requiredClaims ?? []);
+                              setIdentityMaterial(material);
+                            })
+                          }
+                        >
+                          Preview requested Company Role VP
+                        </Btn>
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              await orderIdentity(order.orderId, { action: 'decline' });
+                              setIdentityStatus({ status: 'DECLINED' });
+                            })
+                          }
+                        >
+                          Decline identity request
+                        </Btn>
+                      </>
+                    )}
+                    {identityMaterial && (
+                      <>
+                        <Alert
+                          type="warning"
+                          message={
+                            identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
+                              ? 'Select optional claims to share. Required claims and cryptographic binding remain visible. This authority-derived proof references your existing credential; it does not alter that credential.'
+                              : 'Full disclosure: this legacy request shares the entire signed Company Role Credential. Optional fields cannot be hidden in this format.'
+                          }
+                        />
+                        <p>
+                          Verifier: {short(identityMaterial.audience)} · Purpose:{' '}
+                          {identityMaterial.purpose} · Expires:{' '}
+                          {timestamp(identityMaterial.expiresAt)}
+                        </p>
                         <dl>
-                          {Object.entries(identityStatus.credential).map(([key, value]) => (
+                          {Object.entries(
+                            identityMaterial.claims ??
+                              identityMaterial.credential.credentialSubject,
+                          ).map(([key, value]) => (
                             <div key={key}>
                               <dt>{key}</dt>
+                              {identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' && (
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    aria-label={`Share ${key}`}
+                                    checked={identitySelectedClaims.includes(key)}
+                                    disabled={identityMaterial.requiredClaims.includes(key)}
+                                    onChange={(event) =>
+                                      setIdentitySelectedClaims((current) =>
+                                        event.target.checked
+                                          ? [...current, key]
+                                          : current.filter((claim) => claim !== key),
+                                      )
+                                    }
+                                  />
+                                  {identityMaterial.requiredClaims.includes(key)
+                                    ? 'Necessary'
+                                    : 'Optional'}
+                                </label>
+                              )}
                               <dd style={{ overflowWrap: 'anywhere' }}>{String(value)}</dd>
                             </div>
                           ))}
                         </dl>
-                      )}
-                      {buyer && (
-                        <>
-                          <Btn
-                            disabled={busy}
-                            onClick={() =>
-                              void run(async () => {
-                                const material = await orderIdentity(order.orderId, {
-                                  action: 'material',
-                                });
-                                setIdentitySelectedClaims(material.requiredClaims ?? []);
-                                setIdentityMaterial(material);
-                              })
-                            }
-                          >
-                            Preview requested Company Role VP
-                          </Btn>
-                          <Btn
-                            disabled={busy}
-                            onClick={() =>
-                              void run(async () => {
-                                await orderIdentity(order.orderId, { action: 'decline' });
-                                setIdentityStatus({ status: 'DECLINED' });
-                              })
-                            }
-                          >
-                            Decline identity request
-                          </Btn>
-                        </>
-                      )}
-                      {identityMaterial && (
-                        <>
-                          <Alert
-                            type="warning"
-                            message={
-                              identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
-                                ? 'Select optional claims to share. Required claims and cryptographic binding remain visible. This authority-derived proof references your existing credential; it does not alter that credential.'
-                                : 'Full disclosure: this legacy request shares the entire signed Company Role Credential. Optional fields cannot be hidden in this format.'
-                            }
-                          />
-                          <p>
-                            Verifier: {short(identityMaterial.audience)} · Purpose:{' '}
-                            {identityMaterial.purpose} · Expires:{' '}
-                            {timestamp(identityMaterial.expiresAt)}
-                          </p>
-                          <dl>
-                            {Object.entries(
-                              identityMaterial.claims ??
-                                identityMaterial.credential.credentialSubject,
-                            ).map(([key, value]) => (
-                              <div key={key}>
-                                <dt>{key}</dt>
-                                {identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' && (
-                                  <label>
-                                    <input
-                                      type="checkbox"
-                                      aria-label={`Share ${key}`}
-                                      checked={identitySelectedClaims.includes(key)}
-                                      disabled={identityMaterial.requiredClaims.includes(key)}
-                                      onChange={(event) =>
-                                        setIdentitySelectedClaims((current) =>
-                                          event.target.checked
-                                            ? [...current, key]
-                                            : current.filter((claim) => claim !== key),
-                                        )
-                                      }
-                                    />
-                                    {identityMaterial.requiredClaims.includes(key)
-                                      ? 'Necessary'
-                                      : 'Optional'}
-                                  </label>
-                                )}
-                                <dd style={{ overflowWrap: 'anywhere' }}>{String(value)}</dd>
-                              </div>
-                            ))}
-                          </dl>
-                          <PresentationSigningSettingsLink role={role} />
-                          <Btn
-                            disabled={busy}
-                            onClick={() =>
-                              void run(async () => {
-                                const holder = getActiveMessagingAgent();
-                                if (!holder || holder.did !== identityMaterial.holderDid)
-                                  throw new Error(
-                                    'Restore the holder signing key bound to your wallet.',
-                                  );
-                                const presentation =
-                                  identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
-                                    ? await createSelectiveCompanyIdentityPresentation(
-                                        holder,
-                                        identityMaterial.sdJwt,
-                                        {
-                                          audience: identityMaterial.audience,
-                                          nonce: identityMaterial.challenge,
-                                          claims: identitySelectedClaims,
-                                        },
-                                      )
-                                    : await createCompanyIdentityPresentation(
-                                        holder,
-                                        identityMaterial,
-                                      );
-                                await orderIdentity(order.orderId, {
-                                  action: 'present',
-                                  presentation,
-                                });
-                                setIdentityMaterial(undefined);
-                                setIdentityStatus({ status: 'PRESENTED' });
-                              })
-                            }
-                          >
-                            Approve selected claims & send proof
-                          </Btn>
-                        </>
-                      )}
-                    </details>
-                  )}
+                        <PresentationSigningSettingsLink role={role} />
+                        <Btn
+                          disabled={busy}
+                          onClick={() =>
+                            void run(async () => {
+                              const holder = getActiveMessagingAgent();
+                              if (!holder || holder.did !== identityMaterial.holderDid)
+                                throw new Error(
+                                  'Restore the holder signing key bound to your wallet.',
+                                );
+                              const presentation =
+                                identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
+                                  ? await createSelectiveCompanyIdentityPresentation(
+                                      holder,
+                                      identityMaterial.sdJwt,
+                                      {
+                                        audience: identityMaterial.audience,
+                                        nonce: identityMaterial.challenge,
+                                        claims: identitySelectedClaims,
+                                      },
+                                    )
+                                  : await createCompanyIdentityPresentation(
+                                      holder,
+                                      identityMaterial,
+                                    );
+                              await orderIdentity(order.orderId, {
+                                action: 'present',
+                                presentation,
+                              });
+                              setIdentityMaterial(undefined);
+                              setIdentityStatus({ status: 'PRESENTED' });
+                            })
+                          }
+                        >
+                          Approve selected claims & send proof
+                        </Btn>
+                      </>
+                    )}
+                  </details>
+                )}
 
                 {!activeOrder && (
                   <p>

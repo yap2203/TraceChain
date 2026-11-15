@@ -167,6 +167,7 @@ export interface BlockchainGateway {
 }
 
 export interface OperationalData {
+  actorWallet?: string;
   evidenceRequests: Array<Record<string, unknown>>;
   ingredientBatches: Array<Record<string, unknown>>;
   productBatches: Array<Record<string, unknown>>;

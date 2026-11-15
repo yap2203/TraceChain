@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import type { EncryptedCredentialPayload } from '../ssi/encrypted-credential.store.js';
 
 export interface EvidenceWorkflowRecord {
+  deliveryOrderId?: string;
   orderContext?: boolean;
   batchId: string;
   challengeHash: string;
@@ -59,6 +60,7 @@ interface WorkflowState {
 }
 
 export interface ProductionFlowRepository {
+  listEvidence?(): Promise<EvidenceWorkflowRecord[]>;
   findEvidence(requestId: string): Promise<EvidenceWorkflowRecord | undefined>;
   findEvidenceByOperation(
     operationId: string,
@@ -81,6 +83,9 @@ export class ProductionFlowPersistenceError extends Error {
 }
 
 export class JsonProductionFlowRepository implements ProductionFlowRepository {
+  async listEvidence() {
+    return Object.values((await this.read()).evidence);
+  }
   private writeQueue = Promise.resolve();
 
   constructor(private readonly filePath: string) {}

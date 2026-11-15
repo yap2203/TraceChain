@@ -11,16 +11,11 @@ import {
   getCompanyIdentityProofStatus,
   prepareEvidenceClose,
   prepareEvidenceResponse,
-  requestCompanyIdentityProof,
-  verifyCompanyIdentityProof,
   type CompanyIdentityProofStatus,
   type EvidenceDetails,
   type ProductionEvidenceRequest,
 } from '../../../production-flow/production-flow.api';
-import {
-  sendCompanyIdentityRequestMessage,
-  sendEvidencePresentationMessage,
-} from '../../../production-flow/evidence-didcomm';
+import { sendEvidencePresentationMessage } from '../../../production-flow/evidence-didcomm';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { Alert, Badge, Btn, Card, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
@@ -55,29 +50,6 @@ export function SelectiveDisclosure({
       .then(setIdentityProof)
       .catch(() => undefined);
   }, [request.requestId]);
-  const requestIdentity = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      setIdentityProof(await requestCompanyIdentityProof(request.requestId));
-      await sendCompanyIdentityRequestMessage(await getEvidenceDetails(request.requestId));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Identity-proof request failed.');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const verifyIdentity = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      setIdentityProof(await verifyCompanyIdentityProof(request.requestId));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Identity proof did not verify.');
-    } finally {
-      setBusy(false);
-    }
-  };
   const respond = async () => {
     setBusy(true);
     setError('');
@@ -187,14 +159,14 @@ export function SelectiveDisclosure({
             message="Your browser creates the key-bound presentation with the participant-controlled key. The API never receives that private key and stores only the resulting presentation."
           />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Btn variant="outline" disabled={busy} onClick={() => void requestIdentity()}>
-              Request Company Identity Proof
-            </Btn>
-            {identityProof?.status === 'PRESENTED' && (
-              <Btn variant="outline" disabled={busy} onClick={() => void verifyIdentity()}>
-                Verify Company Identity Proof
-              </Btn>
-            )}
+            <a
+              href={
+                '/supplier/information-requests?context=ingredient&referenceId=' +
+                encodeURIComponent(request.requestId)
+              }
+            >
+              Manage Company Identity Proof in Information requests
+            </a>
           </div>
           {identityProof && (
             <div style={{ display: 'grid', gap: 8 }}>

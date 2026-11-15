@@ -12,6 +12,20 @@ export interface SupplierStock {
   requestCount: number;
 }
 export interface OrdersState {
+  fulfilmentSupported?: boolean;
+  warehouseSupported?: boolean;
+  shipmentReviewSupported?: boolean;
+  logistics?: {
+    warehouses: OrderRecord[];
+    positions: OrderRecord[];
+    shipments: OrderRecord[];
+    productStock: OrderRecord[];
+  };
+  companies?: Array<{ wallet: string; companyName: string; role: string }>;
+  ingredientDeliverySupported?: boolean;
+  chainId?: number;
+  ordersAddress?: string;
+  distributors?: Array<{ wallet: string; companyName: string }>;
   supplierStock?: SupplierStock[];
   approvedReceiptsSupported?: boolean;
   listingBatches?: Array<{ batchId: string; unit: string; eligible: boolean; reason: string }>;
@@ -42,10 +56,24 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
   return response.json();
 }
 export const getOrders = () => request<OrdersState>('');
+export interface CompanyProofRequestRow {
+  requestId: string;
+  referenceId: string;
+  context: 'delivery' | 'order' | 'ingredient';
+  direction: 'sent' | 'received';
+  company: string;
+  purpose: string;
+  expiresAt: number;
+  status: string;
+}
+export const getInformationRequests = () =>
+  request<{ requests: CompanyProofRequestRow[] }>('/information-requests');
 export const prepareOrder = (input: Record<string, unknown>) =>
   request<{ resultId: string; transaction: PreparedTransaction }>('/prepare', input);
 export const orderIdentity = (orderId: string, input: Record<string, unknown>) =>
   request<any>(`/${orderId}/identity`, input);
+export const deliveryIdentity = (orderId: string, input: Record<string, unknown>) =>
+  request<any>(`/${orderId}/delivery/identity`, input);
 export const getRecall = (batchId: string) => request<OrderRecord>(`/recall/${batchId}`);
 export const prepareOrderEvidence = (orderId: string, input: Record<string, unknown>) =>
   request<any>(`/${orderId}/evidence/prepare`, input);
@@ -73,3 +101,5 @@ export async function imageFilePayload(file: File): Promise<CatalogueImageUpload
   });
   return { data, fileName: file.name, mimeType: file.type as CatalogueImageUpload['mimeType'] };
 }
+export const prepareLogistics = (input: Record<string, unknown>) =>
+  request<{ resultId: string; transaction: PreparedTransaction }>('/logistics/prepare', input);

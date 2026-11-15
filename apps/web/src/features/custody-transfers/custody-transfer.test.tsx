@@ -43,10 +43,10 @@ function reader(overrides: Partial<TransferQrReader> = {}): TransferQrReader {
   };
 }
 
-function enterManualPayload() {
-  fireEvent.click(screen.getByRole('tab', { name: 'Manual paste' }));
-  fireEvent.change(screen.getByLabelText('Complete TraceChain QR payload'), {
-    target: { value: QR_PAYLOAD },
+function uploadQrImage() {
+  fireEvent.click(screen.getByRole('tab', { name: 'Image upload' }));
+  fireEvent.change(screen.getByLabelText('Choose QR image'), {
+    target: { files: [new File(['qr'], 'label.png', { type: 'image/png' })] },
   });
 }
 
@@ -95,12 +95,10 @@ describe('custody-transfer QR frontend', () => {
     expect(screen.getByLabelText('TraceChain Receipt Confirmation QR code')).toBeTruthy();
   });
 
-  it('submits a manually pasted payload exactly once', async () => {
+  it('submits an uploaded QR image exactly once', async () => {
     const resolvePayload = vi.fn().mockResolvedValue(TRANSFER);
     render(<TransferQrScanner reader={reader()} resolvePayload={resolvePayload} />);
-    enterManualPayload();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
 
     await waitFor(() => expect(resolvePayload).toHaveBeenCalledWith(QR_PAYLOAD));
     expect(resolvePayload).toHaveBeenCalledOnce();
@@ -134,9 +132,7 @@ describe('custody-transfer QR frontend', () => {
     });
     vi.stubGlobal('fetch', fetchMock);
     render(<TransferQrScanner reader={reader()} />);
-    enterManualPayload();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
 
     expect(await screen.findByText('Custody transfer found')).toBeTruthy();
     expect(screen.getByText('CocoaCraft Manufacturing Sdn. Bhd.')).toBeTruthy();
@@ -165,9 +161,7 @@ describe('custody-transfer QR frontend', () => {
         ),
       );
     render(<TransferQrScanner reader={reader()} resolvePayload={resolvePayload} />);
-    enterManualPayload();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
 
     expect(
       await screen.findByText('This QR code belongs to a different blockchain network.'),
@@ -190,8 +184,8 @@ describe('custody-transfer QR frontend', () => {
         <TransferQrScanner reader={reader()} resolvePayload={resolvePayload} />
       </StrictMode>,
     );
-    enterManualPayload();
-    const submit = screen.getByRole('button', { name: 'Verify transfer' });
+    uploadQrImage();
+    const submit = screen.getByRole('button', { name: 'Browse image' });
 
     fireEvent.click(submit);
     fireEvent.click(submit);
@@ -211,13 +205,13 @@ describe('custody-transfer QR frontend', () => {
         }),
     );
     render(<TransferQrScanner reader={reader()} resolvePayload={resolvePayload} />);
-    enterManualPayload();
-    const submit = screen.getByRole('button', { name: 'Verify transfer' });
+    uploadQrImage();
+    const submit = screen.getByRole('button', { name: 'Browse image' });
 
     fireEvent.click(submit);
     fireEvent.click(submit);
 
-    expect(resolvePayload).toHaveBeenCalledOnce();
+    await waitFor(() => expect(resolvePayload).toHaveBeenCalledOnce());
     finish?.(TRANSFER);
     expect(await screen.findByText('Custody transfer found')).toBeTruthy();
   });
@@ -308,8 +302,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={submitConfirmation}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     const confirm = await screen.findByRole('button', { name: 'Confirm reconciled receipt' });
 
     fireEvent.click(confirm);
@@ -364,8 +357,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={vi.fn().mockResolvedValue(undefined)}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.change(await screen.findByLabelText('Damaged quantity'), {
       target: { value: '10' },
     });
@@ -390,8 +382,7 @@ describe('custody-transfer QR frontend', () => {
         resolvePayload={vi.fn().mockResolvedValue(TRANSFER)}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.change(await screen.findByLabelText('Actual quantity received'), {
       target: { value: '10' },
     });
@@ -425,8 +416,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={vi.fn().mockResolvedValue(undefined)}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.change(await screen.findByLabelText('Actual quantity received'), {
       target: { value: actual },
     });
@@ -457,8 +447,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={vi.fn().mockResolvedValue(undefined)}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.click(await screen.findByRole('button', { name: 'Reject or wrong product' }));
     fireEvent.change(screen.getByLabelText('Rejection type'), {
       target: { value: 'WRONG_PRODUCT' },
@@ -504,8 +493,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={submitConfirmation}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
 
     expect(
@@ -546,8 +534,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={submitConfirmation}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
     await screen.findByText(
       'The MetaMask transaction was cancelled. The transfer remains awaiting receipt.',
@@ -599,8 +586,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={submitConfirmation}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
 
     const refresh = await screen.findByRole('button', { name: 'Refresh status' });
@@ -633,8 +619,7 @@ describe('custody-transfer QR frontend', () => {
         submitConfirmation={vi.fn().mockRejectedValue(new ReceiptConfirmationError(code, message))}
       />,
     );
-    enterManualPayload();
-    fireEvent.click(screen.getByRole('button', { name: 'Verify transfer' }));
+    uploadQrImage();
     fireEvent.click(await screen.findByRole('button', { name: 'Confirm reconciled receipt' }));
 
     expect(await screen.findByText(message)).toBeTruthy();

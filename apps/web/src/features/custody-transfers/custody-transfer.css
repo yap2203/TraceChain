@@ -189,25 +189,6 @@
     overflow: hidden;
     clip-path: inset(50%);
   }
-  .transfer-manual-panel {
-    @apply grid gap-[10px];
-  }
-  .transfer-manual-panel label {
-    color: var(--c-navy, #a8c8e8);
-    @apply text-[length:12px] font-bold;
-  }
-  .transfer-manual-panel textarea {
-    @apply w-[100%] resize-y p-[12px];
-    border: 1px solid var(--c-border2, #243d5a);
-    @apply rounded-[9px];
-    background: var(--c-navy-dark, #040810);
-    color: var(--c-text, #cdd9e5);
-    font-family: var(--font-mono, monospace);
-    @apply text-[length:12px];
-  }
-  .transfer-manual-panel .transfer-qr-button {
-    justify-self: end;
-  }
   .transfer-scanner-progress {
     @apply flex gap-[8px] items-center justify-center p-[14px];
     color: var(--c-teal, #00e5ff);

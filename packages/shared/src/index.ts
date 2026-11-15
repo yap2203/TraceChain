@@ -24,3 +24,8 @@ export type {
 } from './qr/product-qr.js';
 export { COMPANY_ROLE_TO_WORKSPACE } from './workspace-roles.js';
 export type { TraceChainWorkspaceRole } from './workspace-roles.js';
+export {
+  encodeIngredientDeliveryQr,
+  decodeIngredientDeliveryQr,
+} from './qr/ingredient-delivery-qr.js';
+export { encodeShipmentQr, decodeShipmentQr } from './qr/ingredient-delivery-qr.js';

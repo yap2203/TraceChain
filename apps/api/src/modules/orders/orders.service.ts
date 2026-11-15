@@ -9,13 +9,20 @@ import {
   ZeroHash,
 } from 'ethers';
 import type { IngredientBatchWorkflowRepository } from '../ingredient-batches/ingredient-batch.repository.js';
-import { CompanyRole } from '@tracechain/shared';
+import {
+  CompanyRole,
+  encodeIngredientDeliveryQr,
+  decodeIngredientDeliveryQr,
+  decodeShipmentQr,
+} from '@tracechain/shared';
 import type { AuthService } from '../auth/auth.service.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { ProductionFlowRepository } from '../production-flow/production-flow.repository.js';
 import type { OrdersGateway, ChainRecord } from './orders.gateway.js';
 import type { OrderAction } from './orders.schema.js';
 import { supplierStock } from './supplier-stock.js';
+import { readLogistics } from './logistics-state.js';
+import type { LogisticsAction } from './logistics.schema.js';
 import type { ProductionFlowService } from '../production-flow/production-flow.service.js';
 import type { DidCommService } from '../didcomm/didcomm.service.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
@@ -38,6 +45,451 @@ export class OrdersError extends Error {
 }
 const same = (a: string, b: string) => a?.toLowerCase() === b?.toLowerCase();
 export class OrdersService {
+  private requireResourceOwner(owner: string | undefined, actor: string) {
+    if (!owner || !same(owner, actor))
+      throw new OrdersError(
+        'RESOURCE_NOT_FOUND',
+        'This record is not available for your company to manage.',
+        404,
+      );
+  }
+  async informationRequests(sessionId?: string) {
+    const session = await this.session(sessionId);
+    if (!this.repository.listEvidence || !this.flow)
+      throw new OrdersError(
+        'INFORMATION_REQUESTS_UNAVAILABLE',
+        'The company proof request service is unavailable.',
+        503,
+      );
+    const rows: ChainRecord[] = [];
+    for (const record of await this.repository.listEvidence()) {
+      if (
+        !record.identityProof ||
+        (!same(record.requester, session.address) && !same(record.supplier, session.address))
+      )
+        continue;
+      const counterparty = same(record.requester, session.address)
+        ? record.supplier
+        : record.requester;
+      let status: string =
+        record.identityProof.expiresAt <= Date.now() / 1000
+          ? 'EXPIRED'
+          : record.identityProof.status;
+      try {
+        if (!record.deliveryOrderId) {
+          const context = await this.gateway.read(
+            record.orderContext ? 'orders' : 'evidence',
+            record.orderContext ? 'getOrder' : 'getRequest',
+            [record.requestId],
+          );
+          if (
+            !same(record.requester, record.orderContext ? context.buyer : context.requester) ||
+            !same(record.supplier, record.orderContext ? context.seller : context.supplier)
+          )
+            throw new OrdersError(
+              'PROOF_CONTEXT_UNAVAILABLE',
+              'The original company proof context is no longer available.',
+              404,
+            );
+        }
+        const current = await this.flow.getCompanyIdentityProofStatus(sessionId, record.requestId);
+        status = record.identityProof.expiresAt <= Date.now() / 1000 ? 'EXPIRED' : current.status;
+      } catch (cause) {
+        if (
+          !(cause instanceof Error) ||
+          !('status' in cause) ||
+          ![403, 404, 409].includes(Number(cause.status))
+        )
+          throw cause;
+        status = 'UNAVAILABLE';
+      }
+      const company = await this.directory?.resolve(counterparty);
+      rows.push({
+        requestId: record.requestId,
+        referenceId: record.deliveryOrderId ?? record.requestId,
+        context: record.deliveryOrderId ? 'delivery' : record.orderContext ? 'order' : 'ingredient',
+        direction: same(record.requester, session.address) ? 'received' : 'sent',
+        company: company?.companyName ?? counterparty,
+        purpose: record.identityProof.purpose,
+        expiresAt: record.identityProof.expiresAt,
+        status,
+      });
+    }
+    return { requests: rows };
+  }
+  private async prepareWarehouseTransaction(
+    actor: string,
+    contract: string,
+    method: string,
+    args: unknown[],
+  ) {
+    try {
+      return await this.gateway.prepare(actor, contract, method, args);
+    } catch (cause) {
+      if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'CALL_EXCEPTION')
+        throw new OrdersError(
+          'CUSTODY_TRANSITION_REJECTED',
+          'The current warehouse/shipment state rejected this action. Refresh and check current authorization, location ownership, available or reserved quantity, Supplier approval and requested company proof. If this started after a warehouse contract update, deploy the current full contract suite before retrying.',
+        );
+      throw cause;
+    }
+  }
+  async prepareLogistics(sessionId: string | undefined, input: LogisticsAction) {
+    const session = await this.session(sessionId);
+    if (Number(await this.optionalRead('delivery', 'custodyPolicy')) !== 1)
+      throw new OrdersError(
+        'CUSTODY_UPGRADE_REQUIRED',
+        'Deploy the warehouse-first contract suite before using this flow.',
+      );
+    const key = id(
+      `logistics:${this.gateway.chainId}:${this.gateway.address}:${session.address.toLowerCase()}:${input.operationId}`,
+    );
+    let contract = 'delivery',
+      method: string,
+      args: unknown[];
+    if ('occurredAt' in input && input.occurredAt > Date.now() / 1000)
+      throw new OrdersError(
+        'INVALID_EVENT_TIME',
+        'Actual dispatch/receipt time cannot be in the future.',
+        400,
+      );
+    if (
+      ['arrange-delivery', 'warehouse-decision', 'shipment-return'].includes(input.action) &&
+      Number(await this.optionalRead('delivery', 'reviewPolicy')) !== 1
+    )
+      throw new OrdersError(
+        'SHIPMENT_REVIEW_UPGRADE_REQUIRED',
+        'Deploy the updated full suite to use custody acceptance and Supplier-arranged delivery.',
+      );
+    if (input.action === 'arrange-from-custody') {
+      if (session.role !== CompanyRole.SUPPLIER)
+        throw new OrdersError(
+          'SUPPLIER_REQUIRED',
+          'Only the owning Supplier can select custody fulfilment.',
+          403,
+        );
+      const order = await this.gateway.read('orders', 'getOrder', [input.orderId]);
+      this.requireResourceOwner(order.seller, session.address);
+      if (Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) !== 2)
+        throw new OrdersError(
+          'FULFILMENT_UPGRADE_REQUIRED',
+          'Deploy the two-mode delivery suite before selecting custody fulfilment.',
+        );
+      const [delivery, decision] = await Promise.all([
+        this.gateway.read('delivery', 'get', [input.orderId]),
+        this.gateway.read('orders', 'requestDecision', [input.orderId]),
+      ]);
+      if (
+        Number(delivery.stage) !== 1 ||
+        Number(decision.status) !== 1 ||
+        Number(order.status) !== 1 ||
+        Number(order.expiresAt) <= Date.now() / 1000
+      )
+        throw new OrdersError(
+          'FULFILMENT_SELECTION_CLOSED',
+          'Approve the request first, then choose fulfilment before assigning a carrier or reaching the deadline.',
+        );
+      const [stock, batchId] = await Promise.all([
+        this.gateway.read('delivery', 'getPosition', [input.positionId]),
+        this.gateway.read('orders', 'requestedBatch', [input.orderId]),
+      ]);
+      if (
+        !same(stock.position.supplier, session.address) ||
+        !same(stock.position.batchId, batchId) ||
+        BigInt(stock.available) < BigInt(order.requested)
+      )
+        throw new OrdersError(
+          'INSUFFICIENT_CUSTODY_STOCK',
+          'Select received, unreserved custody stock belonging to your company and this exact ingredient batch, sufficient for the full request.',
+        );
+      this.requireResourceOwner(
+        await this.gateway.read('orders', 'locationOwner', [input.receivingLocation]),
+        order.buyer,
+      );
+      method = 'arrangeFromCustody';
+      args = [input.orderId, input.positionId, input.receivingLocation];
+    } else if (input.action === 'arrange-delivery') {
+      if (session.role !== CompanyRole.SUPPLIER)
+        throw new OrdersError(
+          'SUPPLIER_REQUIRED',
+          'Only the Supplier can arrange this approved ingredient delivery.',
+          403,
+        );
+      method = 'arrangeDelivery';
+      this.requireResourceOwner(
+        (await this.gateway.read('orders', 'getOrder', [input.orderId])).seller,
+        session.address,
+      );
+      args = [input.orderId];
+    } else if (input.action === 'warehouse-decision') {
+      if (session.role !== CompanyRole.DISTRIBUTOR)
+        throw new OrdersError(
+          'DISTRIBUTOR_REQUIRED',
+          'Only the intended Distributor can decide custody acceptance.',
+          403,
+        );
+      method = 'decideWarehouseShipment';
+      this.requireResourceOwner(
+        (await this.gateway.read('delivery', 'getRoadShipment', [input.shipmentId])).recipient,
+        session.address,
+      );
+      args = [input.shipmentId, input.decision];
+    } else if (input.action === 'shipment-return') {
+      if (session.role !== CompanyRole.SUPPLIER)
+        throw new OrdersError(
+          'SUPPLIER_REQUIRED',
+          'Only the original Supplier can confirm returned stock.',
+          403,
+        );
+      try {
+        decodeShipmentQr(input.qrPayload, {
+          shipmentId: input.shipmentId,
+          kind: 'ingredient',
+          chainId: this.gateway.chainId,
+          ordersAddress: this.gateway.address,
+          publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
+        });
+      } catch {
+        throw new OrdersError(
+          'SHIPMENT_QR_INVALID',
+          'Scan this rejected shipment label before confirming its physical return.',
+          400,
+        );
+      }
+      method = 'confirmRejectedReturn';
+      this.requireResourceOwner(
+        (await this.gateway.read('delivery', 'getRoadShipment', [input.shipmentId])).sender,
+        session.address,
+      );
+      args = [key, input.shipmentId, input.occurredAt];
+    } else if (input.action === 'warehouse') {
+      if (session.role !== CompanyRole.DISTRIBUTOR)
+        throw new OrdersError(
+          'DISTRIBUTOR_REQUIRED',
+          'Only a Distributor can register its warehouse.',
+          403,
+        );
+      this.requireResourceOwner(
+        await this.gateway.read('orders', 'locationOwner', [input.location]),
+        session.address,
+      );
+      method = 'registerWarehouse';
+      args = [input.location, input.name];
+    } else if (input.action === 'shipment-vehicle') {
+      if (session.role !== CompanyRole.DISTRIBUTOR)
+        throw new OrdersError(
+          'DISTRIBUTOR_REQUIRED',
+          'Only an involved Distributor can record shipment vehicles.',
+          403,
+        );
+      const shipment = await this.gateway.read('delivery', 'getRoadShipment', [input.shipmentId]);
+      if (!same(shipment.sender, session.address) && !same(shipment.recipient, session.address))
+        this.requireResourceOwner(undefined, session.address);
+      contract = 'delivery';
+      method = 'setShipmentVehicle';
+      args = [input.shipmentId, input.vehicle];
+    } else if (input.action === 'shipment-receive') {
+      try {
+        decodeShipmentQr(input.qrPayload, {
+          shipmentId: input.shipmentId,
+          kind: input.kind,
+          chainId: this.gateway.chainId,
+          ordersAddress: this.gateway.address,
+          publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
+        });
+      } catch {
+        throw new OrdersError(
+          'SHIPMENT_QR_INVALID',
+          'Scan the label for this shipment, network and registry.',
+          400,
+        );
+      }
+      if (input.kind === 'ingredient') {
+        this.requireResourceOwner(
+          (await this.gateway.read('delivery', 'getRoadShipment', [input.shipmentId])).recipient,
+          session.address,
+        );
+        if (input.vehicle) {
+          method = 'receiveRoadShipmentWithVehicle';
+          args = [key, input.shipmentId, input.quantity, input.occurredAt, input.vehicle];
+        } else {
+          method = 'receiveRoadShipment';
+          args = [key, input.shipmentId, input.quantity, input.occurredAt];
+        }
+      } else {
+        const shipment = await this.gateway.read('custody', 'getTransfer', [input.shipmentId]);
+        if (!same(shipment.recipient, session.address) || shipment.quantity !== input.quantity)
+          throw new OrdersError(
+            'RECEIPT_MISMATCH',
+            'Confirm the complete expected product quantity here; use the existing reconciliation workflow for discrepancies.',
+          );
+        const receipt = await this.privateRecord(key, session.address, {
+          shipmentId: input.shipmentId,
+          quantity: input.quantity,
+          occurredAt: input.occurredAt,
+        });
+        contract = 'custody';
+        method = 'confirmReceiptWithMissing';
+        args = [
+          input.shipmentId,
+          input.quantity,
+          '0',
+          '0',
+          '0',
+          input.occurredAt,
+          receipt.contentHash,
+          receipt.cid,
+        ];
+      }
+    } else {
+      if (input.expectedAt <= input.occurredAt)
+        throw new OrdersError(
+          'INVALID_ARRIVAL',
+          'Expected arrival must be after actual dispatch.',
+          400,
+        );
+      if (input.action === 'product-dispatch') {
+        const product = await this.gateway.read('products', 'getProduct', [input.batchId]);
+        if (session.role === CompanyRole.MANUFACTURER)
+          this.requireResourceOwner(product.manufacturer, session.address);
+        else if (
+          session.role !== CompanyRole.DISTRIBUTOR ||
+          BigInt(
+            (await this.gateway.read('custody', 'getInventory', [input.batchId, session.address]))
+              .available ?? '0',
+          ) === 0n
+        )
+          this.requireResourceOwner(undefined, session.address);
+        this.requireResourceOwner(
+          await this.gateway.read('orders', 'locationOwner', [input.fromLocation]),
+          session.address,
+        );
+        const details = await this.privateRecord(key, session.address, {
+          purpose: 'Road shipment',
+          batchId: input.batchId,
+        });
+        contract = 'custody';
+        method = 'createRoadTransfer';
+        args = [
+          key,
+          input.batchId,
+          input.recipient,
+          input.quantity,
+          input.expectedAt,
+          details.contentHash,
+          details.cid,
+          input.fromLocation,
+          input.toLocation,
+          input.occurredAt,
+          input.vehicle,
+        ];
+      } else {
+        if (input.action === 'stock-dispatch') {
+          if (session.role !== CompanyRole.SUPPLIER)
+            throw new OrdersError(
+              'SUPPLIER_REQUIRED',
+              'Only the owning Supplier can send ingredient stock.',
+              403,
+            );
+          this.requireResourceOwner(
+            (await this.gateway.read('ingredients', 'getBatch', [input.batchId])).supplier,
+            session.address,
+          );
+        } else {
+          if (session.role !== CompanyRole.DISTRIBUTOR)
+            throw new OrdersError(
+              'DISTRIBUTOR_REQUIRED',
+              'Only the order custodian can dispatch ingredients.',
+              403,
+            );
+          const order = await this.gateway.read('delivery', 'custodyOrders', [input.orderId]);
+          const stock = await this.gateway.read('delivery', 'getPosition', [order.positionId]);
+          this.requireResourceOwner(stock.position?.distributor, session.address);
+        }
+        this.requireResourceOwner(
+          await this.gateway.read('orders', 'locationOwner', [input.fromLocation]),
+          session.address,
+        );
+        method = input.action === 'stock-dispatch' ? 'dispatchToWarehouse' : 'dispatchCustodyOrder';
+        args = [
+          {
+            shipmentId: key,
+            referenceId: input.action === 'stock-dispatch' ? input.batchId : input.orderId,
+            quantity: input.quantity,
+            fromLocation: input.fromLocation,
+            toLocation: input.toLocation,
+            vehicle: input.vehicle,
+            occurredAt: input.occurredAt,
+            expectedAt: input.expectedAt,
+          },
+        ];
+      }
+    }
+    return {
+      resultId: key,
+      transaction: await this.prepareWarehouseTransaction(session.address, contract, method, args),
+    };
+  }
+  private deliveryQr(orderId: `0x${string}`) {
+    try {
+      return encodeIngredientDeliveryQr({
+        orderId,
+        chainId: this.gateway.chainId,
+        ordersAddress: this.gateway.address,
+        publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
+      });
+    } catch {
+      return undefined;
+    }
+  }
+  private assertDeliveryQr(payload: string | undefined, orderId: string) {
+    try {
+      decodeIngredientDeliveryQr(payload ?? '', {
+        orderId,
+        chainId: this.gateway.chainId,
+        ordersAddress: this.gateway.address,
+        publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
+      });
+    } catch {
+      throw new OrdersError(
+        'DELIVERY_QR_INVALID',
+        'Scan the label for this exact ingredient request and configured deployment before confirming.',
+        400,
+      );
+    }
+  }
+  async deliveryIdentityParticipants(
+    record: import('../production-flow/production-flow.repository.js').EvidenceWorkflowRecord,
+  ) {
+    if (!record.deliveryOrderId) return false;
+    const { order, delivery } = await this.deliveryReference(record.deliveryOrderId);
+    return (
+      [2, 3, 4, 5].includes(Number(delivery.stage)) &&
+      same(record.requester, order.seller) &&
+      same(record.supplier, delivery.distributor) &&
+      record.requestId ===
+        id(
+          `ingredient-delivery-identity:${record.deliveryOrderId.toLowerCase()}:${delivery.distributor.toLowerCase()}`,
+        )
+    );
+  }
+  private async deliveryReference(referenceId: string) {
+    let order = await this.gateway.read('orders', 'getOrder', [referenceId]);
+    if (Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1) {
+      const shipment = await this.gateway.read('delivery', 'getRoadShipment', [referenceId]);
+      if (Number(shipment.leg) === 1) {
+        const batch = await this.gateway.read('ingredients', 'getBatch', [shipment.batchId]);
+        order = {
+          ...order,
+          seller: shipment.sender,
+          buyer: shipment.recipient,
+          proposedBatch: shipment.batchId,
+          expiresAt: batch.expiresAt,
+        };
+      }
+    }
+    return { order, delivery: await this.gateway.read('delivery', 'get', [referenceId]) };
+  }
   private async optionalRead(contract: string, method: string, args: unknown[] = []) {
     try {
       return await this.gateway.read(contract, method, args);
@@ -250,9 +702,36 @@ export class OrdersService {
       optionalClaims?: string[];
       presentation?: string;
     },
+    deliveryIdentity = false,
   ) {
     const session = await this.session(sessionId);
-    const order = await this.gateway.read('orders', 'getOrder', [orderId]);
+    const actualOrderId = orderId;
+    let order = await this.gateway.read('orders', 'getOrder', [orderId]);
+    if (deliveryIdentity) {
+      const reference = await this.deliveryReference(orderId);
+      order = reference.order;
+      const delivery = reference.delivery;
+      if (![2, 3, 4, 5].includes(Number(delivery.stage)))
+        throw new OrdersError(
+          'DELIVERY_IDENTITY_UNAVAILABLE',
+          'A current assigned Distributor is required.',
+        );
+      order = {
+        ...order,
+        buyer: order.seller,
+        seller: delivery.distributor,
+        identityChallenge: delivery.identityChallenge,
+        identityCredentialHash: delivery.identityCredentialHash,
+        identityValidUntil: delivery.identityValidUntil,
+        proposedBatch:
+          order.proposedBatch && !/^0x0+$/.test(order.proposedBatch)
+            ? order.proposedBatch
+            : await this.gateway.read('orders', 'requestedBatch', [orderId]),
+      };
+      orderId = id(
+        `ingredient-delivery-identity:${actualOrderId.toLowerCase()}:${delivery.distributor.toLowerCase()}`,
+      );
+    }
     if (!same(order.buyer, session.address) && !same(order.seller, session.address))
       throw new OrdersError('NOT_FOUND', 'Order not found.', 404);
     if (!this.flow || !this.messaging)
@@ -268,6 +747,19 @@ export class OrdersService {
           'Only the seller may request buyer identity.',
           403,
         );
+      if (deliveryIdentity) {
+        const previous = await this.repository.findEvidence(orderId);
+        const proof = previous?.identityProof;
+        if (proof?.status === 'REQUESTED' && proof.expiresAt > Date.now() / 1000) {
+          input = {
+            ...input,
+            purpose: proof.purpose,
+            expiresAt: proof.expiresAt,
+            requiredClaims: proof.requiredClaims,
+            optionalClaims: proof.optionalClaims,
+          };
+        }
+      }
       if (
         !input.purpose ||
         !input.expiresAt ||
@@ -280,6 +772,7 @@ export class OrdersService {
           400,
         );
       const proof = await this.flow.startOrderIdentity(sessionId, {
+        ...(deliveryIdentity ? { deliveryOrderId: actualOrderId } : {}),
         orderId,
         seller: order.seller,
         buyer: order.buyer,
@@ -290,14 +783,32 @@ export class OrdersService {
         optionalClaims: input.optionalClaims ?? [],
         selectiveDisclosure: true,
       });
-      const transaction = await this.gateway.prepare(session.address, 'orders', 'requestIdentity', [
-        orderId,
-        id(proof.challenge),
-        id(input.purpose),
-        id(JSON.stringify({ required: input.requiredClaims, optional: input.optionalClaims })),
-        proof.expiresAt,
-        !!input.required,
-      ]);
+      if (
+        deliveryIdentity &&
+        same(order.identityChallenge, id(proof.challenge)) &&
+        Number(order.identityValidUntil) >= proof.expiresAt
+      )
+        return { state: 'COMPLETE', status: 'REQUESTED' };
+      const transaction = await this.gateway.prepare(
+        session.address,
+        deliveryIdentity ? 'delivery' : 'orders',
+        deliveryIdentity ? 'act' : 'requestIdentity',
+        deliveryIdentity
+          ? deliveryArgs(session.address, 4, actualOrderId, {
+              challenge: id(proof.challenge),
+              validUntil: proof.expiresAt,
+            })
+          : [
+              actualOrderId,
+              id(proof.challenge),
+              id(input.purpose),
+              id(
+                JSON.stringify({ required: input.requiredClaims, optional: input.optionalClaims }),
+              ),
+              proof.expiresAt,
+              !!input.required,
+            ],
+      );
       await this.messaging.send(sessionId, {
         messageType: 'https://tracechain.local/didcomm/order-identity-request/1.0',
         recipientWallet: order.buyer,
@@ -328,13 +839,25 @@ export class OrdersService {
         return { state: 'COMPLETE', checks: proof.checks };
       return {
         checks: proof.checks,
-        transaction: await this.gateway.prepare(session.address, 'orders', 'attestIdentity', [
-          orderId,
-          proof.challengeHash,
-          proof.credentialHash,
-          proof.presentationHash,
-          proof.expiresAt,
-        ]),
+        transaction: await this.gateway.prepare(
+          session.address,
+          deliveryIdentity ? 'delivery' : 'orders',
+          deliveryIdentity ? 'act' : 'attestIdentity',
+          deliveryIdentity
+            ? deliveryArgs(session.address, 5, actualOrderId, {
+                challenge: proof.challengeHash,
+                credentialHash: proof.credentialHash,
+                presentationHash: proof.presentationHash,
+                validUntil: proof.expiresAt,
+              })
+            : [
+                actualOrderId,
+                proof.challengeHash,
+                proof.credentialHash,
+                proof.presentationHash,
+                proof.expiresAt,
+              ],
+        ),
       };
     }
     const workflow = await this.repository.findEvidence(orderId);
@@ -666,9 +1189,53 @@ export class OrdersService {
     }
     const approvedReceiptsSupported =
       Number(await this.optionalRead('orders', 'approvedReceiptPolicy')) === 1;
+    const ingredientDeliverySupported =
+      Number(await this.optionalRead('orders', 'ingredientDeliveryPolicy')) === 1;
+    const warehouseSupported =
+      ingredientDeliverySupported &&
+      Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1;
+    const shipmentReviewSupported =
+      warehouseSupported && Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1;
+    const fulfilmentSupported =
+      warehouseSupported && Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) === 2;
+    const logistics = warehouseSupported
+      ? await readLogistics(
+          this.gateway,
+          session.address,
+          session.role === CompanyRole.SYSTEM_ADMIN,
+          shipmentReviewSupported,
+        )
+      : undefined;
     const orders: ChainRecord[] = [];
     const shipments: ChainRecord[] = [];
     const actor = session.address;
+    const ownsInventory = (position: ChainRecord) =>
+      session.role === CompanyRole.SYSTEM_ADMIN ||
+      (session.role === CompanyRole.DISTRIBUTOR && same(position.distributor, actor)) ||
+      (session.role === CompanyRole.SUPPLIER && same(position.supplier, actor));
+    const cataloguePosition = (position: ChainRecord) => {
+      if (ownsInventory(position)) return position;
+      const {
+        positionId,
+        batchId,
+        distributor,
+        location,
+        unit,
+        available,
+        orderable,
+        warehouseName,
+      } = position;
+      return {
+        positionId,
+        batchId,
+        distributor,
+        location,
+        unit,
+        available,
+        orderable,
+        warehouseName,
+      };
+    };
     const listingBatches: ChainRecord[] = [];
     const listingKind =
       session.role === CompanyRole.SUPPLIER ? 1 : session.role === CompanyRole.MANUFACTURER ? 2 : 0;
@@ -724,19 +1291,71 @@ export class OrdersService {
     }
     for (const event of orderEvents) {
       const order = await this.gateway.read('orders', 'getOrder', [event.orderId]);
-      const involved = admin || same(actor, order.buyer) || same(actor, order.seller);
+      const custody = warehouseSupported
+        ? await this.gateway.read('delivery', 'custodyOrders', [event.orderId])
+        : undefined;
+      const custodyPosition =
+        custody && logistics?.positions.find((entry) => entry.positionId === custody.positionId);
+      const delivery = ingredientDeliverySupported
+        ? await this.gateway.read('delivery', 'get', [event.orderId])
+        : undefined;
+      if (
+        delivery &&
+        ((Number(delivery.stage) === 1 &&
+          Number(delivery.assignmentDeadline) <= Date.now() / 1000) ||
+          ([1, 2, 3].includes(Number(delivery.stage)) &&
+            (Number(order.expiresAt) <= Date.now() / 1000 || Number(order.status) === 3)))
+      ) {
+        delivery.chainStage = delivery.stage;
+        delivery.stage = '6';
+      }
+      const involved =
+        admin ||
+        same(actor, order.buyer) ||
+        same(actor, order.seller) ||
+        same(actor, delivery?.distributor) ||
+        same(actor, custodyPosition?.distributor);
       if (!involved) continue;
       const record = await this.repository.findPrivate('products', event.orderId);
       const details =
         record && record.contentHash === order.detailsHash && record.cid === order.detailsCid
           ? JSON.parse(await this.store.decrypt(record.payload))
           : undefined;
+      const decision = await this.loadRequestDecision(event.orderId, order.seller);
+      const deliveryReceivingLocation =
+        typeof details?.receivingLocation === 'string' &&
+        same(
+          await this.gateway.read('orders', 'locationOwner', [details.receivingLocation]),
+          order.buyer,
+        )
+          ? details.receivingLocation
+          : undefined;
       orders.push({
+        custodyOrder: custodyPosition
+          ? {
+              ...custody,
+              ...cataloguePosition(custodyPosition),
+              positionId: custody.positionId,
+              quantity: custody.quantity,
+              arranged: shipmentReviewSupported
+                ? await this.gateway.read('delivery', 'deliveryArranged', [event.orderId])
+                : false,
+            }
+          : undefined,
         ...order,
+        deliveryReceivingLocation,
         orderId: event.orderId,
-        details,
+        details:
+          same(actor, delivery?.distributor) || same(actor, custodyPosition?.distributor)
+            ? undefined
+            : details,
+        delivery: delivery && Number(delivery.stage) > 0 ? delivery : undefined,
         evidenceIds: await this.gateway.read('orders', 'getOrderEvidence', [event.orderId]),
-        decision: await this.loadRequestDecision(event.orderId, order.seller),
+        decision:
+          (same(actor, delivery?.distributor) || same(actor, custodyPosition?.distributor)) &&
+          decision
+            ? { status: decision.status, recordedAt: decision.recordedAt }
+            : decision,
         requestedBatch: approvedReceiptsSupported
           ? await this.gateway.read('orders', 'requestedBatch', [event.orderId])
           : undefined,
@@ -776,7 +1395,14 @@ export class OrdersService {
       if (!shipments.some((shipment) => shipment.shipmentId === key)) shipments.push(transfer);
     const safeLocations = await Promise.all(
       locations.map(async (location) => {
-        if (!same(actor, location.company))
+        if (
+          !same(actor, location.company) &&
+          !orders.some(
+            (order) =>
+              order.custodyOrder?.receivingLocation === location.location ||
+              order.deliveryReceivingLocation === location.location,
+          )
+        )
           return { location: location.location, company: location.company };
         const record = await this.repository.findPrivate('products', location.location);
         const label =
@@ -789,8 +1415,17 @@ export class OrdersService {
     const wallets = [
       ...new Set([
         ...catalogue.map((item) => item.seller),
-        ...orders.flatMap((order) => [order.buyer, order.seller]),
+        ...orders.flatMap((order) => [
+          order.buyer,
+          order.seller,
+          ...(order.delivery?.distributor ? [order.delivery.distributor] : []),
+        ]),
         ...shipments.flatMap((shipment) => [shipment.sender, shipment.recipient]),
+        ...(logistics?.shipments.flatMap((shipment) => [shipment.sender, shipment.recipient]) ??
+          []),
+        ...(logistics?.warehouses.map((warehouse) => warehouse.distributor) ?? []),
+        ...(logistics?.positions.flatMap((position) => [position.distributor, position.supplier]) ??
+          []),
       ]),
     ];
     const identities = (await this.directory?.resolveMany(wallets)) ?? [];
@@ -813,22 +1448,124 @@ export class OrdersService {
       actor,
       listingBatches,
       approvedReceiptsSupported,
+      ingredientDeliverySupported,
+      warehouseSupported,
+      fulfilmentSupported,
+      shipmentReviewSupported,
+      logistics: logistics
+        ? {
+            ...logistics,
+            warehouses: logistics.warehouses.map((warehouse) => ({
+              ...warehouse,
+              distributorName: name(warehouse.distributor),
+            })),
+            productPositions: logistics.productPositions.filter(
+              (position) =>
+                session.role === CompanyRole.SYSTEM_ADMIN || same(position.distributor, actor),
+            ),
+            positions: logistics.positions.filter(ownsInventory).map((position) => ({
+              ...position,
+              distributorName: name(position.distributor),
+              supplierName: name(position.supplier),
+            })),
+            shipments: logistics.shipments.map((shipment) => ({
+              ...shipment,
+              senderName: name(shipment.sender),
+              recipientName: name(shipment.recipient),
+              itemName: catalogue.find((item) =>
+                item.batches.some((batch: string) => same(batch, shipment.batchId)),
+              )?.name,
+              unit:
+                shipment.unit ??
+                catalogue.find((item) =>
+                  item.batches.some((batch: string) => same(batch, shipment.batchId)),
+                )?.unit,
+            })),
+          }
+        : undefined,
+      companies: warehouseSupported
+        ? ((await this.directory?.list()) ?? []).map((company) => ({
+            wallet: company.walletAddress,
+            companyName: company.companyName,
+            role: company.role,
+          }))
+        : undefined,
+      chainId: this.gateway.chainId,
+      ordersAddress: this.gateway.address,
+      distributors:
+        ingredientDeliverySupported && session.role === CompanyRole.SUPPLIER
+          ? ((await this.directory?.list()) ?? [])
+              .filter((identity) => identity.active && identity.role === CompanyRole.DISTRIBUTOR)
+              .map((identity) => ({
+                wallet: identity.walletAddress,
+                companyName: identity.companyName,
+              }))
+          : [],
       ...(session.role === CompanyRole.SUPPLIER
         ? { supplierStock: supplierStock(actor, catalogue, orders, Math.floor(Date.now() / 1000)) }
         : {}),
       role: session.role,
-      catalogue: catalogue.map((item) => ({
-        ...item,
-        sellerName: name(item.seller),
-        sellerRole: role(item.seller),
-        sellerLogoPath: logoWallets.has(item.seller.toLowerCase())
-          ? `/branding/${getAddress(item.seller)}/logo`
-          : undefined,
-      })),
+      catalogue: catalogue
+        .filter((item) => {
+          if (session.role === CompanyRole.SYSTEM_ADMIN) return true;
+          if (session.role === CompanyRole.SUPPLIER) return same(item.seller, actor);
+          if (session.role === CompanyRole.MANUFACTURER)
+            return Number(item.kind) === 1 || same(item.seller, actor);
+          if (session.role === CompanyRole.RETAILER) return Number(item.kind) === 2;
+          return (
+            orders.some((order) => same(order.itemId, item.itemId)) ||
+            item.batches.some(
+              (batch: string) =>
+                logistics?.positions.some(
+                  (position) => same(position.distributor, actor) && same(position.batchId, batch),
+                ) ||
+                logistics?.shipments.some((shipment) => same(shipment.batchId, batch)) ||
+                shipments.some((shipment) =>
+                  same(shipment.batchId ?? shipment.productBatchId, batch),
+                ),
+            )
+          );
+        })
+        .map((item) => ({
+          ...item,
+          custodyPositions:
+            warehouseSupported && Number(item.kind) === 1
+              ? (logistics?.positions ?? [])
+                  .filter(
+                    (position) =>
+                      item.batches.some((batch: string) => same(batch, position.batchId)) &&
+                      (session.role !== CompanyRole.DISTRIBUTOR ||
+                        same(position.distributor, actor)) &&
+                      (session.role !== CompanyRole.SUPPLIER || same(position.supplier, actor)),
+                  )
+                  .map((position) => ({
+                    ...cataloguePosition(position),
+                    distributorName: name(position.distributor),
+                    supplierName: name(position.supplier),
+                  }))
+              : undefined,
+          storageLocations:
+            Number(item.kind) === 2
+              ? logistics?.productPositions.filter(
+                  (position) =>
+                    item.batches.some((batch: string) => same(batch, position.batchId)) &&
+                    (session.role !== CompanyRole.DISTRIBUTOR || same(position.distributor, actor)),
+                )
+              : undefined,
+          sellerName: name(item.seller),
+          sellerRole: role(item.seller),
+          sellerLogoPath: logoWallets.has(item.seller.toLowerCase())
+            ? `/branding/${getAddress(item.seller)}/logo`
+            : undefined,
+        })),
       orders: orders.map((order) => ({
         ...order,
         buyerName: name(order.buyer),
         sellerName: name(order.seller),
+        delivery: order.delivery
+          ? { ...order.delivery, distributorName: name(order.delivery.distributor) }
+          : undefined,
+        deliveryQr: order.delivery ? this.deliveryQr(order.orderId) : undefined,
       })),
       shipments: shipments.map((shipment): ChainRecord => ({
         ...shipment,
@@ -843,6 +1580,76 @@ export class OrdersService {
     const operationKey = id(
       `${this.gateway.chainId}:${this.gateway.address}:${session.address.toLowerCase()}:${input.operationId}`,
     );
+    if (input.action === 'request') {
+      const kind =
+        input.kind ?? Number((await this.gateway.read('orders', 'getItem', [input.itemId])).kind);
+      if (
+        (kind === 1 && session.role !== CompanyRole.MANUFACTURER) ||
+        (kind === 2 && session.role !== CompanyRole.RETAILER)
+      )
+        throw new OrdersError(
+          'BUYER_ROLE_REQUIRED',
+          'Only a Manufacturer can request ingredients; only a Retailer can request finished products.',
+          403,
+        );
+      if (input.location)
+        this.requireResourceOwner(
+          await this.gateway.read('orders', 'locationOwner', [input.location]),
+          session.address,
+        );
+    }
+    if (
+      input.action === 'request' &&
+      input.kind === 1 &&
+      !!input.positionId &&
+      Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1
+    ) {
+      if (session.role !== CompanyRole.MANUFACTURER)
+        throw new OrdersError(
+          'MANUFACTURER_REQUIRED',
+          'Only a Manufacturer can request ingredient custody stock.',
+          403,
+        );
+      if (!input.positionId || !input.location || !input.batchId)
+        throw new OrdersError(
+          'WAREHOUSE_SELECTION_REQUIRED',
+          'Select available Distributor custody stock and your receiving location.',
+          400,
+        );
+      const stock = await this.gateway.read('delivery', 'getPosition', [input.positionId]);
+      if (
+        !same(stock.position.batchId, input.batchId) ||
+        this.batchUnit(stock.position.unit) !== input.unit ||
+        BigInt(input.quantity) > BigInt(stock.available)
+      )
+        throw new OrdersError(
+          'INSUFFICIENT_CUSTODY_STOCK',
+          'The selected warehouse has insufficient unreserved stock. Refresh before ordering.',
+        );
+      const stored = await this.privateRecord(operationKey, session.address, {
+        note: input.note,
+        positionId: input.positionId,
+        requestOnly: true,
+        receivingLocation: input.location,
+      });
+      return {
+        resultId: operationKey,
+        transaction: await this.prepareWarehouseTransaction(
+          session.address,
+          'delivery',
+          'placeCustodyOrder',
+          [
+            operationKey,
+            input.positionId,
+            input.quantity,
+            input.location,
+            input.expiresAt,
+            stored.contentHash,
+            stored.cid,
+          ],
+        ),
+      };
+    }
     let method: string;
     let args: unknown[];
     let contract = 'orders';
@@ -854,7 +1661,69 @@ export class OrdersService {
         'The reported event cannot be in the future.',
         400,
       );
-    if (input.action === 'approved-receipt') {
+    if (
+      input.action === 'delivery-assign' ||
+      input.action === 'delivery-respond' ||
+      input.action === 'delivery-pickup' ||
+      input.action === 'delivery-expire'
+    ) {
+      if (Number(await this.optionalRead('orders', 'ingredientDeliveryPolicy')) !== 1)
+        throw new OrdersError(
+          'INGREDIENT_DELIVERY_UPGRADE_REQUIRED',
+          'Deploy the updated contract suite to use Distributor ingredient deliveries.',
+        );
+      const order = await this.gateway.read('orders', 'getOrder', [input.orderId]);
+      const delivery = await this.gateway.read('delivery', 'get', [input.orderId]);
+      const supplier = same(order.seller, session.address) && session.role === CompanyRole.SUPPLIER;
+      const distributor =
+        same(delivery.distributor, session.address) && session.role === CompanyRole.DISTRIBUTOR;
+      if (!supplier && !distributor && !same(order.buyer, session.address))
+        throw new OrdersError('NOT_FOUND', 'Delivery not found.', 404);
+      if (input.action === 'delivery-assign') {
+        if (!supplier || Number(delivery.stage) !== 1 || Number(delivery.assignmentDeadline) <= now)
+          throw new OrdersError(
+            'DELIVERY_ASSIGNMENT_CLOSED',
+            'Only the Supplier can request a Distributor before the assignment deadline.',
+          );
+        if (!(await this.gateway.read('stakeholders', 'isAuthorized', [input.distributor, 4])))
+          throw new OrdersError(
+            'DISTRIBUTOR_UNAUTHORIZED',
+            'Choose an active authorized Distributor.',
+          );
+        contract = 'delivery';
+        method = 'act';
+        args = deliveryArgs(session.address, 1, input.orderId, { distributor: input.distributor });
+      } else if (input.action === 'delivery-respond') {
+        if (
+          !distributor ||
+          (Number(delivery.stage) !== 2 &&
+            !(input.accept === false && Number(delivery.stage) === 3))
+        )
+          throw new OrdersError(
+            'DELIVERY_RESPONSE_UNAVAILABLE',
+            'Only the assigned Distributor can accept or decline before pickup.',
+          );
+        contract = 'delivery';
+        method = 'act';
+        args = deliveryArgs(session.address, input.accept ? 2 : 3, input.orderId);
+      } else if (input.action === 'delivery-pickup') {
+        if (!distributor || Number(delivery.stage) !== 3)
+          throw new OrdersError(
+            'PICKUP_UNAVAILABLE',
+            'Accept this delivery before scanning to confirm pickup.',
+          );
+        this.assertDeliveryQr(input.qrPayload, input.orderId);
+        contract = 'delivery';
+        method = 'act';
+        args = deliveryArgs(session.address, 6, input.orderId, { occurredAt: input.occurredAt });
+      } else if (input.action === 'delivery-expire') {
+        if (Number(delivery.stage) !== 6)
+          throw new OrdersError('DELIVERY_NOT_EXPIRED', 'This delivery has not expired.');
+        contract = 'delivery';
+        method = 'act';
+        args = deliveryArgs(session.address, 7, input.orderId);
+      } else throw new OrdersError('INVALID_DELIVERY_ACTION', 'Invalid delivery action.', 400);
+    } else if (input.action === 'approved-receipt') {
       if (Number(await this.optionalRead('orders', 'approvedReceiptPolicy')) !== 1)
         throw new OrdersError(
           'APPROVED_RECEIPT_UPGRADE_REQUIRED',
@@ -865,11 +1734,24 @@ export class OrdersService {
         throw new OrdersError('NOT_FOUND', 'Request not found.', 404);
       const decision = await this.gateway.read('orders', 'requestDecision', [input.orderId]);
       const item = await this.gateway.read('orders', 'getItem', [order.itemId]);
+      const delivery =
+        Number(await this.optionalRead('orders', 'ingredientDeliveryPolicy')) === 1
+          ? await this.gateway.read('delivery', 'get', [input.orderId])
+          : undefined;
+      const routed = Number(delivery?.stage ?? 0) > 0;
+      if (routed) {
+        if (Number(delivery.stage) !== 4)
+          throw new OrdersError(
+            'DELIVERY_NOT_IN_TRANSIT',
+            'The assigned Distributor must accept and scan pickup before receipt.',
+          );
+        this.assertDeliveryQr(input.qrPayload, input.orderId);
+      }
       if (
         !(await this.gateway.read('orders', 'requestOnly', [input.orderId])) ||
         Number(decision.status) !== 1 ||
         Number(order.status) !== 1 ||
-        Number(order.expiresAt) <= now ||
+        (!routed && Number(order.expiresAt) <= now) ||
         Number(item.kind) !== 1
       )
         throw new OrdersError(
@@ -906,8 +1788,13 @@ export class OrdersService {
       const batch = await this.gateway.read('ingredients', 'getBatch', [batchId]);
       if (
         !same(batch.supplier, order.seller) ||
-        !(await this.gateway.read('ingredients', 'isUsable', [batchId])) ||
-        BigInt(batch.availableQuantity) < BigInt(input.quantity)
+        !(await this.gateway.read(
+          'ingredients',
+          routed ? 'isValidTraceabilitySource' : 'isUsable',
+          [batchId],
+        )) ||
+        BigInt(routed ? delivery.reservedQuantity : batch.availableQuantity) <
+          BigInt(input.quantity)
       )
         throw new OrdersError(
           'INSUFFICIENT_SUPPLIER_STOCK',
@@ -997,6 +1884,14 @@ export class OrdersService {
       );
       method = 'decideRequest';
       args = [input.orderId, input.decision, stored.contentHash, stored.cid];
+      if (
+        input.decision === 1 &&
+        session.role === CompanyRole.SUPPLIER &&
+        Number(await this.optionalRead('orders', 'ingredientDeliveryPolicy')) === 1
+      ) {
+        method = 'approveIngredientDelivery';
+        args = [input.orderId, stored.contentHash, stored.cid];
+      }
     } else if (input.action === 'location') {
       const stored = await this.privateRecord(operationKey, session.address, {
         label: input.label,
@@ -1156,8 +2051,22 @@ export class OrdersService {
           stored.contentHash,
           stored.cid,
         ];
+        if (
+          input.kind === 1 &&
+          Number(await this.optionalRead('orders', 'ingredientDeliveryPolicy')) === 1
+        ) {
+          method = 'requestIngredientDelivery';
+          args = [
+            operationKey,
+            input.batchId,
+            input.quantity,
+            input.expiresAt,
+            stored.contentHash,
+            stored.cid,
+          ];
+        }
       }
-      if (input.requestOnly) {
+      if (input.requestOnly && method !== 'requestIngredientDelivery') {
         method = 'requestInterest';
         args = [
           operationKey,
@@ -1170,6 +2079,10 @@ export class OrdersService {
         ];
       }
     } else if (input.action === 'propose') {
+      this.requireResourceOwner(
+        (await this.gateway.read('orders', 'getOrder', [input.orderId])).seller,
+        session.address,
+      );
       method = 'propose';
       args = [input.orderId, input.batchId, input.location];
     } else if (input.action === 'allocate') {
@@ -1238,9 +2151,16 @@ export class OrdersService {
       method = 'allocate';
       args = [input.orderId, input.quantity];
     } else if (input.action === 'close') {
+      const order = await this.gateway.read('orders', 'getOrder', [input.orderId]);
+      if (!same(order.buyer, session.address) && !same(order.seller, session.address))
+        this.requireResourceOwner(undefined, session.address);
       method = 'closeOrder';
       args = [input.orderId];
     } else if (input.action === 'evidence' || input.action === 'bind-evidence') {
+      this.requireResourceOwner(
+        (await this.gateway.read('orders', 'getOrder', [input.orderId])).buyer,
+        session.address,
+      );
       method = input.action === 'evidence' ? 'linkEvidence' : 'bindEvidenceRequest';
       args = [input.orderId, input.evidenceId];
     } else if (input.action === 'dispatch') {
@@ -1394,6 +2314,16 @@ export class OrdersService {
         stored.cid,
       ];
     } else if (input.action === 'receipt') {
+      this.requireResourceOwner(
+        (
+          await this.gateway.read(
+            input.product ? 'custody' : 'orders',
+            input.product ? 'getTransfer' : 'getShipment',
+            [input.shipmentId],
+          )
+        ).recipient,
+        session.address,
+      );
       if (input.product) {
         contract = 'custody';
         const stored = await this.privateRecord(operationKey, session.address, input);
@@ -1420,6 +2350,10 @@ export class OrdersService {
         ];
       }
     } else if (input.action === 'forward') {
+      this.requireResourceOwner(
+        (await this.gateway.read('custody', 'getTransfer', [input.shipmentId])).recipient,
+        session.address,
+      );
       const stored = await this.privateRecord(operationKey, session.address, input);
       contract = 'custody';
       method = 'forwardOrderAt';
@@ -1435,6 +2369,11 @@ export class OrdersService {
         input.occurredAt,
       ];
     } else if (input.action === 'recall') {
+      if (session.role !== CompanyRole.SYSTEM_ADMIN)
+        this.requireResourceOwner(
+          (await this.gateway.read('ingredients', 'getBatch', [input.batchId])).supplier,
+          session.address,
+        );
       const stored = await this.privateRecord(operationKey, session.address, input);
       contract = 'ingredients';
       method = 'setStatus';
@@ -1557,4 +2496,30 @@ function validateImage(input: CatalogueImageInput) {
     if (error instanceof CatalogueImageError) throw new OrdersError(error.code, error.message, 400);
     throw error;
   }
+}
+
+function deliveryArgs(
+  actor: string,
+  action: number,
+  orderId: string,
+  fields: {
+    distributor?: string;
+    challenge?: string;
+    occurredAt?: number;
+    credentialHash?: string;
+    presentationHash?: string;
+    validUntil?: number;
+  } = {},
+) {
+  return [
+    action,
+    actor,
+    orderId,
+    fields.distributor ?? ZeroAddress,
+    fields.challenge ?? ZeroHash,
+    fields.occurredAt ?? 0,
+    fields.credentialHash ?? ZeroHash,
+    fields.presentationHash ?? ZeroHash,
+    fields.validUntil ?? 0,
+  ];
 }

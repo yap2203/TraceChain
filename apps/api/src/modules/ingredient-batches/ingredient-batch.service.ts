@@ -109,7 +109,13 @@ export class IngredientBatchService {
         if (!batch || getAddress(batch.supplier) !== supplierWallet) return null;
         const record = await this.dependencies.repository.find(batchId);
         let metadata: Record<string, unknown> = {};
-        if (record) {
+        if (
+          record &&
+          getAddress(record.supplierWallet) === supplierWallet &&
+          record.metadataHash.toLowerCase() === batch.metadataHash.toLowerCase() &&
+          record.credentialId.toLowerCase() === batch.credentialId.toLowerCase() &&
+          record.encryptedCid === batch.encryptedCid
+        ) {
           try {
             const envelope = JSON.parse(
               await this.dependencies.contentStore.decrypt(record.encryptedPayload),

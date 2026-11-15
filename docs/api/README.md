@@ -1,5 +1,83 @@
 # TraceChain API
 
+## Supplier-selected ingredient fulfilment
+
+Normal ingredient `request` preparation no longer requires `positionId`. The Manufacturer supplies
+its own receiving `location`; the Supplier approves/rejects and then chooses delivery. Explicit old
+`positionId` requests still prepare `placeCustodyOrder`. Supported ingredient delivery preparation
+uses `requestIngredientDelivery` even with `requestOnly: true`, preserving the delivery-required flag.
+
+`GET /api/orders` includes `fulfilmentSupported`, true only for child policy 2. Supplier selects
+custody through `POST /api/orders/logistics/prepare` with `action: "arrange-from-custody"`,
+`operationId`, `orderId`, `positionId` and `receivingLocation`. Preflight verifies ownership,
+approval/selection state, exact batch, sufficient live availability and the buyer's location. It
+returns unsigned `arrangeFromCustody` calldata; MetaMask confirmation is required. Existing
+`delivery-assign` / `delivery-respond` / `delivery-pickup` actions remain the direct path.
+
+Actual direct carrier participants receive `deliveryReceivingLocation`, validated against the
+buyer's registered locations and sourced from the hashed encrypted request metadata. They do not
+receive buyer/seller private notes. Direct receiving location is recorded by the existing on-chain
+receipt action; this metadata projection is not described as an earlier on-chain location field.
+See [the two-mode test guide](../testing/TWO_MODE_INGREDIENT_DELIVERY.md).
+
+## Custody ownership and company proof inbox
+
+`GET /api/orders` now scopes `logistics.positions` to the authenticated Distributor's inventory,
+or the authenticated Supplier's own supplied batches (existing authorized Admin reads are preserved).
+Unrelated Distributor positions are removed from catalogue/storage projections as well. Manufacturer
+ordering gets only necessary public availability fields, not total/reserved warehouse inventory.
+`logistics.productStock` remains scoped to the authenticated wallet; its available physical quantity
+excludes the separately reported reserved/in-transit ledger balance.
+
+`GET /api/orders/information-requests` lists Company Role proof workflows only for their exact
+presenter/verifier participants, after current session/deployment authorization. It returns context,
+reference, direction, company, purpose, deadline and status; no credential/presentation payload,
+decryption key or challenge secret is returned. Existing proof services validate current bindings;
+historical unavailable requests cannot be used to grant access. No additional database is introduced.
+
+## Warehouse-first shipments
+
+`IngredientDelivery.reviewPolicy() = 1` adds `arrange-delivery` (Supplier, approved order),
+`warehouse-decision` (intended Distributor, accept/reject) and `shipment-return` (original Supplier,
+exact label and physical return) actions to `/api/orders/logistics/prepare`. State includes
+`shipmentReviewSupported`, custody decisions, shipment-bound Supplier proof records and the Supplier's
+arranged-order flag. Existing delivery identity endpoints now also resolve first-leg custody shipment
+references; identity binding checks use the actual sender and recipient. No plaintext credentials or
+private keys are added to shipment responses. On-chain guards remain authoritative for all writes.
+
+`POST /api/orders/logistics/prepare` prepares explicit MetaMask transactions for warehouse publication,
+Supplier stock dispatch, approved-order Distributor dispatch, product road dispatch and exact-QR receipt.
+`GET /api/orders` exposes received custody positions, immediate reservations, registered warehouses,
+participant-scoped shipment records and product balances per location. Modern ingredient requests
+require `positionId`, the original `batchId`, canonical unit and the buyer's registered receiving location;
+the contract reserves stock atomically at placement. Pending custodians cannot read private order notes.
+See [setup, fields, permissions and tests](../testing/WAREHOUSE_CUSTODY_FLOW.md).
+The old assignment endpoints below remain for legacy compatibility; new custody orders use Shipments.
+
+## Ingredient delivery
+
+`GET /api/orders` includes current ingredient delivery stages, deadlines, quantities, participant names,
+an order-bound printable QR locator and public configured chain/Orders address. Only the Supplier,
+Manufacturer, assigned Distributor and Admin can read an order; Distributor responses omit private
+order notes and decision reasons. Supplier responses include active Distributor choices. Missing QR
+configuration does not hide other order details.
+
+`POST /api/orders/prepare` adds `delivery-assign` (Distributor wallet), `delivery-respond` (accept
+boolean), `delivery-pickup` (actual time and scanned `qrPayload`) and `delivery-expire` (expired order).
+Each action includes `orderId` and UUID `operationId`. Delivery-backed `approved-receipt` also requires
+the matching `qrPayload` plus quantity, owned location and actual time. Preparation validates current
+session/participant/state, configured origin/network/registry and pending-state contract simulation;
+it returns unsigned calldata for explicit MetaMask confirmation. It never sends transactions itself.
+
+`POST /api/orders/:orderId/delivery/identity` reuses Company Role proof actions `request`, `material`,
+`present`, `verify`, `decline`, `status`. Only the assigned Distributor can request/verify Supplier
+proof; only that Supplier can retrieve/present its credential. Synthetic delivery-proof references
+bind to the actual order and current assigned carrier, with independent challenge, purpose, claims,
+expiry and encrypted DIDComm reply thread. Signature/source hash/holder/wallet/role/lifecycle checks
+precede an unsigned verification attestation. Proof verification never confirms physical custody.
+
+See [the end-to-end test and deployment guide](../testing/INGREDIENT_DISTRIBUTOR_DELIVERY.md).
+
 ## DIDComm ciphertext relay
 
 Authenticated, currently authorized Manufacturer and Supplier sessions use `/api/didcomm` for the Stage 1 secure-message proof of concept:
@@ -357,6 +435,7 @@ Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend
 ## Storage and production limitations
 
 Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Nonces are wallet-bound, expire after five minutes, and are atomically single-use in the supported single-process model. Nonce creation and verification are rate-limited per wallet, expired records are cleaned opportunistically, and state-changing browser requests with an unexpected `Origin` are rejected. Cookies are HttpOnly, SameSite=Lax, explicitly expiring, and Secure in production. Production deployment still requires shared atomic repositories, trusted proxy configuration, HTTPS, monitoring, and stronger distributed rate limiting.
+
 ## Production stock and optional evidence
 
 `GET /api/production-flow/ingredients?purpose=production&location=<bytes32>` reads the authenticated

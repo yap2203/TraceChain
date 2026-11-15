@@ -5,6 +5,7 @@ import {IStakeholderRegistry} from '../interfaces/IStakeholderRegistry.sol';
 import {IngredientRegistry} from './IngredientRegistry.sol';
 import {ProductRegistry} from './ProductRegistry.sol';
 import {EvidenceRegistry} from './EvidenceRegistry.sol';
+import {IngredientDelivery} from './IngredientDelivery.sol';
 import {CustodyTransfer} from './CustodyTransfer.sol';
 
 /// Requests/proposals are distinct from reservations, physical dispatch and receipts.
@@ -15,6 +16,26 @@ contract SupplyChainOrders {
     function requestOnlyPolicy() external pure returns (uint8) { return 1; }
     function supplierManagementPolicy() external pure returns (uint8) { return 1; }
     function approvedReceiptPolicy() external pure returns (uint8) { return 1; }
+    function ingredientDeliveryPolicy() external pure returns (uint8) { return 1; }
+    IngredientDelivery public immutable ingredientDelivery;
+    mapping(bytes32 => bool) private ingredientDeliveryRequired;
+    function approveIngredientDelivery(bytes32 orderId, bytes32 detailsHash, string calldata cid) external {
+        decideRequest(orderId, 1, detailsHash, cid);
+        if (ingredientDelivery.stageOf(orderId) == 0) _startIngredientDelivery(orderId);
+    }
+    function _startIngredientDelivery(bytes32 orderId) private { ingredientDeliveryRequired[orderId] = true; ingredientDelivery.start(orderId); }
+    function deliveryOrderContext(bytes32 orderId) external view returns (address seller, address buyer, bytes32 batchId, uint256 quantity, uint64 expiresAt, uint8 status) {
+        Order storage order = orders[orderId];
+        return (order.seller, order.buyer, requestedBatch[orderId], order.requested, order.expiresAt, order.status);
+    }
+    function reserveDeliveryStock(bytes32 orderId, uint256 quantity) external {
+        if (msg.sender != address(ingredientDelivery)) revert Unauthorized();
+        ingredients.reserveSupply(requestedBatch[orderId], quantity, false);
+    }
+    function finalizeExpiredDelivery(bytes32 orderId) external {
+        if (msg.sender != address(ingredientDelivery)) revert Unauthorized();
+        orders[orderId].status = 3; emit OrderChanged(orderId, 3);
+    }
     mapping(bytes32 => bytes32) public requestedBatch;
     mapping(bytes32 => uint256) public approvedReceivedQuantity;
     mapping(bytes32 => bool) public approvedReceiptUsed;
@@ -23,12 +44,14 @@ contract SupplyChainOrders {
         Order storage order = orders[orderId];
         if (order.buyer != msg.sender || !stakeholders.isAuthorized(msg.sender, 3)) revert Unauthorized();
         bytes32 batchId = requestedBatch[orderId];
-        if (!requestOnly[orderId] || requestDecision[orderId].status != 1 || order.status != 1 || order.expiresAt <= block.timestamp || items[order.itemId].kind != 1 || batchId == bytes32(0)) revert InvalidState();
+        uint8 deliveryStage = ingredientDelivery.stageOf(orderId);
+        if (!requestOnly[orderId] || requestDecision[orderId].status != 1 || order.status != 1 || (ingredientDeliveryRequired[orderId] && deliveryStage != 4) || (deliveryStage == 0 ? order.expiresAt <= block.timestamp : deliveryStage != 4) || items[order.itemId].kind != 1 || batchId == bytes32(0)) revert InvalidState();
         if (receiptId == bytes32(0) || approvedReceiptUsed[receiptId] || quantity == 0 || quantity > order.requested - approvedReceivedQuantity[orderId] || locationOwner[location] != msg.sender || occurredAt < requestDecision[orderId].recordedAt || occurredAt > block.timestamp) revert InvalidInput();
         if (ingredients.getBatch(batchId).supplier != order.seller) revert InvalidState();
         approvedReceiptUsed[receiptId] = true;
         approvedReceivedQuantity[orderId] += quantity;
-        ingredients.reserveSupply(batchId, quantity, false);
+        if (deliveryStage == 0) ingredients.reserveSupply(batchId, quantity, false);
+        else ingredientDelivery.consume(orderId, quantity, occurredAt);
         ingredients.receiveSupply(batchId, msg.sender, location, quantity, 0, 0, 0);
         if (approvedReceivedQuantity[orderId] == order.requested) { order.status = 3; emit OrderChanged(orderId, 3); }
         emit ApprovedIngredientReceived(receiptId, orderId, batchId, msg.sender, location, quantity, occurredAt, uint64(block.timestamp));
@@ -36,10 +59,11 @@ contract SupplyChainOrders {
     struct Decision { uint8 status; bytes32 detailsHash; string encryptedCid; uint64 recordedAt; }
     mapping(bytes32 => Decision) public requestDecision;
     event RequestDecided(bytes32 indexed requestId, uint8 status, bytes32 detailsHash, string encryptedCid);
-    function decideRequest(bytes32 requestId, uint8 decision, bytes32 detailsHash, string calldata cid) external {
+    function decideRequest(bytes32 requestId, uint8 decision, bytes32 detailsHash, string memory cid) public {
         Order storage order = _seller(requestId);
         if (!requestOnly[requestId] || requestDecision[requestId].status != 0 || (decision != 1 && decision != 2) || detailsHash == bytes32(0) || bytes(cid).length == 0) revert InvalidState();
         requestDecision[requestId] = Decision(decision, detailsHash, cid, uint64(block.timestamp));
+        if (decision == 1 && ingredientDeliveryRequired[requestId]) _startIngredientDelivery(requestId);
         if (decision == 2) order.status = 3;
         emit RequestDecided(requestId, decision, detailsHash, cid);
     }
@@ -96,6 +120,7 @@ contract SupplyChainOrders {
 
     constructor(address stakeholder, address ingredient, address product, address evidenceRegistry, address custodyRegistry) {
         stakeholders = IStakeholderRegistry(stakeholder); ingredients = IngredientRegistry(ingredient);
+        ingredientDelivery = new IngredientDelivery(address(this), stakeholder, ingredient, product, evidenceRegistry);
         products = ProductRegistry(product); evidence = EvidenceRegistry(evidenceRegistry); custody = CustodyTransfer(custodyRegistry);
     }
     function registerLocation(bytes32 location, bytes32 detailsHash) external {
@@ -106,17 +131,8 @@ contract SupplyChainOrders {
     }
     function listItem(bytes32 itemId, string calldata name, uint8 kind, bytes32 batchId, bytes32 metadataHash) external {
         if (itemId == bytes32(0) || bytes(name).length == 0 || bytes(name).length > 160 || metadataHash == bytes32(0)) revert InvalidInput();
-        bytes32 unit;
-        if (kind == 1) {
-            IngredientRegistry.Batch memory batch = ingredients.getBatch(batchId);
-            if (batch.supplier != msg.sender || !stakeholders.isAuthorized(msg.sender, 2) || !ingredients.isValidTraceabilitySource(batchId)) revert Unauthorized();
-            unit = batch.unit;
-        } else if (kind == 2) {
-            ProductRegistry.Product memory batch = products.getProduct(batchId);
-            if (batch.manufacturer != msg.sender || !stakeholders.isAuthorized(msg.sender, 3) || !products.isTransferable(batchId)) revert Unauthorized();
-            unit = batch.unit;
-        } else revert InvalidInput();
-        if (unit == bytes32(0)) revert InvalidInput();
+        (address seller, bytes32 unit,) = ingredientDelivery.source(kind, batchId);
+        if (seller != msg.sender || !stakeholders.isAuthorized(msg.sender, kind == 1 ? 2 : 3)) revert Unauthorized();
         Item storage item = items[itemId];
         if (item.seller != address(0) && (item.seller != msg.sender || item.kind != kind || item.unit != unit)) revert InvalidInput();
         if (batchItem[batchId] != bytes32(0) && batchItem[batchId] != itemId) revert InvalidState();
@@ -130,8 +146,12 @@ contract SupplyChainOrders {
         requestOrder(orderId, itemId, quantity, items[itemId].unit, receivingLocation, expiresAt, evidenceRequired, detailsHash, detailsCid);
     }
     /// An expression of supply interest. It cannot reserve, dispatch or credit inventory.
+    function requestIngredientDelivery(bytes32 requestId, bytes32 batchId, uint256 quantity, uint64 expiresAt, bytes32 detailsHash, string calldata detailsCid) external {
+        requestInterest(requestId, 1, batchId, quantity, expiresAt, detailsHash, detailsCid);
+        ingredientDeliveryRequired[requestId] = true;
+    }
     function requestInterest(bytes32 requestId, uint8 kind, bytes32 batchId, uint256 quantity,
-        uint64 expiresAt, bytes32 detailsHash, string calldata detailsCid) external {
+        uint64 expiresAt, bytes32 detailsHash, string memory detailsCid) public {
         bytes32 itemId = _registeredItem(kind, batchId);
         _createRequest(requestId, itemId, quantity, items[itemId].unit, bytes32(0), expiresAt, false, detailsHash, detailsCid);
         requestOnly[requestId] = true;
@@ -139,25 +159,24 @@ contract SupplyChainOrders {
     }
     function _registeredItem(uint8 kind, bytes32 batchId) private returns (bytes32 itemId) {
         if (kind == 1 && ingredients.getListing(batchId).archived) revert InvalidState();
-        if ((kind == 1 && !ingredients.isValidTraceabilitySource(batchId)) || (kind == 2 && !products.isTransferable(batchId))) revert InvalidState();
+        (address seller, bytes32 unit, bytes32 metadataHash) = ingredientDelivery.source(kind, batchId);
         itemId = batchItem[batchId];
         if (itemId == bytes32(0)) {
-            address seller; bytes32 unit; bytes32 metadataHash;
-            if (kind == 1) {
-                IngredientRegistry.Batch memory batch = ingredients.getBatch(batchId);
-                if (!ingredients.isValidTraceabilitySource(batchId)) revert InvalidState();
-                seller = batch.supplier; unit = batch.unit; metadataHash = batch.metadataHash;
-            } else if (kind == 2) {
-                ProductRegistry.Product memory batch = products.getProduct(batchId);
-                if (!products.isTransferable(batchId)) revert InvalidState();
-                seller = batch.manufacturer; unit = batch.unit; metadataHash = batch.metadataHash;
-            } else revert InvalidInput();
             itemId = keccak256(abi.encodePacked('registered:', kind, batchId));
             items[itemId] = Item(seller, kind, unit, metadataHash, kind == 1 ? 'Registered ingredient' : 'Registered product', true);
-            batchItem[batchId] = itemId;
-            emit ItemListed(itemId, seller, batchId);
+            batchItem[batchId] = itemId; emit ItemListed(itemId, seller, batchId);
         }
         if (items[itemId].kind != kind) revert InvalidInput();
+    }
+    function settleCustodyStock(bytes32 orderId, bytes32 batchId, address recipient, bytes32 location, uint256 quantity) external {
+        if (msg.sender != address(ingredientDelivery)) revert Unauthorized();
+        if (recipient == address(0)) ingredients.reserveSupply(batchId, quantity, false);
+        else if (recipient == ingredients.getBatch(batchId).supplier) ingredients.reserveSupply(batchId, quantity, true);
+        else {
+            ingredients.receiveSupply(batchId, recipient, location, quantity, 0, 0, 0);
+            approvedReceivedQuantity[orderId] += quantity;
+            if (approvedReceivedQuantity[orderId] == orders[orderId].requested) { orders[orderId].status = 3; emit OrderChanged(orderId, 3); }
+        }
     }
     function requestOrder(bytes32 orderId, bytes32 itemId, uint256 quantity, bytes32 unit, bytes32 receivingLocation,
         uint64 expiresAt, bool evidenceRequired, bytes32 detailsHash, string calldata detailsCid) public {
@@ -165,17 +184,18 @@ contract SupplyChainOrders {
         _createRequest(orderId, itemId, quantity, unit, receivingLocation, expiresAt, evidenceRequired, detailsHash, detailsCid);
     }
     function _createRequest(bytes32 orderId, bytes32 itemId, uint256 quantity, bytes32 unit, bytes32 receivingLocation,
-        uint64 expiresAt, bool evidenceRequired, bytes32 detailsHash, string calldata detailsCid) private {
+        uint64 expiresAt, bool evidenceRequired, bytes32 detailsHash, string memory detailsCid) private {
+        address buyer = msg.sender == address(ingredientDelivery) ? ingredientDelivery.pendingBuyer() : msg.sender;
         Item memory item = items[itemId];
         uint8 buyerRole = item.kind == 1 ? 3 : 5;
-        if (!stakeholders.isAuthorized(msg.sender, buyerRole) || !stakeholders.isAuthorized(item.seller, item.kind == 1 ? 2 : 3)) revert Unauthorized();
+        if (!stakeholders.isAuthorized(buyer, buyerRole) || !stakeholders.isAuthorized(item.seller, item.kind == 1 ? 2 : 3)) revert Unauthorized();
         if (!item.active || orders[orderId].buyer != address(0) || orderId == bytes32(0) || quantity == 0 ||
             item.unit != unit || expiresAt <= block.timestamp || detailsHash == bytes32(0)) revert InvalidInput();
         Order storage order = orders[orderId];
-        order.buyer = msg.sender; order.seller = item.seller; order.itemId = itemId; order.requested = quantity;
+        order.buyer = buyer; order.seller = item.seller; order.itemId = itemId; order.requested = quantity;
         order.receivingLocation = receivingLocation; order.expiresAt = expiresAt; order.status = 1;
         order.evidenceRequired = evidenceRequired; order.detailsHash = detailsHash; order.detailsCid = detailsCid;
-        emit OrderRequested(orderId, msg.sender, item.seller);
+        emit OrderRequested(orderId, buyer, item.seller);
     }
     function propose(bytes32 orderId, bytes32 batchId, bytes32 location) external {
         if (requestOnly[orderId]) revert InvalidState();
@@ -199,6 +219,7 @@ contract SupplyChainOrders {
     }
     function closeOrder(bytes32 orderId) external {
         Order storage order = orders[orderId];
+        if (ingredientDelivery.stageOf(orderId) == 4 || ingredientDelivery.stageOf(orderId) == 5) revert InvalidState();
         if (order.buyer == address(0) || order.status > 2 || order.status == 0) revert InvalidState();
         if (msg.sender != order.seller && msg.sender != order.buyer && block.timestamp <= order.expiresAt) revert Unauthorized();
         _release(orderId, order); order.status = 3;
@@ -306,23 +327,9 @@ contract SupplyChainOrders {
         order.allocated = order.dispatched;
     }
     function _checkEvidence(Order storage order, bytes32 evidenceId) private view {
-        EvidenceRegistry.Request memory proof = evidence.getRequest(evidenceId);
-        if (proof.requester != order.buyer || proof.status != EvidenceRegistry.RequestStatus.Accepted || proof.presentationExpiresAt <= block.timestamp) revert InvalidState();
-        if (!_isProposedSource(order, proof.ingredientBatchId)) revert InvalidState();
-        if (items[order.itemId].kind == 1) {
-            if (proof.ingredientBatchId != order.proposedBatch || proof.supplier != order.seller) revert InvalidState();
-        } else {
-            ProductRegistry.IngredientLink[] memory links = products.getIngredientLinks(order.proposedBatch);
-            bool linked;
-            for (uint256 i; i < links.length; ++i) if (links[i].batchId == proof.ingredientBatchId) linked = true;
-            if (!linked) revert InvalidState();
-        }
-        if (!ingredients.isValidTraceabilitySource(proof.ingredientBatchId)) revert InvalidState();
+        ingredientDelivery.checkEvidence(order.buyer, order.seller, items[order.itemId].kind, order.proposedBatch, evidenceId);
     }
     function _isProposedSource(Order storage order, bytes32 ingredientBatchId) private view returns (bool) {
-        if (items[order.itemId].kind == 1) return order.proposedBatch == ingredientBatchId;
-        ProductRegistry.IngredientLink[] memory links = products.getIngredientLinks(order.proposedBatch);
-        for (uint256 i; i < links.length; ++i) if (links[i].batchId == ingredientBatchId) return true;
-        return false;
+        return ingredientDelivery.isProposedSource(items[order.itemId].kind, order.proposedBatch, ingredientBatchId);
     }
 }

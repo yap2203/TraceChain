@@ -40,6 +40,8 @@ export function supplierStock(
     if (
       !same(order.seller, actor) ||
       !order.isRequestOnly ||
+      !!order.custodyOrder ||
+      [4, 5, 6].includes(Number(order.delivery?.stage)) ||
       Number(order.status) !== 1 ||
       Number(order.expiresAt) <= now ||
       Number(order.decision?.status) === 2

@@ -6,6 +6,7 @@ import { AuthError } from '../auth/auth.service.js';
 import { ProductionFlowApiError } from '../production-flow/production-flow.service.js';
 import { DidCommError } from '../didcomm/didcomm.service.js';
 import { evidenceRequestSchema } from '../production-flow/production-flow.schema.js';
+import { logisticsActionSchema } from './logistics.schema.js';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
   const router = Router();
@@ -53,6 +54,10 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     action((service, session) => service.state(session)),
   );
   const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
+  router.get(
+    '/information-requests',
+    action((service, session) => service.informationRequests(session)),
+  );
   const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
   router.get(
     '/branding/me',
@@ -133,6 +138,12 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       ),
     ),
   );
+  router.post(
+    '/logistics/prepare',
+    action((service, session, request) =>
+      service.prepareLogistics(session, logisticsActionSchema.parse(request.body)),
+    ),
+  );
   const claim = z.enum([
     'companyId',
     'companyName',
@@ -158,6 +169,17 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       .strict(),
     z.object({ action: z.enum(['material', 'verify', 'decline', 'status']) }).strict(),
   ]);
+  router.post(
+    '/:orderId/delivery/identity',
+    action((service, session, request) =>
+      service.identity(
+        session,
+        hash.parse(request.params.orderId),
+        identityInput.parse(request.body),
+        true,
+      ),
+    ),
+  );
   router.post(
     '/:orderId/identity',
     action((service, session, request) =>

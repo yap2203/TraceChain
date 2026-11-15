@@ -162,6 +162,104 @@ describe('production flow service', () => {
     };
     service = createService(gateway, repository, manufacturerAuth(), encryptedWrites);
   });
+  it('binds delivery identity to a Supplier presenter and authorized Distributor verifier', async () => {
+    const deliveryService = createService(
+      gateway,
+      repository,
+      distributorAuth(),
+      encryptedWrites,
+      undefined,
+      async () => true,
+    );
+    const context = {
+      orderId: id('delivery-proof'),
+      deliveryOrderId: id('delivery-order'),
+      buyer: SUPPLIER,
+      seller: DISTRIBUTOR,
+      batchId: BATCH_ID,
+      purpose: 'Check Supplier before collection',
+      expiresAt: Math.floor(NOW.getTime() / 1000) + 600,
+      requiredClaims: ['role', 'walletAddress'],
+      optionalClaims: ['companyName'],
+    };
+    await deliveryService.startOrderIdentity('session', context);
+    const record = evidence.get(context.orderId)!;
+    expect(record.identityProof).toMatchObject({
+      presenterRole: CompanyRole.SUPPLIER,
+      presenterWallet: SUPPLIER,
+      audience: DISTRIBUTOR.toLowerCase(),
+      status: 'REQUESTED',
+    });
+    expect(record.deliveryOrderId).toBe(context.deliveryOrderId);
+    const supplier = createService(
+      gateway,
+      repository,
+      supplierAuth(),
+      encryptedWrites,
+      undefined,
+      async () => true,
+    );
+    await expect(
+      supplier.getCompanyIdentityProofStatus('session', context.orderId),
+    ).resolves.toMatchObject({ status: 'REQUESTED' });
+    const wrong = createService(
+      gateway,
+      repository,
+      manufacturerAuth(),
+      encryptedWrites,
+      undefined,
+      async () => true,
+    );
+    await expect(
+      wrong.getCompanyIdentityProofMaterial('session', context.orderId),
+    ).rejects.toMatchObject({ code: 'IDENTITY_PROOF_ACCESS_DENIED' });
+    await supplier.declineCompanyIdentityProof('session', context.orderId);
+    await expect(
+      supplier.declineCompanyIdentityProof('session', context.orderId),
+    ).rejects.toMatchObject({ code: 'IDENTITY_PROOF_REPLAY' });
+    const stale = createService(
+      gateway,
+      repository,
+      supplierAuth(),
+      encryptedWrites,
+      undefined,
+      async () => false,
+    );
+    await expect(
+      stale.getCompanyIdentityProofStatus('session', context.orderId),
+    ).rejects.toMatchObject({ code: 'IDENTITY_PROOF_ACCESS_DENIED' });
+  });
+  it('does not treat an expired delivery proof as currently verified', async () => {
+    const deliveryService = createService(
+      gateway,
+      repository,
+      distributorAuth(),
+      encryptedWrites,
+      undefined,
+      async () => true,
+    );
+    const context = {
+      orderId: id('expired-delivery-proof'),
+      deliveryOrderId: id('delivery-order'),
+      buyer: SUPPLIER,
+      seller: DISTRIBUTOR,
+      batchId: BATCH_ID,
+      purpose: 'Check Supplier',
+      expiresAt: Math.floor(NOW.getTime() / 1000) + 600,
+      requiredClaims: ['role'],
+    };
+    await deliveryService.startOrderIdentity('session', context);
+    const proof = evidence.get(context.orderId)!.identityProof!;
+    proof.status = 'VERIFIED';
+    proof.expiresAt = Math.floor(NOW.getTime() / 1000) - 1;
+    await expect(
+      deliveryService.getCompanyIdentityProofStatus('session', context.orderId),
+    ).resolves.toMatchObject({ status: 'EXPIRED' });
+    vi.mocked(gateway.getAccess).mockResolvedValue(false);
+    await expect(
+      deliveryService.getCompanyIdentityProofStatus('session', context.orderId),
+    ).rejects.toMatchObject({ code: 'ROLE_AUTHORIZATION_REQUIRED' });
+  });
 
   it('rejects a wrong Company Role and a wallet that is no longer authorized on chain', async () => {
     const wrongRole = createService(gateway, repository, supplierAuth(), encryptedWrites);
@@ -652,6 +750,77 @@ describe('production flow service', () => {
     });
   });
 
+  it('rechecks live evidence participants and binding before any private read and whitelists inbox context', async () => {
+    const prepared = await service.prepareEvidenceRequest('session', requestInput());
+    const record = evidence.get(prepared.requestId!.toLowerCase())!;
+    const chain = {
+      requester: record.requester,
+      supplier: record.supplier,
+      ingredientBatchId: record.batchId,
+      challengeHash: record.challengeHash,
+      claimsHash: record.claimsHash,
+      requestCid: record.requestCid,
+      dueAt: record.dueAt,
+      status: 1,
+      updatedAt: 0,
+      presentationCid: '',
+      presentationHash: id('none'),
+      presentationExpiresAt: 0,
+    };
+    const decrypt = vi
+      .fn()
+      .mockResolvedValue(
+        JSON.stringify({
+          requesterRole: CompanyRole.MANUFACTURER,
+          productBatchId: PRODUCT_ID,
+          challenge: 'private-challenge',
+          secret: 'not-for-inbox',
+        }),
+      );
+    const reader = new ProductionFlowService({
+      agentProvider: vi.fn(),
+      authService: manufacturerAuth(),
+      clock: () => NOW,
+      gateway,
+      repository,
+      contentStore: { decrypt, encryptAndStore: vi.fn() },
+      ingredientRepository: { find: vi.fn(), listForSupplier: vi.fn(), save: vi.fn() },
+    });
+    vi.mocked(gateway.listEvidenceRequestIds).mockResolvedValue([record.requestId]);
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({ ...chain, requester: RETAILER });
+    expect((await reader.listEvidence('session')).requests).toEqual([]);
+    expect(decrypt).not.toHaveBeenCalled();
+    await expect(reader.getEvidenceDetails('session', record.requestId)).rejects.toMatchObject({
+      code: 'ON_CHAIN_RECORD_MISMATCH',
+    });
+    await expect(reader.reviewEvidence('session', record.requestId)).rejects.toMatchObject({
+      code: 'ON_CHAIN_RECORD_MISMATCH',
+    });
+    expect(decrypt).not.toHaveBeenCalled();
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue(chain);
+    const result = await reader.listEvidence('session');
+    expect(result.requests).toHaveLength(1);
+    expect(result.requests[0]).toMatchObject({
+      productBatchId: PRODUCT_ID,
+      requesterRole: CompanyRole.MANUFACTURER,
+    });
+    expect(JSON.stringify(result)).not.toContain('private-challenge');
+    expect(JSON.stringify(result)).not.toContain('not-for-inbox');
+  });
+
+  it('rejects another Manufacturer product before storing a transfer', async () => {
+    vi.mocked(gateway.getProduct).mockResolvedValue({
+      manufacturer: RETAILER,
+      status: 1,
+      totalQuantity: '100',
+    } as any);
+    await expect(service.prepareTransfer('session', transferInput())).rejects.toMatchObject({
+      code: 'PRODUCT_NOT_TRANSFERABLE',
+    });
+    expect(encryptedWrites).toEqual([]);
+    expect(gateway.prepareTransfer).not.toHaveBeenCalled();
+  });
+
   it('keeps the legacy no-receipt-ledger evidence gate for older integrations', async () => {
     await expect(service.prepareProduct('session', productInput())).rejects.toMatchObject({
       code: 'EVIDENCE_NOT_ACCEPTED',
@@ -942,6 +1111,7 @@ function createService(
   authService: AuthService,
   encryptedWrites: string[],
   stakeholderDirectory?: StakeholderDirectory,
+  validateDeliveryIdentity?: (record: EvidenceWorkflowRecord) => Promise<boolean>,
 ) {
   const ingredientRepository: IngredientBatchWorkflowRepository = {
     find: vi.fn().mockResolvedValue(undefined),
@@ -949,6 +1119,7 @@ function createService(
     save: vi.fn(),
   };
   return new ProductionFlowService({
+    validateDeliveryIdentity,
     agentProvider: vi.fn(),
     authService,
     clock: () => NOW,
