@@ -29,6 +29,7 @@ export function Btn({
   style: sx,
   type = 'button',
   'aria-current': ariaCurrent,
+  'aria-pressed': ariaPressed,
 }: {
   children: ReactNode;
   onClick?: MouseEventHandler<HTMLButtonElement>;
@@ -40,15 +41,17 @@ export function Btn({
   style?: CSSProperties;
   type?: 'button' | 'submit';
   'aria-current'?: 'page';
+  'aria-pressed'?: boolean;
 }) {
   return (
     <button
       type={type}
       aria-current={ariaCurrent}
+      aria-pressed={ariaPressed}
       onClick={onClick}
       disabled={disabled || (!onClick && type !== 'submit')}
       title={!onClick && type !== 'submit' ? 'This action is not available yet' : undefined}
-      className={`inline-flex flex-row flex-nowrap items-center justify-center gap-[6px] font-semibold font-ui min-w-0 max-w-full border border-solid transition-all duration-150 ease-[ease] ${variants[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer opacity-100'}`}
+      className={`workspace-button inline-flex flex-row flex-nowrap items-center justify-center gap-[6px] font-semibold font-ui min-w-0 max-w-full border border-solid transition-all duration-150 ease-[ease] ${variants[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer opacity-100'}`}
       style={sx}
     >
       {icon && <span className="inline-flex items-center shrink-0">{icon}</span>}

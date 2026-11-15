@@ -31,8 +31,8 @@
     --c-border: #1c2c40;
     --c-border2: #243d5a;
     --c-text: #cdd9e5;
-    --c-text2: #5a7a96;
-    --c-text3: #334d63;
+    --c-text2: #93aac0;
+    --c-text3: #8199b0;
 
     --radius: 12px;
     --radius-sm: 8px;
@@ -65,7 +65,7 @@
     --c-border2: #cbd5e1;
     --c-text: #1e293b;
     --c-text2: #64748b;
-    --c-text3: #94a3b8;
+    --c-text3: #64748b;
 
     --shadow: 0 1px 4px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.05);
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.1), 0 2px 4px rgba(0, 0, 0, 0.06);
@@ -114,9 +114,9 @@
     @apply sticky;
     top: 0;
     align-self: flex-start;
-    @apply w-[232px] h-[100vh];
+    @apply w-[248px] h-[100dvh];
     overflow-y: auto;
-    @apply p-[20px_12px] shrink-[0] flex flex-col gap-[28px];
+    @apply p-[20px_12px] shrink-[0] flex flex-col gap-[20px];
     background: var(--c-navy-dark);
     border-right: 1px solid var(--c-border);
     color: #cdd9e5;
@@ -145,7 +145,7 @@
     color: #cdd9e5;
   }
   .workspace-sidebar nav {
-    @apply grid gap-[4px];
+    @apply grid gap-[20px];
   }
   .workspace-sidebar nav a {
     @apply leading-[1.5] flex gap-[10px] items-center p-[10px_12px] rounded-[7px] no-underline text-[length:13px];
@@ -157,6 +157,325 @@
   }
   .workspace-sidebar nav a:hover {
     background: rgba(255, 255, 255, 0.06);
+  }
+  .workspace-nav-group {
+    @apply grid gap-[3px];
+  }
+  .workspace-nav-group h2 {
+    @apply text-[10px] font-semibold uppercase tracking-[0.12em] px-[12px] mb-[5px];
+    color: #91a6bb;
+  }
+  .workspace-sidebar nav a.active {
+    box-shadow: inset 3px 0 #00e5ff;
+  }
+  .workspace-role strong {
+    @apply text-[13px] leading-relaxed;
+    color: #e1ecf5;
+    overflow-wrap: anywhere;
+  }
+  .workspace-page-guide,
+  .workspace-workflow-help {
+    @apply rounded-[10px] border border-solid border-ws-border text-[13px];
+    background: var(--c-surface);
+    color: var(--c-text2);
+  }
+  .workspace-page-guide {
+    @apply mb-[24px];
+  }
+  .workspace-page-guide summary,
+  .workspace-workflow-help summary {
+    @apply flex items-center gap-[8px] cursor-pointer p-[12px_16px] font-medium;
+    list-style: none;
+  }
+  .workspace-page-guide summary::-webkit-details-marker,
+  .workspace-workflow-help summary::-webkit-details-marker {
+    display: none;
+  }
+  .workspace-page-guide summary::after,
+  .workspace-workflow-help summary::after {
+    content: '+';
+    @apply ml-auto text-[18px];
+  }
+  .workspace-page-guide[open] summary::after,
+  .workspace-workflow-help[open] summary::after {
+    content: '−';
+  }
+  .workspace-page-guide summary svg,
+  .workspace-workflow-help summary svg {
+    @apply shrink-0;
+  }
+  .workspace-page-guide summary:focus-visible,
+  .workspace-workflow-help summary:focus-visible {
+    outline: 2px solid var(--c-teal);
+    outline-offset: 2px;
+  }
+  .workspace-page-guide ol {
+    @apply grid gap-[10px] m-0 p-[0_24px_18px_40px];
+    max-width: 90ch;
+  }
+  .workspace-workflow-help > div {
+    @apply grid gap-[8px] p-[0_16px_16px];
+    max-width: 90ch;
+  }
+  .workspace-start {
+    @apply grid grid-cols-3 gap-[16px] mb-[28px];
+  }
+  .workspace-metrics {
+    @apply grid grid-cols-4 gap-[16px];
+  }
+  .workspace-stat-card-content {
+    @apply flex items-start justify-between gap-[10px];
+  }
+  .workspace-stat-card-content > div:last-child:not(:first-child) {
+    @apply shrink-0;
+  }
+  .workspace-start a {
+    @apply grid gap-[8px] min-w-0 p-[18px] rounded-[12px] no-underline border border-solid border-ws-border;
+    background: var(--c-surface);
+  }
+  .workspace-start a:hover {
+    border-color: var(--c-teal);
+    background: var(--c-surface2);
+  }
+  .workspace-start strong {
+    @apply flex justify-between items-center gap-[12px] text-[14px];
+    color: var(--c-navy);
+  }
+  .workspace-start strong svg {
+    @apply shrink-0;
+    color: var(--c-teal);
+  }
+  .workspace-start span {
+    @apply text-[12px] leading-relaxed;
+    color: var(--c-text2);
+  }
+  .workspace-task-toolbar {
+    @apply flex flex-wrap items-center gap-[8px] rounded-[12px] p-[12px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+  }
+  .workspace-task-toolbar > button:last-child {
+    @apply ml-auto;
+  }
+  .workspace-card > :is(h3, h4),
+  .delivery-panel h4 {
+    @apply m-0 text-[15px] font-semibold;
+    color: var(--c-navy);
+  }
+  .workspace-card > :is(h3, h4) + *,
+  .workspace-card > p + p {
+    @apply mt-[8px];
+  }
+  .workspace-card > p {
+    @apply text-[13px] leading-relaxed;
+  }
+  .workspace-button {
+    min-height: 32px;
+  }
+  .workspace-editor {
+    @apply w-full max-w-[1100px] mx-auto;
+  }
+  .workspace-step-progress {
+    @apply grid gap-[12px] list-none p-0 mb-[24px] mt-0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+  }
+  .workspace-step-progress li {
+    @apply flex items-center gap-[10px] p-[12px] rounded-[10px] text-[12px] font-medium min-w-0;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+    color: var(--c-text2);
+  }
+  .workspace-step-progress li[aria-current='step'] {
+    border-color: var(--c-teal);
+    background: var(--c-teal-light);
+    color: var(--c-teal);
+  }
+  .workspace-step-number {
+    @apply inline-flex items-center justify-center shrink-0 w-[28px] h-[28px] rounded-full font-bold;
+    border: 1px solid var(--c-border2);
+  }
+  .workspace-step-progress .is-complete .workspace-step-number {
+    color: var(--c-green);
+    background: var(--c-green-bg);
+    border-color: var(--c-green);
+  }
+  .workspace-step-progress [aria-current='step'] .workspace-step-number {
+    background: var(--c-teal);
+    color: var(--c-on-accent);
+    border-color: var(--c-teal);
+  }
+  .workspace-editor > .workspace-card + .workspace-card {
+    @apply mt-[20px];
+  }
+  .workspace-editor > .workspace-card {
+    @apply grid gap-[16px];
+  }
+  .workspace-profile-settings {
+    @apply my-[16px] rounded-[12px] border border-solid border-ws-border;
+    background: var(--c-surface);
+  }
+  .workspace-profile-settings > summary {
+    @apply cursor-pointer p-[16px] font-semibold text-[13px];
+    color: var(--c-navy);
+  }
+  .workspace-profile-settings > .workspace-card {
+    @apply border-0 shadow-none;
+  }
+  .workspace-choice-tabs {
+    @apply grid grid-cols-4 gap-[8px] mb-[24px];
+  }
+  .workspace-choice-tabs > button {
+    @apply min-w-0;
+  }
+  .workspace-report-note {
+    @apply mb-[20px];
+  }
+  .workspace-report-note > p {
+    @apply text-[13px] mb-[8px];
+    color: var(--c-text2);
+  }
+  .workspace-secondary-tabs {
+    @apply flex flex-wrap gap-[8px];
+    border-bottom: 1px solid var(--c-border);
+    padding-bottom: 12px;
+  }
+  .workspace-list-guidance {
+    @apply text-[13px];
+    color: var(--c-text2);
+  }
+  .workspace-table-scroll {
+    @apply max-w-full overflow-x-auto rounded-[12px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+  }
+  .workspace-table-scroll:focus-visible {
+    outline: 2px solid var(--c-teal);
+    outline-offset: 3px;
+  }
+  .workspace-table-scroll thead {
+    @apply text-[11px] uppercase tracking-wide;
+    background: var(--c-surface2);
+    color: var(--c-text2);
+  }
+  .workspace-application-row {
+    @apply flex flex-wrap items-center justify-between gap-[12px] py-[16px];
+    border-top: 1px solid var(--c-border);
+  }
+  .workspace-application-row p {
+    @apply text-[12px] mt-[4px];
+    color: var(--c-text2);
+  }
+  .workspace-section-title h2,
+  .orders-page-header h2 {
+    @apply text-[22px] font-bold leading-snug tracking-[-0.02em];
+  }
+  .workspace-section-title p,
+  .orders-page-header p {
+    @apply text-[13px] leading-relaxed;
+    color: var(--c-text2);
+    max-width: 76ch;
+  }
+  .delivery-panel {
+    background: var(--c-surface);
+  }
+  .delivery-action-section,
+  .delivery-panel > section[aria-label='Choose delivery mode'] {
+    @apply rounded-[10px] p-[18px];
+    background: var(--c-surface2);
+    border: 1px solid var(--c-border2);
+  }
+  .delivery-panel > p,
+  .delivery-action-section > p {
+    @apply text-[13px] leading-relaxed;
+    color: var(--c-text2);
+  }
+  .delivery-panel > strong[role='status'] {
+    @apply p-[12px_16px] rounded-[8px] text-[14px];
+    background: var(--c-teal-light);
+    color: var(--c-teal);
+  }
+  .delivery-panel ol li[aria-current='step'] {
+    border-color: var(--c-teal);
+    background: var(--c-teal-light);
+  }
+  .delivery-action-section > button {
+    justify-self: start;
+    align-self: end;
+  }
+  @container workspace (max-width: 760px) {
+    .workspace-metrics {
+      @apply grid-cols-2 gap-[12px];
+    }
+    .workspace-choice-tabs {
+      @apply grid-cols-2;
+    }
+    .workspace-start {
+      @apply grid-cols-1;
+    }
+    .delivery-panel :is(.sm\:grid-cols-2, .sm\:grid-cols-3) {
+      grid-template-columns: minmax(0, 1fr) !important;
+    }
+  }
+  @container workspace (max-width: 560px) {
+    .workspace-content .supplier-request-row {
+      grid-template-columns: 68px minmax(0, 1fr);
+      gap: 14px;
+    }
+    .workspace-content .supplier-request-row > .catalogue-image {
+      grid-column: 1;
+      width: 68px;
+      height: 68px;
+      min-height: 0;
+      aspect-ratio: 1;
+      align-self: start;
+    }
+    .workspace-content .supplier-request-row .catalogue-image span {
+      display: none;
+    }
+    .workspace-content .supplier-request-item-info {
+      grid-column: 2;
+    }
+    .workspace-content .supplier-request-facts,
+    .workspace-content .supplier-request-state,
+    .workspace-content .supplier-request-action {
+      grid-column: 1 / -1;
+    }
+    .workspace-content .supplier-request-facts {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+  @media (max-width: 720px), (pointer: coarse) {
+    .workspace-button,
+    .workspace-theme,
+    .workspace-menu,
+    .workspace-sidebar nav a {
+      min-height: 44px;
+    }
+  }
+  @media (max-width: 480px) {
+    .workspace-company {
+      display: none;
+    }
+    .workspace-header h1 {
+      flex: 1;
+    }
+  }
+  @container workspace (max-width: 440px) {
+    .workspace-section-title > div:last-child:not(:first-child),
+    .workspace-section-title > div:last-child:not(:first-child) > button,
+    .delivery-action-section > button {
+      @apply w-full;
+    }
+    .workspace-task-toolbar > button {
+      @apply grow;
+    }
+    .workspace-task-toolbar > button:last-child {
+      @apply ml-0;
+    }
+    .workspace-section-title h2,
+    .orders-page-header h2 {
+      @apply text-[20px];
+    }
   }
   .workspace-sidebar-footer {
     @apply grid gap-[4px] mt-[auto] p-[16px_8px];
@@ -242,7 +561,8 @@
   .workspace-content {
     @apply w-[100%];
     container: workspace / inline-size;
-    @apply max-w-[1220px] p-[28px] m-[0_auto];
+    @apply max-w-full m-[0_auto];
+    padding: clamp(16px, 2.2vw, 36px);
     overflow-wrap: anywhere;
   }
   .workspace-content :is(div, section, article, form, fieldset, label, details, dl, dd) {
@@ -1529,6 +1849,191 @@
     .ingredient-document-progress,
     .supplier-request-loading__row {
       animation: none;
+    }
+  }
+}
+
+@layer components {
+  .workspace-flow-page {
+    @apply grid min-w-0 gap-[20px];
+  }
+  .workspace-location-actions {
+    @apply flex flex-wrap gap-[8px];
+  }
+  .trace-stage-bar {
+    @apply grid grid-cols-5 gap-[10px] min-w-0;
+  }
+  .trace-stage-bar button {
+    @apply grid min-w-0 gap-[8px] text-left p-[16px] rounded-[12px] text-[12px] cursor-pointer;
+    border: 1px solid var(--c-border2);
+    background: var(--c-surface);
+    color: var(--c-text2);
+  }
+  .trace-stage-bar button strong {
+    color: var(--c-navy);
+  }
+  .trace-stage-bar button.is-selected {
+    border-color: var(--c-teal);
+    background: var(--c-teal-light);
+  }
+  .trace-stage-number {
+    @apply flex items-center justify-center h-[28px] w-[28px] rounded-full font-bold;
+    background: var(--c-surface2);
+    border: 1px solid var(--c-border2);
+    color: var(--c-navy);
+  }
+  .trace-stage-bar button.is-selected .trace-stage-number {
+    background: var(--c-teal);
+    border-color: var(--c-teal);
+    color: var(--c-on-accent);
+  }
+  .trace-record-grid,
+  .workspace-profile-locations {
+    @apply grid gap-[16px];
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  }
+  .trace-record {
+    @apply grid gap-[12px] min-w-0 p-[16px] rounded-[10px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .trace-record dl {
+    @apply grid gap-[12px] m-0;
+  }
+  .trace-record dt {
+    @apply text-[11px] mb-[3px];
+    color: var(--c-text2);
+  }
+  .trace-record dd {
+    @apply text-[13px] font-medium m-0;
+  }
+  .workspace-profile-form {
+    @apply grid gap-[12px] items-end;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .workspace-profile-form > button {
+    justify-self: start;
+  }
+  .workspace-location-heading {
+    @apply flex items-center gap-[10px] mb-[16px];
+    color: var(--c-navy);
+  }
+  .workspace-location-heading svg {
+    @apply shrink-0;
+    color: var(--c-teal);
+  }
+  .workspace-location-heading h3 {
+    @apply text-[16px];
+  }
+  .workspace-pickup-plan {
+    @apply grid gap-[12px] p-[16px] rounded-[12px];
+    background: var(--c-teal-light);
+    border: 1px solid var(--c-border2);
+  }
+  .workspace-pickup-plan h4 {
+    @apply flex gap-[8px] items-center m-0;
+    color: var(--c-navy);
+  }
+  .workspace-request-section {
+    @apply border-t border-solid border-ws-border pt-[24px] mt-[8px];
+  }
+  .order-lifecycle {
+    @apply grid gap-[16px] p-[16px] rounded-[12px];
+    background: var(--c-surface2);
+    border: 1px solid var(--c-border2);
+  }
+  .order-lifecycle ol {
+    @apply grid grid-cols-4 list-none gap-[8px] m-0 p-0;
+  }
+  .order-lifecycle li {
+    @apply flex items-center gap-[8px] text-[12px] p-[10px] rounded-[8px];
+    color: var(--c-text2);
+    border: 1px solid var(--c-border);
+  }
+  .order-lifecycle li > span {
+    @apply inline-flex shrink-0 items-center justify-center w-[24px] h-[24px] rounded-full;
+    border: 1px solid var(--c-border2);
+  }
+  .order-lifecycle li.is-complete {
+    color: var(--c-green);
+  }
+  .order-lifecycle li[aria-current='step'] {
+    background: var(--c-teal-light);
+    border-color: var(--c-teal);
+    color: var(--c-teal);
+  }
+  .order-next-action {
+    @apply grid gap-[10px] text-[13px];
+  }
+  @container workspace (max-width:900px) {
+    .trace-stage-bar {
+      @apply grid-cols-3;
+    }
+  }
+  @container workspace (max-width:600px) {
+    .trace-stage-bar {
+      @apply grid-cols-1;
+    }
+    .trace-stage-bar button {
+      grid-template-columns: 28px minmax(0, 1fr);
+      align-items: center;
+      gap: 6px 12px;
+    }
+    .trace-stage-bar button > span:last-child {
+      grid-column: 2;
+    }
+    .trace-stage-number {
+      grid-row: 1/3;
+    }
+    .workspace-profile-form {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .order-lifecycle ol {
+      @apply grid-cols-2;
+    }
+    .workspace-profile-form > button {
+      @apply w-full;
+    }
+  }
+}
+@layer components {
+  .workspace-offer-form,
+  .workspace-offer-facts {
+    @apply grid grid-cols-2 gap-[16px] mb-[20px];
+  }
+  .workspace-offer-facts dt {
+    @apply text-[12px] mb-[4px];
+    color: var(--c-text2);
+  }
+  .workspace-offer-facts dd {
+    @apply m-0 text-[14px] font-medium;
+  }
+  .custody-offer-progress {
+    @apply grid grid-cols-5 gap-[8px] list-none p-0 mb-[24px] mt-0;
+  }
+  .custody-offer-progress li {
+    @apply grid gap-[8px] p-[12px] rounded-[8px] text-[12px];
+    border: 1px solid var(--c-border);
+    color: var(--c-text2);
+  }
+  .custody-offer-progress li > span {
+    @apply flex items-center justify-center w-[26px] h-[26px] rounded-full;
+    border: 1px solid var(--c-border2);
+  }
+  .custody-offer-progress li[aria-current='step'] {
+    border-color: var(--c-teal);
+    color: var(--c-teal);
+    background: var(--c-teal-light);
+  }
+  @container workspace (max-width:760px) {
+    .custody-offer-progress {
+      @apply grid-cols-2;
+    }
+  }
+  @container workspace (max-width:560px) {
+    .workspace-offer-form,
+    .workspace-offer-facts {
+      @apply grid-cols-1;
     }
   }
 }

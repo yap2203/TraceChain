@@ -1,7 +1,8 @@
 import { BrowserProvider, ZeroHash, hexlify, id, isAddress, randomBytes } from 'ethers';
 import { Check, ChevronLeft, ChevronRight, FileCheck2, Link2, UploadCloud } from 'lucide-react';
-import { useState, type ChangeEvent, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { notify, readableError } from '../../components/ui/feedback';
 
 import { Brand } from '../../components/brand/Brand';
 import { Button, Card, Input, Select, StatusBadge } from '../../components/ui';
@@ -27,6 +28,7 @@ const roleValues: Record<string, number> = {
 
 interface RegistrationData {
   address: string;
+  initialLocationName: string;
   companyDid: string;
   companyEmail: string;
   companyName: string;
@@ -40,6 +42,7 @@ interface RegistrationData {
 }
 const initialData: RegistrationData = {
   address: '',
+  initialLocationName: '',
   companyDid: '',
   companyEmail: '',
   companyName: '',
@@ -87,6 +90,7 @@ function DocumentUpload({
 }
 
 export function RegisterCompanyPage() {
+  const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [data, setData] = useState(initialData);
   const [documents, setDocuments] = useState<Record<string, File>>({});
@@ -94,6 +98,9 @@ export function RegisterCompanyPage() {
   const [connecting, setConnecting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [transaction, setTransaction] = useState<{ applicationId: string; hash: string }>();
+  useEffect(() => {
+    if (error) notify(error, 'error');
+  }, [error]);
   const update = (field: keyof RegistrationData, value: string | boolean) => {
     setData((current) => ({ ...current, [field]: value }));
     setError('');
@@ -105,6 +112,7 @@ export function RegisterCompanyPage() {
       ['companyEmail', 'Company email', 254],
       ['contactNumber', 'Contact number', 40],
       ['address', 'Business address', 1000],
+      ['initialLocationName', 'Primary location name', 160],
       ['representativeName', 'Authorised representative', 160],
       ['representativePosition', 'Representative position', 120],
     ] as const) {
@@ -241,6 +249,7 @@ export function RegisterCompanyPage() {
         applicationId,
         companyName: data.companyName.trim(),
         companyRegistrationNumber: data.registrationNumber.trim(),
+        initialLocationName: data.initialLocationName.trim(),
         encryptedProfileCid: localContentReference,
         previousApplicationId: ZeroHash,
         profileHash,
@@ -250,10 +259,16 @@ export function RegisterCompanyPage() {
         throw new Error('The API transaction targets a different chain.');
       const pending = await sendPreparedTransaction(signer, prepared);
       const receipt = await pending.wait();
-      if (!receipt) throw new Error('The transaction was not confirmed.');
+      if (!receipt || receipt.status !== 1)
+        throw new Error('The application transaction was not confirmed successfully.');
       setTransaction({ applicationId, hash: receipt.hash });
+      notify(
+        'Application submitted successfully. Sign in to check its approval status.',
+        'success',
+      );
+      navigate('/login', { replace: true });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The local blockchain transaction failed.');
+      setError(readableError(cause, 'The application could not be submitted. Please try again.'));
     } finally {
       setSubmitting(false);
     }
@@ -336,6 +351,18 @@ export function RegisterCompanyPage() {
                     onChange={(e) => update('contactNumber', e.target.value)}
                     type="tel"
                     value={data.contactNumber}
+                  />
+                  <Input
+                    label={
+                      data.requestedRole === 'DISTRIBUTOR'
+                        ? 'Primary warehouse name *'
+                        : 'Primary dispatch / receiving location name *'
+                    }
+                    required
+                    maxLength={160}
+                    value={data.initialLocationName}
+                    onChange={(event) => update('initialLocationName', event.target.value)}
+                    placeholder="Name this location for orders and deliveries"
                   />
                   <label className="field registration-field--wide">
                     <span className="field__label">Business address *</span>

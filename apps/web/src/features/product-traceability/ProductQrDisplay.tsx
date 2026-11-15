@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { Check, Clipboard, Download, Printer, QrCode } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -37,7 +38,7 @@ export function ProductQrDisplay({
       };
     } catch (error) {
       return {
-        error: error instanceof Error ? error.message : 'The product QR could not be created.',
+        error: reportError(error, 'The product QR could not be created.'),
       };
     }
   }, [batchId, configuration, encodedPayload]);

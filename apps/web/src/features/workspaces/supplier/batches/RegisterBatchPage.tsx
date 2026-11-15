@@ -1,3 +1,4 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { FileSearch, Keyboard, Upload } from 'lucide-react';
 
@@ -127,9 +128,10 @@ export function RegisterBatch({
       setAllergen(result.fields.allergenInformation.value);
     } catch (caught) {
       setError(
-        caught instanceof Error
-          ? caught.message
-          : 'The document could not be processed. Enter the values manually instead.',
+        reportError(
+          caught,
+          'The document could not be processed. Enter the values manually instead.',
+        ),
       );
     } finally {
       setExtracting(false);
@@ -224,18 +226,15 @@ export function RegisterBatch({
           setImageNotice('Supplier-provided presentation image uploaded successfully.');
         } catch (imageError) {
           setError(
-            `The batch was registered successfully, but its optional image could not be uploaded. ${
-              imageError instanceof Error
-                ? imageError.message
-                : 'Add the image later from View details.'
-            }`,
+            `The batch was registered successfully, but its optional image could not be uploaded. ${reportError(
+              imageError,
+              'Add the image later from View details.',
+            )}`,
           );
         }
       }
     } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : 'The ingredient batch could not be registered.',
-      );
+      setError(reportError(caught, 'The ingredient batch could not be registered.'));
     } finally {
       activeSubmission.current = false;
       setBusy(false);
@@ -252,7 +251,7 @@ export function RegisterBatch({
           Register Ingredient Batch
         </h2>
       </div>
-      <div style={{ maxWidth: 700, margin: '0 auto' }}>
+      <div className="workspace-editor">
         {error && <Alert type="error" message={error} />}
 
         {entryMode === 'choose' && (

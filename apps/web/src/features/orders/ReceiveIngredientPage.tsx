@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
 import { CompanyRole, decodeIngredientDeliveryQr } from '@tracechain/shared';
 import { useWalletAuthentication } from '../auth/useWalletAuthentication';
@@ -85,7 +86,10 @@ export function ReceiveIngredientPage() {
           )}
           {error && <Alert type="error" message={error} />}
           {allowed && !data && !error && (
-            <p role="status">Checking the delivery against the configured blockchain…</p>
+            <LoadingIndicator
+              page
+              label="Checking the delivery against the configured blockchain…"
+            />
           )}
           {allowed &&
             data &&

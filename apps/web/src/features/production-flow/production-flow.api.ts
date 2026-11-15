@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../components/ui/feedback';
 import type { CompanyRole } from '@tracechain/shared';
 
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
@@ -19,7 +20,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
-    throw new Error(body.error?.message ?? 'The production workflow request failed.');
+    throw new Error(
+      apiErrorMessage(body.error?.message, 'The production workflow request failed.'),
+    );
   }
   return response.json() as Promise<T>;
 }

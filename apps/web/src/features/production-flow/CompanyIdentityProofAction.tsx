@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 
 import {
@@ -43,7 +44,7 @@ export function CompanyIdentityProofAction({
     try {
       setMaterial(await getCompanyIdentityProofMaterial(requestId));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Identity preview failed.');
+      setError(reportError(cause, 'Identity preview failed.'));
     } finally {
       setBusy(false);
     }
@@ -62,7 +63,7 @@ export function CompanyIdentityProofAction({
       await sendCompanyIdentityPresentationMessage(requestId, presentation);
       setStatus(await presentCompanyIdentityProof(requestId, presentation));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Identity presentation failed.');
+      setError(reportError(cause, 'Identity presentation failed.'));
     } finally {
       setBusy(false);
     }
@@ -75,7 +76,7 @@ export function CompanyIdentityProofAction({
       setStatus(await declineCompanyIdentityProof(requestId));
       setMaterial(undefined);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Identity request rejection failed.');
+      setError(reportError(cause, 'Identity request rejection failed.'));
     } finally {
       setBusy(false);
     }

@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { CheckCircle, ClipboardList, Package, Store } from 'lucide-react';
 import { useOperationalData } from '../../blockchain/useOperationalData';
 import { Alert, Badge, Btn, Card, EmptyState, StatCard, T } from '../shared/ui';
@@ -12,10 +13,11 @@ export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
         index,
     )
     .reduce((sum, transfer) => sum + BigInt(transfer.inventory.available), 0n);
+  if (loading) return <LoadingIndicator page label="Loading records…" />;
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       {error && <Alert type="error" message={error} />}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
+      <div className="workspace-metrics">
         <StatCard
           label="Incoming Shipments"
           value={loading ? '…' : String(incoming.length)}

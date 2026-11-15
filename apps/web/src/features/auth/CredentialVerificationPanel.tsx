@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 
 import type { CompanyRole } from '@tracechain/shared';
@@ -70,9 +71,7 @@ export function CredentialVerificationPanel({
       }
       await onPresent(parsed as Record<string, unknown>);
     } catch (error) {
-      setFileError(
-        error instanceof Error ? error.message : 'The credential file could not be read.',
-      );
+      setFileError(reportError(error, 'The credential file could not be read.'));
     } finally {
       if (input.current) input.current.value = '';
     }

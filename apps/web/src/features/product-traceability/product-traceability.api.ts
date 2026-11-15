@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../components/ui/feedback';
 import type { ProductTraceabilityResponse } from './product-traceability.types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
@@ -27,7 +28,10 @@ export async function resolveProductTraceability(qrPayload: string) {
       error?: { code?: string; message?: string };
     };
     throw new ProductTraceabilityApiError(
-      body.error?.message ?? 'The product traceability record could not be resolved.',
+      apiErrorMessage(
+        body.error?.message,
+        'The product traceability record could not be resolved.',
+      ),
       body.error?.code ?? 'TRACEABILITY_ERROR',
       response.status,
     );

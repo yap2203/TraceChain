@@ -1,3 +1,4 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
@@ -39,8 +40,7 @@ export function IngredientBatchDetail({
         if (active) setBatch(batches.find((candidate) => candidate.batchId === batchId) ?? null);
       })
       .catch((caught: unknown) => {
-        if (active)
-          setError(caught instanceof Error ? caught.message : 'The batch could not be loaded.');
+        if (active) setError(reportError(caught, 'The batch could not be loaded.'));
       });
     return () => {
       active = false;
@@ -51,7 +51,7 @@ export function IngredientBatchDetail({
   if (batch === undefined)
     return (
       <Card>
-        <LoadingIndicator label="Loading ingredient batch" />
+        <LoadingIndicator page label="Loading ingredient batch" />
       </Card>
     );
   if (!batch)

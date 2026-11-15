@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useEffect, useState } from 'react';
 import { CompanyRole, decodeShipmentQr } from '@tracechain/shared';
 import { useWalletAuthentication } from '../auth/useWalletAuthentication';
@@ -9,7 +10,12 @@ import '../workspaces/workspace.css';
 
 export function ReceiveShipmentPage() {
   const auth = useWalletAuthentication();
-  const [record, setRecord] = useState<{ actor: string; shipmentId: string }>();
+  const [record, setRecord] = useState<{
+    actor: string;
+    shipmentId: string;
+    productOrderId?: string;
+    kind: 'ingredient' | 'product';
+  }>();
   const [error, setError] = useState('');
   const role = (
     {
@@ -18,7 +24,13 @@ export function ReceiveShipmentPage() {
       [CompanyRole.DISTRIBUTOR]: 'distributor',
       [CompanyRole.RETAILER]: 'retailer',
     } as const
-  )[auth.state.role as CompanyRole.SUPPLIER];
+  )[
+    auth.state.role as
+      | CompanyRole.SUPPLIER
+      | CompanyRole.MANUFACTURER
+      | CompanyRole.DISTRIBUTOR
+      | CompanyRole.RETAILER
+  ];
   const allowed = auth.state.phase === 'authenticated' && auth.state.authorizationReady && !!role;
   useEffect(() => {
     let active = true;
@@ -32,13 +44,26 @@ export function ReceiveShipmentPage() {
             ordersAddress: data.ordersAddress!,
             publicAppUrl: import.meta.env.VITE_PUBLIC_APP_URL,
           });
+          const pickup = data.orders.find(
+            (entry) =>
+              entry.orderId.toLowerCase() === decoded.shipmentId.toLowerCase() &&
+              entry.productDelivery?.distributor?.toLowerCase() === data.actor.toLowerCase() &&
+              Number(entry.productDelivery.stage) === 3,
+          );
           if (
+            !pickup &&
             !data.logistics?.shipments.some(
               (entry) => entry.shipmentId.toLowerCase() === decoded.shipmentId.toLowerCase(),
             )
           )
             throw new Error('This shipment is unavailable to your company.');
-          if (active) setRecord({ actor: data.actor, shipmentId: decoded.shipmentId });
+          if (active)
+            setRecord({
+              actor: data.actor,
+              shipmentId: pickup ? '' : decoded.shipmentId,
+              productOrderId: pickup?.orderId,
+              kind: decoded.kind,
+            });
         })
         .catch((cause) => {
           if (active) setError(cause.message);
@@ -66,13 +91,16 @@ export function ReceiveShipmentPage() {
         )}
         {error && <Alert type="error" message={error} />}
         {allowed && !record && !error && (
-          <p role="status">Checking the shipment and your company authorization…</p>
+          <LoadingIndicator page label="Checking the shipment and your company authorization…" />
         )}
         {allowed && record && record.actor.toLowerCase() === auth.state.address?.toLowerCase() && (
           <ShipmentsWorkspace
             key={record.actor}
             role={role}
+            initialKind={record.kind}
+            section={role === 'distributor' && !record.productOrderId ? 'intake' : 'tracking'}
             initialShipmentId={record.shipmentId}
+            initialOrderId={record.productOrderId}
             initialQr={window.location.href}
           />
         )}

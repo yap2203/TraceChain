@@ -1,5 +1,30 @@
 # TraceChain API
 
+## Retailer product-order delivery
+
+`GET /api/orders` reports `productDeliverySupported`, participant-scoped `productDelivery` and
+`productDeliveryQr` records. The gateway discovers the ProductDelivery child from CustodyTransfer.
+Assigned direct carriers are included in the operational shipment projection. Buyer/seller private
+notes are not exposed to carriers. Manufacturer custody projections contain only its own products.
+
+`POST /api/orders/logistics/prepare` accepts these unsigned-transaction actions:
+
+| Action | Fields besides operationId/orderId | Authorized actor |
+| --- | --- | --- |
+| `product-order-select` | mode 1/2, distributor, fromLocation, toLocation | Original Manufacturer |
+| `product-order-respond` | accept | Assigned direct Distributor |
+| `product-order-dispatch` | vehicle, occurredAt, expectedAt; qrPayload mandatory for direct pickup | Assigned Distributor |
+| `product-order-close` | none | Manufacturer before dispatch; actual participants for expired cleanup |
+
+Existing product shipment receipt preparation remains recipient-only, uses the final shipment QR
+and completes the coordinator through CustodyTransfer. Existing delivery company-proof endpoints
+resolve either ingredient or product coordinators from the exact context; they do not assume that
+all seller credentials are Supplier credentials. Requested Manufacturer proof is verified separately
+and its on-chain attestation gates pickup/dispatch. No new login prerequisite is added.
+
+See [the product request/delivery test flow](../testing/PRODUCT_DISTRIBUTOR_RETAILER_FLOW.md) for
+setup, stock timing, privacy and the current local deployment limitation.
+
 ## Supplier-selected ingredient fulfilment
 
 Normal ingredient `request` preparation no longer requires `positionId`. The Manufacturer supplies
@@ -433,6 +458,28 @@ SIWE proves control of a wallet address only. Workspace authorization comes from
 Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend verifies the chain ID and sends the transaction through MetaMask. The API never signs on behalf of a stakeholder, so Solidity still receives the user's wallet as `msg.sender`.
 
 ## Storage and production limitations
+
+### Role workflows (2026-11-16)
+
+- `GET /api/orders/traceability?kind=ingredient|product&batchId=<bytes32>` returns company-scoped
+  trace roots and safe linked batch/event stages. Unrelated roots are not available. The response is
+  not a credential-signature verification result and contains no private proof or stock payloads.
+- `GET /api/orders/profile` returns only the session company's locations and optional initial draft.
+  `PATCH /api/orders/profile/locations/:location` accepts `{label}` for an owner-only display alias;
+  original location IDs and registered names stay fixed.
+- `GET|PUT /api/orders/:referenceId/pickup` reads/saves `{pickupAt}` for accepted direct carriers.
+  Only actual participants may read and only the accepted Distributor may arrange pickup.
+- `GET|POST /api/orders/custody-offers` lists participant offers/creates an owned-stock offer.
+  `GET /api/orders/custody-offers/:offerId` returns one authorized offer.
+  `POST .../:offerId/action` accepts `accept`, `reject` or `schedule` plus `pickupAt` for schedule.
+  `POST .../:offerId/prepare` returns unsigned existing dispatch calldata after checking sender,
+  pickup, source, route, expiry, participant authorization and requested company proof.
+- Custody sender proof reuses `POST /api/orders/:referenceId/delivery/identity`, bound to the offer,
+  batch and parties. No on-chain proof attestation is fabricated for the off-chain offer.
+
+Offer decisions, schedules and location aliases use existing encrypted content and atomic JSON
+workflow storage. The API can decrypt them. They are not on-chain reservations or receipts; signed
+dispatch and exact-QR physical receipt remain authoritative. All these routes return `no-store`.
 
 Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Nonces are wallet-bound, expire after five minutes, and are atomically single-use in the supported single-process model. Nonce creation and verification are rate-limited per wallet, expired records are cleaned opportunistically, and state-changing browser requests with an unexpected `Origin` are rejected. Cookies are HttpOnly, SameSite=Lax, explicitly expiring, and Secure in production. Production deployment still requires shared atomic repositories, trusted proxy configuration, HTTPS, monitoring, and stronger distributed rate limiting.
 

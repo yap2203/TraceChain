@@ -149,11 +149,23 @@ export class ProductionFlowService {
         403,
       );
     const currentRole = context.deliveryOrderId
-      ? CompanyRole.SUPPLIER
+      ? (await this.dependencies.gateway.isRoleAuthorized(context.buyer, 2))
+        ? CompanyRole.SUPPLIER
+        : CompanyRole.MANUFACTURER
       : (await this.dependencies.gateway.isRoleAuthorized(context.buyer, 3))
         ? CompanyRole.MANUFACTURER
         : CompanyRole.RETAILER;
     const previous = await this.dependencies.repository.findEvidence(context.orderId);
+    if (
+      context.deliveryOrderId &&
+      currentRole === CompanyRole.MANUFACTURER &&
+      !(await this.dependencies.gateway.isRoleAuthorized(context.buyer, 3))
+    )
+      throw new ProductionFlowApiError(
+        'ROLE_AUTHORIZATION_REQUIRED',
+        'The delivery seller must be a currently authorized Supplier or Manufacturer.',
+        403,
+      );
     if (previous?.identityProof && previous.identityProof.expiresAt > this.nowSeconds()) {
       if (
         previous.identityProof.purpose === context.purpose &&
@@ -1984,7 +1996,9 @@ export class ProductionFlowService {
         : this.requireEitherRole(sessionId);
     const session = await this.dependencies.authService.requireSession(sessionId);
     if (sameAddress(session.address, workflow.requester))
-      return this.requireRole(sessionId, CompanyRole.SUPPLIER, 'ISSUE_INGREDIENT_CREDENTIAL');
+      return workflow.identityProof?.presenterRole === CompanyRole.MANUFACTURER
+        ? this.requireRole(sessionId, CompanyRole.MANUFACTURER, 'INITIATE_TRANSFER')
+        : this.requireRole(sessionId, CompanyRole.SUPPLIER, 'ISSUE_INGREDIENT_CREDENTIAL');
     if (!presenter && sameAddress(session.address, workflow.supplier))
       return this.requireRole(sessionId, CompanyRole.DISTRIBUTOR, 'RECEIVE_TRANSFER');
     throw new ProductionFlowApiError(
@@ -2416,7 +2430,11 @@ export class ProductionFlowService {
         proof.presenterWallet,
         presentedHash,
         ROLE_NUMBERS[expectedRole],
-        expectedRole === CompanyRole.SUPPLIER ? 'ISSUE_INGREDIENT_CREDENTIAL' : 'REQUEST_EVIDENCE',
+        expectedRole === CompanyRole.SUPPLIER
+          ? 'ISSUE_INGREDIENT_CREDENTIAL'
+          : workflow.deliveryOrderId
+            ? 'INITIATE_TRANSFER'
+            : 'REQUEST_EVIDENCE',
       ),
     );
     if (!allowed)

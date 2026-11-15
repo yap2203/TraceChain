@@ -34,6 +34,8 @@ describe('individual company permissions UI', () => {
         {
           subject: account,
           companyName: 'Registered Supplier',
+          credentialId: '0x' + '12'.repeat(32),
+          issuedAt: 1_700_000_000,
           role: 'Supplier',
           stakeholderStatus: 'active',
           status: 'active',
@@ -57,7 +59,7 @@ describe('individual company permissions UI', () => {
   afterEach(cleanup);
   async function open() {
     render(<AccessControl />);
-    fireEvent.click(screen.getByText('Individual Permissions'));
+    fireEvent.click(await screen.findByText('Individual Permissions'));
     await screen.findByText(/Registered Supplier/);
     fireEvent.change(screen.getByLabelText('Company wallet'), { target: { value: account } });
     await screen.findByText('Denied');
@@ -93,7 +95,7 @@ describe('individual company permissions UI', () => {
   it('shows read failures without fabricating effective permissions', async () => {
     mocks.getPersonalPermissions.mockRejectedValue(new Error('RPC unavailable'));
     render(<AccessControl />);
-    fireEvent.click(screen.getByText('Individual Permissions'));
+    fireEvent.click(await screen.findByText('Individual Permissions'));
     await screen.findByText(/Registered Supplier/);
     fireEvent.change(screen.getByLabelText('Company wallet'), { target: { value: account } });
     await waitFor(() =>

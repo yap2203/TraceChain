@@ -1,12 +1,6 @@
-import {
-  Camera,
-  CheckCircle2,
-  FileImage,
-  LoaderCircle,
-  RotateCcw,
-  ScanLine,
-  X,
-} from 'lucide-react';
+import { Camera, CheckCircle2, FileImage, RotateCcw, ScanLine, X } from 'lucide-react';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
+import { notify } from '../../components/ui/feedback';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -61,6 +55,9 @@ export function TransferQrScanner({
   const [method, setMethod] = useState<ScanMethod>('camera');
   const [cameraState, setCameraState] = useState<'idle' | 'starting' | 'active'>('idle');
   const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (error) notify(error, 'error');
+  }, [error]);
   const [resolving, setResolving] = useState(false);
   const [resolved, setResolved] = useState<ResolvedCustodyTransfer | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -394,8 +391,7 @@ export function TransferQrScanner({
 
             {resolving && (
               <div aria-live="polite" className="transfer-scanner-progress">
-                <LoaderCircle aria-hidden="true" size={18} />
-                Verifying with TraceChain…
+                <LoadingIndicator page label="Verifying with TraceChain…" />
               </div>
             )}
             {error && (
@@ -435,11 +431,7 @@ export function TransferQrScanner({
                   type="button"
                 >
                   {confirming ? (
-                    <LoaderCircle
-                      aria-hidden="true"
-                      className="transfer-confirmation-spinner"
-                      size={16}
-                    />
+                    <LoadingIndicator size="small" label="Refreshing status…" />
                   ) : (
                     <RotateCcw aria-hidden="true" size={16} />
                   )}

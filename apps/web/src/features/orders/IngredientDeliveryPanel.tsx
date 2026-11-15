@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
 import { Check, PackageCheck, ScanQrCode, Truck } from 'lucide-react';
 import { decodeIngredientDeliveryQr } from '@tracechain/shared';
@@ -11,6 +12,7 @@ import { Alert, Btn, Input, SelectField } from '../workspaces/shared/ui';
 import { prepareOrder, prepareLogistics, type OrdersState, type OrderRecord } from './orders.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { workspacePath } from '../workspaces/workspace-paths';
+import { PickupPlanPanel } from './PickupPlanPanel';
 
 const labels = [
   'Not scheduled',
@@ -52,10 +54,10 @@ export function IngredientDeliveryPanel({
   const [selected, setSelected] = useState(''),
     [scanned, setScanned] = useState('');
   const [custodyPosition, setCustodyPosition] = useState('');
+  const [pickupReady, setPickupReady] = useState(false);
   const [location, setLocation] = useState(
-      order.deliveryReceivingLocation ?? order.details?.receivingLocation ?? '',
-    ),
-    [locationName, setLocationName] = useState('');
+    order.deliveryReceivingLocation ?? order.details?.receivingLocation ?? '',
+  );
   const [quantity, setQuantity] = useState(''),
     [occurredAt, setOccurredAt] = useState(''),
     [confirmed, setConfirmed] = useState(false);
@@ -96,7 +98,7 @@ export function IngredientDeliveryPanel({
       stop.current?.();
     } catch (cause) {
       setScanned('');
-      setError(cause instanceof Error ? cause.message : 'Invalid delivery QR.');
+      setError(reportError(cause, 'Invalid delivery QR.'));
     }
   };
   useEffect(() => {
@@ -128,9 +130,7 @@ export function IngredientDeliveryPanel({
       setError(
         submitted
           ? 'Confirmed, but refresh failed. Refresh tracking; do not submit again.'
-          : cause instanceof Error
-            ? cause.message
-            : 'Delivery action failed.',
+          : reportError(cause, 'Delivery action failed.'),
       );
     } finally {
       setBusy(false);
@@ -164,7 +164,7 @@ export function IngredientDeliveryPanel({
   return (
     <section
       aria-label="Ingredient delivery tracking"
-      className="grid min-w-0 gap-[16px] rounded-xl border border-[var(--c-border)] p-[16px]"
+      className="delivery-panel grid min-w-0 gap-[16px] rounded-xl border border-[var(--c-border)] p-[16px]"
     >
       <div className="flex flex-wrap items-center justify-between gap-[12px]">
         <h3 className="m-0">Ingredient delivery</h3>
@@ -201,7 +201,7 @@ export function IngredientDeliveryPanel({
           <li
             key={String(role)}
             aria-current={
-              stage !== 6 && (stage < 4 ? index === 0 : stage === 4 ? index === 1 : index === 2)
+              stage !== 6 && (stage === 1 ? index === 0 : stage <= 3 ? index === 1 : index === 2)
                 ? 'step'
                 : undefined
             }
@@ -233,7 +233,7 @@ export function IngredientDeliveryPanel({
           Requested receiving location:{' '}
           {data.locations.find((entry) => same(entry.location, receivingLocation))?.label ??
             'Manufacturer receiving location'}
-          . Confirmed stock is credited only after physical receipt.
+          .
         </p>
       )}
       {error && <Alert type="error" message={error} />}
@@ -269,17 +269,8 @@ export function IngredientDeliveryPanel({
           className="grid gap-[12px] rounded-lg border border-[var(--c-border)] p-[16px]"
           aria-label="Choose delivery mode"
         >
-          <h4>Choose how to fulfil this order</h4>
-          <p>
-            <strong>1. Request direct Distributor delivery</strong> — the Distributor accepts or
-            rejects, then collects from you and delivers to the Manufacturer. No warehouse custody
-            stock is used.
-          </p>
-          <p>
-            <strong>2. Send from Distributor custody</strong> — use stock already physically
-            received at a Distributor warehouse. The full requested quantity must be available and
-            unreserved.
-          </p>
+          <h4>Option 1 · Use warehouse stock</h4>
+          <p>Deliver from a Distributor with enough received, unreserved stock.</p>
           <SelectField
             label="Custody stock for this order"
             value={custodyPosition}
@@ -327,7 +318,8 @@ export function IngredientDeliveryPanel({
         </section>
       )}
       {supplier && stage === 1 && (
-        <div className="grid gap-[12px] sm:grid-cols-2">
+        <div className="delivery-action-section grid gap-[12px] sm:grid-cols-2">
+          <h4 className="col-span-full">Option 2 · Arrange pickup from Supplier</h4>
           <SelectField
             label="Choose Distributor"
             value={selected}
@@ -403,7 +395,10 @@ export function IngredientDeliveryPanel({
       {(supplier || distributor) && [2, 3].includes(stage) && (
         <a
           href={
-            workspacePath(supplier ? 'supplier' : 'distributor', 'requests') +
+            workspacePath(
+              supplier ? 'supplier' : 'distributor',
+              supplier ? 'requests' : 'sent-requests',
+            ) +
             '?context=delivery&referenceId=' +
             encodeURIComponent(order.orderId)
           }
@@ -411,8 +406,19 @@ export function IngredientDeliveryPanel({
           Manage Supplier company proof in Information requests
         </a>
       )}
-      {canScan && (
-        <section className="grid gap-[12px]" aria-label="Scan delivery label">
+      {stage >= 3 && stage <= 4 && (
+        <PickupPlanPanel
+          referenceId={order.orderId}
+          canArrange={distributor && stage === 3}
+          expiresAt={Number(order.expiresAt)}
+          onReady={setPickupReady}
+        />
+      )}
+      {canScan && (!distributor || pickupReady) && (
+        <section
+          className="delivery-action-section grid gap-[12px]"
+          aria-label="Scan delivery label"
+        >
           {proofBlocksPickup && (
             <Alert
               type="warning"
@@ -506,20 +512,9 @@ export function IngredientDeliveryPanel({
                 ]}
               />
               {!locations.length && (
-                <>
-                  <Input
-                    label="New receiving location name"
-                    value={locationName}
-                    onChange={setLocationName}
-                    maxLength={160}
-                  />
-                  <Btn
-                    disabled={busy || !locationName.trim()}
-                    onClick={() => void run({ action: 'location', label: locationName.trim() })}
-                  >
-                    Register receiving location
-                  </Btn>
-                </>
+                <a href={workspacePath('manufacturer', 'profile')}>
+                  Add a receiving location in Profile
+                </a>
               )}
               <Input
                 label={`Quantity physically received (${item?.unit ?? 'registered unit'})`}
@@ -553,6 +548,7 @@ export function IngredientDeliveryPanel({
             disabled={
               busy ||
               proofBlocksPickup ||
+              (distributor && !pickupReady) ||
               !scanned ||
               !confirmed ||
               !validTime ||

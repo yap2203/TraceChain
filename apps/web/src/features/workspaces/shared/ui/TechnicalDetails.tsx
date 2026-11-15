@@ -1,4 +1,5 @@
 import { T } from './tokens';
+import { notify } from '../../../../components/ui/feedback';
 
 export interface TechnicalField {
   label: string;
@@ -46,7 +47,17 @@ export function TechnicalDetails({ fields }: { fields: TechnicalField[] }) {
               <button
                 type="button"
                 aria-label={`Copy ${field.label}`}
-                onClick={() => void navigator.clipboard.writeText(field.value)}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(field.value);
+                    notify(`${field.label} copied.`, 'success');
+                  } catch {
+                    notify(
+                      'Copy failed. Please try again or select and copy the value manually.',
+                      'error',
+                    );
+                  }
+                }}
                 style={{
                   padding: '3px 8px',
                   border: `1px solid ${T.border2}`,

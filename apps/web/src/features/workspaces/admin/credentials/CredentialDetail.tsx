@@ -1,3 +1,4 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { BrowserProvider, id } from 'ethers';
 import { useState } from 'react';
 
@@ -48,7 +49,7 @@ export function CredDetail({
       if (!(await transaction.wait())) throw new Error('The transaction was not confirmed.');
       await onChanged();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Credential action failed.');
+      setError(reportError(cause, 'Credential action failed.'));
     } finally {
       setBusy(false);
     }

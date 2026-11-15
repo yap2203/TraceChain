@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -25,6 +26,7 @@ import {
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import { workspacePath } from '../workspaces/workspace-paths';
+import { OrderLifecycle } from './OrderLifecycle';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import {
   createCompanyIdentityPresentation,
@@ -37,6 +39,7 @@ import { sendEvidenceRequestMessage } from '../production-flow/evidence-didcomm'
 import { CatalogueBrowser, CatalogueSkeleton } from './CatalogueBrowser';
 import { SupplierStockSummary } from './SupplierStockSummary';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
+import { ProductDeliveryPanel } from './ProductDeliveryPanel';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
 import {
   companyEvidenceStatus,
@@ -53,7 +56,7 @@ const timestamp = (value: string | number) =>
   Number(value) ? new Date(Number(value) * 1000).toLocaleString() : 'Not recorded';
 const now = () => Math.floor(Date.now() / 1000);
 const orderError = (cause: unknown) => {
-  const message = cause instanceof Error ? cause.message : 'Action failed.';
+  const message = reportError(cause, 'Action failed.');
   if (/\b(rpc|provider)\b.*unavailable|unavailable.*\b(rpc|provider)\b/i.test(message))
     return 'Blockchain/RPC unavailable. Try again when the configured network is reachable.';
   if (/fetch failed|network error|order service is unavailable/i.test(message))
@@ -66,12 +69,14 @@ export function OrdersPage({
   evidenceOnly = false,
   mode = 'combined',
   initialBatchId = '',
+  fixedDirection,
 }: {
   role: WorkspaceRole;
   initialOrderId?: string;
   evidenceOnly?: boolean;
   mode?: 'combined' | 'browse' | 'manage';
   initialBatchId?: string;
+  fixedDirection?: 'sent' | 'received';
 }) {
   const [data, setData] = useState<OrdersState>();
   const [error, setError] = useState('');
@@ -81,7 +86,7 @@ export function OrdersPage({
   const [tab, setTab] = useState(
     role === 'supplier' || evidenceOnly || mode === 'manage' ? 'orders' : 'catalogue',
   );
-  const [direction, setDirection] = useState<'sent' | 'received'>('sent');
+  const [direction, setDirection] = useState<'sent' | 'received'>(fixedDirection ?? 'sent');
   const [selected, setSelected] = useState(initialOrderId);
   const [pendingDecision, setPendingDecision] = useState<1 | 2>();
   const [decisionReason, setDecisionReason] = useState('');
@@ -112,7 +117,9 @@ export function OrdersPage({
     load().catch((cause) => setError(orderError(cause)));
   }, [load]);
   const hasActiveDelivery = data?.orders.some(
-    (entry) => entry.delivery && Number(entry.delivery.stage) < 5,
+    (entry) =>
+      (entry.delivery && Number(entry.delivery.stage) < 5) ||
+      (entry.productDelivery && Number(entry.productDelivery.stage) < 5),
   );
   useEffect(() => {
     if (!hasActiveDelivery) return;
@@ -203,7 +210,7 @@ export function OrdersPage({
     data?.catalogue.filter(
       (entry) =>
         !entry.archived &&
-        (mode !== 'browse' || Number(entry.kind) === 1) &&
+        (mode !== 'browse' || Number(entry.kind) === (role === 'retailer' ? 2 : 1)) &&
         (role !== 'manufacturer' || Number(entry.kind) === 1 || same(entry.seller, data.actor)) &&
         (role !== 'retailer' || Number(entry.kind) === 2),
     ) ?? [];
@@ -233,9 +240,15 @@ export function OrdersPage({
               : mode === 'manage'
                 ? role === 'distributor'
                   ? 'Ingredient deliveries'
-                  : 'My orders'
+                  : fixedDirection === 'received'
+                    ? 'Incoming product orders'
+                    : role === 'retailer'
+                      ? 'My product orders'
+                      : 'Ingredient orders'
                 : mode === 'browse'
-                  ? 'Supplier ingredients'
+                  ? role === 'retailer'
+                    ? 'Browse products'
+                    : 'Supplier ingredients'
                   : role === 'supplier'
                     ? evidenceOnly
                       ? 'Company evidence request'
@@ -246,14 +259,14 @@ export function OrdersPage({
             {mode === 'manage'
               ? role === 'distributor'
                 ? 'Review delivery offers, optionally verify the Supplier company proof, then scan the package label to confirm physical pickup.'
-                : 'Manage ingredient requests and track Supplier → Distributor → Manufacturer delivery. Confirm physical receipt by scanning the ingredient label. Payments are not processed.'
+                : 'Review requests, arrange delivery and track receipt.'
               : mode === 'browse'
                 ? 'Open an ingredient to see its registered details, request evidence or send a quantity request to its Supplier.'
                 : role === 'supplier'
                   ? evidenceOnly
                     ? 'Manage company evidence linked to this request. Verification does not approve the order automatically.'
-                    : 'Review Manufacturer quantity requests and record your decision. Approval does not move stock, take payment or dispatch goods.'
-                  : 'Browse registered ingredients and products, request quantities or additional details, and exchange company evidence. No payment or fulfilment steps are included.'}
+                    : 'Review quantity requests and approve or reject them.'
+                  : 'Find products, request quantities and track delivery. No payments are processed.'}
           </p>
         </div>
         <Btn
@@ -276,6 +289,7 @@ export function OrdersPage({
         <nav aria-label="Browse and requests" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <Btn
             variant={tab === 'catalogue' ? 'primary' : 'outline'}
+            aria-pressed={tab === 'catalogue'}
             disabled={busy}
             onClick={() => openTab('catalogue')}
           >
@@ -283,6 +297,7 @@ export function OrdersPage({
           </Btn>
           <Btn
             variant={tab === 'orders' ? 'primary' : 'outline'}
+            aria-pressed={tab === 'orders'}
             disabled={busy}
             onClick={() => openTab('orders')}
           >
@@ -307,15 +322,13 @@ export function OrdersPage({
           items={availableItems}
           initialBatchId={initialBatchId}
           role={role}
-          onOpenEvidence={() =>
-            navigate(workspacePath(role, role === 'manufacturer' ? 'requests' : 'evidence'))
-          }
+          onOpenEvidence={() => navigate(workspacePath(role, 'sent-requests'))}
           locations={data.locations.filter((location) => same(location.company, data.actor))}
           onRegisterLocation={(label) => submit('location', { label })}
           onQuantityRequest={(selectedItem, input) =>
             submit('request', {
               itemId: selectedItem.itemId,
-              batchId: selectedItem.batches[0],
+              batchId: input.batchId ?? selectedItem.batches[0],
               kind: Number(selectedItem.kind),
               requestOnly: true,
               quantity: input.quantity,
@@ -324,6 +337,8 @@ export function OrdersPage({
               evidenceRequired: false,
               note: input.note,
               ...(input.location ? { location: input.location } : {}),
+              ...(input.positionId ? { positionId: input.positionId } : {}),
+              ...(input.custodySource ? { custodySource: input.custodySource } : {}),
             })
           }
           onEvidenceRequest={(selectedItem, input) =>
@@ -352,39 +367,39 @@ export function OrdersPage({
       )}
       {data && tab === 'orders' && (
         <>
-          {mode === 'manage' && role !== 'distributor' && !order && (
-            <>
-              <nav aria-label="Order direction" className="flex flex-wrap gap-[8px]">
-                <Btn
-                  variant={direction === 'sent' ? 'primary' : 'outline'}
-                  onClick={() => setDirection('sent')}
-                >
-                  Sent to Suppliers
-                </Btn>
-                <Btn
-                  variant={direction === 'received' ? 'primary' : 'outline'}
-                  onClick={() => setDirection('received')}
-                >
-                  Received from buyers
-                </Btn>
-              </nav>
-            </>
-          )}
+          {mode === 'manage' &&
+            role !== 'distributor' &&
+            !order &&
+            !fixedDirection &&
+            !evidenceOnly && (
+              <>
+                <nav aria-label="Order direction" className="flex flex-wrap gap-[8px]">
+                  <Btn
+                    variant={direction === 'sent' ? 'primary' : 'outline'}
+                    onClick={() => setDirection('sent')}
+                  >
+                    Sent to Suppliers
+                  </Btn>
+                  <Btn
+                    variant={direction === 'received' ? 'primary' : 'outline'}
+                    onClick={() => setDirection('received')}
+                  >
+                    Received from buyers
+                  </Btn>
+                </nav>
+              </>
+            )}
           {role !== 'supplier' && (
             <>
               <h3>{order ? 'Request details' : 'My requests'}</h3>
-              <p>
-                Review requests you sent or received. The recipient can ask for company evidence;
-                presenting and verifying it are separate actions.
-              </p>
             </>
           )}
-          {order && role !== 'supplier' && (
+          {order && role !== 'supplier' && !evidenceOnly && (
             <Btn variant="outline" onClick={() => setSelected('')}>
               Back to requests
             </Btn>
           )}
-          {!order && (
+          {!order && !evidenceOnly && (
             <RequestsOverview
               actor={data.actor}
               catalogue={data.catalogue}
@@ -400,14 +415,15 @@ export function OrdersPage({
           )}
           {order && (
             <OrderDetailSurface
-              modal={role === 'supplier'}
+              modal={role === 'supplier' && !evidenceOnly}
               title={`Review request — ${item?.name ?? 'Requested item'}`}
               onClose={() => setSelected('')}
             >
               <div className="request-detail-modal">
+                {!evidenceOnly && <OrderLifecycle order={order} actor={data.actor} role={role} />}
                 <section
                   className="request-detail-summary"
-                  aria-label="Ingredient and Manufacturer"
+                  aria-label="Requested item and requester"
                 >
                   <CatalogueImage
                     path={item?.imagePath}
@@ -424,12 +440,12 @@ export function OrdersPage({
                     <p>Batch reference: {item?.batchReference || 'Not disclosed'}</p>
                     <div className="request-detail-company">
                       <CompanyAvatar
-                        name={order.buyerName ?? 'Verified Manufacturer unavailable'}
+                        name={order.buyerName ?? 'Company name unavailable'}
                         size="lg"
                       />
                       <div>
-                        <span>Manufacturer</span>
-                        <strong>{order.buyerName ?? 'Verified Manufacturer unavailable'}</strong>
+                        <span>Requesting company</span>
+                        <strong>{order.buyerName ?? 'Company name unavailable'}</strong>
                       </div>
                     </div>
                   </div>
@@ -454,7 +470,9 @@ export function OrdersPage({
                     <dd>{companyEvidenceStatus(order)}</dd>
                   </div>
                 </dl>
-                <Alert type="info" message={`Next action: ${nextAction(order, data.actor)}`} />
+                {evidenceOnly && (
+                  <Alert type="info" message={`Next action: ${nextAction(order, data.actor)}`} />
+                )}
                 {buyer &&
                   mode === 'manage' &&
                   !evidenceOnly &&
@@ -474,6 +492,15 @@ export function OrdersPage({
                     </Btn>
                   )}
                 <p>Private note: {order.details?.note || 'No note recorded'}</p>
+                {Number(item?.kind) === 2 && Number(order.decision?.status) === 1 && (
+                  <ProductDeliveryPanel
+                    key={order.orderId}
+                    data={data}
+                    order={order}
+                    item={item}
+                    onChanged={load}
+                  />
+                )}
                 {order.custodyOrder && (
                   <section className="grid gap-[12px] rounded-lg border border-[var(--c-border)] p-[16px]">
                     <h3>Distributor warehouse fulfilment</h3>
@@ -602,22 +629,9 @@ export function OrdersPage({
                             {!data.locations.some((location) =>
                               same(location.company, data.actor),
                             ) && (
-                              <div className="grid gap-[8px]">
-                                <Input
-                                  label="New receiving location name"
-                                  value={form.locationLabel ?? ''}
-                                  onChange={change('locationLabel')}
-                                  maxLength={160}
-                                />
-                                <Btn
-                                  disabled={busy || !form.locationLabel?.trim()}
-                                  onClick={() =>
-                                    void submit('location', { label: form.locationLabel.trim() })
-                                  }
-                                >
-                                  Register receiving location
-                                </Btn>
-                              </div>
+                              <a href={workspacePath(role, 'profile')}>
+                                Add a receiving location in Profile
+                              </a>
                             )}
                             <Input
                               label={`Quantity received (${item?.unit})`}
@@ -751,8 +765,8 @@ export function OrdersPage({
                         disabled={!activeOrder}
                         onClick={() =>
                           navigate(
-                            workspacePath(role, 'requests') +
-                              '?direction=sent&orderId=' +
+                            workspacePath(role, 'sent-requests') +
+                              '?orderId=' +
                               encodeURIComponent(order.orderId),
                           )
                         }
@@ -766,8 +780,10 @@ export function OrdersPage({
                           {pendingDecision === 1 ? 'Approve this request?' : 'Reject this request?'}
                         </h4>
                         <p>
-                          This records your decision only. No payment, reservation or dispatch takes
-                          place.
+                          {pendingDecision === 1 &&
+                          (order.custodyOrder || order.details?.custodySource)
+                            ? 'Approval releases this warehouse request to the Distributor. Review two MetaMask confirmations: approval, then delivery arrangement. Physical dispatch is separate.'
+                            : 'This records your decision. No payment or physical dispatch takes place.'}
                         </p>
                         <Input
                           label="Decision reason"
@@ -790,9 +806,33 @@ export function OrdersPage({
                                   reason: decisionReason.trim(),
                                 });
                                 await sign(prepared.transaction);
+                                if (
+                                  pendingDecision === 1 &&
+                                  order.custodyOrder &&
+                                  !order.custodyOrder.arranged
+                                ) {
+                                  const arranged = await prepareLogistics({
+                                    action: 'arrange-delivery',
+                                    operationId: crypto.randomUUID(),
+                                    orderId: order.orderId,
+                                  });
+                                  await sign(arranged.transaction);
+                                } else if (pendingDecision === 1 && order.details?.custodySource) {
+                                  const source = order.details.custodySource;
+                                  const arranged = await prepareLogistics({
+                                    action: 'product-order-select',
+                                    operationId: crypto.randomUUID(),
+                                    orderId: order.orderId,
+                                    mode: 2,
+                                    distributor: source.distributor,
+                                    fromLocation: source.location,
+                                    toLocation: order.details.receivingLocation,
+                                  });
+                                  await sign(arranged.transaction);
+                                }
                                 setPendingDecision(undefined);
                                 setNotice(
-                                  'Decision recorded successfully. Stock and credential permissions are unchanged.',
+                                  'Decision recorded successfully. Physical dispatch is a separate step.',
                                 );
                               })
                             }

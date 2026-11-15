@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
 import { Inbox, RefreshCw, Search, Send } from 'lucide-react';
 import { OrdersPage } from '../../../orders/OrdersPage';
@@ -230,7 +231,7 @@ export function ManufacturerInformationRequests({
       />
       {error && <Alert type="warning" message={error} />}
       {loading ? (
-        <p role="status">Loading information requests…</p>
+        <LoadingIndicator page label="Loading information requests…" />
       ) : (
         <Card padding="0">
           <Table headers={['Company', 'Request type', 'Reference', 'Deadline', 'Status', '']}>

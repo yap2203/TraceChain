@@ -14,6 +14,7 @@ import {
   encodeIngredientDeliveryQr,
   decodeIngredientDeliveryQr,
   decodeShipmentQr,
+  encodeShipmentQr,
 } from '@tracechain/shared';
 import type { AuthService } from '../auth/auth.service.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
@@ -22,6 +23,9 @@ import type { OrdersGateway, ChainRecord } from './orders.gateway.js';
 import type { OrderAction } from './orders.schema.js';
 import { supplierStock } from './supplier-stock.js';
 import { readLogistics } from './logistics-state.js';
+import { readBusinessTraceability } from './business-traceability.js';
+import { CustodyOffers, type CustodyOffer } from './custody-offers.js';
+import type { ApplicationMetadataRepository } from '../blockchain/application-metadata.repository.js';
 import type { LogisticsAction } from './logistics.schema.js';
 import type { ProductionFlowService } from '../production-flow/production-flow.service.js';
 import type { DidCommService } from '../didcomm/didcomm.service.js';
@@ -45,6 +49,108 @@ export class OrdersError extends Error {
 }
 const same = (a: string, b: string) => a?.toLowerCase() === b?.toLowerCase();
 export class OrdersService {
+  private custodyOfferService?: CustodyOffers;
+  private offers() {
+    return (this.custodyOfferService ??= new CustodyOffers({
+      gateway: this.gateway,
+      repository: this.repository,
+      store: this.store,
+      session: async (sessionId) => {
+        const session = await this.session(sessionId);
+        return { address: session.address, role: session.role };
+      },
+      prepare: (sessionId, input) => this.prepareLogistics(sessionId, input),
+      proofCheck: async (sessionId, offer) => {
+        const requestId = id(
+          `ingredient-delivery-identity:${offer.offerId.toLowerCase()}:${offer.distributor.toLowerCase()}`,
+        );
+        const workflow = await this.repository.findEvidence(requestId);
+        if (!workflow?.identityProof) return;
+        if (!this.flow)
+          throw new OrdersError(
+            'IDENTITY_UNAVAILABLE',
+            'Company proof verification is unavailable.',
+            503,
+          );
+        const status = await this.flow.getCompanyIdentityProofStatus(sessionId, requestId);
+        if (status.status !== 'VERIFIED')
+          throw new OrdersError(
+            'COMPANY_PROOF_REQUIRED',
+            'Verify the requested company evidence before accepting, scheduling or handing off this stock.',
+          );
+      },
+    }));
+  }
+  private async offerView(offer: CustodyOffer) {
+    const batch = await this.gateway.read(
+      offer.kind === 1 ? 'ingredients' : 'products',
+      offer.kind === 1 ? 'getBatch' : 'getProduct',
+      [offer.batchId],
+    );
+    const summary = await this.discoverBatch(offer.kind, offer.batchId, batch);
+    const identities = (await this.directory?.resolveMany([offer.sender, offer.distributor])) ?? [];
+    const name = (wallet: string) =>
+      identities.find((identity) => same(identity.walletAddress, wallet))?.companyName ??
+      'Company name unavailable';
+    const events = await this.gateway.events('orders', 'LocationRegistered');
+    const locationName = async (location: string, owner: string) => {
+      const alias = await this.locationAlias(location, owner);
+      if (alias) return alias;
+      const event = events.find(
+        (event) => same(event.location, location) && same(event.company, owner),
+      );
+      const record = await this.repository.findPrivate('products', location);
+      if (
+        event &&
+        record &&
+        same(record.owner, owner) &&
+        same(record.contentHash, event.detailsHash)
+      ) {
+        const serialized = await this.store.decrypt(record.payload);
+        if (same(record.contentHash, `0x${createHash('sha256').update(serialized).digest('hex')}`))
+          return JSON.parse(serialized).label;
+      }
+      return 'Location name unavailable';
+    };
+    return {
+      ...offer,
+      itemName: summary.name ?? 'Registered batch',
+      batchReference: summary.batchReference,
+      senderName: name(offer.sender),
+      distributorName: name(offer.distributor),
+      fromLocationName: await locationName(offer.fromLocation, offer.sender),
+      toLocationName: await locationName(offer.toLocation, offer.distributor),
+    };
+  }
+  async listCustodyOffers(sessionId?: string) {
+    const result = await this.offers().list(sessionId);
+    return { offers: await Promise.all(result.offers.map((offer) => this.offerView(offer))) };
+  }
+  async getCustodyOffer(sessionId: string | undefined, offerId: string) {
+    return { offer: await this.offerView(await this.offers().get(sessionId, offerId)) };
+  }
+  async createCustodyOffer(
+    sessionId: string | undefined,
+    input: Parameters<CustodyOffers['create']>[1],
+  ) {
+    const result = await this.offers().create(sessionId, input);
+    return { offer: await this.offerView(result.offer) };
+  }
+  async actCustodyOffer(
+    sessionId: string | undefined,
+    offerId: string,
+    input: Parameters<CustodyOffers['act']>[2],
+  ) {
+    const result = await this.offers().act(sessionId, offerId, input);
+    return { offer: await this.offerView(result.offer) };
+  }
+  async prepareCustodyOffer(
+    sessionId: string | undefined,
+    offerId: string,
+    input: Parameters<CustodyOffers['prepare']>[2],
+  ) {
+    return this.offers().prepare(sessionId, offerId, input);
+  }
   private requireResourceOwner(owner: string | undefined, actor: string) {
     if (!owner || !same(owner, actor))
       throw new OrdersError(
@@ -107,7 +213,13 @@ export class OrdersService {
       rows.push({
         requestId: record.requestId,
         referenceId: record.deliveryOrderId ?? record.requestId,
-        context: record.deliveryOrderId ? 'delivery' : record.orderContext ? 'order' : 'ingredient',
+        context: record.deliveryOrderId
+          ? (await this.offers().lookup(record.deliveryOrderId, session.address))
+            ? 'custody'
+            : 'delivery'
+          : record.orderContext
+            ? 'order'
+            : 'ingredient',
         direction: same(record.requester, session.address) ? 'received' : 'sent',
         company: company?.companyName ?? counterparty,
         purpose: record.identityProof.purpose,
@@ -128,14 +240,25 @@ export class OrdersService {
     } catch (cause) {
       if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'CALL_EXCEPTION')
         throw new OrdersError(
-          'CUSTODY_TRANSITION_REJECTED',
-          'The current warehouse/shipment state rejected this action. Refresh and check current authorization, location ownership, available or reserved quantity, Supplier approval and requested company proof. If this started after a warehouse contract update, deploy the current full contract suite before retrying.',
+          contract === 'productDelivery'
+            ? 'PRODUCT_DELIVERY_REJECTED'
+            : 'CUSTODY_TRANSITION_REJECTED',
+          contract === 'productDelivery'
+            ? 'The product delivery state rejected this action. Refresh and check Manufacturer approval, assigned Distributor acceptance, route ownership, available stock, actual dispatch time and any requested company proof.'
+            : 'The current warehouse/shipment state rejected this action. Refresh and check current authorization, location ownership, available or reserved quantity, Supplier approval and requested company proof. If this started after a warehouse contract update, deploy the current full contract suite before retrying.',
         );
       throw cause;
     }
   }
   async prepareLogistics(sessionId: string | undefined, input: LogisticsAction) {
     const session = await this.session(sessionId);
+    if (
+      input.action === 'product-order-select' ||
+      input.action === 'product-order-respond' ||
+      input.action === 'product-order-dispatch' ||
+      input.action === 'product-order-close'
+    )
+      return this.prepareProductDelivery(session, input, sessionId);
     if (Number(await this.optionalRead('delivery', 'custodyPolicy')) !== 1)
       throw new OrdersError(
         'CUSTODY_UPGRADE_REQUIRED',
@@ -430,10 +553,196 @@ export class OrdersService {
       transaction: await this.prepareWarehouseTransaction(session.address, contract, method, args),
     };
   }
+  private async prepareProductDelivery(
+    session: Awaited<ReturnType<OrdersService['session']>>,
+    input: LogisticsAction,
+    sessionId?: string,
+  ) {
+    if (Number(await this.optionalRead('custody', 'productDeliveryPolicy')) !== 1)
+      throw new OrdersError(
+        'PRODUCT_DELIVERY_UPGRADE_REQUIRED',
+        'Deploy the product delivery suite before arranging product orders.',
+      );
+    if (!('orderId' in input))
+      throw new OrdersError('INVALID_REQUEST', 'An order reference is required.', 400);
+    const order = await this.gateway.read('orders', 'getOrder', [input.orderId]);
+    const delivery = await this.gateway.read('productDelivery', 'get', [input.orderId]);
+    const isManufacturer =
+      same(order.seller, session.address) && session.role === CompanyRole.MANUFACTURER;
+    const isCarrier =
+      same(delivery.distributor, session.address) && session.role === CompanyRole.DISTRIBUTOR;
+    const isBuyer = same(order.buyer, session.address) && session.role === CompanyRole.RETAILER;
+    if (!isManufacturer && !isCarrier && !isBuyer)
+      throw new OrdersError(
+        'RESOURCE_NOT_FOUND',
+        'This product order is unavailable to your company.',
+        404,
+      );
+    let method: string,
+      args: unknown[],
+      resultId = input.orderId;
+    if (input.action === 'product-order-select') {
+      if (!isManufacturer)
+        throw new OrdersError(
+          'MANUFACTURER_REQUIRED',
+          'Only this product Manufacturer selects fulfilment.',
+          403,
+        );
+      const batchId = await this.gateway.read('orders', 'requestedBatch', [input.orderId]);
+      const requestRecord = await this.repository.findPrivate('products', input.orderId);
+      if (
+        requestRecord &&
+        same(requestRecord.owner, order.buyer) &&
+        same(requestRecord.contentHash, order.detailsHash) &&
+        requestRecord.cid === order.detailsCid
+      ) {
+        const details = JSON.parse(await this.store.decrypt(requestRecord.payload));
+        const source = details.custodySource;
+        if (
+          source &&
+          (input.mode !== 2 ||
+            !same(input.distributor, source.distributor) ||
+            !same(input.fromLocation, source.location))
+        )
+          throw new OrdersError(
+            'REQUESTED_CUSTODY_REQUIRED',
+            'Use the Distributor warehouse selected on this Retailer request.',
+          );
+      }
+      this.requireResourceOwner(
+        (await this.gateway.read('products', 'getProduct', [batchId])).manufacturer,
+        session.address,
+      );
+      this.requireResourceOwner(
+        await this.gateway.read('orders', 'locationOwner', [input.fromLocation]),
+        input.mode === 1 ? session.address : input.distributor,
+      );
+      this.requireResourceOwner(
+        await this.gateway.read('orders', 'locationOwner', [input.toLocation]),
+        order.buyer,
+      );
+      if (input.mode === 2) {
+        const [stock, located] = await Promise.all([
+          this.gateway.read('custody', 'getInventory', [batchId, input.distributor]),
+          this.gateway.read('custody', 'locationStock', [
+            batchId,
+            input.distributor,
+            input.fromLocation,
+          ]),
+        ]);
+        if (
+          BigInt(stock.available ?? '0') < BigInt(order.requested) ||
+          BigInt(located) < BigInt(order.requested)
+        )
+          throw new OrdersError(
+            'INSUFFICIENT_PRODUCT_CUSTODY',
+            'This Distributor location has insufficient unreserved received stock for the full order.',
+          );
+      }
+      method = 'select';
+      args = [input.orderId, input.mode, input.distributor, input.fromLocation, input.toLocation];
+    } else if (input.action === 'product-order-respond') {
+      if (!isCarrier)
+        throw new OrdersError(
+          'DISTRIBUTOR_REQUIRED',
+          'Only the assigned Distributor may respond.',
+          403,
+        );
+      method = 'respond';
+      args = [input.orderId, input.accept];
+    } else if (input.action === 'product-order-close') {
+      method = 'close';
+      args = [input.orderId];
+    } else if (input.action === 'product-order-dispatch') {
+      if (!isCarrier)
+        throw new OrdersError(
+          'DISTRIBUTOR_REQUIRED',
+          'Only the assigned Distributor may dispatch.',
+          403,
+        );
+      if (Number(delivery.stage) !== 3)
+        throw new OrdersError(
+          'PRODUCT_DELIVERY_NOT_READY',
+          'Accept the direct carrier request, or wait for Manufacturer custody arrangement.',
+        );
+      if (Number(delivery.mode) === 1) {
+        try {
+          decodeShipmentQr(input.qrPayload ?? '', {
+            shipmentId: input.orderId,
+            kind: 'product',
+            chainId: this.gateway.chainId,
+            ordersAddress: this.gateway.address,
+            publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
+          });
+        } catch {
+          throw new OrdersError(
+            'SHIPMENT_QR_INVALID',
+            'Scan the exact approved product-order label before confirming physical pickup.',
+            400,
+          );
+        }
+        if (!(await this.pickupPlan(sessionId, input.orderId)).plan)
+          throw new OrdersError(
+            'PICKUP_PLAN_REQUIRED',
+            'Arrange a pickup time before recording physical collection.',
+          );
+      }
+      if (input.occurredAt > Date.now() / 1000 || input.expectedAt <= Date.now() / 1000)
+        throw new OrdersError(
+          'INVALID_EVENT_TIME',
+          'Use an actual pickup/dispatch time and a future arrival.',
+          400,
+        );
+      resultId = id(
+        `product-delivery:${this.gateway.chainId}:${this.gateway.address}:${session.address}:${input.operationId}`,
+      );
+      method = 'dispatch';
+      args = [
+        input.orderId,
+        {
+          transferId: resultId,
+          occurredAt: input.occurredAt,
+          expectedAt: input.expectedAt,
+          vehicle: input.vehicle,
+          detailsHash: id(
+            JSON.stringify({
+              orderId: input.orderId,
+              vehicle: input.vehicle,
+              occurredAt: input.occurredAt,
+              expectedAt: input.expectedAt,
+            }),
+          ),
+          cid: '',
+        },
+      ];
+    } else throw new OrdersError('INVALID_REQUEST', 'Unsupported product delivery action.', 400);
+    return {
+      resultId,
+      transaction: await this.prepareWarehouseTransaction(
+        session.address,
+        'productDelivery',
+        method,
+        args,
+      ),
+    };
+  }
   private deliveryQr(orderId: `0x${string}`) {
     try {
       return encodeIngredientDeliveryQr({
         orderId,
+        chainId: this.gateway.chainId,
+        ordersAddress: this.gateway.address,
+        publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
+      });
+    } catch {
+      return undefined;
+    }
+  }
+  private productOrderQr(orderId: `0x${string}`) {
+    try {
+      return encodeShipmentQr({
+        shipmentId: orderId,
+        kind: 'product',
         chainId: this.gateway.chainId,
         ordersAddress: this.gateway.address,
         publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
@@ -462,8 +771,12 @@ export class OrdersService {
     record: import('../production-flow/production-flow.repository.js').EvidenceWorkflowRecord,
   ) {
     if (!record.deliveryOrderId) return false;
-    const { order, delivery } = await this.deliveryReference(record.deliveryOrderId);
+    const { order, delivery, contract } = await this.deliveryReference(
+      record.deliveryOrderId,
+      record.requester,
+    );
     return (
+      (contract !== 'custody-offer' || same(record.batchId, delivery.batchId)) &&
       [2, 3, 4, 5].includes(Number(delivery.stage)) &&
       same(record.requester, order.seller) &&
       same(record.supplier, delivery.distributor) &&
@@ -473,8 +786,54 @@ export class OrdersService {
         )
     );
   }
-  private async deliveryReference(referenceId: string) {
+  private async deliveryReference(referenceId: string, actor?: string) {
+    const offer = await this.offers().lookup(referenceId, actor);
+    if (offer) {
+      if (
+        !(await this.gateway.read('stakeholders', 'isAuthorized', [
+          offer.sender,
+          offer.kind === 1 ? 2 : 3,
+        ])) ||
+        !(await this.gateway.read('stakeholders', 'isAuthorized', [offer.distributor, 4]))
+      )
+        throw new OrdersError(
+          'PARTICIPANT_UNAUTHORIZED',
+          'The sender and Distributor must both remain authorized.',
+        );
+      return {
+        order: {
+          seller: offer.sender,
+          buyer: offer.distributor,
+          proposedBatch: offer.batchId,
+          expiresAt: offer.expiresAt,
+        },
+        delivery: {
+          distributor: offer.distributor,
+          batchId: offer.batchId,
+          stage:
+            offer.status === 'REQUESTED'
+              ? 2
+              : ['ACCEPTED', 'SCHEDULED'].includes(offer.status)
+                ? 3
+                : offer.status === 'DISPATCHED'
+                  ? 4
+                  : offer.status === 'RECEIVED'
+                    ? 5
+                    : 6,
+        },
+        contract: 'custody-offer',
+      };
+    }
     let order = await this.gateway.read('orders', 'getOrder', [referenceId]);
+    if (Number(await this.optionalRead('custody', 'productDeliveryPolicy')) === 1) {
+      const delivery = await this.gateway.read('productDelivery', 'get', [referenceId]);
+      if (Number(delivery.mode) > 0)
+        return {
+          order: { ...order, proposedBatch: delivery.batchId },
+          delivery,
+          contract: 'productDelivery',
+        };
+    }
     if (Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1) {
       const shipment = await this.gateway.read('delivery', 'getRoadShipment', [referenceId]);
       if (Number(shipment.leg) === 1) {
@@ -488,7 +847,11 @@ export class OrdersService {
         };
       }
     }
-    return { order, delivery: await this.gateway.read('delivery', 'get', [referenceId]) };
+    return {
+      order,
+      delivery: await this.gateway.read('delivery', 'get', [referenceId]),
+      contract: 'delivery',
+    };
   }
   private async optionalRead(contract: string, method: string, args: unknown[] = []) {
     try {
@@ -591,7 +954,211 @@ export class OrdersService {
     private messaging?: DidCommService,
     private directory?: StakeholderDirectory,
     private ingredientRecords?: IngredientBatchWorkflowRepository,
+    private applicationMetadata?: ApplicationMetadataRepository,
   ) {}
+  async traceability(
+    sessionId: string | undefined,
+    selection: { kind?: string; batchId?: string },
+  ) {
+    const session = await this.session(sessionId);
+    if (session.role === CompanyRole.SYSTEM_ADMIN)
+      throw new OrdersError(
+        'ROLE_NOT_ALLOWED',
+        'Business traceability is for participating companies.',
+        403,
+      );
+    const state = await this.state(sessionId);
+    const result = await readBusinessTraceability(
+      this.gateway,
+      state,
+      selection,
+      async (wallets) => {
+        const identities = (await this.directory?.resolveMany(wallets)) ?? [];
+        return new Map(
+          identities.map((identity) => [
+            identity.walletAddress.toLowerCase(),
+            identity.companyName,
+          ]),
+        );
+      },
+    );
+    if (selection.batchId && !result.root)
+      throw new OrdersError(
+        'TRACE_NOT_FOUND',
+        'This batch is not available in your company traceability records.',
+        404,
+      );
+    return result;
+  }
+  private locationLabelKey(location: string) {
+    return id(
+      `location-label:${this.gateway.chainId}:${this.gateway.address.toLowerCase()}:${location.toLowerCase()}`,
+    );
+  }
+  private async locationAlias(location: string, owner: string) {
+    const record = await this.repository.findPrivate('products', this.locationLabelKey(location));
+    if (!record || !same(record.owner, owner)) return undefined;
+    const serialized = await this.store.decrypt(record.payload);
+    if (!same(record.contentHash, `0x${createHash('sha256').update(serialized).digest('hex')}`))
+      throw new OrdersError(
+        'PROFILE_UNAVAILABLE',
+        'Location display metadata could not be checked.',
+        503,
+      );
+    return (JSON.parse(serialized) as { label: string }).label;
+  }
+  async companyProfile(sessionId?: string) {
+    const session = await this.session(sessionId);
+    if (session.role === CompanyRole.SYSTEM_ADMIN)
+      throw new OrdersError(
+        'ROLE_NOT_ALLOWED',
+        'Operational locations belong to participating companies.',
+        403,
+      );
+    const events = (await this.gateway.events('orders', 'LocationRegistered')).filter((event) =>
+      same(event.company, session.address),
+    );
+    const locations = await Promise.all(
+      events.map(async (event) => {
+        this.requireResourceOwner(
+          await this.gateway.read('orders', 'locationOwner', [event.location]),
+          session.address,
+        );
+        const record = await this.repository.findPrivate('products', event.location);
+        const registeredLabel =
+          record &&
+          same(record.owner, session.address) &&
+          same(record.contentHash, event.detailsHash)
+            ? JSON.parse(await this.store.decrypt(record.payload)).label
+            : 'Registered location';
+        const warehouse =
+          session.role === CompanyRole.DISTRIBUTOR &&
+          Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1
+            ? await this.gateway.read('delivery', 'warehouses', [event.location])
+            : undefined;
+        return {
+          location: event.location,
+          registeredLabel,
+          label: (await this.locationAlias(event.location, session.address)) ?? registeredLabel,
+          warehouse: same(warehouse?.distributor, session.address),
+        };
+      }),
+    );
+    let initialLocationName: string | undefined;
+    if (this.applicationMetadata)
+      for (const event of await this.gateway.events('stakeholders', 'ApplicationSubmitted')) {
+        if (!same(event.applicant, session.address)) continue;
+        const applicationId = event.applicationId;
+        const application = await this.gateway.read('stakeholders', 'getApplication', [
+          applicationId,
+        ]);
+        const metadata = await this.applicationMetadata.find(applicationId);
+        if (
+          same(application.applicant, session.address) &&
+          metadata &&
+          same(metadata.profileHash, application.profileHash)
+        )
+          initialLocationName = metadata.initialLocationName;
+      }
+    return { wallet: session.address, role: session.role, locations, initialLocationName };
+  }
+  async updateLocationLabel(sessionId: string | undefined, location: string, label: string) {
+    const session = await this.session(sessionId);
+    if (session.role === CompanyRole.SYSTEM_ADMIN)
+      throw new OrdersError(
+        'COMPANY_ROLE_REQUIRED',
+        'Locations belong to operating companies.',
+        403,
+      );
+    this.requireResourceOwner(
+      await this.gateway.read('orders', 'locationOwner', [location]),
+      session.address,
+    );
+    await this.replacePresentationRecord(this.locationLabelKey(location), session.address, {
+      label,
+    });
+    return { location, label, source: 'Company profile display name' };
+  }
+  private pickupKey(referenceId: string, distributor: string) {
+    return id(
+      `pickup:${this.gateway.chainId}:${this.gateway.address.toLowerCase()}:${referenceId.toLowerCase()}:${distributor.toLowerCase()}`,
+    );
+  }
+  async pickupPlan(
+    sessionId: string | undefined,
+    referenceId: string,
+    input?: { pickupAt: number },
+  ) {
+    const session = await this.session(sessionId);
+    const { order, delivery, contract } = await this.deliveryReference(
+      referenceId,
+      session.address,
+    );
+    if (contract === 'custody-offer')
+      throw new OrdersError('USE_CUSTODY_PICKUP', 'Arrange this pickup from the custody request.');
+    if (
+      ![order.seller, order.buyer, delivery.distributor].some((wallet) =>
+        same(wallet, session.address),
+      )
+    )
+      throw new OrdersError(
+        'PICKUP_NOT_FOUND',
+        'This pickup is not available to your company.',
+        404,
+      );
+    const originBlockHash = (await this.gateway.events('orders', 'OrderRequested')).find((event) =>
+      same(event.orderId, referenceId),
+    )?.blockHash;
+    const binding = {
+      referenceId: referenceId.toLowerCase(),
+      distributor: delivery.distributor?.toLowerCase(),
+      seller: order.seller.toLowerCase(),
+      buyer: order.buyer.toLowerCase(),
+      batchId: delivery.batchId ?? order.requestedBatch ?? order.proposedBatch,
+      expiresAt: Number(order.expiresAt),
+      mode: Number(delivery.mode ?? 1),
+      contract,
+      originBlockHash,
+    };
+    const key = this.pickupKey(referenceId, delivery.distributor ?? ZeroAddress);
+    if (input) {
+      if (
+        session.role !== CompanyRole.DISTRIBUTOR ||
+        !same(session.address, delivery.distributor) ||
+        Number(delivery.stage) !== 3 ||
+        (contract === 'productDelivery' && Number(delivery.mode) !== 1)
+      )
+        throw new OrdersError(
+          'PICKUP_NOT_READY',
+          'Only the accepted direct-delivery Distributor can arrange pickup before dispatch.',
+        );
+      if (input.pickupAt <= Date.now() / 1000 || input.pickupAt >= Number(order.expiresAt))
+        throw new OrdersError(
+          'PICKUP_TIME_INVALID',
+          'Choose a future pickup time before this request expires.',
+          400,
+        );
+      await this.replacePresentationRecord(key, session.address, {
+        ...binding,
+        pickupAt: input.pickupAt,
+        arrangedAt: new Date().toISOString(),
+      });
+    }
+    const record = await this.repository.findPrivate('products', key);
+    if (!record || !same(record.owner, delivery.distributor)) return { plan: null };
+    const serialized = await this.store.decrypt(record.payload);
+    if (!same(record.contentHash, `0x${createHash('sha256').update(serialized).digest('hex')}`))
+      throw new OrdersError(
+        'PICKUP_UNAVAILABLE',
+        'Pickup planning data could not be checked.',
+        503,
+      );
+    const plan = JSON.parse(serialized);
+    if (Object.entries(binding).some(([key, value]) => plan[key] !== value)) return { plan: null };
+    return {
+      plan: { pickupAt: plan.pickupAt, arrangedAt: plan.arrangedAt, distributor: plan.distributor },
+    };
+  }
   private async discoverBatch(kind: number, batchId: string, batch: ChainRecord) {
     let metadata: ChainRecord = {};
     if (kind === 1) {
@@ -706,9 +1273,13 @@ export class OrdersService {
   ) {
     const session = await this.session(sessionId);
     const actualOrderId = orderId;
-    let order = await this.gateway.read('orders', 'getOrder', [orderId]);
+    let identityContract = 'delivery';
+    let order: ChainRecord = deliveryIdentity
+      ? {}
+      : await this.gateway.read('orders', 'getOrder', [orderId]);
     if (deliveryIdentity) {
-      const reference = await this.deliveryReference(orderId);
+      const reference = await this.deliveryReference(orderId, session.address);
+      identityContract = reference.contract;
       order = reference.order;
       const delivery = reference.delivery;
       if (![2, 3, 4, 5].includes(Number(delivery.stage)))
@@ -789,26 +1360,32 @@ export class OrdersService {
         Number(order.identityValidUntil) >= proof.expiresAt
       )
         return { state: 'COMPLETE', status: 'REQUESTED' };
-      const transaction = await this.gateway.prepare(
-        session.address,
-        deliveryIdentity ? 'delivery' : 'orders',
-        deliveryIdentity ? 'act' : 'requestIdentity',
-        deliveryIdentity
-          ? deliveryArgs(session.address, 4, actualOrderId, {
-              challenge: id(proof.challenge),
-              validUntil: proof.expiresAt,
-            })
-          : [
-              actualOrderId,
-              id(proof.challenge),
-              id(input.purpose),
-              id(
-                JSON.stringify({ required: input.requiredClaims, optional: input.optionalClaims }),
-              ),
-              proof.expiresAt,
-              !!input.required,
-            ],
-      );
+      const transaction =
+        identityContract === 'custody-offer'
+          ? undefined
+          : await this.gateway.prepare(
+              session.address,
+              deliveryIdentity ? identityContract : 'orders',
+              deliveryIdentity ? 'act' : 'requestIdentity',
+              deliveryIdentity
+                ? deliveryArgs(session.address, 4, actualOrderId, {
+                    challenge: id(proof.challenge),
+                    validUntil: proof.expiresAt,
+                  })
+                : [
+                    actualOrderId,
+                    id(proof.challenge),
+                    id(input.purpose),
+                    id(
+                      JSON.stringify({
+                        required: input.requiredClaims,
+                        optional: input.optionalClaims,
+                      }),
+                    ),
+                    proof.expiresAt,
+                    !!input.required,
+                  ],
+            );
       await this.messaging.send(sessionId, {
         messageType: 'https://tracechain.local/didcomm/order-identity-request/1.0',
         recipientWallet: order.buyer,
@@ -827,10 +1404,17 @@ export class OrdersService {
     }
     if (input.action === 'material')
       return this.flow.getCompanyIdentityProofMaterial(sessionId, orderId);
-    if (input.action === 'status')
+    if (input.action === 'status') {
+      if (
+        identityContract === 'custody-offer' &&
+        !(await this.repository.findEvidence(orderId))?.identityProof
+      )
+        return { status: 'NOT_REQUESTED' };
       return this.flow.getCompanyIdentityProofStatus(sessionId, orderId);
+    }
     if (input.action === 'verify') {
       const proof = await this.flow.orderIdentityAttestation(sessionId, orderId);
+      if (identityContract === 'custody-offer') return { state: 'COMPLETE', checks: proof.checks };
       if (
         same(order.identityCredentialHash, proof.credentialHash) &&
         same(order.identityChallenge, proof.challengeHash) &&
@@ -841,7 +1425,7 @@ export class OrdersService {
         checks: proof.checks,
         transaction: await this.gateway.prepare(
           session.address,
-          deliveryIdentity ? 'delivery' : 'orders',
+          deliveryIdentity ? identityContract : 'orders',
           deliveryIdentity ? 'act' : 'attestIdentity',
           deliveryIdentity
             ? deliveryArgs(session.address, 5, actualOrderId, {
@@ -1198,12 +1782,15 @@ export class OrdersService {
       warehouseSupported && Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1;
     const fulfilmentSupported =
       warehouseSupported && Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) === 2;
+    const productDeliverySupported =
+      Number(await this.optionalRead('custody', 'productDeliveryPolicy')) === 1;
     const logistics = warehouseSupported
       ? await readLogistics(
           this.gateway,
           session.address,
           session.role === CompanyRole.SYSTEM_ADMIN,
           shipmentReviewSupported,
+          productDeliverySupported,
         )
       : undefined;
     const orders: ChainRecord[] = [];
@@ -1299,6 +1886,9 @@ export class OrdersService {
       const delivery = ingredientDeliverySupported
         ? await this.gateway.read('delivery', 'get', [event.orderId])
         : undefined;
+      const productDelivery = productDeliverySupported
+        ? await this.gateway.read('productDelivery', 'get', [event.orderId])
+        : undefined;
       if (
         delivery &&
         ((Number(delivery.stage) === 1 &&
@@ -1314,6 +1904,7 @@ export class OrdersService {
         same(actor, order.buyer) ||
         same(actor, order.seller) ||
         same(actor, delivery?.distributor) ||
+        same(actor, productDelivery?.distributor) ||
         same(actor, custodyPosition?.distributor);
       if (!involved) continue;
       const record = await this.repository.findPrivate('products', event.orderId);
@@ -1344,15 +1935,25 @@ export class OrdersService {
           : undefined,
         ...order,
         deliveryReceivingLocation,
+        productDelivery:
+          productDelivery && Number(productDelivery.mode) > 0 ? productDelivery : undefined,
+        productDeliveryQr:
+          productDelivery && Number(productDelivery.mode) > 0
+            ? this.productOrderQr(event.orderId)
+            : undefined,
         orderId: event.orderId,
         details:
-          same(actor, delivery?.distributor) || same(actor, custodyPosition?.distributor)
+          same(actor, delivery?.distributor) ||
+          same(actor, custodyPosition?.distributor) ||
+          same(actor, productDelivery?.distributor)
             ? undefined
             : details,
         delivery: delivery && Number(delivery.stage) > 0 ? delivery : undefined,
         evidenceIds: await this.gateway.read('orders', 'getOrderEvidence', [event.orderId]),
         decision:
-          (same(actor, delivery?.distributor) || same(actor, custodyPosition?.distributor)) &&
+          (same(actor, delivery?.distributor) ||
+            same(actor, custodyPosition?.distributor) ||
+            same(actor, productDelivery?.distributor)) &&
           decision
             ? { status: decision.status, recordedAt: decision.recordedAt }
             : decision,
@@ -1409,7 +2010,11 @@ export class OrdersService {
           record && record.contentHash === location.detailsHash
             ? JSON.parse(await this.store.decrypt(record.payload)).label
             : 'Location label unavailable';
-        return { location: location.location, company: location.company, label };
+        return {
+          location: location.location,
+          company: location.company,
+          label: (await this.locationAlias(location.location, location.company)) ?? label,
+        };
       }),
     );
     const wallets = [
@@ -1451,6 +2056,7 @@ export class OrdersService {
       ingredientDeliverySupported,
       warehouseSupported,
       fulfilmentSupported,
+      productDeliverySupported,
       shipmentReviewSupported,
       logistics: logistics
         ? {
@@ -1459,10 +2065,28 @@ export class OrdersService {
               ...warehouse,
               distributorName: name(warehouse.distributor),
             })),
-            productPositions: logistics.productPositions.filter(
-              (position) =>
-                session.role === CompanyRole.SYSTEM_ADMIN || same(position.distributor, actor),
-            ),
+            productPositions: logistics.productPositions
+              .filter(
+                (position) =>
+                  session.role === CompanyRole.SYSTEM_ADMIN ||
+                  same(position.distributor, actor) ||
+                  (session.role === CompanyRole.MANUFACTURER &&
+                    catalogue.some(
+                      (item) =>
+                        Number(item.kind) === 2 &&
+                        same(item.seller, actor) &&
+                        item.batches.some((batch: string) => same(batch, position.batchId)),
+                    )),
+              )
+              .map((position) => ({
+                ...position,
+                quantity: position.available,
+                unit:
+                  catalogue.find((item) =>
+                    item.batches.some((batch: string) => same(batch, position.batchId)),
+                  )?.unit ?? 'Unavailable',
+                distributorName: name(position.distributor),
+              })),
             positions: logistics.positions.filter(ownsInventory).map((position) => ({
               ...position,
               distributorName: name(position.distributor),
@@ -1713,6 +2337,11 @@ export class OrdersService {
             'Accept this delivery before scanning to confirm pickup.',
           );
         this.assertDeliveryQr(input.qrPayload, input.orderId);
+        if (!(await this.pickupPlan(sessionId, input.orderId)).plan)
+          throw new OrdersError(
+            'PICKUP_PLAN_REQUIRED',
+            'Arrange a pickup time before recording physical collection.',
+          );
         contract = 'delivery';
         method = 'act';
         args = deliveryArgs(session.address, 6, input.orderId, { occurredAt: input.occurredAt });
@@ -2021,8 +2650,42 @@ export class OrdersService {
           'Use the same unit as the selected catalogue item. Quantities are not converted automatically.',
           400,
         );
+      if (input.custodySource) {
+        if (input.kind !== 2 || !input.batchId || session.role !== CompanyRole.RETAILER)
+          throw new OrdersError(
+            'INVALID_CUSTODY_SOURCE',
+            'A product custody selection requires a Retailer product request.',
+            400,
+          );
+        const { distributor, location } = input.custodySource;
+        const warehouse = await this.gateway.read('delivery', 'warehouses', [location]);
+        if (
+          !same(warehouse.distributor, distributor) ||
+          !(await this.gateway.read('stakeholders', 'isAuthorized', [distributor, 4])) ||
+          !same(await this.gateway.read('orders', 'locationOwner', [location]), distributor)
+        )
+          throw new OrdersError(
+            'INVALID_CUSTODY_SOURCE',
+            'Choose an active Distributor warehouse.',
+            400,
+          );
+        if (
+          BigInt(
+            await this.gateway.read('custody', 'locationStock', [
+              input.batchId,
+              distributor,
+              location,
+            ]),
+          ) < BigInt(input.quantity)
+        )
+          throw new OrdersError(
+            'INSUFFICIENT_CUSTODY_STOCK',
+            'The selected warehouse no longer has enough available product stock.',
+          );
+      }
       const stored = await this.privateRecord(operationKey, session.address, {
         note: input.note,
+        ...(input.custodySource ? { custodySource: input.custodySource } : {}),
         ...(input.requestOnly ? { requestOnly: true } : {}),
         receivingLocation: input.location,
       });

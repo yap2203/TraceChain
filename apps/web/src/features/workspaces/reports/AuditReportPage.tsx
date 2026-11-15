@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { FileSearch, RefreshCw } from 'lucide-react';
 import { useMemo } from 'react';
 import type { ReactNode } from 'react';
@@ -16,6 +17,7 @@ import {
   Table,
   TD,
   TR,
+  WorkflowHelp,
 } from '../shared/ui';
 
 interface AuditRow {
@@ -50,6 +52,7 @@ export default function AuditReport() {
       'text/csv',
     );
 
+  if (loading) return <LoadingIndicator page label="Loading records…" />;
   return (
     <div>
       <SectionTitle
@@ -83,10 +86,15 @@ export default function AuditReport() {
           </div>
         }
       />
-      <Alert
-        type="info"
-        message="This is a current, wallet-scoped blockchain snapshot, not a complete historical event index. Contract state and hashes are authoritative; readable company names come from existing issuance metadata."
-      />
+      <div className="workspace-report-note">
+        <p>
+          Current records for your wallet. This snapshot is not a complete historical event index.
+        </p>
+        <WorkflowHelp title="About this report’s data">
+          Contract state and hashes are authoritative. Readable company names come from existing
+          issuance metadata. The report covers records available to your authenticated wallet.
+        </WorkflowHelp>
+      </div>
       {error && (
         <div style={{ marginBottom: 16 }}>
           <Alert type="error" message={`Blockchain audit data is unavailable: ${error}`} />

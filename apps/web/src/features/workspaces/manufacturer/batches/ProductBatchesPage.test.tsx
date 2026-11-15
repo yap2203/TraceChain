@@ -83,8 +83,7 @@ describe('Manufacturer Products entry point', () => {
     expect(screen.getByText(/250 kg/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'View product details' }));
     expect(mocks.onDetail).toHaveBeenCalledWith('product-batch');
-    fireEvent.click(screen.getByRole('button', { name: 'Supplier ingredients' }));
-    expect(mocks.onSectionChange).toHaveBeenCalledWith('ingredients');
+    expect(screen.queryByRole('button', { name: 'Supplier ingredients' })).toBeNull();
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'no match' } });
     expect(screen.getByText('No matching products')).toBeTruthy();
   });

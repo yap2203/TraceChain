@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useState } from 'react';
 import { getOrders, type OrderRecord } from '../../../orders/orders.api';
 
@@ -79,7 +80,7 @@ export function ProductBatchDetail({
   }, [productBatchId]);
 
   if (error) return <Alert type="error" message={error} />;
-  if (loading) return <div>Reading ProductRegistry…</div>;
+  if (loading) return <LoadingIndicator page label="Reading ProductRegistry…" />;
   if (!p)
     return (
       <EmptyState

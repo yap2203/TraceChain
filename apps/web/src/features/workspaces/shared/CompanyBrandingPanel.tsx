@@ -1,3 +1,4 @@
+import { reportError } from '../../../components/ui/feedback';
 import { ImageUp } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { CompanyAvatar } from '../../orders/CatalogueMedia';
@@ -20,9 +21,7 @@ export function CompanyBrandingPanel({ walletAddress }: { walletAddress: string 
   useEffect(() => {
     void getMyCompanyBranding()
       .then(({ branding: value }) => setBranding(value))
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : 'Company branding is unavailable.'),
-      );
+      .catch((cause) => setError(reportError(cause, 'Company branding is unavailable.')));
   }, []);
 
   const upload = async () => {
@@ -38,7 +37,7 @@ export function CompanyBrandingPanel({ walletAddress }: { walletAddress: string 
       setFile(undefined);
       setNotice('Company logo updated for catalogue presentation. Authorization is unchanged.');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The company logo could not be saved.');
+      setError(reportError(cause, 'The company logo could not be saved.'));
     } finally {
       setBusy(false);
     }

@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { ClipboardList, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
@@ -179,7 +180,7 @@ export function RequestsOverview({
       <div className="requests-overview__heading">
         <div>
           <h3 id="requests-title">My requests</h3>
-          <p>Review the latest state and next expected action. Requests do not reserve stock.</p>
+          <p>Open a request to see its status and next action.</p>
         </div>
         <strong>{records.length} results</strong>
       </div>
@@ -296,14 +297,7 @@ export function RequestsOverview({
 }
 
 export function RequestsLoading() {
-  return (
-    <div className="supplier-request-loading" role="status" aria-label="Loading requests">
-      <span>Loading incoming quantity requests…</span>
-      {[0, 1, 2].map((key) => (
-        <div className="supplier-request-loading__row" aria-hidden="true" key={key} />
-      ))}
-    </div>
-  );
+  return <LoadingIndicator page label="Loading requests" />;
 }
 
 function SummaryFilter({
@@ -342,7 +336,7 @@ function SupplierRequestCard({
   onView: (orderId: string) => void;
 }) {
   const state = requestStatus(entry);
-  const manufacturer = entry.buyerName ?? 'Verified Manufacturer unavailable';
+  const manufacturer = entry.buyerName ?? 'Company name unavailable';
   return (
     <Card padding="20px">
       <article className="supplier-request-row supplier-request-card">
@@ -398,6 +392,27 @@ function SupplierRequestCard({
 }
 
 export function requestStatus(order: OrderRecord) {
+  if (Number(order.productDelivery?.stage) === 5)
+    return {
+      key: 'completed',
+      group: 'closed' as const,
+      label: 'Received by Retailer',
+      variant: 'verified' as const,
+    };
+  if (Number(order.productDelivery?.stage) === 6)
+    return {
+      key: 'cancelled',
+      group: 'closed' as const,
+      label: 'Product delivery cancelled / expired',
+      variant: 'rejected' as const,
+    };
+  if (Number(order.productDelivery?.stage) === 4)
+    return {
+      key: 'in-transit',
+      group: 'approved' as const,
+      label: 'In transit to Retailer',
+      variant: 'accepted' as const,
+    };
   if (
     order.custodyOrder &&
     BigInt(order.custodyOrder.dispatched) < BigInt(order.requested) &&
@@ -491,6 +506,19 @@ export function companyEvidenceStatus(order: OrderRecord) {
 }
 
 export function nextAction(order: OrderRecord, actor: string) {
+  if (order.productDelivery) {
+    const stage = Number(order.productDelivery.stage);
+    if (stage === 2) return 'The requested Distributor must accept or decline product delivery.';
+    if (stage === 3)
+      return Number(order.productDelivery.mode) === 1
+        ? 'The assigned Distributor scans the product-order label and confirms pickup.'
+        : 'The custodian records dispatch of the reserved products.';
+    if (stage === 4) return 'The Retailer scans the shipment label and confirms physical receipt.';
+    if (stage === 5)
+      return 'Product delivery completed. Retailer stock reflects confirmed receipt.';
+    if (stage === 6)
+      return 'Delivery closed. Release any expired reservation before reusing that stock.';
+  }
   const state = requestStatus(order);
   if (order.delivery && !order.custodyOrder && state.group === 'approved') {
     const stage = Number(order.delivery.stage);
@@ -571,6 +599,6 @@ function same(left: string, right: string) {
 
 function counterpartyName(order: OrderRecord, actor: string) {
   return same(order.seller, actor)
-    ? (order.buyerName ?? 'Verified Manufacturer unavailable')
-    : (order.sellerName ?? 'Verified Supplier unavailable');
+    ? (order.buyerName ?? 'Company name unavailable')
+    : (order.sellerName ?? 'Company name unavailable');
 }

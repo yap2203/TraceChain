@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../components/ui/feedback';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 export type OrderRecord = Record<string, any>;
 export interface SupplierStock {
@@ -12,6 +13,7 @@ export interface SupplierStock {
   requestCount: number;
 }
 export interface OrdersState {
+  productDeliverySupported?: boolean;
   fulfilmentSupported?: boolean;
   warehouseSupported?: boolean;
   shipmentReviewSupported?: boolean;
@@ -20,6 +22,7 @@ export interface OrdersState {
     positions: OrderRecord[];
     shipments: OrderRecord[];
     productStock: OrderRecord[];
+    productPositions?: OrderRecord[];
   };
   companies?: Array<{ wallet: string; companyName: string; role: string }>;
   ingredientDeliverySupported?: boolean;
@@ -42,24 +45,118 @@ export interface CatalogueImageUpload {
   fileName: string;
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
 }
-async function request<T>(path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  path: string,
+  body?: unknown,
+  method = body ? 'POST' : 'GET',
+): Promise<T> {
   const response = await fetch(`${base}/api/orders${path}`, {
     credentials: 'include',
-    method: body ? 'POST' : 'GET',
+    method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error?.message ?? 'The order service is unavailable.');
+    throw new Error(apiErrorMessage(error.error?.message, 'The order service is unavailable.'));
   }
   return response.json();
 }
 export const getOrders = () => request<OrdersState>('');
+export interface CompanyLocation {
+  location: string;
+  registeredLabel: string;
+  label: string;
+  warehouse: boolean;
+}
+export interface CompanyProfile {
+  wallet: string;
+  role: string;
+  initialLocationName?: string;
+  locations: CompanyLocation[];
+}
+export const getCompanyProfile = () => request<CompanyProfile>('/profile');
+export const updateLocationLabel = (location: string, label: string) =>
+  request(`/profile/locations/${encodeURIComponent(location)}`, { label }, 'PATCH');
+export interface PickupPlan {
+  pickupAt: number;
+  arrangedAt: string;
+  distributor: string;
+}
+export const getPickupPlan = (referenceId: string) =>
+  request<{ plan: PickupPlan | null }>(`/${encodeURIComponent(referenceId)}/pickup`);
+export const savePickupPlan = (referenceId: string, pickupAt: number) =>
+  request<{ plan: PickupPlan }>(`/${encodeURIComponent(referenceId)}/pickup`, { pickupAt }, 'PUT');
+export interface TraceStage {
+  id: string;
+  title: string;
+  state: 'recorded' | 'in-progress' | 'not-recorded';
+  records: OrderRecord[];
+}
+export interface TraceRoute {
+  id: string;
+  productBatchId: string | null;
+  name: string;
+  ingredients: OrderRecord[];
+  stages: TraceStage[];
+}
+export interface BusinessTraceability {
+  roots: Array<{
+    batchId: string;
+    kind: 'ingredient' | 'product';
+    name: string;
+    reference: string;
+  }>;
+  root: BusinessTraceability['roots'][number] | null;
+  routes: TraceRoute[];
+}
+export const getBusinessTraceability = (kind?: string, batchId?: string) =>
+  request<BusinessTraceability>(
+    '/traceability' + (kind && batchId ? '?' + new URLSearchParams({ kind, batchId }) : ''),
+  );
+export interface CustodyOffer {
+  offerId: string;
+  kind: 1 | 2;
+  batchId: string;
+  quantity: string;
+  unit: string;
+  sender: string;
+  distributor: string;
+  senderName: string;
+  distributorName: string;
+  itemName: string;
+  fromLocation: string;
+  toLocation: string;
+  fromLocationName?: string;
+  toLocationName?: string;
+  expiresAt: number;
+  status:
+    'REQUESTED' | 'ACCEPTED' | 'SCHEDULED' | 'REJECTED' | 'DISPATCHED' | 'RECEIVED' | 'EXPIRED';
+  pickupAt?: number;
+  shipmentId?: string;
+}
+export const getCustodyOffers = () => request<{ offers: CustodyOffer[] }>('/custody-offers');
+export const getCustodyOffer = (offerId: string) =>
+  request<{ offer: CustodyOffer }>(`/custody-offers/${encodeURIComponent(offerId)}`);
+export const createCustodyOffer = (input: Record<string, unknown>) =>
+  request<{ offer: CustodyOffer }>('/custody-offers', input);
+export const actCustodyOffer = (
+  offerId: string,
+  input: { action: 'accept' | 'reject' | 'schedule'; pickupAt?: number },
+) =>
+  request<{ offer: CustodyOffer }>(`/custody-offers/${encodeURIComponent(offerId)}/action`, input);
+export const prepareCustodyOffer = (
+  offerId: string,
+  input: { vehicle: string; occurredAt: number; expectedAt: number },
+) =>
+  request<{ transaction: PreparedTransaction; resultId: string; offerId: string }>(
+    `/custody-offers/${encodeURIComponent(offerId)}/prepare`,
+    input,
+  );
 export interface CompanyProofRequestRow {
   requestId: string;
   referenceId: string;
-  context: 'delivery' | 'order' | 'ingredient';
+  context: 'delivery' | 'order' | 'ingredient' | 'custody';
   direction: 'sent' | 'received';
   company: string;
   purpose: string;

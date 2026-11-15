@@ -1,3 +1,5 @@
+import { reportError } from '../../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { getAuthSession } from '../../../auth/auth.api';
@@ -62,8 +64,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
     let active = true;
     void loadTransferOptions()
       .catch((cause) => {
-        if (active)
-          setError(cause instanceof Error ? cause.message : 'Could not load transfer options.');
+        if (active) setError(reportError(cause, 'Could not load transfer options.'));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -121,7 +122,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
       setStep('created');
       await Promise.all([loadTransferOptions(), reload()]);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Transfer creation failed.');
+      setError(reportError(cause, 'Transfer creation failed.'));
     } finally {
       submissionActive.current = false;
       setBusy(false);
@@ -142,6 +143,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
 
   const outgoingTransfers = data.transfers.filter((transfer) => transfer.direction === 'outgoing');
   const productLabel = product?.productName ?? product?.productReference ?? 'Product batch';
+  if (loading) return <LoadingIndicator page label="Loading transfer options…" />;
 
   return (
     <div>

@@ -1,3 +1,5 @@
+import { reportError } from '../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { CheckCircle2, ChevronDown, Copy, Download, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -29,9 +31,7 @@ export function StakeholderCredentialPage({
     try {
       setData(await getMyCompanyIdentity());
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : 'The company credential could not be loaded.',
-      );
+      setError(reportError(cause, 'The company credential could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -54,9 +54,7 @@ export function StakeholderCredentialPage({
       setData(await verifyMyCompanyIdentity());
       setActionMessage('Credential verification completed successfully.');
     } catch (cause) {
-      setVerificationError(
-        cause instanceof Error ? cause.message : 'Credential verification is unavailable.',
-      );
+      setVerificationError(reportError(cause, 'Credential verification is unavailable.'));
     } finally {
       setVerifying(false);
     }
@@ -84,13 +82,7 @@ export function StakeholderCredentialPage({
     }
   };
 
-  if (loading)
-    return (
-      <SectionTitle
-        title="My Company Identity"
-        sub="Retrieving your encrypted Company Role Credential and current registry status..."
-      />
-    );
+  if (loading) return <LoadingIndicator page label="Loading company identity…" />;
   if (!data)
     return (
       <div>
@@ -107,17 +99,9 @@ export function StakeholderCredentialPage({
   const role = displayRole(identity.role);
   return (
     <div>
-      <details
-        id="presentation-signing"
-        style={{ marginBottom: 16 }}
-        open={typeof window !== 'undefined' && window.location.hash === '#presentation-signing'}
-      >
-        <summary style={{ cursor: 'pointer', padding: 12 }}>Presentation signing settings</summary>
-        <HolderSigningKeyPanel />
-      </details>
       <SectionTitle
         title="My Company Identity"
-        sub="Your existing Company Role Credential and current blockchain authorization state"
+        sub="Your company identity, credential status and verification results."
         action={
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             <Btn size="xs" disabled={verifying} onClick={() => void verify()}>
@@ -169,9 +153,6 @@ export function StakeholderCredentialPage({
         wallet={identity.associatedWallet}
         onCopy={(label, value) => void copyValue(label, value)}
       />
-      <div style={{ marginBottom: 16 }}>
-        <CompanyBrandingPanel walletAddress={identity.associatedWallet} />
-      </div>
       {verificationError && (
         <Alert type="error" message={`Verification service unavailable: ${verificationError}`} />
       )}
@@ -254,6 +235,18 @@ export function StakeholderCredentialPage({
         </Card>
       </div>
 
+      <details className="workspace-profile-settings">
+        <summary>Company logo settings</summary>
+        <CompanyBrandingPanel walletAddress={identity.associatedWallet} />
+      </details>
+      <details
+        id="presentation-signing"
+        className="workspace-profile-settings"
+        open={typeof window !== 'undefined' && window.location.hash === '#presentation-signing'}
+      >
+        <summary>Presentation signing settings</summary>
+        <HolderSigningKeyPanel />
+      </details>
       <details
         style={{
           background: T.surface,

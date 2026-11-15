@@ -105,6 +105,7 @@ describe('My Company Identity', () => {
   });
   it('updates only the authenticated company presentation logo', async () => {
     render(<StakeholderCredentialPage expectedRole="MANUFACTURER" />);
+    fireEvent.click(await screen.findByText('Company logo settings'));
     await screen.findByLabelText('Choose company logo');
     const file = new File(['logo'], 'logo.webp', { type: 'image/webp' });
     fireEvent.change(screen.getByLabelText('Choose company logo'), {

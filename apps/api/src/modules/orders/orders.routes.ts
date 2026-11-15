@@ -7,6 +7,7 @@ import { ProductionFlowApiError } from '../production-flow/production-flow.servi
 import { DidCommError } from '../didcomm/didcomm.service.js';
 import { evidenceRequestSchema } from '../production-flow/production-flow.schema.js';
 import { logisticsActionSchema } from './logistics.schema.js';
+import { CustodyOfferError } from './custody-offers.js';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
   const router = Router();
@@ -34,7 +35,8 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
           error instanceof OrdersError ||
           error instanceof AuthError ||
           error instanceof ProductionFlowApiError ||
-          error instanceof DidCommError
+          error instanceof DidCommError ||
+          error instanceof CustodyOfferError
         )
           return response
             .status(error.status)
@@ -55,10 +57,124 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
   );
   const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
   router.get(
+    '/traceability',
+    action((service, session, request) =>
+      service.traceability(
+        session,
+        z
+          .object({ kind: z.enum(['ingredient', 'product']).optional(), batchId: hash.optional() })
+          .parse(request.query),
+      ),
+    ),
+  );
+  router.get(
+    '/profile',
+    action((service, session) => service.companyProfile(session)),
+  );
+  router.patch(
+    '/profile/locations/:location',
+    action((service, session, request) =>
+      service.updateLocationLabel(
+        session,
+        hash.parse(request.params.location),
+        z
+          .object({ label: z.string().trim().min(1).max(160) })
+          .strict()
+          .parse(request.body).label,
+      ),
+    ),
+  );
+  router.get(
+    '/:referenceId/pickup',
+    action((service, session, request) =>
+      service.pickupPlan(session, hash.parse(request.params.referenceId)),
+    ),
+  );
+  router.put(
+    '/:referenceId/pickup',
+    action((service, session, request) =>
+      service.pickupPlan(
+        session,
+        hash.parse(request.params.referenceId),
+        z.object({ pickupAt: z.number().int().positive() }).strict().parse(request.body),
+      ),
+    ),
+  );
+  router.get(
     '/information-requests',
     action((service, session) => service.informationRequests(session)),
   );
   const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
+  router.get(
+    '/custody-offers',
+    action((service, session) => service.listCustodyOffers(session)),
+  );
+  router.get(
+    '/custody-offers/:offerId',
+    action((service, session, request) =>
+      service.getCustodyOffer(session, hash.parse(request.params.offerId)),
+    ),
+  );
+  router.post(
+    '/custody-offers',
+    action((service, session, request) =>
+      service.createCustodyOffer(
+        session,
+        z
+          .object({
+            operationId: z.string().uuid(),
+            kind: z.union([z.literal(1), z.literal(2)]),
+            batchId: hash,
+            quantity: z.string().regex(/^[1-9]\d{0,38}$/),
+            fromLocation: hash,
+            toLocation: hash,
+            distributor: wallet,
+            expiresAt: z.number().int().positive(),
+          })
+          .strict()
+          .parse(request.body),
+      ),
+    ),
+  );
+  router.post(
+    '/custody-offers/:offerId/action',
+    action((service, session, request) =>
+      service.actCustodyOffer(
+        session,
+        hash.parse(request.params.offerId),
+        z
+          .object({
+            action: z.enum(['accept', 'reject', 'schedule']),
+            pickupAt: z.number().int().positive().optional(),
+          })
+          .strict()
+          .parse(request.body),
+      ),
+    ),
+  );
+  router.post(
+    '/custody-offers/:offerId/prepare',
+    action((service, session, request) =>
+      service.prepareCustodyOffer(
+        session,
+        hash.parse(request.params.offerId),
+        z
+          .object({
+            vehicle: z
+              .string()
+              .trim()
+              .toUpperCase()
+              .min(2)
+              .max(32)
+              .regex(/^(?=.*[A-Z0-9])[A-Z0-9 -]+$/),
+            occurredAt: z.number().int().positive(),
+            expectedAt: z.number().int().positive(),
+          })
+          .strict()
+          .parse(request.body),
+      ),
+    ),
+  );
   router.get(
     '/branding/me',
     action((service, session) => service.myBranding(session)),

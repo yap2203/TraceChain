@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import { Alert, Badge, Btn, Card, EmptyState, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate, shortChainId, transferStatuses } from '../../shared/operational-format';
@@ -13,7 +14,7 @@ export function ReceiveProduct({
   const { data, error, loading } = useOperationalData();
   const t = data.transfers.find((x) => x.transferId === shipmentId);
   if (error) return <Alert type="error" message={error} />;
-  if (loading) return <div>Reading CustodyTransfer…</div>;
+  if (loading) return <LoadingIndicator page label="Reading CustodyTransfer…" />;
   if (!t)
     return (
       <EmptyState

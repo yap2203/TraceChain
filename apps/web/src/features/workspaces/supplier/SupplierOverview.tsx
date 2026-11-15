@@ -1,3 +1,5 @@
+import { reportError } from '../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { Boxes, ClipboardList, PackageCheck, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -22,8 +24,7 @@ export function SupplierOverview({ onNav }: { onNav: (tab: string) => void }) {
         if (active) setBatches(result);
       })
       .catch((caught: unknown) => {
-        if (active)
-          setBatchError(caught instanceof Error ? caught.message : 'Batches could not be loaded.');
+        if (active) setBatchError(reportError(caught, 'Batches could not be loaded.'));
       })
       .finally(() => {
         if (active) setBatchesLoading(false);
@@ -36,13 +37,15 @@ export function SupplierOverview({ onNav }: { onNav: (tab: string) => void }) {
   const activeBatches = batches.filter((batch) => batch.status === 1);
   const availableBatches = activeBatches.filter((batch) => BigInt(batch.availableQuantity) > 0n);
   const pendingRequests = data.evidenceRequests.filter((request) => request.status === 1);
+  if (batchesLoading || operationalLoading)
+    return <LoadingIndicator page label="Loading records…" />;
 
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       {batchError && <Alert type="error" message={batchError} />}
       {operationalError && <Alert type="error" message={operationalError} />}
 
-      <div className="workspace-stat-grid">
+      <div className="workspace-metrics">
         <StatCard
           label="Ingredient Batches"
           value={batchesLoading ? '…' : String(batches.length)}

@@ -1,0 +1,39 @@
+@reference '../../styles/tailwind.css';
+@layer components {
+  .app-notifications {
+    @apply fixed z-[1000] grid gap-[10px] pointer-events-none;
+    top: 16px;
+    right: 16px;
+    width: min(420px, calc(100vw - 32px));
+  }
+  .app-notification {
+    @apply flex items-start gap-[10px] p-[16px] rounded-[12px] pointer-events-auto;
+    background: #102238;
+    color: #edf6ff;
+    border: 1px solid #48617a;
+    box-shadow: 0 8px 28px #0005;
+  }
+  .app-notification p {
+    @apply flex-1 m-0 min-w-0 text-[14px];
+    overflow-wrap: anywhere;
+  }
+  .app-notification > svg {
+    @apply shrink-0;
+    color: #51ddf5;
+  }
+  .app-notification--success > svg {
+    color: #7cecaa;
+  }
+  .app-notification--error > svg {
+    color: #ff9292;
+  }
+  .app-notification button {
+    @apply flex items-center justify-center shrink-0 p-[8px] rounded-[6px] cursor-pointer;
+    background: transparent;
+    border: 0;
+    color: inherit;
+  }
+  .app-notification button:focus-visible {
+    outline: 2px solid #51ddf5;
+  }
+}

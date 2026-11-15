@@ -1,3 +1,5 @@
+import { reportError } from '../../components/ui/feedback';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { RefreshCw, Search, Warehouse } from 'lucide-react';
@@ -15,18 +17,30 @@ import {
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const short = (value?: string) =>
   value ? `${value.slice(0, 10)}…${value.slice(-6)}` : 'Unavailable';
-export function CustodyInventoryPage({ role }: { role: 'supplier' | 'distributor' }) {
+export function CustodyInventoryPage({
+  role,
+  initialKind,
+}: {
+  role: 'supplier' | 'distributor' | 'manufacturer';
+  initialKind?: 'ingredient' | 'product';
+}) {
   const [data, setData] = useState<OrdersState>(),
     [error, setError] = useState(''),
     [search, setSearch] = useState(''),
-    [kind, setKind] = useState('ingredient');
+    [kind] = useState(
+      role === 'manufacturer'
+        ? 'product'
+        : role === 'supplier'
+          ? 'ingredient'
+          : (initialKind ?? 'ingredient'),
+    );
   const [params, setParams] = useSearchParams();
   const load = useCallback(async () => {
     setError('');
     try {
       setData(await getOrders());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Custody inventory unavailable.');
+      setError(reportError(cause, 'Custody inventory unavailable.'));
     }
   }, []);
   useEffect(() => {
@@ -36,7 +50,7 @@ export function CustodyInventoryPage({ role }: { role: 'supplier' | 'distributor
     return error ? (
       <Alert type="error" message={error} />
     ) : (
-      <p role="status">Reading your authorized custody inventory…</p>
+      <LoadingIndicator page label="Reading your authorized custody inventory…" />
     );
   const ingredientRows = (data.logistics?.positions ?? [])
     .filter((entry) =>
@@ -46,11 +60,17 @@ export function CustodyInventoryPage({ role }: { role: 'supplier' | 'distributor
     )
     .map((entry) => ({ ...entry, kind: 'ingredient', id: entry.positionId }));
   const productRows =
-    role === 'distributor'
-      ? (data.logistics?.productStock ?? []).map((entry) => ({
+    role === 'distributor' || role === 'manufacturer'
+      ? (role === 'manufacturer'
+          ? (data.logistics?.productPositions ?? [])
+          : (data.logistics?.productStock ?? [])
+        ).map((entry) => ({
           ...entry,
           kind: 'product',
-          id: entry.batchId,
+          id:
+            role === 'manufacturer'
+              ? `${entry.batchId}:${entry.distributor}:${entry.location}`
+              : entry.batchId,
         }))
       : [];
   const rows: OrderRecord[] = [...ingredientRows, ...productRows];
@@ -69,8 +89,10 @@ export function CustodyInventoryPage({ role }: { role: 'supplier' | 'distributor
         title="Custody inventory"
         sub={
           role === 'distributor'
-            ? 'Only inventory held by your authenticated Distributor company is shown.'
-            : 'Track your own ingredient batches held in Distributor custody. Other Suppliers’ stock is private.'
+            ? 'Stock held at your company’s warehouses.'
+            : role === 'manufacturer'
+              ? 'Your finished products held at Distributor warehouses.'
+              : 'Your ingredients held at Distributor warehouses.'
         }
         action={
           <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={() => void load()}>
@@ -112,7 +134,10 @@ export function CustodyInventoryPage({ role }: { role: 'supplier' | 'distributor
                   (role === 'distributor' ? 'Your Distributor company' : 'Unavailable'),
               ],
               ['Warehouse', selected.warehouseName ?? 'See location balances'],
-              ['Physical stock', `${selected.quantity} ${selected.unit}`],
+              [
+                selected.kind === 'product' ? 'Available physical stock' : 'Physical stock',
+                `${selected.quantity} ${selected.unit}`,
+              ],
               [
                 selected.kind === 'product'
                   ? 'Reserved / in transit (outside available stock)'
@@ -167,22 +192,6 @@ export function CustodyInventoryPage({ role }: { role: 'supplier' | 'distributor
         </Card>
       ) : (
         <>
-          <div className="flex flex-wrap gap-[8px]">
-            <Btn
-              variant={kind === 'ingredient' ? 'primary' : 'outline'}
-              onClick={() => setKind('ingredient')}
-            >
-              Ingredients
-            </Btn>
-            {role === 'distributor' && (
-              <Btn
-                variant={kind === 'product' ? 'primary' : 'outline'}
-                onClick={() => setKind('product')}
-              >
-                Products
-              </Btn>
-            )}
-          </div>
           <Input
             label="Search custody inventory"
             type="search"

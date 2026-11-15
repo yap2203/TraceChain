@@ -1,3 +1,4 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { BrowserProvider, id } from 'ethers';
 import { useState } from 'react';
 
@@ -55,7 +56,7 @@ export function AppDetail({
       await transaction.wait();
       await onChanged();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Transaction failed.');
+      setError(reportError(cause, 'Transaction failed.'));
     } finally {
       setBusy(false);
     }
@@ -100,7 +101,7 @@ export function AppDetail({
       }
       await onChanged();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Credential issuance failed.');
+      setError(reportError(cause, 'Credential issuance failed.'));
     } finally {
       setBusy(false);
     }

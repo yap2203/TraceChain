@@ -1,3 +1,5 @@
+import { reportError } from '../../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useState } from 'react';
 
 import {
@@ -85,8 +87,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           setIngredients(result.batches.filter((batch) => BigInt(batch.availableQuantity) > 0n));
       })
       .catch((cause) => {
-        if (active)
-          setStockError(cause instanceof Error ? cause.message : 'Could not load received stock.');
+        if (active) setStockError(reportError(cause, 'Could not load received stock.'));
       })
       .finally(() => {
         if (active) setStockLoading(false);
@@ -183,7 +184,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
         throw new Error('The confirmed product did not include its on-chain batch ID.');
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Product creation failed.');
+      setError(reportError(cause, 'Product creation failed.'));
     } finally {
       setBusy(false);
     }
@@ -191,7 +192,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
 
   if (createdProduct) {
     return (
-      <div style={{ maxWidth: 820 }}>
+      <div className="workspace-editor">
         <Alert
           type="success"
           message="Product creation was verified on chain. Its permanent traceability QR is ready."
@@ -232,7 +233,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div style={{ maxWidth: 820 }}>
+    <div className="workspace-editor">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <Btn onClick={onBack} variant="ghost" size="sm">
           Back
@@ -241,40 +242,8 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       </div>
       {error && <Alert type="error" message={error} />}
       <Card>
-        <label style={{ display: 'grid', gap: 6, marginBottom: 14 }}>
-          Production stock location
-          <select
-            aria-label="Production stock location"
-            value={productionLocation}
-            onChange={(event) => setProductionLocation(event.target.value)}
-          >
-            <option value="">Select your registered receiving / production location</option>
-            {locations.map((location) => (
-              <option key={location.location} value={location.location}>
-                {location.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <p>
-          Production consumes only accepted ingredient stock already received at this location.
-          Quantity requests and evidence acceptance do not add usable stock.
-        </p>
+        <h3>1. Product details</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Input
-            label={`Price per ${unit} (optional)`}
-            value={price}
-            onChange={setPrice}
-            type="number"
-            min="0"
-            step="0.01"
-          />
-          <Input
-            label="Currency code"
-            value={currency}
-            onChange={(value) => setCurrency(value.toUpperCase())}
-            maxLength={3}
-          />
           <Input
             label="Product name"
             maxLength={160}
@@ -332,18 +301,44 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             onChange={setExpiresAt}
             required
           />
+          <Input
+            label={`Price per ${unit} (optional)`}
+            value={price}
+            onChange={setPrice}
+            type="number"
+            min="0"
+            step="0.01"
+          />
+          <Input
+            label="Currency code"
+            value={currency}
+            onChange={(value) => setCurrency(value.toUpperCase())}
+            maxLength={3}
+          />
         </div>
       </Card>
       <Card>
-        <div style={{ fontWeight: 700, color: T.navy, marginBottom: 5 }}>
-          Select received ingredients
-        </div>
+        <h3>2. Select received ingredients</h3>
+        <label style={{ display: 'grid', gap: 6 }}>
+          Production stock location
+          <select
+            aria-label="Production stock location"
+            value={productionLocation}
+            onChange={(event) => setProductionLocation(event.target.value)}
+          >
+            <option value="">Select your registered receiving / production location</option>
+            {locations.map((location) => (
+              <option key={location.location} value={location.location}>
+                {location.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <p style={{ color: T.text2, fontSize: 12, marginTop: 0 }}>
-          Select one or more ingredients, choose compatible units and enter the amount used.
-          Remaining stock updates automatically. Confirmed received stock can be consumed;
-          requesting ingredient evidence is optional.
+          Choose received ingredients and the amount to use. Remaining stock updates automatically;
+          ingredient evidence is optional.
         </p>
-        {stockLoading && <p role="status">Reading ingredient stock…</p>}
+        {stockLoading && <LoadingIndicator page label="Reading ingredient stock…" />}
         {stockError && <Alert type="error" message={stockError} />}
         {!stockLoading && ingredients.length === 0 ? (
           <Alert

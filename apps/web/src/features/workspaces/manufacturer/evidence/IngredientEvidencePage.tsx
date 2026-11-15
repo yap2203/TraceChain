@@ -1,4 +1,6 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { CheckCircle2, Clock, FileCheck } from 'lucide-react';
 
 import {
@@ -17,7 +19,6 @@ import {
 } from '../../../production-flow/production-flow.api';
 import { sendEvidenceRequestMessage } from '../../../production-flow/evidence-didcomm';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
-import { CompanyIdentityProofAction } from '../../../production-flow/CompanyIdentityProofAction';
 import {
   Alert,
   Badge,
@@ -60,14 +61,17 @@ export function IngredientEvidence({
   onNav: _onNav,
   hideComposer = false,
   requestId,
+  initialBatchId,
 }: {
   onNav: (target: string) => void;
   hideComposer?: boolean;
   requestId?: string;
+  initialBatchId?: string;
 }) {
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
+  const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
-  const [batchId, setBatchId] = useState('');
+  const [batchId, setBatchId] = useState(initialBatchId ?? '');
   const [reason, setReason] = useState('Product ingredient traceability verification');
   const [dueAt, setDueAt] = useState('');
   const [busy, setBusy] = useState('');
@@ -92,8 +96,7 @@ export function IngredientEvidence({
             });
         })
         .catch((cause) => {
-          if (active)
-            setError(cause instanceof Error ? cause.message : 'Request details are unavailable.');
+          if (active) setError(reportError(cause, 'Request details are unavailable.'));
         });
     return () => {
       active = false;
@@ -121,9 +124,9 @@ export function IngredientEvidence({
     );
   };
   useEffect(() => {
-    void load().catch((cause) =>
-      setError(cause instanceof Error ? cause.message : 'Could not load evidence records.'),
-    );
+    void load()
+      .catch((cause) => setError(reportError(cause, 'Could not load evidence records.')))
+      .finally(() => setLoading(false));
   }, [hideComposer, requestId]);
 
   const requestEvidence = async () => {
@@ -165,16 +168,12 @@ export function IngredientEvidence({
         setNotice('The request is confirmed on chain and its encrypted DIDComm message was sent.');
       } catch (deliveryError) {
         setNotice('The request is confirmed on chain.');
-        setError(
-          deliveryError instanceof Error
-            ? deliveryError.message
-            : 'Encrypted DIDComm delivery is pending.',
-        );
+        setError(reportError(deliveryError, 'Encrypted DIDComm delivery is pending.'));
       }
       setBatchId('');
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The request failed.');
+      setError(reportError(cause, 'The request failed.'));
     } finally {
       setBusy('');
     }
@@ -189,7 +188,7 @@ export function IngredientEvidence({
       setNotice('The cryptographically verified evidence is accepted for this Manufacturer.');
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Evidence acceptance failed.');
+      setError(reportError(cause, 'Evidence acceptance failed.'));
     } finally {
       setBusy('');
     }
@@ -207,7 +206,7 @@ export function IngredientEvidence({
         'The presentation and credential checks passed. Review the result before separately accepting it.',
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Evidence verification failed.');
+      setError(reportError(cause, 'Evidence verification failed.'));
     } finally {
       setBusy('');
     }
@@ -219,7 +218,7 @@ export function IngredientEvidence({
     try {
       setReview(await reviewEvidence(requestId));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load received evidence.');
+      setError(reportError(cause, 'Could not load received evidence.'));
     } finally {
       setBusy('');
     }
@@ -243,12 +242,13 @@ export function IngredientEvidence({
       setRejectReason('');
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Evidence rejection failed.');
+      setError(reportError(cause, 'Evidence rejection failed.'));
     } finally {
       setBusy('');
     }
   };
 
+  if (loading) return <LoadingIndicator page label="Loading ingredient evidence requests…" />;
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <SectionTitle
@@ -407,7 +407,6 @@ export function IngredientEvidence({
                   />
                 </TD>
                 <TD>
-                  <CompanyIdentityProofAction requestId={request.requestId} role="manufacturer" />
                   {request.status >= 2 && (
                     <Btn
                       size="xs"

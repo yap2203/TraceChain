@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { useRef, useState } from 'react';
 import { Link, useInRouterContext } from 'react-router-dom';
 
@@ -41,7 +42,7 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
       await didCommApi.bind(await createBindingProof(holder, challenge));
       setReady(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create the presentation key.');
+      setError(reportError(cause, 'Could not create the presentation key.'));
     }
   };
   const restore = async (selected?: File) => {
@@ -58,7 +59,7 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
       setActiveMessagingAgent(holder);
       setReady(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not restore the presentation key.');
+      setError(reportError(cause, 'Could not restore the presentation key.'));
     } finally {
       if (file.current) file.current.value = '';
     }
@@ -75,7 +76,7 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
       link.click();
       URL.revokeObjectURL(link.href);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create the encrypted backup.');
+      setError(reportError(cause, 'Could not create the encrypted backup.'));
     }
   };
   return (

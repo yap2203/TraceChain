@@ -1,0 +1,472 @@
+import { reportError } from '../../components/ui/feedback';
+import { useEffect, useRef, useState } from 'react';
+import { Camera, Truck } from 'lucide-react';
+import { decodeShipmentQr } from '@tracechain/shared';
+import { Alert, Btn, Input, SelectField, WorkflowHelp } from '../workspaces/shared/ui';
+import { ProductQrDisplay } from '../product-traceability/ProductQrDisplay';
+import { ZxingTransferQrReader, cameraErrorMessage } from '../custody-transfers/qr-reader';
+import { prepareLogistics, type OrdersState, type OrderRecord } from './orders.api';
+import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
+import { workspacePath } from '../workspaces/workspace-paths';
+import { PickupPlanPanel } from './PickupPlanPanel';
+const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+const localTime = (offset = 0) => {
+  const d = new Date(Date.now() + offset);
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 19);
+};
+export function ProductDeliveryPanel({
+  data,
+  order,
+  item,
+  onChanged,
+  initialQr = '',
+}: {
+  data: OrdersState;
+  order: OrderRecord;
+  item?: OrderRecord;
+  onChanged: () => Promise<void>;
+  initialQr?: string;
+}) {
+  const r = order.productDelivery;
+  const manufacturer = same(order.seller, data.actor),
+    retailer = same(order.buyer, data.actor),
+    carrier = same(r?.distributor, data.actor);
+  const approvalDeadline =
+    Number(order.decision?.recordedAt) > 0
+      ? Math.min(Number(order.expiresAt), Number(order.decision.recordedAt) + 48 * 3600)
+      : Number(order.expiresAt);
+  const stage = Number(
+    r?.stage ??
+      (Number(order.status) >= 3 || approvalDeadline <= Date.now() / 1000
+        ? 6
+        : Number(order.decision?.status) === 1
+          ? 1
+          : 0),
+  );
+  const [mode, setMode] = useState(order.details?.custodySource ? '2' : '1'),
+    [distributor, setDistributor] = useState(order.details?.custodySource?.distributor ?? ''),
+    [from, setFrom] = useState(order.details?.custodySource?.location ?? '');
+  const [vehicle, setVehicle] = useState(''),
+    [actual, setActual] = useState(localTime()),
+    [eta, setEta] = useState(localTime(4 * 3600000));
+  const [scanned, setScanned] = useState(''),
+    [confirmed, setConfirmed] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [notice, setNotice] = useState('');
+  const [pickupReady, setPickupReady] = useState(false);
+  const lock = useRef(false),
+    video = useRef<HTMLVideoElement>(null),
+    reader = useRef(new ZxingTransferQrReader()),
+    stop = useRef<() => void>(undefined),
+    attempt = useRef(0);
+  useEffect(
+    () => () => {
+      attempt.current++;
+      stop.current?.();
+    },
+    [],
+  );
+  useEffect(() => {
+    setScanned('');
+    setConfirmed(false);
+    setActual(localTime());
+    setEta(localTime(4 * 3600000));
+    attempt.current++;
+    stop.current?.();
+  }, [order.orderId, stage, data.actor]);
+  const check = (value: string) => {
+    try {
+      decodeShipmentQr(value, {
+        shipmentId: order.orderId,
+        kind: 'product',
+        chainId: data.chainId!,
+        ordersAddress: data.ordersAddress!,
+        publicAppUrl: import.meta.env.VITE_PUBLIC_APP_URL,
+      });
+      setScanned(value);
+      setConfirmed(false);
+      setError('');
+      stop.current?.();
+    } catch {
+      setScanned('');
+      setError('Scan the label for this product order and configured deployment.');
+    }
+  };
+  useEffect(() => {
+    if (initialQr && carrier && stage === 3) check(initialQr);
+  }, [initialQr, carrier, stage]);
+  const run = async (input: Record<string, unknown>) => {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    setNotice('');
+    let mined = false;
+    try {
+      const p = await prepareLogistics({
+        ...input,
+        orderId: order.orderId,
+        operationId: crypto.randomUUID(),
+      });
+      await submitProductionTransaction(p.transaction, data.actor);
+      mined = true;
+      setNotice('Product delivery action confirmed on-chain.');
+      await onChanged();
+    } catch (cause) {
+      setError(
+        mined
+          ? 'Confirmed, but refresh failed. Refresh before submitting another action.'
+          : reportError(cause, 'Product delivery failed.'),
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const batchId = order.requestedBatch ?? item?.batches?.[0];
+  const received: OrderRecord[] = (item?.storageLocations ?? []).filter(
+    (p: OrderRecord) =>
+      same(p.batchId, batchId) &&
+      same(p.distributor, distributor) &&
+      BigInt(p.available) >= BigInt(order.requested),
+  );
+  const locations: OrderRecord[] =
+    mode === '1'
+      ? data.locations.filter((p) => same(p.company, data.actor))
+      : received.map((p: OrderRecord) => ({
+          location: p.location,
+          label: p.warehouseName ?? 'Distributor warehouse',
+        }));
+  const to = order.deliveryReceivingLocation ?? order.details?.receivingLocation;
+  const role = manufacturer ? 'manufacturer' : retailer ? 'retailer' : 'distributor';
+  const actualAt = Math.floor(Date.parse(actual) / 1000),
+    expectedAt = Math.floor(Date.parse(eta) / 1000);
+  const validTransport =
+    /^(?=.*[A-Z0-9])[A-Z0-9 -]{2,32}$/.test(vehicle.trim().toUpperCase()) &&
+    actualAt > 0 &&
+    actualAt <= Date.now() / 1000 &&
+    expectedAt > Date.now() / 1000;
+  const proofBlocked =
+    !!r?.identityChallenge &&
+    !/^0x0+$/.test(r.identityChallenge) &&
+    (!r.identityCredentialHash ||
+      /^0x0+$/.test(r.identityCredentialHash) ||
+      Number(r.identityValidUntil) <= Date.now() / 1000);
+  if (stage === 0) return null;
+  return (
+    <section
+      aria-label="Product delivery tracking"
+      className="delivery-panel grid min-w-0 gap-[16px] rounded-xl border border-[var(--c-border)] p-[16px]"
+    >
+      <h3 className="m-0">Manufacturer → Distributor → Retailer</h3>
+      <ol
+        aria-label="Product delivery progress"
+        className="m-0 grid list-none gap-[12px] p-0 sm:grid-cols-3"
+      >
+        {['Manufacturer approves', 'Distributor delivers', 'Retailer receives'].map((label, i) => (
+          <li
+            key={label}
+            className="delivery-progress-step min-w-0 rounded-lg border border-[var(--c-border)] p-[12px]"
+            aria-current={
+              (stage === 1 ? i === 0 : stage <= 4 ? i === 1 : i === 2) ? 'step' : undefined
+            }
+          >
+            {i + 1}. {label}
+          </li>
+        ))}
+      </ol>
+      <strong role="status">
+        {
+          [
+            'Awaiting approval',
+            'Choose delivery mode',
+            'Distributor reviewing request',
+            'Ready for physical dispatch',
+            'In transit to Retailer',
+            'Received by Retailer',
+            'Cancelled / expired',
+          ][stage]
+        }
+      </strong>
+      <p>
+        {item?.name ?? 'Registered product'} · {order.requested} {item?.unit} ·{' '}
+        {r?.mode
+          ? Number(r.mode) === 1
+            ? 'Direct Distributor delivery'
+            : 'From received Distributor custody'
+          : 'Manufacturer selects fulfilment after approval'}
+      </p>
+      {error && <Alert type="error" message={error} />}
+      {notice && <Alert type="success" message={notice} />}
+      {!data.productDeliverySupported && (
+        <Alert
+          type="warning"
+          message="Product order delivery needs the updated complete contract suite. Existing stock and records remain intact."
+        />
+      )}
+      {manufacturer && stage === 1 && (
+        <div className="delivery-action-section grid gap-[12px] sm:grid-cols-2">
+          <h4 className="col-span-full">Arrange delivery</h4>
+          <SelectField
+            label="Product delivery mode"
+            disabled={!!order.details?.custodySource}
+            value={mode}
+            onChange={(v) => {
+              setMode(v);
+              setFrom('');
+            }}
+            options={[
+              { value: '1', label: 'Request direct Distributor delivery' },
+              { value: '2', label: 'Deliver from existing Distributor custody' },
+            ]}
+          />
+          <SelectField
+            label="Delivery Distributor"
+            disabled={!!order.details?.custodySource}
+            value={distributor}
+            onChange={(v) => {
+              setDistributor(v);
+              setFrom('');
+            }}
+            options={[
+              { value: '', label: 'Select an authorized Distributor' },
+              ...(data.companies ?? [])
+                .filter((p) => p.role === 'DISTRIBUTOR')
+                .map((p) => ({ value: p.wallet, label: p.companyName })),
+            ]}
+          />
+          <SelectField
+            label={
+              mode === '1' ? 'Manufacturer pickup location' : 'Received product custody location'
+            }
+            value={from}
+            disabled={!!order.details?.custodySource}
+            onChange={setFrom}
+            options={[
+              { value: '', label: 'Select dispatch location' },
+              ...locations.map((p) => ({ value: p.location, label: p.label ?? p.location })),
+            ]}
+          />
+          <p>
+            Retailer destination:{' '}
+            {data.locations.find((p) => same(p.location, to))?.label ??
+              (to
+                ? 'Registered Retailer location'
+                : 'Unavailable — ask the Retailer to submit a request with its receiving location')}
+            .
+          </p>
+          {mode === '2' && !received.length && (
+            <p>
+              No selected Distributor warehouse has enough received, unreserved stock for this
+              product batch and full quantity.
+            </p>
+          )}
+          <p>
+            {mode === '1'
+              ? 'The Distributor accepts, scans at pickup and delivers to the Retailer.'
+              : 'Available warehouse stock is reserved for this order.'}{' '}
+            Arrange within 48 hours of approval and before request expiry.
+          </p>
+          <Btn
+            disabled={
+              busy ||
+              !data.productDeliverySupported ||
+              !from ||
+              !to ||
+              !distributor ||
+              (mode === '2' && !received.some((p: OrderRecord) => same(p.location, from)))
+            }
+            onClick={() =>
+              void run({
+                action: 'product-order-select',
+                mode: Number(mode),
+                distributor,
+                fromLocation: from,
+                toLocation: to,
+              })
+            }
+          >
+            {mode === '1'
+              ? 'Request Distributor delivery'
+              : 'Confirm product delivery from custody'}
+          </Btn>
+        </div>
+      )}
+      {manufacturer && r?.mode === 1 && stage >= 2 && stage <= 3 && order.productDeliveryQr && (
+        <ProductQrDisplay
+          batchId={order.orderId}
+          batchReference={item?.batchReference ?? 'Product order'}
+          productName={item?.name ?? 'Product delivery'}
+          encodedPayload={order.productDeliveryQr}
+          labelTitle="Product Order Pickup QR"
+          instruction="Attach to these products. Assigned Distributor scans before confirming pickup; Retailer scans the final shipment label on arrival."
+        />
+      )}
+      {carrier && stage === 2 && (
+        <div className="flex flex-wrap gap-[8px]">
+          <Btn
+            disabled={busy}
+            onClick={() => void run({ action: 'product-order-respond', accept: true })}
+          >
+            Accept product delivery
+          </Btn>
+          <Btn
+            variant="danger"
+            disabled={busy}
+            onClick={() => void run({ action: 'product-order-respond', accept: false })}
+          >
+            Decline product delivery
+          </Btn>
+        </div>
+      )}
+      {r && stage >= 2 && stage <= 3 && (carrier || manufacturer) && (
+        <a
+          href={
+            workspacePath(role, carrier ? 'sent-requests' : 'requests') +
+            '?context=delivery&referenceId=' +
+            encodeURIComponent(order.orderId)
+          }
+        >
+          Manage Manufacturer company evidence in Information requests
+        </a>
+      )}
+      {r && Number(r.mode) === 1 && stage >= 3 && stage <= 4 && (
+        <PickupPlanPanel
+          referenceId={order.orderId}
+          canArrange={carrier && stage === 3}
+          expiresAt={Number(order.expiresAt)}
+          onReady={setPickupReady}
+        />
+      )}
+      {carrier && stage === 3 && (Number(r.mode) !== 1 || pickupReady) && (
+        <div className="delivery-action-section grid gap-[12px]">
+          <h4>Record physical dispatch</h4>
+          {proofBlocked && (
+            <Alert
+              type="warning"
+              message="Verify the requested Manufacturer company proof before pickup or dispatch."
+            />
+          )}
+          {Number(r.mode) === 1 && (
+            <>
+              <video ref={video} playsInline muted className="max-h-[220px] w-full" />
+              <Btn
+                icon={<Camera size={16} />}
+                onClick={() => {
+                  const current = ++attempt.current;
+                  stop.current?.();
+                  void reader.current
+                    .startCamera(video.current!, check, (c) => setError(cameraErrorMessage(c)))
+                    .then((cleanup) => {
+                      if (current !== attempt.current) cleanup();
+                      else stop.current = cleanup;
+                    })
+                    .catch((c) => setError(cameraErrorMessage(c)));
+                }}
+              >
+                Scan product pickup QR
+              </Btn>
+              <label>
+                Upload product pickup QR image
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={async (event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    try {
+                      check(await reader.current.decodeImage(file));
+                    } catch (c) {
+                      setError(reportError(c, 'QR image could not be read.'));
+                    }
+                  }}
+                />
+              </label>
+              {scanned && <p role="status">Correct product-order label scanned.</p>}
+            </>
+          )}
+          <Input
+            label="Vehicle registration"
+            value={vehicle}
+            onChange={setVehicle}
+            maxLength={32}
+            required
+          />
+          <Input
+            label="Actual product pickup / dispatch time"
+            type="datetime-local"
+            value={actual}
+            onChange={setActual}
+            required
+          />
+          <Input
+            label="Expected product arrival"
+            type="datetime-local"
+            value={eta}
+            onChange={setEta}
+            required
+          />
+          <label className="flex items-start gap-[8px]">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(e) => setConfirmed(e.target.checked)}
+            />
+            I confirm the full requested quantity is physically collected or dispatched on this
+            route.
+          </label>
+          <Btn
+            icon={<Truck size={16} />}
+            disabled={
+              busy ||
+              !confirmed ||
+              !validTransport ||
+              proofBlocked ||
+              (Number(r.mode) === 1 && !pickupReady) ||
+              (Number(r.mode) === 1 && !scanned)
+            }
+            onClick={() =>
+              void run({
+                action: 'product-order-dispatch',
+                vehicle: vehicle.trim().toUpperCase(),
+                occurredAt: actualAt,
+                expectedAt,
+                ...(Number(r.mode) === 1 ? { qrPayload: scanned } : {}),
+              })
+            }
+          >
+            Confirm product pickup & dispatch
+          </Btn>
+        </div>
+      )}
+      {stage >= 4 && stage <= 5 && (
+        <a
+          href={
+            workspacePath(role, role === 'retailer' ? 'shipments' : 'product-shipments') +
+            '?shipmentId=' +
+            encodeURIComponent(r.transferId)
+          }
+        >
+          Open product shipment & scanned Retailer receipt
+        </a>
+      )}
+      {((manufacturer && stage >= 2 && stage < 4) || (stage === 6 && r?.reservationActive)) && (
+        <Btn
+          variant="outline"
+          disabled={busy}
+          onClick={() => void run({ action: 'product-order-close' })}
+        >
+          {stage === 6
+            ? 'Release expired product reservation'
+            : 'Cancel product delivery arrangement'}
+        </Btn>
+      )}
+      <WorkflowHelp title="When does stock become available?">
+        Approval and evidence verification do not credit stock. Retailer usable stock changes only
+        after the intended Retailer confirms physical receipt.
+      </WorkflowHelp>
+    </section>
+  );
+}

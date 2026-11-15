@@ -1,5 +1,21 @@
 # TraceChain
 
+**Workspace UI:** navigation is grouped by task for all five roles, with overview quick actions,
+separate stock/order/shipment destinations, clickable forward/backward traceability and responsive layouts.
+Distributor pickup scheduling applies to both custody offers and direct buyer deliveries. Locations
+are registered and edited in Profile. See the [role workflow test guide](docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md)
+and [UI review](docs/UI_REFINEMENT.md).
+
+**Product orders:** Retailer requests → Manufacturer approves/rejects → Manufacturer chooses direct
+Distributor delivery or sufficient received Distributor custody → Distributor dispatches → Retailer
+scans and confirms receipt. Manufacturer proof requests use Information requests; Manufacturer now
+has Custody inventory and Retailer has Shipments navigation. See the [product delivery test guide](docs/testing/PRODUCT_DISTRIBUTOR_RETAILER_FLOW.md).
+This needs the updated complete suite with the automatically created ProductDelivery child.
+The running local deployment has not been replaced: its ingredient delivery progressed beyond the
+restricted migration helper's supported history, so preflight stopped before any writes. Current
+ingredients, accounts and history remain intact; enabling the new product coordinator requires a
+preservation-aware deployment migration.
+
 **Local redeployment with preserved test data (2026-11-15):** the configured chain-31337 suite
 was redeployed alongside the old contracts, and the root `.env` was updated after 25 state checks.
 The existing ingredient, 12 custody units, three locations, approved order, Admin and four temporary
@@ -517,6 +533,34 @@ The current SIWE verifier is tested for EOA wallets. ERC-1271 contract-wallet au
 For local testing, start `npx hardhat node` from `packages/contracts`, deploy the suite to `localhost`, place the resulting addresses plus `CHAIN_ID=31337` and `CHAIN_RPC_URL=http://127.0.0.1:8545` in the root `.env`, then run `npm run dev` from the repository root. Import the relevant unlocked Hardhat account into MetaMask, select TraceChain Local, and connect from `/login`. Login requests one message signature and no gas; active wallets go directly to their role workspace, while other wallets remain on the status view.
 
 ## Workspace UI
+
+The role sidebars separate incoming/outgoing orders, custody offers, warehouse arrivals and outbound
+deliveries. Retailer shipments contain products only. Administrator navigation contains company
+administration, permissions, discrepancies and audit rather than operational ordering.
+Received/Sent Information requests are distinct destinations.
+The Sent evidence lists contain only outgoing evidence requests and their responses; incoming
+company-proof response controls are managed on Received requests rather than embedded in Sent.
+Company-proof details do not embed general order navigation. Loading pages use the shared centered
+spinner; dismissible notifications show success or readable errors instead of raw RPC/JSON payloads.
+Success notifications disappear after 4 seconds; error notifications after 7 seconds. Only the exact
+current sidebar page is highlighted, including separate Received and Sent request destinations.
+Workspace modals dismiss on backdrop clicks or Escape. Confirmed registration and logout return to
+Login. Supplier traceability is forward-only; Retailer traceability is backward-only.
+Traceability has one stage flow per role, without direction-switch buttons. Manufacturer and
+Distributor use Supplier-to-Retailer ordering; Retailer keeps the source-tracing reverse order.
+See the
+[role and process matrix](docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md).
+
+New authenticated Orders endpoints: `GET /api/orders/traceability?kind=ingredient|product&batchId=…`,
+`GET /api/orders/profile`, `PATCH /api/orders/profile/locations/:location`,
+`GET|PUT /api/orders/:referenceId/pickup`, `GET|POST /api/orders/custody-offers`,
+`GET /api/orders/custody-offers/:offerId`, and
+`POST /api/orders/custody-offers/:offerId/action|prepare`. Each checks current session authorization;
+private coordination data is participant-scoped and encrypted through existing storage. Pickup plans,
+offer decisions and editable location labels are off-chain; the API can decrypt them. Existing
+MetaMask-signed contracts remain authoritative for dispatch, receipt and stock. No contract change
+or redeployment is required solely for this workspace/pickup stage; previously pending ProductDelivery
+deployment requirements still apply. No new environment variables or npm dependencies were added.
 
 Integrated pages live in `apps/web/src/features/workspaces`, grouped by stakeholder and workflow. `WorkspaceApp.tsx` owns canonical routing and the access boundary; `WorkspaceScreen.tsx` dispatches detailed pages. Shared workspace presentation components, receipts, reports, and table controls are kept in focused subfolders.
 

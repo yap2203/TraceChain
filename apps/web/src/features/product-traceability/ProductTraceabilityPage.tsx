@@ -1,4 +1,6 @@
+import { reportError } from '../../components/ui/feedback';
 import { Camera, FileImage, RotateCcw, Search, ShieldCheck } from 'lucide-react';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -69,7 +71,7 @@ export function ProductTraceabilityPage({
       else if (window.location.pathname === '/trace/product' && window.location.search)
         initial = window.location.href;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The product reference is invalid.');
+      setError(reportError(cause, 'The product reference is invalid.'));
       setState('error');
     }
     if (initial) {
@@ -119,8 +121,7 @@ export function ProductTraceabilityPage({
 
         {state === 'loading' && (
           <section className="product-trace-card" aria-live="polite">
-            <h2>Verifying blockchain traceability record…</h2>
-            <p className="product-trace-muted">Reading the configured TraceChain contracts.</p>
+            <LoadingIndicator page label="Verifying blockchain traceability record…" />
           </section>
         )}
 

@@ -45,6 +45,8 @@ export interface EvidenceWorkflowRecord {
 }
 
 export interface PrivateWorkflowRecord {
+  recordType?: 'custody-offer';
+  participants?: string[];
   cid: string;
   id: string;
   owner: string;
@@ -60,6 +62,7 @@ interface WorkflowState {
 }
 
 export interface ProductionFlowRepository {
+  listPrivate?(kind: 'products' | 'transfers'): Promise<PrivateWorkflowRecord[]>;
   listEvidence?(): Promise<EvidenceWorkflowRecord[]>;
   findEvidence(requestId: string): Promise<EvidenceWorkflowRecord | undefined>;
   findEvidenceByOperation(
@@ -83,6 +86,9 @@ export class ProductionFlowPersistenceError extends Error {
 }
 
 export class JsonProductionFlowRepository implements ProductionFlowRepository {
+  async listPrivate(kind: 'products' | 'transfers') {
+    return Object.values((await this.read())[kind]);
+  }
   async listEvidence() {
     return Object.values((await this.read()).evidence);
   }

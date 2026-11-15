@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { Check, Copy, Download, Printer, QrCode } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -54,7 +55,7 @@ export function TransferQrDisplay({
       return { model: createTransferQrModel(transferId, configuration) };
     } catch (error) {
       return {
-        error: error instanceof Error ? error.message : 'The transfer QR could not be generated.',
+        error: reportError(error, 'The transfer QR could not be generated.'),
       };
     }
   }, [configuration, transferId]);

@@ -1,5 +1,15 @@
 @reference '../../styles/tailwind.css';
 @layer components {
+  .loading-indicator.loading-indicator--page {
+    @apply flex flex-col items-center justify-center gap-[16px] p-[24px] text-center w-full;
+    min-height: clamp(220px, 45vh, 480px);
+    color: var(--c-text2, var(--color-text));
+  }
+  .loading-indicator--page .loading-indicator__spinner {
+    @apply w-[40px] h-[40px];
+    border-width: 3px;
+    border-top-color: var(--c-teal, var(--color-primary));
+  }
   .loading-indicator.loading-indicator--screen {
     @apply fixed;
     inset: 0;

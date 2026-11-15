@@ -6,6 +6,7 @@ export interface ApplicationMetadata {
   companyName: string;
   companyRegistrationNumber: string;
   profileHash: string;
+  initialLocationName?: string;
 }
 
 export interface ApplicationMetadataRepository {

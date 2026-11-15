@@ -19,6 +19,9 @@ vi.mock('../../../production-flow/production-flow.api', async (importOriginal) =
 vi.mock('../../../production-flow/evidence-didcomm', () => ({
   sendEvidenceRequestMessage: vi.fn(),
 }));
+vi.mock('../../../production-flow/CompanyIdentityProofAction', () => ({
+  CompanyIdentityProofAction: () => <p>Incoming company proof response</p>,
+}));
 
 import { IngredientEvidence } from './IngredientEvidencePage';
 
@@ -55,6 +58,7 @@ describe('Manufacturer received evidence review', () => {
     });
     render(<IngredientEvidence onNav={vi.fn()} hideComposer requestId="selected" />);
     await screen.findByText('Selected Supplier');
+    expect(screen.queryByText('Incoming company proof response')).toBeNull();
     expect(await screen.findByText('Reason: Verify origin')).toBeTruthy();
     expect(screen.getByText('Necessary claims: expiryDate')).toBeTruthy();
     expect(screen.getByText('Optional claims: countryOfOrigin')).toBeTruthy();

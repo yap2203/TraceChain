@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { PackageCheck, QrCode } from 'lucide-react';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
@@ -13,6 +14,7 @@ export function ReceiveProductList({
 }) {
   const { data, error, loading } = useOperationalData();
   const rows = data.transfers.filter((t) => t.direction === 'incoming' && t.status === 1);
+  if (loading) return <LoadingIndicator page label="Loading records…" />;
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between' }}>

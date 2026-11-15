@@ -1,4 +1,4 @@
-import { useState, type ComponentProps } from 'react';
+﻿import { useState, type ComponentProps } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { workspacePath } from './workspace-paths';
 import type { WorkspaceRole } from './workspace-navigation';
@@ -21,7 +21,9 @@ import {
   ProductBatchDetail,
   ManufacturerCredential,
 } from './manufacturer';
-import { ManufacturerInformationRequests } from './manufacturer/evidence/ManufacturerInformationRequests';
+import { IngredientEvidence } from './manufacturer/evidence/IngredientEvidencePage';
+import { CompanyProfilePage } from '../orders/CompanyProfilePage';
+import { TraceabilityWorkspace } from '../product-traceability/TraceabilityWorkspace';
 import { DistributorOverview, DistributorCredential } from './distributor';
 import {
   RetailerOverview,
@@ -38,6 +40,7 @@ import { OrdersPage } from '../orders/OrdersPage';
 import { ShipmentsWorkspace } from '../orders/ShipmentsWorkspace';
 import { CustodyInventoryPage } from '../orders/CustodyInventoryPage';
 import { InformationRequestsWorkspace } from '../orders/InformationRequestsWorkspace';
+import { CustodyOffersWorkspace } from '../orders/CustodyOffersWorkspace';
 
 export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page: string }) {
   const navigate = useNavigate();
@@ -53,54 +56,97 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     navigate(`${workspacePath(role, page)}${newView ? '?view=' + tab : ''}`);
   };
   const goTo = (view: string, id = '') => setSearchParams({ view, ...(id ? { id } : {}) });
-  if (tab === 'inventory' && (role === 'supplier' || role === 'distributor'))
-    return <CustodyInventoryPage role={role} />;
-  if (tab === 'requests' || (['manufacturer', 'retailer'].includes(role) && tab === 'evidence'))
+  if (tab === 'transfers' && (role === 'supplier' || role === 'manufacturer'))
+    return <CustodyOffersWorkspace role={role} />;
+  if (tab === 'intake' && role === 'distributor')
+    return <CustodyOffersWorkspace role={role} receiver />;
+  if (tab === 'profile' && role !== 'admin') return <CompanyProfilePage role={role} />;
+  if (tab === 'traceability' && role !== 'admin') return <TraceabilityWorkspace role={role} />;
+  if (
+    ['inventory', 'product-inventory'].includes(tab) &&
+    ['supplier', 'distributor', 'manufacturer'].includes(role)
+  )
     return (
-      <InformationRequestsWorkspace role={role}>
-        {role === 'supplier' ? (
+      <CustodyInventoryPage
+        key={tab}
+        role={role as 'supplier' | 'distributor' | 'manufacturer'}
+        initialKind={
+          tab === 'product-inventory' || role === 'manufacturer' ? 'product' : 'ingredient'
+        }
+      />
+    );
+  if (tab === 'requests' || tab === 'sent-requests') {
+    const direction = tab === 'sent-requests' ? 'sent' : 'received';
+    return (
+      <InformationRequestsWorkspace key={tab} role={role} initialDirection={direction}>
+        {role === 'supplier' && direction === 'received' ? (
           discReq ? (
             <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />
           ) : (
-            <InformationRequests onRespond={setDiscReq} />
+            <InformationRequests onRespond={setDiscReq} initialDirection="received" hideDirection />
           )
-        ) : role === 'manufacturer' ? (
-          <ManufacturerInformationRequests />
-        ) : role === 'retailer' ? (
-          <RetailerEvidenceRequests />
+        ) : role === 'manufacturer' && direction === 'sent' ? (
+          <IngredientEvidence
+            onNav={nav}
+            hideComposer={!params.get('batchId')}
+            initialBatchId={params.get('batchId') ?? undefined}
+          />
+        ) : role === 'retailer' && direction === 'sent' ? (
+          <RetailerEvidenceRequests
+            initialProductBatchId={params.get('productBatchId') ?? undefined}
+            initialIngredientBatchId={params.get('batchId') ?? undefined}
+          />
         ) : undefined}
       </InformationRequestsWorkspace>
     );
-  if (
-    ['supplier', 'manufacturer', 'distributor', 'retailer'].includes(role) &&
-    (['shipments', 'transfers'].includes(tab) ||
-      (role === 'distributor' && ['incoming', 'ingredient-deliveries', 'orders'].includes(tab)))
-  )
+  }
+  if (role !== 'admin' && ['shipments', 'product-shipments', 'arrivals'].includes(tab))
     return (
       <ShipmentsWorkspace
         key={`${role}-${tab}`}
         role={role}
-        initialView={tab === 'transfers' ? 'transfer' : 'shipments'}
+        section={tab === 'arrivals' ? 'intake' : role === 'distributor' ? 'deliveries' : 'tracking'}
+        initialKind={
+          role === 'retailer' ||
+          tab === 'product-shipments' ||
+          (tab === 'transfers' && role === 'manufacturer')
+            ? 'product'
+            : 'ingredient'
+        }
+        initialView="shipments"
         initialShipmentId={params.get('shipmentId') ?? ''}
         initialOrderId={params.get('orderId') ?? ''}
         initialBatchId={params.get('batchId') ?? ''}
       />
     );
-  if (tab === 'orders' && role !== 'distributor')
+  if (
+    role !== 'admin' &&
+    role !== 'distributor' &&
+    ['orders', 'product-orders', 'browse', 'ingredients'].includes(tab)
+  )
     return (
       <OrdersPage
+        key={tab}
         role={role}
         initialOrderId={params.get('orderId') ?? ''}
-        mode={role === 'manufacturer' ? 'manage' : 'combined'}
+        initialBatchId={params.get('batchId') ?? ''}
+        mode={['browse', 'ingredients'].includes(tab) ? 'browse' : 'manage'}
+        fixedDirection={role === 'supplier' || tab === 'product-orders' ? 'received' : 'sent'}
       />
     );
-  if (role === 'distributor' && (tab === 'ingredient-deliveries' || tab === 'orders'))
-    return <OrdersPage role={role} mode="manage" initialOrderId={params.get('orderId') ?? ''} />;
   if (role === 'admin') {
     if (tab === 'overview') return <AdminOverview onNav={nav} />;
     if (tab === 'applications') return <Applications />;
     if (tab === 'credentials') return <CompanyCredentials />;
-    if (tab === 'accesscontrol') return <AccessControlScreen />;
+    if (['accesscontrol', 'roles', 'personal', 'matrix'].includes(tab))
+      return (
+        <AccessControlScreen
+          key={tab}
+          section={
+            tab === 'accesscontrol' ? 'stakeholders' : (tab as 'roles' | 'personal' | 'matrix')
+          }
+        />
+      );
     if (tab === 'discrepancies') return <DiscrepancyManagement />;
     if (tab === 'audit') return <AdminAuditReport />;
   }
@@ -134,7 +180,11 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
             batchId={activeId}
             onBack={() => setSearchParams({})}
             onTransfer={() => nav('transfers')}
-            onIngredientDetail={(batchId) => setSearchParams({ view: 'ingredients', batchId })}
+            onIngredientDetail={(batchId) =>
+              navigate(
+                workspacePath(role, 'ingredients') + '?batchId=' + encodeURIComponent(batchId),
+              )
+            }
           />
         );
       return (
@@ -198,7 +248,17 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     if (tab === 'history') {
       if (subView === 'history-detail')
         return <QRVerification initialBatch={activeId} onBack={() => setSearchParams({})} />;
-      return <ProductHistory onView={(batch) => goTo('history-detail', batch)} />;
+      return (
+        <ProductHistory
+          onView={(batch) =>
+            navigate(
+              workspacePath(role, 'traceability') +
+                '?' +
+                new URLSearchParams({ kind: 'product', batchId: batch }),
+            )
+          }
+        />
+      );
     }
     if (tab === 'mycredential') return <RetailerCredential />;
     if (tab === 'audit') return <AuditReport />;

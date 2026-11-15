@@ -1,9 +1,13 @@
+import { reportError } from '../../components/ui/feedback';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Inbox, RefreshCw, Search } from 'lucide-react';
 import {
   getInformationRequests,
   getOrders,
+  getCustodyOffer,
+  type CustodyOffer,
   type CompanyProofRequestRow,
   type OrdersState,
 } from './orders.api';
@@ -35,9 +39,11 @@ const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toL
 export function InformationRequestsWorkspace({
   role,
   children,
+  initialDirection,
 }: {
   role: WorkspaceRole;
   children?: ReactNode;
+  initialDirection?: 'received' | 'sent';
 }) {
   const [params, setParams] = useSearchParams();
   const [rows, setRows] = useState<CompanyProofRequestRow[]>([]),
@@ -45,7 +51,8 @@ export function InformationRequestsWorkspace({
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true),
     [search, setSearch] = useState(''),
-    [direction, setDirection] = useState('received');
+    [selectedDirection, setDirection] = useState<'received' | 'sent'>('received');
+  const direction = initialDirection ?? selectedDirection;
   const reference = params.get('referenceId') ?? params.get('orderId') ?? '',
     context = params.get('context') ?? 'order';
   const load = useCallback(async () => {
@@ -56,7 +63,7 @@ export function InformationRequestsWorkspace({
       setRows(requests.requests);
       setData(orders);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Information requests unavailable.');
+      setError(reportError(cause, 'Information requests unavailable.'));
     } finally {
       setLoading(false);
     }
@@ -77,7 +84,9 @@ export function InformationRequestsWorkspace({
         expiresAt: shipment.expiresAt,
         delivery: shipment.delivery,
       }
-    : order;
+    : order?.productDelivery
+      ? { ...order, delivery: order.productDelivery }
+      : order;
   const canDelivery =
     deliveryOrder?.delivery &&
     (same(data?.actor, deliveryOrder.seller) ||
@@ -86,8 +95,12 @@ export function InformationRequestsWorkspace({
   return (
     <div className="grid min-w-0 gap-[16px]">
       <SectionTitle
-        title="Information requests"
-        sub="Manage Company Role credential proofs here. Presenting, verifying, order approval and physical delivery remain separate actions."
+        title={
+          initialDirection
+            ? `${initialDirection === 'received' ? 'Received' : 'Sent'} information requests`
+            : 'Information requests'
+        }
+        sub="Review requests for company identity or ingredient evidence. Sharing and verification are separate actions."
         action={
           <Btn
             variant="outline"
@@ -99,19 +112,26 @@ export function InformationRequestsWorkspace({
           </Btn>
         }
       />
-      <nav className="flex flex-wrap gap-[8px]" aria-label="Information request category">
-        <Btn variant={!showEvidence ? 'primary' : 'outline'} onClick={() => setParams({})}>
-          Company credential requests
-        </Btn>
-        {children && (
+      {!initialDirection && (
+        <nav className="flex flex-wrap gap-[8px]" aria-label="Information request category">
           <Btn
-            variant={showEvidence ? 'primary' : 'outline'}
-            onClick={() => setParams({ tab: 'evidence' })}
+            aria-pressed={!showEvidence}
+            variant={!showEvidence ? 'primary' : 'outline'}
+            onClick={() => setParams({})}
           >
-            Ingredient evidence
+            Company credential requests
           </Btn>
-        )}
-      </nav>
+          {children && (
+            <Btn
+              variant={showEvidence ? 'primary' : 'outline'}
+              aria-pressed={!!showEvidence}
+              onClick={() => setParams({ tab: 'evidence' })}
+            >
+              Ingredient evidence
+            </Btn>
+          )}
+        </nav>
+      )}
       {error && <Alert type="error" message={error} />}
       {showEvidence ? (
         children
@@ -127,19 +147,23 @@ export function InformationRequestsWorkspace({
             Back to company requests
           </Btn>
           {loading && !data ? (
-            <p role="status">Checking request participants…</p>
+            <LoadingIndicator page label="Checking request participants…" />
           ) : selected?.status === 'UNAVAILABLE' ? (
             <Alert
               type="warning"
               message="This historical proof request is unavailable for further actions. Its participant binding or current authorization is no longer valid."
             />
+          ) : context === 'custody' && data ? (
+            <CustodyCompanyProof referenceId={reference} data={data} />
           ) : context === 'delivery' ? (
             data && canDelivery ? (
               <Card>
-                <h3>Supplier company credential proof</h3>
+                <h3>
+                  {order?.productDelivery ? 'Manufacturer' : 'Supplier'} company credential proof
+                </h3>
                 <p>
                   {selected?.purpose ??
-                    'Review the Supplier identity before custody acceptance or dispatch.'}
+                    'Review the seller company identity before custody acceptance or dispatch.'}
                 </p>
                 <DeliveryIdentityPanel
                   key={reference}
@@ -168,20 +192,29 @@ export function InformationRequestsWorkspace({
         </>
       ) : (
         <>
-          <div className="flex flex-wrap gap-[8px]" aria-label="Company proof direction">
-            <Btn
-              variant={direction === 'received' ? 'primary' : 'outline'}
-              onClick={() => setDirection('received')}
-            >
-              Received requests
-            </Btn>
-            <Btn
-              variant={direction === 'sent' ? 'primary' : 'outline'}
-              onClick={() => setDirection('sent')}
-            >
-              Sent requests
-            </Btn>
-          </div>
+          {!initialDirection && (
+            <nav className="workspace-secondary-tabs" aria-label="Company proof direction">
+              <Btn
+                variant={direction === 'received' ? 'primary' : 'outline'}
+                aria-pressed={direction === 'received'}
+                onClick={() => setDirection('received')}
+              >
+                Received requests
+              </Btn>
+              <Btn
+                variant={direction === 'sent' ? 'primary' : 'outline'}
+                aria-pressed={direction === 'sent'}
+                onClick={() => setDirection('sent')}
+              >
+                Sent requests
+              </Btn>
+            </nav>
+          )}
+          <p className="workspace-list-guidance">
+            {direction === 'received'
+              ? 'Other companies are asking your company to share information.'
+              : 'Track information your company has requested from others.'}
+          </p>
           <Input
             label="Search company requests"
             type="search"
@@ -191,7 +224,7 @@ export function InformationRequestsWorkspace({
             placeholder="Search company, purpose, reference or status"
           />
           {loading ? (
-            <p role="status">Loading your company proof requests…</p>
+            <LoadingIndicator page label="Loading your company proof requests…" />
           ) : (
             <Card padding="0">
               <Table headers={['Company', 'Context', 'Purpose', 'Deadline', 'Status', '']}>
@@ -208,11 +241,13 @@ export function InformationRequestsWorkspace({
                     <TR key={row.requestId}>
                       <TD bold>{row.company}</TD>
                       <TD>
-                        {row.context === 'delivery'
-                          ? 'Custody / delivery'
-                          : row.context === 'order'
-                            ? 'Quantity request'
-                            : 'Ingredient information'}
+                        {row.context === 'custody'
+                          ? 'Custody offer'
+                          : row.context === 'delivery'
+                            ? 'Custody / delivery'
+                            : row.context === 'order'
+                              ? 'Quantity request'
+                              : 'Ingredient information'}
                       </TD>
                       <TD>{row.purpose}</TD>
                       <TD>{new Date(row.expiresAt * 1000).toLocaleString()}</TD>
@@ -246,7 +281,59 @@ export function InformationRequestsWorkspace({
           )}
         </>
       )}
+      {initialDirection && children && !showEvidence && !reference && (
+        <section className="workspace-request-section" aria-label="Ingredient evidence requests">
+          {children}
+        </section>
+      )}
     </div>
+  );
+}
+function CustodyCompanyProof({ referenceId, data }: { referenceId: string; data: OrdersState }) {
+  const [offer, setOffer] = useState<CustodyOffer>(),
+    [error, setError] = useState('');
+  const load = useCallback(async () => {
+    try {
+      setOffer((await getCustodyOffer(referenceId)).offer);
+    } catch (cause) {
+      setError(reportError(cause, 'Custody offer unavailable.'));
+    }
+  }, [referenceId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  if (error) return <Alert type="error" message={error} />;
+  if (!offer) return <LoadingIndicator page label="Checking custody request participants…" />;
+  const delivery = {
+    distributor: offer.distributor,
+    stage:
+      offer.status === 'REQUESTED'
+        ? 2
+        : ['ACCEPTED', 'SCHEDULED'].includes(offer.status)
+          ? 3
+          : offer.status === 'DISPATCHED'
+            ? 4
+            : offer.status === 'RECEIVED'
+              ? 5
+              : 6,
+  };
+  return (
+    <Card>
+      <h3>Company evidence for this custody offer</h3>
+      <p>Verification and custody acceptance are separate decisions.</p>
+      <DeliveryIdentityPanel
+        data={data}
+        order={{
+          orderId: offer.offerId,
+          seller: offer.sender,
+          buyer: offer.distributor,
+          expiresAt: offer.expiresAt,
+          delivery,
+          ...(offer.kind === 2 ? { productDelivery: delivery } : {}),
+        }}
+        onChanged={load}
+      />
+    </Card>
   );
 }
 function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requestId: string }) {
@@ -276,7 +363,7 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
         await sendCompanyIdentityRequestMessage(await getEvidenceDetails(requestId));
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Company proof action failed.');
+      setError(reportError(cause, 'Company proof action failed.'));
     } finally {
       setBusy(false);
     }

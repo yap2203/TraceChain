@@ -21,6 +21,14 @@ vi.mock('./orders.api', () => ({
   prepareOrder: mocks.prepare,
   prepareLogistics: mocks.prepare,
   deliveryIdentity: mocks.identity,
+  getPickupPlan: vi.fn(async () => ({
+    plan: {
+      pickupAt: Math.floor(Date.now() / 1000) + 300,
+      arrangedAt: new Date().toISOString(),
+      distributor: 'test-distributor',
+    },
+  })),
+  savePickupPlan: vi.fn(),
 }));
 vi.mock('../production-flow/production-flow.transaction', () => ({
   submitProductionTransaction: mocks.submit,

@@ -1,3 +1,5 @@
+import { reportError } from '../../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { BadgeCheck } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { BrowserProvider } from 'ethers';
@@ -31,7 +33,7 @@ export function CompanyCredentials() {
     try {
       setCredentials((await getCompanyCredentials()).credentials);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Credential registry read failed.');
+      setError(reportError(cause, 'Credential registry read failed.'));
     } finally {
       setLoading(false);
     }
@@ -66,11 +68,12 @@ export function CompanyCredentials() {
       }
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Admin credential connection failed.');
+      setError(reportError(cause, 'Admin credential connection failed.'));
     } finally {
       setConnectingAdmin(false);
     }
   };
+  if (loading) return <LoadingIndicator page label="Loading records…" />;
   if (selected)
     return (
       <CredDetail

@@ -1,3 +1,5 @@
+import { reportError } from '../../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
 import { Inbox, Send, RefreshCw, Search } from 'lucide-react';
 import {
@@ -45,11 +47,13 @@ export function InformationRequests({
   initialOrderId,
   initialDirection = 'received',
   onClearSelection,
+  hideDirection = false,
 }: {
   onRespond: (request: ProductionEvidenceRequest) => void;
   initialOrderId?: string;
   initialDirection?: 'received' | 'sent';
   onClearSelection?: () => void;
+  hideDirection?: boolean;
 }) {
   const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
   const [sent, setSent] = useState<Sent[]>([]),
@@ -65,6 +69,16 @@ export function InformationRequests({
     setLoading(true);
     setError('');
     setSentError('');
+    if (hideDirection && initialDirection === 'received' && !initialOrderId) {
+      try {
+        setRequests((await listEvidenceRequests()).requests);
+      } catch (cause) {
+        setError(reportError(cause, 'Received evidence requests are unavailable.'));
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     const results = await Promise.allSettled([listEvidenceRequests(), getOrders()]);
     const incoming = results[0].status === 'fulfilled' ? results[0].value.requests : [];
     setRequests(incoming);
@@ -120,7 +134,7 @@ export function InformationRequests({
       );
     setSent(outgoing.sort((a, b) => a.id.localeCompare(b.id)));
     setLoading(false);
-  }, []);
+  }, [hideDirection, initialDirection, initialOrderId]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -162,8 +176,12 @@ export function InformationRequests({
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <SectionTitle
-        title="Information requests"
-        sub="Keep evidence requested from you separate from company evidence you ask others to provide."
+        title={hideDirection ? 'Ingredient evidence requests' : 'Information requests'}
+        sub={
+          hideDirection
+            ? 'Review ingredient information requested from your company.'
+            : 'Keep evidence requested from you separate from company evidence you ask others to provide.'
+        }
         action={
           <Btn
             variant="outline"
@@ -175,25 +193,27 @@ export function InformationRequests({
           </Btn>
         }
       />
-      <nav
-        aria-label="Evidence request direction"
-        style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
-      >
-        <Btn
-          icon={<Inbox size={16} />}
-          variant={direction === 'received' ? 'primary' : 'outline'}
-          onClick={() => setDirection('received')}
+      {!hideDirection && (
+        <nav
+          aria-label="Evidence request direction"
+          style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}
         >
-          Received requests
-        </Btn>
-        <Btn
-          icon={<Send size={16} />}
-          variant={direction === 'sent' ? 'primary' : 'outline'}
-          onClick={() => setDirection('sent')}
-        >
-          Sent requests
-        </Btn>
-      </nav>
+          <Btn
+            icon={<Inbox size={16} />}
+            variant={direction === 'received' ? 'primary' : 'outline'}
+            onClick={() => setDirection('received')}
+          >
+            Received requests
+          </Btn>
+          <Btn
+            icon={<Send size={16} />}
+            variant={direction === 'sent' ? 'primary' : 'outline'}
+            onClick={() => setDirection('sent')}
+          >
+            Sent requests
+          </Btn>
+        </nav>
+      )}
       <p>
         {direction === 'received'
           ? 'Other companies are asking you for ingredient evidence. Review the necessary claims before choosing optional disclosures.'
@@ -208,11 +228,15 @@ export function InformationRequests({
             ? 'Search by requesting company or request ID…'
             : 'Search by company, purpose or request ID…'
         }
-        hint="Results update as you type within the selected Received or Sent tab."
+        hint={
+          hideDirection
+            ? 'Search the requests received by your company.'
+            : 'Results update as you type within the selected Received or Sent tab.'
+        }
         value={search}
         onChange={setSearch}
       />
-      {loading && <p role="status">Loading evidence requests...</p>}
+      {loading && <LoadingIndicator page label="Loading evidence requests..." />}
       {direction === 'received' && error && <Alert type="error" message={error} />}
       {direction === 'sent' && sentError && <Alert type="error" message={sentError} />}
       {!loading && direction === 'received' && (

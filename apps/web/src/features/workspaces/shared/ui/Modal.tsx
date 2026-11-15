@@ -30,6 +30,9 @@ export function Modal({
       className="workspace-dialog"
       ref={dialog}
       aria-labelledby={titleId}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
       onCancel={(event) => {
         event.preventDefault();
         onClose();

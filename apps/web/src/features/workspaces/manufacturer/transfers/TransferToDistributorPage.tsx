@@ -1,3 +1,4 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 
 import { useOperationalData } from '../../../blockchain/useOperationalData';
@@ -27,9 +28,7 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     void listDistributors()
       .then((result) => setDistributors(result.distributors))
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : 'Could not load Distributors.'),
-      );
+      .catch((cause) => setError(reportError(cause, 'Could not load Distributors.')));
   }, []);
   const submit = async () => {
     const product = data.productBatches.find(
@@ -62,7 +61,7 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
         'transferId' in result && typeof result.transferId === 'string' ? result.transferId : '',
       );
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Transfer creation failed.');
+      setError(reportError(cause, 'Transfer creation failed.'));
     } finally {
       setBusy(false);
     }

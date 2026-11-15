@@ -82,9 +82,30 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
-it('provides Information requests navigation for every stakeholder', () => {
-  for (const entries of Object.values(workspaceNavigation))
-    expect(entries.some(([, label]) => label === 'Information requests')).toBe(true);
+it.each(['received', 'sent'] as const)(
+  'keeps the %s sidebar page fixed without embedding the other direction',
+  async (direction) => {
+    render(
+      <MemoryRouter>
+        <InformationRequestsWorkspace role="supplier" initialDirection={direction} />
+      </MemoryRouter>,
+    );
+    await screen.findByText(
+      direction === 'received' ? 'Warehouse Company' : 'Manufacturer Company',
+    );
+    expect(
+      screen.queryByText(direction === 'received' ? 'Manufacturer Company' : 'Warehouse Company'),
+    ).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Company proof direction' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Received requests' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sent requests' })).toBeNull();
+  },
+);
+it('provides separate received and sent information requests for participating companies', () => {
+  for (const role of ['supplier', 'manufacturer', 'distributor', 'retailer'] as const) {
+    expect(workspaceNavigation[role].some(([id]) => id === 'requests')).toBe(true);
+    expect(workspaceNavigation[role].some(([id]) => id === 'sent-requests')).toBe(true);
+  }
 });
 it('separates sent and received company proof requests and opens the correct existing manager', async () => {
   render(

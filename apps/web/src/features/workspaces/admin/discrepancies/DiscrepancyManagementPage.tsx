@@ -1,3 +1,5 @@
+import { reportError } from '../../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { FileDown, RefreshCw, Scale } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -31,7 +33,7 @@ export default function DiscrepancyManagementPage() {
     try {
       setItems(await getCustodyDiscrepancies());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Discrepancies could not be loaded.');
+      setError(reportError(cause, 'Discrepancies could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -59,7 +61,7 @@ export default function DiscrepancyManagementPage() {
       await submitProductionTransaction(prepared.transaction, prepared.actorWallet);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The discrepancy decision failed.');
+      setError(reportError(cause, 'The discrepancy decision failed.'));
     } finally {
       setBusyId('');
     }
@@ -228,7 +230,7 @@ export default function DiscrepancyManagementPage() {
         })
       )}
 
-      {loading && <div style={{ color: T.text2, fontSize: 13 }}>Loading discrepancies…</div>}
+      {loading && <LoadingIndicator page label="Loading discrepancies…" />}
     </div>
   );
 }

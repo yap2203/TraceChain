@@ -303,16 +303,12 @@ export function createApp({
       return resolvedGateway.prepareRolePermission(input);
     },
   };
+  const companyApplicationMetadata = applicationMetadataRepository ?? new JsonApplicationMetadataRepository(fileURLToPath(new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url)));
   const blockchainController = new BlockchainController(
     lazyGateway,
     resolvedAuthService,
     env.AUTH_COOKIE_NAME,
-    applicationMetadataRepository ??
-      new JsonApplicationMetadataRepository(
-        fileURLToPath(
-          new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url),
-        ),
-      ),
+    companyApplicationMetadata,
     lazyIssuanceRepository,
     stakeholderDirectory,
   );
@@ -363,6 +359,7 @@ export function createApp({
         new JsonIngredientBatchWorkflowRepository(
           loadCredentialStorageEnvironment().ingredientWorkflowStorePath,
         ),
+        companyApplicationMetadata,
       );
     }
     return ordersService;

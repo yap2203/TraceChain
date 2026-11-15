@@ -1,4 +1,5 @@
 import { BrowserProvider, getAddress } from 'ethers';
+import { notify } from '../../components/ui/feedback';
 
 import { chainConfig } from '../../config/network';
 import { sendPreparedTransaction, type PreparedTransaction } from '../blockchain/blockchain.api';
@@ -63,6 +64,7 @@ export async function submitProductionTransaction(
         'REVERTED',
         'The blockchain transaction reverted. You can safely retry this workflow.',
       );
+    notify('Blockchain transaction confirmed.', 'success');
   } catch (error) {
     if (error instanceof ProductionTransactionError) throw error;
     const candidate = error as {

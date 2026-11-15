@@ -22,6 +22,102 @@ const orderId = id('order'),
   batchId = id('batch');
 const operationId = '00000000-0000-4000-8000-000000000001';
 afterEach(() => vi.unstubAllEnvs());
+describe('Manufacturer-selected Retailer product delivery', () => {
+  function product(actor = seller, role = CompanyRole.MANUFACTURER) {
+    const f = fixture(actor, true, role),
+      previous = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (c, m, args) => {
+      if (m === 'productDeliveryPolicy') return 1;
+      if (c === 'productDelivery' && m === 'get')
+        return {
+          manufacturer: seller,
+          retailer: buyer,
+          distributor: outsider,
+          batchId,
+          mode: 1,
+          stage: 3,
+        };
+      if (m === 'getOrder') return { ...(await previous(c, m)), requested: '10' };
+      if (m === 'requestedBatch') return batchId;
+      if (m === 'getProduct') return { manufacturer: seller };
+      if (m === 'locationOwner') return args?.[0] === id('retailer-location') ? buyer : actor;
+      if (m === 'getInventory') return { available: '10' };
+      if (m === 'locationStock') return '10';
+      return previous(c, m);
+    });
+    return f;
+  }
+  const selection = {
+    action: 'product-order-select' as const,
+    operationId,
+    orderId,
+    mode: 1 as 1 | 2,
+    distributor: outsider,
+    fromLocation: id('manufacturer-location'),
+    toLocation: id('retailer-location'),
+  };
+  it('lets the owning Manufacturer prepare direct carrier selection for the Retailer order', async () => {
+    const f = product();
+    await f.service.prepareLogistics('session', selection);
+    expect(f.gateway.prepare).toHaveBeenCalledWith(seller, 'productDelivery', 'select', [
+      orderId,
+      1,
+      outsider,
+      selection.fromLocation,
+      selection.toLocation,
+    ]);
+    expect(f.store.encryptAndStore).not.toHaveBeenCalled();
+  });
+  it('rejects a foreign Manufacturer and product custody shortages', async () => {
+    await expect(
+      product(buyer).service.prepareLogistics('session', selection),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+    const f = product(),
+      previous = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (c, m, args) =>
+      m === 'locationOwner'
+        ? args?.[0] === selection.toLocation
+          ? buyer
+          : outsider
+        : m === 'locationStock'
+          ? '9'
+          : previous(c, m, args),
+    );
+    await expect(
+      f.service.prepareLogistics('session', { ...selection, mode: 2 }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_PRODUCT_CUSTODY' });
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
+  it('requires the exact product-order QR for assigned direct carrier pickup', async () => {
+    vi.stubEnv('VITE_PUBLIC_APP_URL', 'http://localhost:5173');
+    const f = product(outsider, CompanyRole.DISTRIBUTOR);
+    const input = {
+      action: 'product-order-dispatch' as const,
+      operationId,
+      orderId,
+      vehicle: 'VAB 1234',
+      occurredAt: Math.floor(Date.now() / 1000) - 1,
+      expectedAt: Math.floor(Date.now() / 1000) + 600,
+    };
+    await expect(f.service.prepareLogistics('session', input)).rejects.toMatchObject({
+      code: 'SHIPMENT_QR_INVALID',
+    });
+    const qrPayload = encodeShipmentQr({
+      shipmentId: orderId,
+      kind: 'product',
+      chainId: 31337,
+      ordersAddress: seller,
+      publicAppUrl: 'http://localhost:5173',
+    });
+    await expect(f.service.prepareLogistics('session', { ...input, qrPayload })).rejects.toMatchObject({code:'PICKUP_PLAN_REQUIRED'});
+    await f.service.pickupPlan('session', orderId, {pickupAt:Math.floor(Date.now()/1000)+300});
+    await f.service.prepareLogistics('session', { ...input, qrPayload });
+    expect(f.gateway.prepare).toHaveBeenCalledWith(outsider, 'productDelivery', 'dispatch', [
+      orderId,
+      expect.objectContaining({ vehicle: 'VAB 1234' }),
+    ]);
+  });
+});
 describe('Supplier-selected direct or custody fulfilment', () => {
   function selection() {
     const f = fixture(seller, true, CompanyRole.SUPPLIER),
@@ -722,6 +818,7 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
             : [],
     ),
     read: vi.fn(async (_contract: string, method: string) => {
+      if (method === 'productDeliveryPolicy') return 0;
       if (method === 'fulfilmentPolicy') return 2;
       if (method === 'locationOwner') return actor;
       if (method === 'custodyPolicy' || method === 'reviewPolicy') return 0;

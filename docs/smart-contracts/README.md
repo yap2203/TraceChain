@@ -1,5 +1,30 @@
 # Smart Contracts
 
+## Product orders through a Distributor
+
+CustodyTransfer automatically creates ProductDelivery. Its immutable child coordinates Retailer
+orders approved by the original Manufacturer, choosing accepted direct pickup or sufficient received
+custody stock. It uses the existing Orders context, product ownership/lifecycle, company role/permission
+checks, location ownership and credential-bound carrier proof attestations. ProductDelivery exposes
+`select`, `respond`, `dispatch`, `close`, `get` and the existing-shaped proof `act` adapter.
+
+Only that child can reserve/release/dispatch product-delivery balances. Direct pickup keeps stock
+ownership on Manufacturer's ledger until final Retailer receipt while recording Distributor as the
+authorized physical carrier and confirmer; it creates no Distributor warehouse balance. The normal
+generic Manufacturer → Retailer transfer API remains forbidden. Custody selection reserves the full
+quantity at one received location. Final dispatch reuses that reservation; receipt settles once.
+CustodyTransfer alone completes/cancels the coordinator after receipt/Admin reconciliation.
+
+Carrier assignment is within 48 hours of approval, capped by request expiry; acceptance and dispatch
+remain within order expiry. Expired reservations require explicit participant cleanup, not a timer.
+Automatic-restock cancellation/rejection is disabled after these deliveries dispatch; existing
+receipt/discrepancy reconciliation remains available. Ingredient coordination and near-limit Orders
+bytecode are preserved. Both delivery children are automatic: keep the seven top-level environment
+addresses consistent, without adding a manually configured ProductDelivery address.
+
+An updated complete suite is required. The current local dataset has newer ingredient history than
+the restricted replay helper supports; this stage has not changed it. See the [manual product flow](../testing/PRODUCT_DISTRIBUTOR_RETAILER_FLOW.md).
+
 ## Two-mode ingredient fulfilment
 
 `IngredientDelivery.fulfilmentPolicy() = 2` adds `arrangeFromCustody(orderId, positionId,

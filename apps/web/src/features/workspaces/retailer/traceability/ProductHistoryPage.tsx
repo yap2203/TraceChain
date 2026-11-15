@@ -1,3 +1,5 @@
+import { reportError } from '../../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 
@@ -23,7 +25,17 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
 
   useEffect(() => {
     let active = true;
-    const batchIds = [...new Set(data.productBatches.map((product) => product.batchId))];
+    const batchIds = [
+      ...new Set(
+        data.transfers
+          .filter(
+            (transfer) =>
+              Number(transfer.status) === 2 &&
+              transfer.recipient.toLowerCase() === data.actorWallet?.toLowerCase(),
+          )
+          .map((transfer) => transfer.productBatchId),
+      ),
+    ];
     if (operationalLoading) return;
     if (!batchIds.length) {
       setRecords([]);
@@ -41,8 +53,7 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
         if (active) setRecords(resolved);
       })
       .catch((cause) => {
-        if (active)
-          setError(cause instanceof Error ? cause.message : 'Product history could not be loaded.');
+        if (active) setError(reportError(cause, 'Product history could not be loaded.'));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -85,7 +96,7 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
       </div>
       {(error || operationalError) && <Alert type="error" message={error || operationalError} />}
       {loading ? (
-        <Card>Resolving blockchain custody history…</Card>
+        <LoadingIndicator page label="Resolving blockchain custody history…" />
       ) : !filtered.length ? (
         <EmptyState
           icon={<Search size={22} />}

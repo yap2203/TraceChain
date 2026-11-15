@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../components/ui/feedback';
 import type {
   AdminCustodyDiscrepancy,
   PreparedDiscrepancyResolution,
@@ -107,7 +108,7 @@ async function custodyTransferRequest<T>(path: string, init?: RequestInit): Prom
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
     throw new CustodyTransferResolutionError(
       body.error?.code ?? 'TRANSFER_RESOLUTION_FAILED',
-      body.error?.message ?? 'The transfer could not be verified.',
+      apiErrorMessage(body.error?.message, 'The transfer could not be verified.'),
       response.status,
     );
   }

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { reportError } from '../../components/ui/feedback';
 
 import type { CompanyRole } from '@tracechain/shared';
 import { BrowserProvider, getAddress, isAddress } from 'ethers';
 
 import { chainConfig, targetChainId } from '../../config/network';
 import {
-  AuthApiError,
   deleteAuthSession,
   getAuthSession,
   requestNonce,
@@ -103,9 +103,7 @@ function isUserRejection(error: unknown) {
 }
 
 function errorMessage(error: unknown) {
-  if (error instanceof AuthApiError || error instanceof WalletConnectionError) return error.message;
-  if (error instanceof Error) return error.message;
-  return 'Wallet authentication could not be completed.';
+  return reportError(error, 'Wallet authentication could not be completed.');
 }
 
 function chainIdOf(value: string) {

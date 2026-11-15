@@ -16,6 +16,14 @@
 
 ## Confirmed target architecture
 
+The confirmed 2026-11-16 workspace model separates role-specific stock, orders, shipments,
+information requests, traceability and Profile. Distributor accepts and schedules custody intake
+before sender handoff; direct delivery also requires accepted-carrier pickup planning. Coordination
+offers/plans and location aliases use existing encrypted server-managed storage; physical stock
+continues to depend on MetaMask-signed contract records. Forward/backward traceability exposes safe
+batch/event facts, not confidential credential contents or implied cryptographic verification.
+See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and validation steps.
+
 - React and Vite web application
 - Tailwind CSS 4 with the existing TraceChain design tokens, layouts and dark/light workspace themes
 - Node.js and Express application server
@@ -29,6 +37,8 @@
 - QR-code generation and scanning
 
 ## Current implementation
+
+- Product orders now mirror two-mode ingredient fulfilment: Retailer requests, Manufacturer approves/rejects and selects an assigned direct carrier or sufficient received Distributor custody, Distributor dispatches, and Retailer scans/settles receipt. ProductDelivery is automatically deployed by CustodyTransfer, keeps owner/receiver/carrier roles separate and reuses product inventory, road QR/receipt services and Manufacturer company-proof verification. Manufacturer has Custody inventory; Retailer has Shipments. The running local suite remains unchanged because its newly completed ingredient delivery cannot be replayed safely by the existing restricted migration helper. See `docs/testing/PRODUCT_DISTRIBUTOR_RETAILER_FLOW.md`.
 
 - New Manufacturer ingredient requests let the Supplier choose fulfilment after approval: direct Distributor delivery with carrier accept/decline and scanned pickup, or existing Distributor custody with sufficient exact-batch stock reserved atomically at Supplier selection. Manufacturer physical receipt remains mandatory. Explicit earlier custody-position orders still reserve at placement. `IngredientDelivery.fulfilmentPolicy() = 2` needs an updated full-suite deployment. See `docs/testing/TWO_MODE_INGREDIENT_DELIVERY.md`; the older warehouse-only normal-flow description below is superseded for new requests.
 

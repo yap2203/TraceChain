@@ -1,11 +1,17 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink } from 'react-router-dom';
+import { notify } from '../../components/ui/feedback';
 import { Menu, Moon, Sun, X } from 'lucide-react';
 import type { CompanyRole } from '@tracechain/shared';
 
 import { Brand } from '../../components/brand/Brand';
 import { workspaces } from './workspace-config';
-import { workspaceNavigation, type WorkspaceRole } from './workspace-navigation';
+import {
+  workspaceNavigation,
+  workspaceNavigationGroups,
+  type WorkspaceRole,
+} from './workspace-navigation';
+import { WorkspaceGuide } from './WorkspaceGuide';
 import './workspace.css';
 
 interface WorkspaceLayoutProps {
@@ -34,8 +40,46 @@ export function WorkspaceLayout({
 }: WorkspaceLayoutProps) {
   const [light, setLight] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const sidebar = useRef<HTMLElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
   const current = workspaceNavigation[role].find(([id]) => id === page);
   const PageIcon = current?.[2];
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    sidebar.current?.querySelector<HTMLButtonElement>('.workspace-close')?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+      if (event.key !== 'Tab') return;
+      const controls = Array.from(
+        sidebar.current?.querySelectorAll<HTMLElement>('a[href], button:not(:disabled), summary') ??
+          [],
+      ).filter((element) => !element.matches('details:not([open]) button'));
+      if (!controls?.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    const onResize = () => {
+      if (window.innerWidth > 720) setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    window.addEventListener('resize', onResize);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('resize', onResize);
+      menuButton.current?.focus();
+    };
+  }, [menuOpen]);
 
   return (
     <div className={`workspace-ui${light ? ' light-theme' : ''}`}>
@@ -50,7 +94,11 @@ export function WorkspaceLayout({
             onClick={() => setMenuOpen(false)}
           />
         )}
-        <aside className={`workspace-sidebar${menuOpen ? ' is-open' : ''}`}>
+        <aside
+          id="workspace-navigation"
+          ref={sidebar}
+          className={`workspace-sidebar${menuOpen ? ' is-open' : ''}`}
+        >
           <Link className="workspace-brand" to={pathForPage('overview')}>
             <Brand />
           </Link>
@@ -62,31 +110,40 @@ export function WorkspaceLayout({
             <X aria-hidden="true" size={20} />
           </button>
           <div className="workspace-role">
-            <span>Workspace</span>
             <strong>{identity?.companyName ?? workspaces[role].roleLabel}</strong>
             <span>{workspaces[role].roleLabel}</span>
           </div>
           <nav aria-label={`${workspaces[role].roleLabel} navigation`}>
-            {workspaceNavigation[role].map(([id, label, Icon]) => (
-              <NavLink key={id} to={pathForPage(id)} onClick={() => setMenuOpen(false)}>
-                <Icon aria-hidden="true" size={18} strokeWidth={1.8} style={{ flexShrink: 0 }} />
-                {label}
-              </NavLink>
+            {workspaceNavigationGroups(role).map((group) => (
+              <section className="workspace-nav-group" key={group.label} aria-label={group.label}>
+                <h2>{group.label}</h2>
+                {group.items.map(([id, label, Icon]) => (
+                  <NavLink end key={id} to={pathForPage(id)} onClick={() => setMenuOpen(false)}>
+                    <Icon
+                      aria-hidden="true"
+                      size={18}
+                      strokeWidth={1.8}
+                      style={{ flexShrink: 0 }}
+                    />
+                    {label}
+                  </NavLink>
+                ))}
+              </section>
             ))}
           </nav>
           <div className="workspace-sidebar-footer">
-            <strong>{identity?.companyName ?? workspaces[role].roleLabel}</strong>
-            <span>{workspaces[role].roleLabel}</span>
             <span>{status}</span>
             {identity && <AccountDetails identity={identity} />}
             {accountAction}
           </div>
         </aside>
-        <div className="workspace-main">
+        <div className="workspace-main" inert={menuOpen || undefined}>
           <header className="workspace-header">
             <button
               className="workspace-menu"
+              ref={menuButton}
               aria-label="Open navigation"
+              aria-controls="workspace-navigation"
               aria-expanded={menuOpen}
               onClick={() => setMenuOpen(true)}
             >
@@ -114,6 +171,7 @@ export function WorkspaceLayout({
             </button>
           </header>
           <main id="workspace-content" className="workspace-content" key={`${role}/${page}`}>
+            {identity && <WorkspaceGuide role={role} page={page} pathForPage={pathForPage} />}
             {children}
           </main>
         </div>
@@ -123,6 +181,7 @@ export function WorkspaceLayout({
 }
 
 function AccountDetails({ identity }: { identity: NonNullable<WorkspaceLayoutProps['identity']> }) {
+  const [copyStatus, setCopyStatus] = useState('');
   const shortWallet = `${identity.walletAddress.slice(0, 6)}...${identity.walletAddress.slice(-4)}`;
   return (
     <details className="workspace-account-details">
@@ -142,7 +201,16 @@ function AccountDetails({ identity }: { identity: NonNullable<WorkspaceLayoutPro
             <code>{shortWallet}</code>
             <button
               type="button"
-              onClick={() => void navigator.clipboard.writeText(identity.walletAddress)}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(identity.walletAddress);
+                  setCopyStatus('Wallet address copied.');
+                  notify('Wallet address copied.', 'success');
+                } catch {
+                  setCopyStatus('Unable to copy. Please try again.');
+                  notify('Unable to copy. Please try again.', 'error');
+                }
+              }}
             >
               Copy
             </button>
@@ -153,6 +221,7 @@ function AccountDetails({ identity }: { identity: NonNullable<WorkspaceLayoutPro
           <dd>{identity.credentialStatus}</dd>
         </div>
       </dl>
+      <span role="status">{copyStatus}</span>
     </details>
   );
 }

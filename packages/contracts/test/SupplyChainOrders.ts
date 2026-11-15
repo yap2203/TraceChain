@@ -544,7 +544,12 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
   }
   it('keeps Orders and its delivery module deployable under the actual Ethereum size limit', async function () {
     const f = await networkHelpers.loadFixture(deliveryFixture);
-    for (const contract of [f.orders, f.delivery]) {
+    for (const contract of [
+      f.orders,
+      f.delivery,
+      f.custody,
+      await ethers.getContractAt('ProductDelivery', await f.custody.productDelivery()),
+    ]) {
       expect(
         ((await ethers.provider.getCode(await contract.getAddress())).length - 2) / 2,
       ).to.be.at.most(24576);
@@ -1223,6 +1228,371 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
   async function fixture() {
     return buildFixture(86400);
   }
+  async function productDeliveryFixture() {
+    const f = await fixture();
+    const { productId } = await produced(f);
+    const delivery = await ethers.getContractAt(
+      'ProductDelivery',
+      await f.custody.productDelivery(),
+    );
+    const orderId = ethers.id('retailer-product-delivery');
+    await signed(f.orders, f.retailer).requestInterest(
+      orderId,
+      2,
+      productId,
+      10,
+      f.expiry - 1,
+      ethers.id('request'),
+      'encrypted',
+    );
+    await signed(f.orders, f.manufacturer).decideRequest(
+      orderId,
+      1,
+      ethers.id('approved'),
+      'encrypted',
+    );
+    const transport = async (name: string) => ({
+      transferId: ethers.id(name),
+      occurredAt: await networkHelpers.time.latest(),
+      expectedAt: f.expiry - 1,
+      vehicle: 'VAB 1234',
+      detailsHash: ethers.id('road'),
+      cid: '',
+    });
+    return { ...f, productId, delivery, orderId, transport };
+  }
+  it('fulfils a Retailer request via accepted direct Distributor pickup without creating Distributor custody', async function () {
+    const f = await networkHelpers.loadFixture(productDeliveryFixture);
+    await signed(f.delivery, f.manufacturer).select(
+      f.orderId,
+      1,
+      f.distributor.address,
+      f.destination,
+      f.shop,
+    );
+    await expect(signed(f.delivery, f.stranger).respond(f.orderId, true)).to.revert(ethers);
+    await signed(f.delivery, f.distributor).respond(f.orderId, false);
+    expect((await f.delivery.get(f.orderId)).stage).to.equal(1n);
+    await signed(f.delivery, f.manufacturer).select(
+      f.orderId,
+      1,
+      f.distributor.address,
+      f.destination,
+      f.shop,
+    );
+    await expect(
+      signed(f.delivery, f.distributor).dispatch(f.orderId, await f.transport('before-accept')),
+    ).to.revert(ethers);
+    await signed(f.delivery, f.distributor).respond(f.orderId, true);
+    const t = await f.transport('direct-product-shipment');
+    await signed(f.delivery, f.distributor).dispatch(f.orderId, t);
+    expect((await f.custody.getInventory(f.productId, f.manufacturer.address)).available).to.equal(
+      50n,
+    );
+    expect((await f.custody.getInventory(f.productId, f.distributor.address)).available).to.equal(
+      0n,
+    );
+    expect(await f.custody.productDeliveryCarrier(t.transferId)).to.equal(f.distributor.address);
+    const { EthersOrdersGateway } = await import(
+      new URL('../../../apps/api/src/modules/orders/orders.gateway.ts', import.meta.url).href
+    );
+    const { OrdersService } = await import(
+      new URL('../../../apps/api/src/modules/orders/orders.service.ts', import.meta.url).href
+    );
+    const gateway = new EthersOrdersGateway(
+      31337,
+      await f.orders.getAddress(),
+      'http://127.0.0.1:1',
+      {
+        ingredients: await f.ingredients.getAddress(),
+        products: await f.products.getAddress(),
+        custody: await f.custody.getAddress(),
+        evidence: await f.evidence.getAddress(),
+        stakeholders: await f.stakeholders.getAddress(),
+        credentials: await f.credentials.getAddress(),
+      },
+    );
+    Object.defineProperty(gateway, 'provider', { value: ethers.provider });
+    const service = new OrdersService(
+      {
+        getSession: async () => ({
+          authenticated: true,
+          authorizationReady: true,
+          address: f.distributor.address,
+          role: CompanyRole.DISTRIBUTOR,
+        }),
+      } as any,
+      gateway,
+      {
+        decrypt: async () => {
+          throw new Error('No private payload is configured.');
+        },
+      } as any,
+      { findPrivate: async () => undefined } as any,
+    );
+    const state = await service.state('carrier');
+    expect(state.productDeliverySupported).to.equal(true);
+    expect(state.orders.find((o: any) => o.orderId === f.orderId)?.productDelivery.stage).to.equal(
+      '4',
+    );
+    expect(
+      state.logistics?.shipments.find((s: any) => s.shipmentId === t.transferId)?.carrier,
+    ).to.equal(f.distributor.address);
+    await expect(
+      signed(f.custody, f.stranger).confirmReceiptWithMissing(
+        t.transferId,
+        10,
+        0,
+        0,
+        0,
+        await networkHelpers.time.latest(),
+        ethers.id('receipt'),
+        '',
+      ),
+    ).to.revert(ethers);
+    await signed(f.custody, f.retailer).confirmReceiptWithMissing(
+      t.transferId,
+      10,
+      0,
+      0,
+      0,
+      await networkHelpers.time.latest(),
+      ethers.id('receipt'),
+      '',
+    );
+    expect((await f.delivery.get(f.orderId)).stage).to.equal(5n);
+    expect((await f.custody.getInventory(f.productId, f.retailer.address)).available).to.equal(10n);
+    await expect(
+      signed(f.delivery, f.distributor).dispatch(f.orderId, await f.transport('again')),
+    ).to.revert(ethers);
+  });
+  it('reserves received product custody at Manufacturer selection and settles Retailer receipt without double deduction', async function () {
+    const f = await networkHelpers.loadFixture(productDeliveryFixture);
+    const intake = ethers.id('product-custody');
+    await signed(f.custody, f.manufacturer).createRoadTransfer(
+      intake,
+      f.productId,
+      f.distributor.address,
+      20,
+      f.expiry - 1,
+      ethers.id('intake'),
+      '',
+      f.destination,
+      f.transit,
+      await networkHelpers.time.latest(),
+      'VAB 1234',
+    );
+    await expect(
+      signed(f.delivery, f.manufacturer).select(
+        f.orderId,
+        2,
+        f.distributor.address,
+        f.transit,
+        f.shop,
+      ),
+    ).to.revert(ethers);
+    await signed(f.custody, f.distributor).confirmReceiptWithMissing(
+      intake,
+      20,
+      0,
+      0,
+      0,
+      await networkHelpers.time.latest(),
+      ethers.id('intake-receipt'),
+      '',
+    );
+    await signed(f.delivery, f.manufacturer).select(
+      f.orderId,
+      2,
+      f.distributor.address,
+      f.transit,
+      f.shop,
+    );
+    expect((await f.custody.getInventory(f.productId, f.distributor.address)).available).to.equal(
+      10n,
+    );
+    expect(await f.custody.locationStock(f.productId, f.distributor.address, f.transit)).to.equal(
+      10n,
+    );
+    await expect(
+      signed(f.delivery, f.manufacturer).select(
+        f.orderId,
+        1,
+        f.distributor.address,
+        f.destination,
+        f.shop,
+      ),
+    ).to.revert(ethers);
+    const t = await f.transport('warehouse-product-shipment');
+    await signed(f.delivery, f.distributor).dispatch(f.orderId, t);
+    await signed(f.custody, f.retailer).confirmReceiptWithMissing(
+      t.transferId,
+      10,
+      0,
+      0,
+      0,
+      await networkHelpers.time.latest(),
+      ethers.id('retail-receipt'),
+      '',
+    );
+    expect((await f.custody.getInventory(f.productId, f.manufacturer.address)).available).to.equal(
+      40n,
+    );
+    expect((await f.custody.getInventory(f.productId, f.distributor.address)).available).to.equal(
+      10n,
+    );
+    expect((await f.custody.getInventory(f.productId, f.retailer.address)).available).to.equal(10n);
+  });
+  it('blocks product route substitution and expired requested Manufacturer proof', async function () {
+    const f = await networkHelpers.loadFixture(productDeliveryFixture);
+    await expect(
+      signed(f.delivery, f.stranger).select(
+        f.orderId,
+        1,
+        f.distributor.address,
+        f.destination,
+        f.shop,
+      ),
+    ).to.revert(ethers);
+    await expect(
+      signed(f.delivery, f.manufacturer).select(
+        f.orderId,
+        1,
+        f.distributor.address,
+        f.transit,
+        f.shop,
+      ),
+    ).to.revert(ethers);
+    await signed(f.delivery, f.manufacturer).select(
+      f.orderId,
+      1,
+      f.distributor.address,
+      f.destination,
+      f.shop,
+    );
+    await signed(f.delivery, f.distributor).respond(f.orderId, true);
+    const challenge = ethers.id('manufacturer-proof');
+    const until = (await networkHelpers.time.latest()) + 60;
+    await signed(f.delivery, f.distributor).act(
+      4,
+      f.distributor.address,
+      f.orderId,
+      ethers.ZeroAddress,
+      challenge,
+      0,
+      ethers.ZeroHash,
+      ethers.ZeroHash,
+      until,
+    );
+    await expect(
+      signed(f.delivery, f.distributor).dispatch(f.orderId, await f.transport('unverified')),
+    ).to.revert(ethers);
+    const hash = (await f.stakeholders.getStakeholder(f.manufacturer.address)).credentialHash;
+    await signed(f.delivery, f.distributor).act(
+      5,
+      f.distributor.address,
+      f.orderId,
+      ethers.ZeroAddress,
+      challenge,
+      0,
+      hash,
+      ethers.id('proof'),
+      until,
+    );
+    await networkHelpers.time.increaseTo(until);
+    await expect(
+      signed(f.delivery, f.distributor).dispatch(f.orderId, await f.transport('expired-proof')),
+    ).to.revert(ethers);
+  });
+  it('releases a cancelled product custody reservation exactly once and rejects expired direct assignment', async function () {
+    const f = await networkHelpers.loadFixture(productDeliveryFixture);
+    const intake = ethers.id('reserved-products');
+    await signed(f.custody, f.manufacturer).createRoadTransfer(
+      intake,
+      f.productId,
+      f.distributor.address,
+      20,
+      f.expiry - 1,
+      ethers.id('intake'),
+      '',
+      f.destination,
+      f.transit,
+      await networkHelpers.time.latest(),
+      'VAB 1234',
+    );
+    await signed(f.custody, f.distributor).confirmReceiptWithMissing(
+      intake,
+      20,
+      0,
+      0,
+      0,
+      await networkHelpers.time.latest(),
+      ethers.id('receipt'),
+      '',
+    );
+    await signed(f.delivery, f.manufacturer).select(
+      f.orderId,
+      2,
+      f.distributor.address,
+      f.transit,
+      f.shop,
+    );
+    await signed(f.delivery, f.manufacturer).close(f.orderId);
+    expect((await f.custody.getInventory(f.productId, f.distributor.address)).available).to.equal(
+      20n,
+    );
+    expect(await f.custody.locationStock(f.productId, f.distributor.address, f.transit)).to.equal(
+      20n,
+    );
+    await expect(signed(f.delivery, f.manufacturer).close(f.orderId)).to.revert(ethers);
+    await expect(
+      signed(f.delivery, f.distributor).dispatch(f.orderId, await f.transport('cancelled')),
+    ).to.revert(ethers);
+  });
+  it('blocks expired product dispatch and lets a participant release its expired custody reservation once', async function () {
+    const f = await networkHelpers.loadFixture(productDeliveryFixture);
+    const intake = ethers.id('expiring-product-custody');
+    await signed(f.custody, f.manufacturer).createRoadTransfer(
+      intake,
+      f.productId,
+      f.distributor.address,
+      20,
+      f.expiry - 1,
+      ethers.id('intake'),
+      '',
+      f.destination,
+      f.transit,
+      await networkHelpers.time.latest(),
+      'VAB 1234',
+    );
+    await signed(f.custody, f.distributor).confirmReceiptWithMissing(
+      intake,
+      20,
+      0,
+      0,
+      0,
+      await networkHelpers.time.latest(),
+      ethers.id('receipt'),
+      '',
+    );
+    await signed(f.delivery, f.manufacturer).select(
+      f.orderId,
+      2,
+      f.distributor.address,
+      f.transit,
+      f.shop,
+    );
+    await networkHelpers.time.increaseTo(f.expiry - 1);
+    expect((await f.delivery.get(f.orderId)).stage).to.equal(6n);
+    await expect(
+      signed(f.delivery, f.distributor).dispatch(f.orderId, await f.transport('expired')),
+    ).to.revert(ethers);
+    await signed(f.delivery, f.retailer).close(f.orderId);
+    expect((await f.custody.getInventory(f.productId, f.distributor.address)).available).to.equal(
+      20n,
+    );
+    await expect(signed(f.delivery, f.retailer).close(f.orderId)).to.revert(ethers);
+  });
   async function buildFixture(lifetime: number) {
     const [admin, supplier, manufacturer, distributor, retailer, stranger] =
       await ethers.getSigners();

@@ -3,9 +3,40 @@ pragma solidity ^0.8.34;
 import {IStakeholderRegistry} from '../interfaces/IStakeholderRegistry.sol';
 import {IProductRegistry} from '../interfaces/IProductRegistry.sol';
 import {ProductRegistry} from './ProductRegistry.sol';
+import {ProductDelivery} from './ProductDelivery.sol';
 interface IOrderLocations { function locationOwner(bytes32) external view returns (address); }
 
 contract CustodyTransfer {
+    ProductDelivery public immutable productDelivery;
+    mapping(bytes32=>bytes32) public productDeliveryOrder;
+    mapping(bytes32=>address) public productDeliveryCarrier;
+    function productDeliveryPolicy() external pure returns(uint8){return 1;}
+    function reserveProductDelivery(bytes32 batchId,address holder,bytes32 location,uint256 quantity) external {
+        if(msg.sender!=address(productDelivery))revert Unauthorized(msg.sender);
+        _initialize(batchId);
+        if(!locationTracked[batchId][holder]){
+            if(products.manufacturerOf(batchId)!=holder||ProductRegistry(address(products)).productionLocation(batchId)!=location)revert InvalidState();
+            locationTracked[batchId][holder]=true;locationStock[batchId][holder][location]=inventory[batchId][holder].available;
+        }
+        Inventory storage stock=inventory[batchId][holder];
+        if(quantity==0||stock.available<quantity||locationStock[batchId][holder][location]<quantity)revert InsufficientInventory();
+        stock.available-=quantity;stock.reserved+=quantity;locationStock[batchId][holder][location]-=quantity;
+    }
+    function releaseProductDelivery(bytes32 batchId,address holder,bytes32 location,uint256 quantity) external {
+        if(msg.sender!=address(productDelivery))revert Unauthorized(msg.sender);
+        Inventory storage stock=inventory[batchId][holder];stock.reserved-=quantity;stock.available+=quantity;locationStock[batchId][holder][location]+=quantity;
+    }
+    function dispatchProductDelivery(bytes32 orderId,ProductDelivery.Route calldata r,ProductDelivery.Transport calldata input) external {
+        if(msg.sender!=address(productDelivery))revert Unauthorized(msg.sender);
+        if(bytes(input.vehicle).length<2||bytes(input.vehicle).length>32)revert InvalidInput();
+        Inventory storage stock=inventory[r.batchId][r.holder];stock.reserved-=r.quantity;stock.available+=r.quantity;
+        productDeliveryOrder[input.transferId]=orderId;productDeliveryCarrier[input.transferId]=r.distributor;
+        _createTransfer(r.holder,input.transferId,r.batchId,r.retailer,r.quantity,input.expectedAt,input.detailsHash,input.cid,true);
+        _recordLocations(input.transferId,r.fromLocation,r.toLocation,input.occurredAt);
+        vehicleRegistration[input.transferId]=input.vehicle;dispatchConfirmedBy[input.transferId]=r.distributor;
+        transferOrder[input.transferId]=orderId;emit OrderTransferLinked(input.transferId,orderId);
+        emit RoadTransportRecorded(input.transferId,r.fromLocation,r.toLocation,input.vehicle,input.occurredAt,uint64(block.timestamp),r.distributor);
+    }
     function transportPolicy() external pure returns (uint8) { return 1; }
     mapping(bytes32 => string) public vehicleRegistration;
     mapping(bytes32 => address) public dispatchConfirmedBy;
@@ -187,6 +218,7 @@ contract CustodyTransfer {
     constructor(address stakeholderRegistry, address productRegistry) {
         stakeholders = IStakeholderRegistry(stakeholderRegistry);
         products = IProductRegistry(productRegistry);
+        productDelivery=new ProductDelivery(address(this),stakeholderRegistry,productRegistry);
     }
     function createTransfer(
         bytes32 transferId,
@@ -206,7 +238,8 @@ contract CustodyTransfer {
         if (
             !stakeholders.hasPermission(sender, keccak256('INITIATE_TRANSFER')) ||
             !stakeholders.hasPermission(recipient, keccak256('RECEIVE_TRANSFER')) ||
-            !((senderRole == 3 && recipientRole == 4) || (senderRole == 4 && recipientRole == 5))
+            !((senderRole == 3 && recipientRole == 4) || (senderRole == 4 && recipientRole == 5) ||
+              (senderRole==3&&recipientRole==5&&msg.sender==address(productDelivery)&&productDeliveryCarrier[transferId]!=address(0)))
         )
             revert Unauthorized(msg.sender);
         if (
@@ -250,6 +283,7 @@ contract CustodyTransfer {
         );
     }
     function cancel(bytes32 transferId, bytes32 reasonHash) external {
+        if(productDeliveryOrder[transferId]!=bytes32(0))revert InvalidState();
         Transfer storage transfer = _transfer(transferId);
         if (msg.sender != transfer.sender) revert Unauthorized(msg.sender);
         if (transfer.status != Status.AwaitingReceipt) revert InvalidState();
@@ -258,6 +292,7 @@ contract CustodyTransfer {
         emit TransferStatusChanged(transferId, transfer.status, reasonHash);
     }
     function reject(bytes32 transferId, bytes32 reasonHash) external {
+        if(productDeliveryOrder[transferId]!=bytes32(0))revert InvalidState();
         Transfer storage transfer = _transfer(transferId);
         if (msg.sender != transfer.recipient) revert Unauthorized(msg.sender);
         if (transfer.status != Status.AwaitingReceipt) revert InvalidState();
@@ -311,6 +346,7 @@ contract CustodyTransfer {
         discrepancy.resolved = true;
         if (!acceptActual) {
             _release(transferId, transfer);
+            if(productDeliveryOrder[transferId]!=bytes32(0))productDelivery.cancelAfterReconciliation(productDeliveryOrder[transferId],transferId);
             transfer.status = Status.Cancelled;
             emit TransferStatusChanged(transferId, transfer.status, reasonHash);
         } else {
@@ -348,11 +384,12 @@ contract CustodyTransfer {
     function confirmReceiptWithMissing(bytes32 transferId, uint256 accepted, uint256 damaged, uint256 rejectedQuantity, uint256 missing, uint64 occurredAt, bytes32 receiptHash, string calldata receiptCid) external {
         uint64 dispatched = reportedDispatchAt[transferId] == 0 ? _transfer(transferId).dispatchedAt : reportedDispatchAt[transferId];
         if (occurredAt < dispatched || occurredAt > block.timestamp) revert InvalidInput();
-        _confirmReceipt(transferId, accepted + damaged + rejectedQuantity, damaged, rejectedQuantity, missing, receiptHash, receiptCid);
         receiptOccurredAt[transferId] = occurredAt;
+        _confirmReceipt(transferId, accepted + damaged + rejectedQuantity, damaged, rejectedQuantity, missing, receiptHash, receiptCid);
         emit ReceiptTimesRecorded(transferId, occurredAt, uint64(block.timestamp));
     }
     function _confirmReceipt(bytes32 transferId, uint256 totalReceived, uint256 damaged, uint256 rejectedQuantity, uint256 missing, bytes32 receiptHash, string memory receiptCid) private {
+        if(productDeliveryOrder[transferId]!=bytes32(0)&&receiptOccurredAt[transferId]==0)revert InvalidInput();
         Transfer storage transfer = _transfer(transferId);
         if (
             msg.sender != transfer.recipient ||
@@ -382,6 +419,7 @@ contract CustodyTransfer {
         transfer.status = Status.Received;
         missingQuantity[transferId] = missing;
         receiptRecordedAt[transferId] = uint64(block.timestamp);
+        if(productDeliveryOrder[transferId]!=bytes32(0))productDelivery.complete(productDeliveryOrder[transferId],transferId,receiptOccurredAt[transferId]);
         emit MissingRecorded(transferId, missing);
         emit ReceiptConfirmed(
             transferId,

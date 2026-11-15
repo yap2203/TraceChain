@@ -10,12 +10,12 @@ export function SectionTitle({
   action?: ReactNode;
 }) {
   return (
-    <div className="workspace-section-title flex justify-between items-start flex-wrap gap-[12px] mb-[20px]">
+    <header className="workspace-section-title flex justify-between items-start flex-wrap gap-[12px] mb-[20px]">
       <div>
-        <h2 className="text-[18px] font-bold text-ws-navy m-0">{title}</h2>
-        {sub && <div className="text-[13px] text-ws-text2 mt-[3px]">{sub}</div>}
+        <h2 className="font-bold text-ws-navy m-0">{title}</h2>
+        {sub && <p className="text-[13px] text-ws-text2 mt-[3px] max-w-[72ch]">{sub}</p>}
       </div>
       {action && <div>{action}</div>}
-    </div>
+    </header>
   );
 }

@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { ArrowUpRight, CheckCircle, Package, TrendingUp } from 'lucide-react';
 import { useOperationalData } from '../../blockchain/useOperationalData';
 import { Alert, Badge, Btn, Card, EmptyState, StatCard, T } from '../shared/ui';
@@ -5,10 +6,11 @@ import { recordStatuses, shortChainId } from '../shared/operational-format';
 export function ManufacturerOverview({ onNav }: { onNav: (tab: string) => void }) {
   const { data, error, loading } = useOperationalData();
   const pending = data.transfers.filter((t) => t.status === 1);
+  if (loading) return <LoadingIndicator page label="Loading records…" />;
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       {error && <Alert type="error" message={error} />}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
+      <div className="workspace-metrics">
         <StatCard
           label="Product Batches"
           value={loading ? '…' : String(data.productBatches.length)}

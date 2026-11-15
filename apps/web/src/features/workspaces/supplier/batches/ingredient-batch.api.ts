@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../../../components/ui/feedback';
 import type { PreparedTransaction } from '../../../blockchain/blockchain.api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
@@ -115,7 +116,7 @@ export async function extractIngredientDocument(file: File) {
     };
     throw new IngredientBatchRequestError(
       payload.error?.code ?? 'DOCUMENT_EXTRACTION_FAILED',
-      payload.error?.message ?? 'The document could not be processed.',
+      apiErrorMessage(payload.error?.message, 'The document could not be processed.'),
       response.status,
     );
   }
@@ -134,7 +135,7 @@ async function ingredientBatchRequest<T>(path: string, init?: RequestInit): Prom
     };
     throw new IngredientBatchRequestError(
       body.error?.code ?? 'INGREDIENT_BATCH_REQUEST_FAILED',
-      body.error?.message ?? 'The ingredient batch request failed.',
+      apiErrorMessage(body.error?.message, 'The ingredient batch request failed.'),
       response.status,
     );
   }

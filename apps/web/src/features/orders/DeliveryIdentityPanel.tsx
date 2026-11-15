@@ -1,3 +1,4 @@
+import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
 import { deliveryIdentity, type OrderRecord, type OrdersState } from './orders.api';
 import { Alert, Btn, Input } from '../workspaces/shared/ui';
@@ -18,11 +19,12 @@ export function DeliveryIdentityPanel({
   data: OrdersState;
   onChanged: () => Promise<void>;
 }) {
+  const sellerLabel = order.productDelivery ? 'Manufacturer' : 'Supplier';
   const supplier = data.actor.toLowerCase() === order.seller.toLowerCase();
   const [status, setStatus] = useState<any>(),
     [material, setMaterial] = useState<any>();
   const [purpose, setPurpose] = useState(
-    'Verify Supplier company identity before collecting these ingredients',
+    'Verify seller company identity before collecting or dispatching these goods',
   );
   const [claims, setClaims] = useState<string[]>(['companyName']);
   const [selected, setSelected] = useState<string[]>([]);
@@ -64,7 +66,7 @@ export function DeliveryIdentityPanel({
       await refresh();
       await onChanged();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Company proof could not be processed.');
+      setError(reportError(cause, 'Company proof could not be processed.'));
     } finally {
       pending.current = false;
       setBusy(false);
@@ -76,9 +78,9 @@ export function DeliveryIdentityPanel({
   return (
     <section
       className="grid gap-[12px] rounded-lg border border-[var(--c-border)] p-[12px]"
-      aria-label="Supplier company evidence"
+      aria-label={`${sellerLabel} company evidence`}
     >
-      <h4 className="m-0">Supplier company evidence · Optional delivery check</h4>
+      <h4 className="m-0">{sellerLabel} company evidence · Optional delivery check</h4>
       <p className="m-0">
         Proof status: {status?.status ?? 'Not requested'}. This is separate from approval, pickup
         and receipt.
@@ -88,7 +90,7 @@ export function DeliveryIdentityPanel({
       {!supplier && (
         <>
           <Input
-            label="Why is Supplier company evidence needed?"
+            label={`Why is ${sellerLabel} company evidence needed?`}
             value={purpose}
             onChange={setPurpose}
             maxLength={500}
@@ -138,14 +140,14 @@ export function DeliveryIdentityPanel({
                   }),
                 );
                 setNotice(
-                  'Supplier evidence requested through encrypted company messaging. If requested, verification is required before pickup.',
+                  `${sellerLabel} evidence requested through encrypted company messaging. If requested, verification is required before pickup or dispatch.`,
                 );
               })
             }
           >
             {status?.status === 'REQUESTED'
               ? 'Complete company evidence request'
-              : 'Request Supplier Company Role VP'}
+              : `Request ${sellerLabel} Company Role VP`}
           </Btn>
           {status?.status === 'PRESENTED' && (
             <Btn
@@ -159,7 +161,7 @@ export function DeliveryIdentityPanel({
                 })
               }
             >
-              Verify Supplier proof & record result
+              Verify {sellerLabel} proof & record result
             </Btn>
           )}
         </>
@@ -233,7 +235,9 @@ export function DeliveryIdentityPanel({
               ),
             )}
           </dl>
-          <PresentationSigningSettingsLink role="supplier" />
+          <PresentationSigningSettingsLink
+            role={order.productDelivery ? 'manufacturer' : 'supplier'}
+          />
           <Btn
             disabled={busy}
             onClick={() =>
@@ -257,7 +261,7 @@ export function DeliveryIdentityPanel({
               })
             }
           >
-            Approve & sign Supplier company proof
+            Approve & sign {sellerLabel} company proof
           </Btn>
         </>
       )}

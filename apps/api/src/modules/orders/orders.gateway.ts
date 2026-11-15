@@ -19,6 +19,7 @@ export interface OrdersGateway {
 const artifactNames: Record<string, string> = {
   orders: 'traceability/SupplyChainOrders',
   delivery: 'traceability/IngredientDelivery',
+  productDelivery: 'traceability/ProductDelivery',
   ingredients: 'traceability/IngredientRegistry',
   products: 'traceability/ProductRegistry',
   custody: 'traceability/CustodyTransfer',
@@ -87,6 +88,10 @@ export class EthersOrdersGateway implements OrdersGateway {
         this.addresses.delivery = String(
           await (await this.contract('orders')).getFunction('ingredientDelivery')(),
         );
+      if (name === 'productDelivery' && !this.addresses.productDelivery)
+        this.addresses.productDelivery = String(
+          await (await this.contract('custody')).getFunction('productDelivery')(),
+        );
       contract = new Contract(
         name === 'orders' ? this.address : this.addresses[name],
         new Interface(artifact.abi),
@@ -121,6 +126,7 @@ export class EthersOrdersGateway implements OrdersGateway {
           ...plain(entry.args, entry.fragment.inputs),
           transactionHash: entry.transactionHash,
           blockNumber: entry.blockNumber,
+          blockHash: entry.blockHash,
         };
       });
   }

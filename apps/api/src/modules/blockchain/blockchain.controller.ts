@@ -371,11 +371,13 @@ export class BlockchainController {
         applicationId: input.applicationId,
         companyName: input.companyName,
         companyRegistrationNumber: input.companyRegistrationNumber,
+        initialLocationName: input.initialLocationName,
         profileHash: input.profileHash,
       });
       const {
         companyName: _companyName,
         companyRegistrationNumber: _registrationNumber,
+        initialLocationName: _initialLocation,
         ...transactionInput
       } = input;
       response.json(this.gateway.prepareApplication(transactionInput));

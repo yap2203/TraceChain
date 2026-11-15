@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   Archive,
@@ -683,9 +684,9 @@ function IngredientDetailModal({
             .filter((position: OrderRecord) => BigInt(position.quantity) > 0n)
             .map((position: OrderRecord) => (
               <p key={position.positionId}>
-                <strong>{position.distributorName ?? 'Distributor'}</strong>{' '}
-                ({position.warehouseName ?? 'Warehouse'}): {position.quantity} {item.unit} in custody ·{' '}
-                {position.available} {item.unit} unreserved
+                <strong>{position.distributorName ?? 'Distributor'}</strong> (
+                {position.warehouseName ?? 'Warehouse'}): {position.quantity} {item.unit} in custody
+                · {position.available} {item.unit} unreserved
               </p>
             ))}
         </div>
@@ -830,14 +831,7 @@ function IngredientDetailModal({
 }
 
 function IngredientLoading() {
-  return (
-    <div className="ingredient-grid" role="status" aria-label="Loading ingredient batches">
-      {[0, 1, 2].map((entry) => (
-        <div key={entry} className="ingredient-card ingredient-card--loading" />
-      ))}
-      <span className="sr-only">Loading ingredient batches</span>
-    </div>
-  );
+  return <LoadingIndicator page label="Loading ingredient batches" />;
 }
 
 function InventorySummaryCard({

@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   sign: vi.fn(),
   image: vi.fn(),
   camera: vi.fn(),
+  offers: vi.fn(),
 }));
 vi.mock('../custody-transfers/qr-reader', () => ({
   ZxingTransferQrReader: class {
@@ -23,6 +24,7 @@ vi.mock('../custody-transfers/qr-reader', () => ({
 vi.mock('./orders.api', () => ({
   deliveryIdentity: vi.fn(),
   getOrders: mocks.get,
+  getCustodyOffers: mocks.offers,
   prepareLogistics: mocks.prepare,
   prepareOrder: mocks.prepare,
 }));
@@ -115,6 +117,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('VITE_PUBLIC_APP_URL', 'http://localhost:5173');
   mocks.get.mockResolvedValue(structuredClone(state));
+  mocks.offers.mockResolvedValue({ offers: [] });
   mocks.prepare.mockResolvedValue({
     resultId: shipmentId,
     transaction: { chainId: 31337, to: ordersAddress, data: '0x', value: '0x0' },
@@ -138,6 +141,39 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 describe('unified warehouse shipments', () => {
+  it('uses the accepted custody offer and requires scanning before both chain receipt confirmations', async () => {
+    const next = structuredClone(state);
+    next.logistics!.shipments[0].custodyDecision = 0;
+    mocks.get.mockResolvedValue(next);
+    mocks.offers.mockResolvedValue({
+      offers: [
+        {
+          offerId: hash('a'),
+          shipmentId,
+          sender: supplier,
+          distributor: carrier,
+          status: 'DISPATCHED',
+        },
+      ],
+    });
+    render(
+      <ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan package QR' }));
+    const confirm = await screen.findByRole('button', { name: 'Confirm receipt with MetaMask' });
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Accept custody delivery' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Quantity physically received (kg)'), {
+      target: { value: '40' },
+    });
+    fireEvent.click(screen.getByLabelText(/I physically received/));
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.sign).toHaveBeenCalledTimes(2));
+    expect(mocks.prepare.mock.calls.map(([input]) => input.action)).toEqual([
+      'warehouse-decision',
+      'shipment-receive',
+    ]);
+  });
   it('shows direct-carrier requests separately from custody intake and permits accept/reject', async () => {
     const next = structuredClone(state);
     next.logistics!.shipments = [];

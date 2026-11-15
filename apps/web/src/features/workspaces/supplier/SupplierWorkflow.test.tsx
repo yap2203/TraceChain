@@ -149,9 +149,9 @@ describe('Supplier ingredient and request management', () => {
     expect(screen.getByText(/Collected deliveries are already deducted/)).toBeTruthy();
   });
 
-  it('labels the Supplier navigation as Order requests', () => {
+  it('labels the Supplier navigation as Incoming orders', () => {
     expect(workspaceNavigation.supplier.find(([id]) => id === 'orders')?.[1]).toBe(
-      'Order requests',
+      'Incoming orders',
     );
   });
   it('edits only listing fields and requires confirmation before archiving', async () => {
@@ -297,5 +297,23 @@ describe('Supplier ingredient and request management', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View evidence request' }));
     await screen.findByRole('button', { name: 'Request company identity proof' });
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+  });
+  it('does not fetch or embed sent company proofs in the fixed Received page', async () => {
+    api.listEvidenceRequests.mockResolvedValue({
+      requests: [
+        {
+          requestId: 'incoming-only',
+          requester: buyer,
+          requesterName: 'Received-only company',
+          dueAt: 2000000000,
+          status: 1,
+        },
+      ],
+    });
+    mount(<InformationRequests onRespond={vi.fn()} initialDirection="received" hideDirection />);
+    await screen.findByText('Received-only company');
+    expect(screen.queryByRole('button', { name: 'Sent requests' })).toBeNull();
+    expect(api.getOrders).not.toHaveBeenCalled();
+    expect(api.getCompanyIdentityProofStatus).not.toHaveBeenCalled();
   });
 });

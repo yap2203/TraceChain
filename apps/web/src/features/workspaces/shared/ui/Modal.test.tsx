@@ -61,4 +61,13 @@ describe('Modal', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.body.style.overflow).toBe('');
   });
+  it('dismisses a backdrop click while keeping clicks inside the modal open', () => {
+    const close = vi.fn();
+    render(<ModalHarness onClose={close} />);
+    fireEvent.click(screen.getByText('Dialog content'));
+    expect(close).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('dialog'));
+    expect(close).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 });

@@ -1,4 +1,6 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 
 import {
   createSelectiveIngredientPresentation,
@@ -41,9 +43,7 @@ export function SelectiveDisclosure({
   useEffect(() => {
     void getEvidenceDetails(request.requestId)
       .then(setDetails)
-      .catch((cause) =>
-        setError(cause instanceof Error ? cause.message : 'Could not load the private request.'),
-      );
+      .catch((cause) => setError(reportError(cause, 'Could not load the private request.')));
   }, [request.requestId]);
   useEffect(() => {
     void getCompanyIdentityProofStatus(request.requestId)
@@ -81,7 +81,7 @@ export function SelectiveDisclosure({
       await sendEvidencePresentationMessage(await getEvidenceDetails(request.requestId));
       onBack();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The evidence response failed.');
+      setError(reportError(cause, 'The evidence response failed.'));
     } finally {
       setBusy(false);
     }
@@ -96,7 +96,7 @@ export function SelectiveDisclosure({
       setHolderDid(signing.holderSigning.holderDid);
       setPreview(await readSelectiveIngredientClaims(signing.holderSigning.credential));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not preview the credential claims.');
+      setError(reportError(cause, 'Could not preview the credential claims.'));
     } finally {
       setBusy(false);
     }
@@ -118,11 +118,12 @@ export function SelectiveDisclosure({
       );
       onBack();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The decline transaction failed.');
+      setError(reportError(cause, 'The decline transaction failed.'));
     } finally {
       setBusy(false);
     }
   };
+  if (!details && !error) return <LoadingIndicator page label="Loading evidence request…" />;
   return (
     <div style={{ maxWidth: 720 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
@@ -161,7 +162,7 @@ export function SelectiveDisclosure({
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a
               href={
-                '/supplier/information-requests?context=ingredient&referenceId=' +
+                '/supplier/information-requests/sent?context=ingredient&referenceId=' +
                 encodeURIComponent(request.requestId)
               }
             >

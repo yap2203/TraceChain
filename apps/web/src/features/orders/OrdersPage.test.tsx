@@ -47,7 +47,7 @@ describe('browse and request-only UI', () => {
     expiresAt: '2000000000',
     details: { requestOnly: true, note: 'Please review' },
   };
-  it('shows catalogue skeleton cards while authoritative data loads', () => {
+  it('shows the shared centered spinner while authoritative data loads', () => {
     api.getOrders.mockImplementation(() => new Promise(() => undefined));
     const { container } = render(
       <MemoryRouter>
@@ -55,7 +55,9 @@ describe('browse and request-only UI', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('status', { name: 'Loading catalogue' })).toBeTruthy();
-    expect(container.querySelectorAll('.catalogue-skeleton')).toHaveLength(4);
+    expect(
+      container.querySelector('.loading-indicator--page .loading-indicator__spinner'),
+    ).toBeTruthy();
   });
   it('shows registered items in a grid with price and a detail view without publishing', async () => {
     api.getOrders.mockResolvedValue({
@@ -133,6 +135,8 @@ describe('browse and request-only UI', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Preview requested Company Role VP' }),
     );
+    expect(screen.queryByRole('navigation', { name: 'Order direction' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Back to requests' })).toBeNull();
     await screen.findByLabelText('Share companyName');
     expect(screen.queryByLabelText('Presentation key backup password')).toBeNull();
     expect(

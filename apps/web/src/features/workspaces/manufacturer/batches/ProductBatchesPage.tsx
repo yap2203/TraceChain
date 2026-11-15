@@ -1,4 +1,5 @@
-﻿import { useEffect, useState } from 'react';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
+import { useEffect, useState } from 'react';
 import { Package, Search } from 'lucide-react';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import { OrdersPage } from '../../../orders/OrdersPage';
@@ -11,7 +12,6 @@ export function ProductBatches({
   onTransfer,
   onDetail,
   section = 'products',
-  onSectionChange,
   ingredientBatchId,
 }: {
   onNew: () => void;
@@ -21,37 +21,16 @@ export function ProductBatches({
   onSectionChange?: (section: 'products' | 'ingredients') => void;
   ingredientBatchId?: string;
 }) {
+  if (section === 'ingredients')
+    return <OrdersPage role="manufacturer" mode="browse" initialBatchId={ingredientBatchId} />;
   return (
     <div className="grid gap-[20px] min-w-0">
       <SectionTitle
         title="Products"
-        sub="Manage your finished products and source ingredients from registered Suppliers."
+        sub="Manage products made by your company."
         action={<Btn onClick={onNew}>Create product batch</Btn>}
       />
-      <nav aria-label="Products and ingredients" className="flex flex-wrap gap-[8px]">
-        <Btn
-          variant={section === 'products' ? 'primary' : 'outline'}
-          onClick={() => onSectionChange?.('products')}
-        >
-          My products
-        </Btn>
-        <Btn
-          variant={section === 'ingredients' ? 'primary' : 'outline'}
-          onClick={() => onSectionChange?.('ingredients')}
-        >
-          Supplier ingredients
-        </Btn>
-      </nav>
-      {section === 'ingredients' ? (
-        <OrdersPage
-          key={ingredientBatchId ?? 'ingredients'}
-          role="manufacturer"
-          mode="browse"
-          initialBatchId={ingredientBatchId}
-        />
-      ) : (
-        <OwnedProducts onDetail={onDetail} onTransfer={onTransfer} />
-      )}
+      <OwnedProducts onDetail={onDetail} onTransfer={onTransfer} />
     </div>
   );
 }
@@ -104,7 +83,7 @@ function OwnedProducts({
       />
       {error && <Alert type="error" message={error} />}
       {metadataError && <Alert type="warning" message={metadataError} />}
-      {loading && <p role="status">Loading registered products…</p>}
+      {loading && <LoadingIndicator page label="Loading registered products…" />}
       {!loading && !products.length && (
         <EmptyState
           icon={<Package size={44} />}

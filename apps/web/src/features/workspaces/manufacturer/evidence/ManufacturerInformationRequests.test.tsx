@@ -130,11 +130,13 @@ describe('Manufacturer information request management', () => {
   });
   it('replaces Manufacturer Browse navigation and keeps old evidence links usable', () => {
     const labels = workspaceNavigation.manufacturer.map(([, label]) => label);
-    expect(labels).toContain('Products');
-    expect(labels).toContain('My orders');
-    expect(labels).toContain('Information requests');
+    expect(labels).toContain('My products');
+    expect(labels).toContain('Ingredient orders');
+    expect(labels).toContain('Incoming product orders');
+    expect(labels).toContain('Received requests');
+    expect(labels).toContain('Sent requests');
     expect(labels).not.toContain('Browse & requests');
-    expect(workspacePage('manufacturer', 'ingredient-evidence')).toBe('requests');
+    expect(workspacePage('manufacturer', 'ingredient-evidence')).toBe('sent-requests');
     expect(workspacePath('manufacturer', 'evidence')).toBe('/manufacturer/information-requests');
   });
 });

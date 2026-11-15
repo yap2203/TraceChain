@@ -96,6 +96,7 @@ export const orderActionSchema = z.discriminatedUnion('action', [
       ...base,
       action: z.literal('request'),
       positionId: hash.optional(),
+      custodySource: z.object({ distributor: wallet, location: hash }).strict().optional(),
       requestOnly: z.boolean().optional(),
       itemId: hash,
       batchId: hash.optional(),

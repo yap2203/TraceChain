@@ -4,6 +4,7 @@ import { COMPANY_ROLE_TO_WORKSPACE } from '@tracechain/shared';
 
 import { Brand } from '../../components/brand/Brand';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
+import { notify } from '../../components/ui/feedback';
 import { chainConfig } from '../../config/network';
 import { getLoginAuthPresentation } from './login-auth-presentation';
 import { shortenAddress, useWalletAuthentication } from './useWalletAuthentication';
@@ -123,6 +124,10 @@ function LoginPage() {
     switchToTargetNetwork,
   } = useWalletAuthentication();
   const activeLearningTab = learningTabs[activeTab];
+  useEffect(() => {
+    if (['error', 'rejected', 'unavailable'].includes(walletState.phase))
+      notify(walletState.message, 'error');
+  }, [walletState.phase, walletState.message]);
   const authPresentation = getLoginAuthPresentation(walletState);
   const isWalletBusy = ['connecting', 'restoring', 'signing', 'verifying'].includes(
     walletState.phase,

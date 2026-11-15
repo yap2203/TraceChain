@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../components/ui/feedback';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
   /\/$/,
   '',
@@ -22,7 +23,7 @@ async function blockchainRequest<T>(path: string, init?: RequestInit): Promise<T
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
-    throw new Error(body.error?.message ?? 'The blockchain request failed.');
+    throw new Error(apiErrorMessage(body.error?.message, 'The blockchain request failed.'));
   }
   return response.json() as Promise<T>;
 }
@@ -219,6 +220,7 @@ export function prepareCompanyApplication(input: {
   applicationId: string;
   companyName: string;
   companyRegistrationNumber: string;
+  initialLocationName?: string;
   encryptedProfileCid: string;
   previousApplicationId: string;
   profileHash: string;

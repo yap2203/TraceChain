@@ -1,5 +1,7 @@
 import { CircleCheck, CircleX, Info, TriangleAlert } from 'lucide-react';
 import { T } from './tokens';
+import { useEffect } from 'react';
+import { notify, readableError } from '../../../../components/ui/feedback';
 
 export function Alert({
   type = 'warning',
@@ -8,6 +10,10 @@ export function Alert({
   type?: 'warning' | 'error' | 'success' | 'info';
   message: string;
 }) {
+  const text = type === 'error' ? readableError(message) : message;
+  useEffect(() => {
+    if (type === 'error' || type === 'success') notify(text, type);
+  }, [text, type]);
   const styles = {
     warning: {
       bg: T.amberBg,
@@ -39,6 +45,7 @@ export function Alert({
   return (
     <div
       className="rounded-[8px] px-[14px] py-[10px] flex gap-[10px] items-start"
+      role={type === 'error' ? 'alert' : undefined}
       style={{
         background: s.bg,
         border: `1px solid ${s.border}`,
@@ -52,7 +59,7 @@ export function Alert({
         style={{ color: s.color }}
       />
       <span className="text-[13px]" style={{ color: s.color }}>
-        {message}
+        {text}
       </span>
     </div>
   );

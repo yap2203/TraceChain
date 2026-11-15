@@ -29,6 +29,37 @@ export const logisticsActionSchema = z.discriminatedUnion('action', [
   z
     .object({
       ...base,
+      action: z.literal('product-order-select'),
+      orderId: hash,
+      mode: z.union([z.literal(1), z.literal(2)]),
+      distributor: wallet,
+      fromLocation: hash,
+      toLocation: hash,
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
+      action: z.literal('product-order-respond'),
+      orderId: hash,
+      accept: z.boolean(),
+    })
+    .strict(),
+  z.object({ ...base, action: z.literal('product-order-close'), orderId: hash }).strict(),
+  z
+    .object({
+      ...base,
+      action: z.literal('product-order-dispatch'),
+      orderId: hash,
+      vehicle: vehicleSchema,
+      occurredAt: time,
+      expectedAt: time,
+      qrPayload: z.string().max(1024).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...base,
       action: z.literal('arrange-from-custody'),
       orderId: hash,
       positionId: hash,

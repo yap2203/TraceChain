@@ -1,3 +1,5 @@
+import { reportError } from '../../../../components/ui/feedback';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { BrowserProvider, id } from 'ethers';
 import { ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -22,6 +24,7 @@ import {
   Card,
   EmptyState,
   Modal,
+  SectionTitle,
   T,
   Table,
   TD,
@@ -48,8 +51,8 @@ const roleColors: Record<string, string> = {
   Retailer: '#7C3AED',
 };
 
-export default function AccessControl() {
-  const [tab, setTab] = useState<Tab>('stakeholders');
+export default function AccessControl({ section }: { section?: Tab } = {}) {
+  const [tab, setTab] = useState<Tab>(section ?? 'stakeholders');
   const [records, setRecords] = useState<ChainCredential[]>([]);
   const [permissions, setPermissions] = useState<RolePermissionRecord[]>([]);
   const [selected, setSelected] = useState<ChainCredential | null>(null);
@@ -74,7 +77,7 @@ export default function AccessControl() {
         );
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Access-control registry read failed.');
+      setError(reportError(cause, 'Access-control registry read failed.'));
     } finally {
       setLoading(false);
     }
@@ -114,7 +117,7 @@ export default function AccessControl() {
       setConfirm(false);
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Stakeholder action failed.');
+      setError(reportError(cause, 'Stakeholder action failed.'));
     } finally {
       setBusy(false);
     }
@@ -139,7 +142,7 @@ export default function AccessControl() {
         throw new Error('The permission transaction was not confirmed.');
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Permission update failed.');
+      setError(reportError(cause, 'Permission update failed.'));
     } finally {
       setBusy(false);
     }
@@ -154,40 +157,64 @@ export default function AccessControl() {
       description: 'Exceptions for one company wallet',
     },
   ];
+  if (loading) return <LoadingIndicator page label="Loading records…" />;
   return (
     <div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-        {tabs.map(({ id: value, label, description }) => (
-          <button
-            key={value}
-            onClick={() => setTab(value)}
-            style={{
-              padding: '12px 20px',
-              borderRadius: 8,
-              border: `1px solid ${tab === value ? `color-mix(in srgb, ${T.teal} 31%, transparent)` : T.border}`,
-              background: tab === value ? T.tealLight : T.surface,
-              cursor: 'pointer',
-              fontFamily: UI,
-              textAlign: 'left',
-              transition: 'all 0.15s',
-            }}
-          >
-            <span
+      <SectionTitle
+        title={
+          section === 'roles'
+            ? 'Role permissions'
+            : section === 'personal'
+              ? 'Individual permissions'
+              : section === 'matrix'
+                ? 'Permission matrix'
+                : 'Stakeholder access'
+        }
+        sub={
+          section === 'roles'
+            ? 'Set the default permissions for each role.'
+            : section === 'personal'
+              ? 'Set exceptions for an individual company wallet.'
+              : section === 'matrix'
+                ? 'Compare the permissions available to each role.'
+                : 'Manage company access and lifecycle status.'
+        }
+      />
+      {!section && (
+        <nav className="workspace-choice-tabs" aria-label="Access control sections">
+          {tabs.map(({ id: value, label, description }) => (
+            <button
+              key={value}
+              aria-pressed={tab === value}
+              onClick={() => setTab(value)}
               style={{
-                display: 'block',
-                fontWeight: 600,
-                fontSize: 13,
-                color: tab === value ? T.teal : T.text,
+                padding: '12px 20px',
+                borderRadius: 8,
+                border: `1px solid ${tab === value ? `color-mix(in srgb, ${T.teal} 31%, transparent)` : T.border}`,
+                background: tab === value ? T.tealLight : T.surface,
+                cursor: 'pointer',
+                fontFamily: UI,
+                textAlign: 'left',
+                transition: 'all 0.15s',
               }}
             >
-              {label}
-            </span>
-            <span style={{ display: 'block', color: T.text2, fontSize: 11, marginTop: 2 }}>
-              {description}
-            </span>
-          </button>
-        ))}
-      </div>
+              <span
+                style={{
+                  display: 'block',
+                  fontWeight: 600,
+                  fontSize: 13,
+                  color: tab === value ? T.teal : T.text,
+                }}
+              >
+                {label}
+              </span>
+              <span style={{ display: 'block', color: T.text2, fontSize: 11, marginTop: 2 }}>
+                {description}
+              </span>
+            </button>
+          ))}
+        </nav>
+      )}
       {tab === 'stakeholders' && (
         <StakeholderView
           records={records}
@@ -361,9 +388,7 @@ function PersonalPermissions({
       setError(
         confirmed
           ? 'The permission transaction is confirmed, but the refreshed state is unavailable. Re-select this company to refresh; do not resend the transaction.'
-          : cause instanceof Error
-            ? cause.message
-            : 'Individual permission update failed.',
+          : reportError(cause, 'Individual permission update failed.'),
       );
     } finally {
       setBusy(false);
@@ -398,7 +423,9 @@ function PersonalPermissions({
       )}
       {error && <Alert type="error" message={error} />}
       {notice && <div role="status">{notice}</div>}
-      {loading && <p role="status">Reading individual permissions from the blockchain...</p>}
+      {loading && (
+        <LoadingIndicator page label="Reading individual permissions from the blockchain..." />
+      )}
       {!loading && permissions.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>

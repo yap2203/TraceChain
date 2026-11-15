@@ -17,7 +17,7 @@ export function StatCard({
 }) {
   return (
     <Card padding="20px">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <div className="workspace-stat-card-content">
         <div>
           <div style={{ fontSize: 12, color: T.text2, fontWeight: 500, marginBottom: 8 }}>
             {label}

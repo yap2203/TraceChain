@@ -44,6 +44,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     roleLabel: 'Manufacturer',
     organisation: 'Manufacturer organisation',
     navigation: nav('manufacturer', [
+      ['inventory', 'Custody inventory', 'inventory'],
       ['information-requests', 'Information requests', 'evidence'],
       ['product-batches', 'Product batches', 'boxes'],
       ['transfers', 'Transfers', 'transfers'],
@@ -63,6 +64,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     roleLabel: 'Retailer',
     organisation: 'Retailer organisation',
     navigation: nav('retailer', [
+      ['shipments', 'Shipments', 'transfers'],
       ['incoming-products', 'Incoming products', 'boxes'],
       ['traceability', 'Traceability', 'scan'],
       ['reports', 'Reports', 'reports'],

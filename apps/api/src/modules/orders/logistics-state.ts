@@ -14,6 +14,7 @@ export async function readLogistics(
   actor: string,
   admin = false,
   reviewSupported = false,
+  productDeliverySupported = false,
 ) {
   const [warehouseEvents, positionEvents, shipmentEvents, productEvents] = await Promise.all([
     gateway.events('delivery', 'WarehouseRegistered'),
@@ -118,12 +119,22 @@ export async function readLogistics(
           });
       }
     }
-    if (!admin && !same(record.sender, actor) && !same(record.recipient, actor)) continue;
+    const carrier = productDeliverySupported
+      ? await gateway.read('custody', 'productDeliveryCarrier', [event.transferId])
+      : undefined;
+    if (
+      !admin &&
+      !same(record.sender, actor) &&
+      !same(record.recipient, actor) &&
+      !same(carrier, actor)
+    )
+      continue;
     productBatches.add(record.productBatchId);
     const vehicle = await gateway.read('custody', 'vehicleRegistration', [event.transferId]);
     shipments.push({
       ...record,
       kind: 'product',
+      carrier,
       shipmentId: event.transferId,
       batchId: record.productBatchId,
       received: record.usable,
@@ -147,6 +158,7 @@ export async function readLogistics(
         stock = await gateway.read('custody', 'getInventory', [batchId, actor]);
       const tracked = await gateway.read('custody', 'locationTracked', [batchId, actor]);
       const available =
+        !tracked &&
         !productEvents.some((event) => (event.productBatchId ?? event.batchId) === batchId) &&
         same(batch.manufacturer, actor)
           ? batch.totalQuantity

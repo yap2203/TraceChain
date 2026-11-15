@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { ArrowUpRight, CheckCircle, Layers, PackageCheck } from 'lucide-react';
 import { useOperationalData } from '../../blockchain/useOperationalData';
 import { Alert, Badge, Btn, Card, EmptyState, StatCard, T } from '../shared/ui';
@@ -7,13 +8,14 @@ export function DistributorOverview({ onNav }: { onNav: (tab: string) => void })
   const incoming = data.transfers.filter((t) => t.direction === 'incoming' && t.status === 1);
   const inventory = data.transfers.filter(
     (transfer, index, all) =>
-      all.findIndex((candidate) => candidate.productBatchId === transfer.productBatchId) === index &&
-      BigInt(transfer.inventory.available) > 0n,
+      all.findIndex((candidate) => candidate.productBatchId === transfer.productBatchId) ===
+        index && BigInt(transfer.inventory.available) > 0n,
   );
+  if (loading) return <LoadingIndicator page label="Loading records…" />;
   return (
     <div style={{ display: 'grid', gap: 20 }}>
       {error && <Alert type="error" message={error} />}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16 }}>
+      <div className="workspace-metrics">
         <StatCard
           label="Incoming Shipments"
           value={loading ? '…' : String(incoming.length)}

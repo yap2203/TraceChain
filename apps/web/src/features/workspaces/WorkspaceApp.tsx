@@ -1,6 +1,7 @@
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
-import { lazy, Suspense } from 'react';
-import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
+import { lazy, Suspense, useState } from 'react';
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { notify, reportError } from '../../components/ui/feedback';
 
 import { useWalletAuthentication } from '../auth/useWalletAuthentication';
 import { WorkspaceAccessGate } from './WorkspaceAccessGate';
@@ -15,6 +16,8 @@ const WorkspaceScreen = lazy(() =>
 
 export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   const authentication = useWalletAuthentication();
+  const navigate = useNavigate();
+  const [signingOut, setSigningOut] = useState(false);
   const { '*': route = '' } = useParams();
   const [search] = useSearchParams();
   const state = authentication.state;
@@ -22,31 +25,30 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   const exists = workspaceNavigation[role].some(([id]) => id === page);
   const canonicalPath = workspacePath(role, page);
   const authenticated = state.phase === 'authenticated';
-  const compactSupplierPage = role === 'supplier' && (page === 'batches' || page === 'orders');
   const status =
     state.phase === 'restoring'
       ? 'Checking session'
       : authenticated
         ? state.authorizationReady
-          ? 'Configured blockchain · Authorized'
+          ? 'Wallet authorized'
           : 'Blockchain authorization required'
         : 'Sign-in required';
 
   const content = (
     <fieldset disabled={!state.authorizationReady} className="workspace-pending-workflows">
-      <legend className={state.authorizationReady && compactSupplierPage ? 'sr-only' : undefined}>
+      <legend className={state.authorizationReady ? 'sr-only' : undefined}>
         {state.authorizationReady
-          ? compactSupplierPage
-            ? 'Authorized workspace content'
-            : 'Connected to the configured local blockchain.'
+          ? 'Authorized workspace content'
           : 'Blockchain authorization is required.'}
       </legend>
-      <Suspense fallback={<LoadingIndicator fullScreen label="Loading page…" />}>
+      <Suspense fallback={<LoadingIndicator page label="Loading page…" />}>
         <WorkspaceScreen role={role} page={page} />
       </Suspense>
     </fieldset>
   );
 
+  if (signingOut) return <LoadingIndicator fullScreen label="Signing out…" />;
+  if (state.phase === 'idle') return <Navigate replace to="/login" />;
   if (exists && `/${role}/${route}` !== canonicalPath) {
     const query = search.toString();
     return <Navigate replace to={`${canonicalPath}${query ? `?${query}` : ''}`} />;
@@ -70,7 +72,20 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
       }
       accountAction={
         authenticated ? (
-          <button className="workspace-account-action" onClick={() => void authentication.logout()}>
+          <button
+            className="workspace-account-action"
+            onClick={async () => {
+              setSigningOut(true);
+              try {
+                await authentication.logout();
+                notify('You have signed out.', 'success');
+                navigate('/login', { replace: true });
+              } catch (cause) {
+                reportError(cause, 'Sign-out could not be completed. Please try again.');
+                setSigningOut(false);
+              }
+            }}
+          >
             Sign out
           </button>
         ) : (

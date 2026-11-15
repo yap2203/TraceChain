@@ -1,5 +1,8 @@
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { FilterX, PackageSearch, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import {
   Alert,
@@ -21,6 +24,7 @@ export interface QuantityRequestInput {
   positionId?: string;
   location?: string;
   batchId?: string;
+  custodySource?: { distributor: string; location: string };
 }
 
 export interface EvidenceRequestInput {
@@ -260,6 +264,7 @@ export function CatalogueBrowser({
           onEvidenceRequest={onEvidenceRequest}
           onOpenEvidence={onOpenEvidence}
           onQuantityRequest={onQuantityRequest}
+          role={role}
           locations={locations}
           onRegisterLocation={onRegisterLocation}
         />
@@ -342,7 +347,9 @@ function CatalogueDetail({
   onQuantityRequest,
   locations,
   onRegisterLocation,
+  role,
 }: {
+  role: WorkspaceRole;
   locations: OrderRecord[];
   onRegisterLocation?: (label: string) => Promise<void>;
   item: OrderRecord;
@@ -368,12 +375,19 @@ function CatalogueDetail({
     countryOfOrigin: 'optional',
     expiryDate: 'required',
   });
-  const [receiving, setReceiving] = useState(''),
-    [locationName, setLocationName] = useState('');
-  const requiresLocation = Number(item.kind) === 1;
+  const [receiving, setReceiving] = useState('');
+  const [source, setSource] = useState('seller');
+  const sources: OrderRecord[] =
+    Number(item.kind) === 1 ? (item.custodyPositions ?? []) : (item.storageLocations ?? []);
+  const chosenSource = sources.find((entry, index) => String(index) === source);
+  const requiresLocation = Number(item.kind) === 1 || Number(item.kind) === 2;
 
   const validQuantity =
-    /^[1-9]\d*$/.test(quantity) && Boolean(deadline) && (!requiresLocation || !!receiving);
+    /^[1-9]\d*$/.test(quantity) &&
+    Boolean(deadline) &&
+    (!requiresLocation || !!receiving) &&
+    (source === 'seller' ||
+      (!!chosenSource && BigInt(chosenSource.available ?? '0') >= BigInt(quantity || '0')));
   const requestedClaims = Object.keys(claims).filter((claim) => claims[claim] !== 'not-requested');
   return (
     <Modal
@@ -478,6 +492,16 @@ function CatalogueDetail({
                   deadline,
                   note,
                   ...(requiresLocation ? { location: receiving } : {}),
+                  ...(chosenSource
+                    ? Number(item.kind) === 1
+                      ? { positionId: chosenSource.positionId, batchId: chosenSource.batchId }
+                      : {
+                          custodySource: {
+                            distributor: chosenSource.distributor,
+                            location: chosenSource.location,
+                          },
+                        }
+                    : {}),
                 });
             }}
           >
@@ -486,7 +510,7 @@ function CatalogueDetail({
                 type="info"
                 message={
                   requiresLocation
-                    ? 'The Supplier approves or rejects your request, then chooses direct Distributor delivery or available custody stock. No goods move and no payment is taken at this step.'
+                    ? 'The seller approves or rejects your request, then chooses direct Distributor delivery or available custody stock. No goods move and no payment is taken at this step.'
                     : `This sends a request for ${item.unit}. It does not reserve stock, create a purchase, take payment or dispatch goods.`
                 }
               />
@@ -499,32 +523,38 @@ function CatalogueDetail({
                   onChange={setReceiving}
                   required
                   options={[
-                    { value: '', label: 'Select your factory / receiving location' },
+                    { value: '', label: 'Select your receiving location' },
                     ...locations.map((entry) => ({
                       value: entry.location,
                       label: entry.label ?? entry.location,
                     })),
                   ]}
                 />
-                {!locations.length && onRegisterLocation && (
-                  <>
-                    <Input
-                      label="New receiving location name"
-                      value={locationName}
-                      onChange={setLocationName}
-                      maxLength={160}
-                    />
-                    <Btn
-                      type="button"
-                      disabled={busy || !locationName.trim()}
-                      onClick={() => void onRegisterLocation(locationName.trim())}
-                    >
-                      Register receiving location
-                    </Btn>
-                  </>
+                {!locations.length && (
+                  <Link to={workspacePath(role, 'profile')}>
+                    Add your receiving location in Profile
+                  </Link>
                 )}
               </>
             )}
+            <SelectField
+              label="Request from"
+              value={source}
+              onChange={setSource}
+              options={[
+                { value: 'seller', label: 'Seller stock · request Distributor pickup' },
+                ...sources.flatMap((entry, index) =>
+                  BigInt(entry.available ?? '0') > 0n
+                    ? [
+                        {
+                          value: String(index),
+                          label: `${entry.warehouseName ?? 'Distributor warehouse'} · ${entry.available} ${item.unit} available`,
+                        },
+                      ]
+                    : [],
+                ),
+              ]}
+            />
             <Input
               label={`Requested quantity (${item.unit})`}
               type="number"
@@ -669,13 +699,7 @@ function CatalogueDetail({
 }
 
 export function CatalogueSkeleton() {
-  return (
-    <div className="catalogue-grid" role="status" aria-label="Loading catalogue">
-      {[0, 1, 2, 3].map((entry) => (
-        <div key={entry} className="catalogue-card catalogue-skeleton" />
-      ))}
-    </div>
-  );
+  return <LoadingIndicator page label="Loading catalogue" />;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

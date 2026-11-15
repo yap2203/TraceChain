@@ -1,5 +1,6 @@
 import { CompanyRole, decodeTransferQrPayload, TransferQrError } from '@tracechain/shared';
-import { AlertTriangle, LoaderCircle, ShieldCheck, Smartphone } from 'lucide-react';
+import { AlertTriangle, ShieldCheck, Smartphone } from 'lucide-react';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useMemo } from 'react';
 
 import { Brand } from '../../components/brand/Brand';
@@ -81,16 +82,13 @@ export function ReceiveTransferPage() {
             </div>
           </section>
         ) : pending ? (
-          <section className="receive-transfer-state" aria-live="polite">
-            <LoaderCircle className="receive-transfer-spinner" size={24} />
-            <div>
-              <h2>
-                {auth.state.phase === 'restoring'
-                  ? 'Restoring your session'
-                  : 'Continue in MetaMask'}
-              </h2>
-              <p>{auth.state.message}</p>
-            </div>
+          <section aria-live="polite">
+            <LoadingIndicator
+              page
+              label={
+                auth.state.phase === 'restoring' ? 'Restoring your session' : 'Continue in MetaMask'
+              }
+            />
           </section>
         ) : auth.state.phase !== 'authenticated' ? (
           <section className="receive-transfer-login">

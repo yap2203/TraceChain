@@ -1,4 +1,6 @@
+import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { FileCheck2 } from 'lucide-react';
 
 import {
@@ -19,7 +21,6 @@ import {
   completePreparedWorkflow,
   WorkflowRefreshPendingError,
 } from '../../../production-flow/production-flow.transaction';
-import { CompanyIdentityProofAction } from '../../../production-flow/CompanyIdentityProofAction';
 import {
   Alert,
   Badge,
@@ -56,8 +57,12 @@ const statuses = [
   'Cancelled',
 ];
 
-export function RetailerEvidenceRequests() {
+export function RetailerEvidenceRequests({
+  initialProductBatchId,
+  initialIngredientBatchId,
+}: { initialProductBatchId?: string; initialIngredientBatchId?: string } = {}) {
   const [options, setOptions] = useState<RetailerEvidenceOption[]>([]);
+  const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
   const [selected, setSelected] = useState('');
   const [reason, setReason] = useState('Retail product ingredient traceability review');
@@ -78,10 +83,23 @@ export function RetailerEvidenceRequests() {
       listEvidenceRequests(),
     ]);
     setOptions(available.options);
+    if (initialProductBatchId && initialIngredientBatchId) {
+      const index = available.options.findIndex(
+        (option) =>
+          option.productBatchId.toLowerCase() === initialProductBatchId.toLowerCase() &&
+          option.ingredientBatchId.toLowerCase() === initialIngredientBatchId.toLowerCase(),
+      );
+      if (index >= 0)
+        setSelected(
+          `${available.options[index].productBatchId}:${available.options[index].ingredientBatchId}`,
+        );
+    }
     setRequests(current.requests);
   };
   useEffect(() => {
-    void load().catch((cause) => setError(message(cause)));
+    void load()
+      .catch((cause) => setError(message(cause)))
+      .finally(() => setLoading(false));
   }, []);
   const chosen = options.find(
     (item) => `${item.productBatchId}:${item.ingredientBatchId}` === selected,
@@ -189,6 +207,7 @@ export function RetailerEvidenceRequests() {
     }
   };
 
+  if (loading) return <LoadingIndicator page label="Loading ingredient evidence requests…" />;
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <SectionTitle
@@ -311,7 +330,6 @@ export function RetailerEvidenceRequests() {
                   />
                 </TD>
                 <TD>
-                  <CompanyIdentityProofAction requestId={request.requestId} role="retailer" />
                   {request.status >= 2 && (
                     <Btn
                       size="xs"
@@ -373,5 +391,5 @@ export function RetailerEvidenceRequests() {
   );
 }
 function message(cause: unknown) {
-  return cause instanceof Error ? cause.message : 'The evidence workflow failed.';
+  return reportError(cause, 'The evidence workflow failed.');
 }

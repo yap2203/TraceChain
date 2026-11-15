@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../components/ui/feedback';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
   /\/$/,
   '',
@@ -71,7 +72,7 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
     throw new AuthApiError(
-      body.error?.message ?? 'Authentication could not be completed.',
+      apiErrorMessage(body.error?.message, 'Authentication could not be completed.'),
       body.error?.code ?? 'AUTHENTICATION_ERROR',
       response.status,
     );
