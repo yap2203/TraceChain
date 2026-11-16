@@ -11,12 +11,16 @@ vi.mock('../../../production-flow/production-flow.api', () => ({
   listProductionIngredients: mocks.ingredients,
   prepareProduct: mocks.prepare,
 }));
-vi.mock('../../../production-flow/production-flow.transaction', () => ({
+vi.mock('../../../production-flow/production-flow.transaction', async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import('../../../production-flow/production-flow.transaction')
+  >()),
   completePreparedWorkflow: mocks.complete,
 }));
 vi.mock('../../../orders/orders.api', () => ({ getOrders: mocks.orders }));
 vi.mock('../../../product-traceability', () => ({ ProductQrDisplay: () => <div>Product QR</div> }));
 import { CreateProductBatch } from './CreateProductBatchPage';
+import { WorkflowRefreshPendingError } from '../../../production-flow/production-flow.transaction';
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.orders.mockResolvedValue({
@@ -115,5 +119,66 @@ describe('multi-ingredient production', () => {
     expect(mocks.prepare).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Production stock location'), { target: { value: '' } });
     await waitFor(() => expect(screen.queryByLabelText('Quantity to use for Cocoa')).toBeNull());
+  });
+  it('allows an exact decimal-unit balance and reports zero remaining stock', async () => {
+    await setup();
+    fireEvent.change(screen.getByLabelText('Quantity to use for Cocoa'), {
+      target: { value: '5' },
+    });
+    expect(screen.getByText('Remaining after production: 0 g')).toBeTruthy();
+    for (const [label, value] of [
+      ['Product name', 'Exact Chocolate'],
+      ['Product batch reference', 'CHOC-EXACT'],
+      ['Category', 'Food'],
+      ['Quantity produced', '4'],
+      ['Production date', '2026-01-01'],
+      ['Expiry date', '2099-01-01'],
+    ])
+      fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
+
+    const create = screen.getByRole('button', { name: 'Create product with MetaMask' });
+    expect(create.hasAttribute('disabled')).toBe(false);
+    mocks.ingredients.mockResolvedValueOnce({ batches: [] });
+    fireEvent.click(create);
+    await waitFor(() =>
+      expect(mocks.prepare).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ingredientLinks: [{ batchId: 'cocoa', quantity: '5000' }],
+        }),
+      ),
+    );
+    expect(await screen.findByText('Cocoa: 0 g')).toBeTruthy();
+  });
+  it('keeps a confirmed product pending refresh and never offers duplicate creation', async () => {
+    await setup();
+    fireEvent.change(screen.getByLabelText('Quantity to use for Cocoa'), {
+      target: { value: '5' },
+    });
+    for (const [label, value] of [
+      ['Product name', 'Exact Chocolate'],
+      ['Product batch reference', 'CHOC-PENDING'],
+      ['Category', 'Food'],
+      ['Quantity produced', '4'],
+      ['Production date', '2026-01-01'],
+      ['Expiry date', '2099-01-01'],
+    ])
+      fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
+    mocks.complete.mockRejectedValueOnce(
+      new WorkflowRefreshPendingError({ batchId: 'confirmed-product' }),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create product with MetaMask' }));
+    expect(
+      await screen.findByText(/product transaction was confirmed.*do not submit/i),
+    ).toBeTruthy();
+    expect(screen.queryByText(/does not have enough/i)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create product with MetaMask' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Refresh records' })).toBeTruthy();
+
+    mocks.ingredients.mockResolvedValueOnce({ batches: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh records' }));
+    expect(await screen.findByText('Cocoa: 0 g')).toBeTruthy();
+    expect(mocks.complete).toHaveBeenCalledOnce();
+    expect(mocks.prepare).toHaveBeenCalledOnce();
   });
 });

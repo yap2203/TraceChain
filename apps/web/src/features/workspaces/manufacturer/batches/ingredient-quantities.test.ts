@@ -9,6 +9,8 @@ describe('exact ingredient quantities', () => {
     expect(convert('0.5', 'litre', 'ml')).toEqual({ quantity: '500' });
     expect(convert('1000', 'g', 'kg')).toEqual({ quantity: '1' });
     expect(convert('9007199254740993', 'each', 'each')).toEqual({ quantity: '9007199254740993' });
+    expect(convert('4.000000', 'kg', 'g')).toEqual({ quantity: '4000' });
+    expect(convert('0.004', 'kg', 'g')).toEqual({ quantity: '4' });
   });
   it('rejects fractional registered quantities, incompatible units, zero and invalid input', () => {
     for (const [value, from, to] of [

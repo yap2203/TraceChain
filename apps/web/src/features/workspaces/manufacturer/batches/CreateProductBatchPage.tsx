@@ -7,7 +7,10 @@ import {
   prepareProduct,
   type ProductionIngredient,
 } from '../../../production-flow/production-flow.api';
-import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
+import {
+  completePreparedWorkflow,
+  WorkflowRefreshPendingError,
+} from '../../../production-flow/production-flow.transaction';
 import { ProductQrDisplay } from '../../../product-traceability';
 import { Alert, Badge, Btn, Card, Input, SelectField, StepProgress, T } from '../../shared/ui';
 import { registeredIngredientQuantity, ingredientUnitOptions } from './ingredient-quantities';
@@ -19,6 +22,17 @@ import {
   referenceError,
   productionDateError,
 } from '../../../validation/form-validation';
+
+type ProductPreparationInput = Parameters<typeof prepareProduct>[0];
+type IngredientBalance = { batchId: string; remaining: string; unit: string };
+type SubmittedProduct = {
+  batchId?: string;
+  batchReference: string;
+  ingredientBalances: IngredientBalance[];
+  producedAt: string;
+  productName: string;
+  request: ProductPreparationInput;
+};
 
 export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
@@ -42,11 +56,13 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [expiresAt, setExpiresAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [refreshPending, setRefreshPending] = useState<SubmittedProduct>();
   const [createdProduct, setCreatedProduct] = useState<{
     production?: { location: string; recordedAt: number };
     producedAt?: string;
     batchId: string;
     batchReference: string;
+    ingredientBalances: IngredientBalance[];
     productName: string;
   }>();
 
@@ -135,6 +151,33 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     !!unit &&
     !!producedAt &&
     !!expiresAt;
+  const refreshStock = async (location: string) => {
+    try {
+      setConfirmedStock((await listProductionIngredients(location, 'production')).batches);
+      setStockError('');
+    } catch {
+      setStockError(
+        'Product creation succeeded, but the updated stock could not be loaded. Refresh before creating another product.',
+      );
+    }
+  };
+  const showCreatedProduct = async (
+    result: { batchId?: string; production?: { location: string; recordedAt: number } },
+    submitted: SubmittedProduct,
+  ) => {
+    if (!result.batchId)
+      throw new Error('The confirmed product did not include its on-chain batch ID.');
+    setCreatedProduct({
+      production: result.production,
+      producedAt: submitted.producedAt,
+      batchId: result.batchId,
+      batchReference: submitted.batchReference,
+      ingredientBalances: submitted.ingredientBalances,
+      productName: submitted.productName,
+    });
+    setRefreshPending(undefined);
+    await refreshStock(submitted.request.productionLocation ?? '');
+  };
   const submit = async () => {
     const validationError =
       textError(productName, 'Product name', 160) ||
@@ -161,46 +204,65 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     }
     const submittedProductName = productName.trim();
     const submittedBatchReference = batchReference.trim();
+    const request: ProductPreparationInput = {
+      ...(productionLocation ? { productionLocation } : {}),
+      batchReference: submittedBatchReference,
+      category,
+      ...(price ? { price, currency } : {}),
+      expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
+      ingredientLinks: links,
+      privateMetadata: { productName: submittedProductName, category },
+      producedAt: new Date(`${producedAt}T00:00:00`).toISOString(),
+      productName: submittedProductName,
+      quantity,
+      unit,
+    };
+    const submitted: SubmittedProduct = {
+      batchReference: submittedBatchReference,
+      ingredientBalances: links.map((link) => {
+        const ingredient = ingredients.find((item) => item.batchId === link.batchId)!;
+        return {
+          batchId: link.batchId,
+          remaining: (BigInt(ingredient.availableQuantity) - BigInt(link.quantity)).toString(),
+          unit: ingredient.unit,
+        };
+      }),
+      producedAt,
+      productName: submittedProductName,
+      request,
+    };
     setBusy(true);
     setError('');
     try {
-      const result = await completePreparedWorkflow(() =>
-        prepareProduct({
-          ...(productionLocation ? { productionLocation } : {}),
-          batchReference: submittedBatchReference,
-          category,
-          ...(price ? { price, currency } : {}),
-          expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
-          ingredientLinks: links,
-          privateMetadata: { productName: submittedProductName, category },
-          producedAt: new Date(`${producedAt}T00:00:00`).toISOString(),
-          productName: submittedProductName,
-          quantity,
-          unit,
-        }),
-      );
-      if ('batchId' in result && typeof result.batchId === 'string') {
-        setCreatedProduct({
-          production: result.production,
-          producedAt,
-          batchId: result.batchId,
-          batchReference: submittedBatchReference,
-          productName: submittedProductName,
-        });
-        try {
-          setConfirmedStock(
-            (await listProductionIngredients(productionLocation, 'production')).batches,
-          );
-        } catch {
-          setStockError(
-            'Product creation succeeded, but the updated stock could not be loaded. Refresh before creating another product.',
-          );
-        }
-      } else {
-        throw new Error('The confirmed product did not include its on-chain batch ID.');
-      }
+      const result = await completePreparedWorkflow(() => prepareProduct(request));
+      await showCreatedProduct(result, submitted);
     } catch (cause) {
-      setError(reportError(cause, 'Product creation failed.'));
+      if (cause instanceof WorkflowRefreshPendingError) {
+        const prepared = cause.prepared as { batchId?: string } | undefined;
+        setRefreshPending({ ...submitted, batchId: prepared?.batchId });
+      } else setError(reportError(cause, 'Product creation failed.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refreshConfirmedProduct = async () => {
+    if (!refreshPending || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await prepareProduct(refreshPending.request);
+      if (result.state !== 'COMPLETE') {
+        setError(
+          'The confirmed product is not readable yet. Wait briefly and refresh records again; do not create it again.',
+        );
+        return;
+      }
+      await showCreatedProduct(result, refreshPending);
+    } catch {
+      setError(
+        'The confirmed product is not readable yet. Wait briefly and refresh records again; do not create it again.',
+      );
     } finally {
       setBusy(false);
     }
@@ -228,10 +290,17 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           {stockError && <Alert type="warning" message={stockError} />}
           {links.map((link) => {
             const stock = confirmedStock.find((item) => item.batchId === link.batchId);
+            const submittedBalance = createdProduct.ingredientBalances.find(
+              (item) => item.batchId === link.batchId,
+            );
             return (
               <p key={link.batchId}>
                 {names[link.batchId] ?? shortChainId(link.batchId)}:{' '}
-                {stock ? `${stock.availableQuantity} ${stock.unit}` : 'Refreshing / unavailable'}
+                {stock
+                  ? `${stock.availableQuantity} ${stock.unit}`
+                  : submittedBalance
+                    ? `${submittedBalance.remaining} ${submittedBalance.unit}`
+                    : 'Refreshing / unavailable'}
               </p>
             );
           })}
@@ -244,6 +313,33 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           />
         </Card>
         <Btn onClick={onBack}>Done</Btn>
+      </div>
+    );
+  }
+
+  if (refreshPending) {
+    return (
+      <div className="workspace-editor">
+        <Alert
+          type="success"
+          message="The product transaction was confirmed. TraceChain is waiting to refresh the authoritative product record. Do not submit the transaction again."
+        />
+        {error && <Alert type="warning" message={error} />}
+        <Card>
+          <h3>Product confirmation pending refresh</h3>
+          <p>
+            {refreshPending.productName} · {refreshPending.batchReference}
+          </p>
+          {refreshPending.batchId && (
+            <p>Product batch ID: {shortChainId(refreshPending.batchId)}</p>
+          )}
+          <Btn full disabled={busy} onClick={() => void refreshConfirmedProduct()}>
+            {busy ? 'Refreshing records…' : 'Refresh records'}
+          </Btn>
+        </Card>
+        <Btn onClick={onBack} variant="ghost">
+          Return to products
+        </Btn>
       </div>
     );
   }

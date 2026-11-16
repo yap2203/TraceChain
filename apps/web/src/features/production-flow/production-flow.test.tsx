@@ -156,6 +156,7 @@ describe('production transaction workflow', () => {
       code: 'CONFIRMATION_REFRESH_PENDING',
       confirmationSucceeded: true,
       message: expect.stringContaining('blockchain transaction was confirmed'),
+      prepared: expect.objectContaining({ state: 'TRANSACTION_REQUIRED' }),
     });
     expect(prepare).toHaveBeenCalledTimes(2);
   });

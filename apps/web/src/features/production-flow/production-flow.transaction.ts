@@ -19,11 +19,11 @@ export class ProductionTransactionError extends Error {
   }
 }
 
-export class WorkflowRefreshPendingError extends Error {
+export class WorkflowRefreshPendingError<TPrepared = unknown> extends Error {
   readonly code = 'CONFIRMATION_REFRESH_PENDING';
   readonly confirmationSucceeded = true;
 
-  constructor() {
+  constructor(readonly prepared?: TPrepared) {
     super(
       'The blockchain transaction was confirmed, but TraceChain could not refresh the authoritative record. Use Refresh records; do not submit the transaction again.',
     );
@@ -109,8 +109,8 @@ export async function completePreparedWorkflow<
   try {
     confirmed = await prepare();
   } catch {
-    throw new WorkflowRefreshPendingError();
+    throw new WorkflowRefreshPendingError(first);
   }
-  if (confirmed.state !== 'COMPLETE') throw new WorkflowRefreshPendingError();
+  if (confirmed.state !== 'COMPLETE') throw new WorkflowRefreshPendingError(first);
   return confirmed;
 }

@@ -767,16 +767,14 @@ describe('production flow service', () => {
       presentationHash: id('none'),
       presentationExpiresAt: 0,
     };
-    const decrypt = vi
-      .fn()
-      .mockResolvedValue(
-        JSON.stringify({
-          requesterRole: CompanyRole.MANUFACTURER,
-          productBatchId: PRODUCT_ID,
-          challenge: 'private-challenge',
-          secret: 'not-for-inbox',
-        }),
-      );
+    const decrypt = vi.fn().mockResolvedValue(
+      JSON.stringify({
+        requesterRole: CompanyRole.MANUFACTURER,
+        productBatchId: PRODUCT_ID,
+        challenge: 'private-challenge',
+        secret: 'not-for-inbox',
+      }),
+    );
     const reader = new ProductionFlowService({
       agentProvider: vi.fn(),
       authService: manufacturerAuth(),
@@ -832,6 +830,92 @@ describe('production flow service', () => {
     expect(gateway.prepareProduct).toHaveBeenCalledWith(
       expect.objectContaining({ ingredients: [{ batchId: BATCH_ID, quantity: '500' }] }),
     );
+  });
+  it('allows partial and exact received-stock consumption but rejects an excess', async () => {
+    const location = id('exact-balance-factory');
+    gateway.getReceivedAvailable = vi.fn().mockResolvedValue('4');
+
+    await expect(
+      service.prepareProduct('session', {
+        ...productInput(),
+        batchReference: 'PRODUCT-PARTIAL',
+        ingredientLinks: [{ batchId: BATCH_ID, quantity: '3' }],
+        productionLocation: location,
+      }),
+    ).resolves.toMatchObject({ state: 'TRANSACTION_REQUIRED' });
+    await expect(
+      service.prepareProduct('session', {
+        ...productInput(),
+        batchReference: 'PRODUCT-EXACT',
+        ingredientLinks: [{ batchId: BATCH_ID, quantity: '4' }],
+        productionLocation: location,
+      }),
+    ).resolves.toMatchObject({ state: 'TRANSACTION_REQUIRED' });
+    await expect(
+      service.prepareProduct('session', {
+        ...productInput(),
+        batchReference: 'PRODUCT-EXCESS',
+        ingredientLinks: [{ batchId: BATCH_ID, quantity: '5' }],
+        productionLocation: location,
+      }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_INGREDIENT_QUANTITY' });
+
+    expect(gateway.prepareProduct).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(gateway.prepareProduct).mock.calls[0]?.[0].ingredients).toEqual([
+      { batchId: BATCH_ID, quantity: '3' },
+    ]);
+    expect(vi.mocked(gateway.prepareProduct).mock.calls[1]?.[0].ingredients).toEqual([
+      { batchId: BATCH_ID, quantity: '4' },
+    ]);
+  });
+  it('reads back an exactly consumed product without requiring positive ingredient stock', async () => {
+    const privateRecords = new Map<
+      string,
+      Awaited<ReturnType<ProductionFlowRepository['findPrivate']>>
+    >();
+    repository.findPrivate = vi.fn(async (_kind, key) => privateRecords.get(key.toLowerCase()));
+    repository.savePrivate = vi.fn(async (_kind, record) => {
+      privateRecords.set(record.id.toLowerCase(), record);
+    });
+    const location = id('exact-balance-factory');
+    const input = {
+      ...productInput(),
+      batchReference: 'PRODUCT-EXACT-READBACK',
+      ingredientLinks: [{ batchId: BATCH_ID, quantity: '4' }],
+      productionLocation: location,
+    };
+    gateway.getReceivedAvailable = vi.fn().mockResolvedValue('4');
+
+    const prepared = await service.prepareProduct('session', input);
+    expect(prepared).toMatchObject({ state: 'TRANSACTION_REQUIRED' });
+    const transactionInput = vi.mocked(gateway.prepareProduct).mock.calls.at(-1)![0];
+    vi.mocked(gateway.getProduct).mockResolvedValue({
+      expiresAt: transactionInput.expiresAt,
+      manufacturer: MANUFACTURER,
+      metadataHash: transactionInput.metadataHash,
+      producedAt: transactionInput.producedAt,
+      publicCid: transactionInput.publicCid,
+      status: 1,
+      totalQuantity: transactionInput.quantity,
+      unit: encodeBytes32String(transactionInput.unit),
+    });
+    vi.mocked(gateway.getProductLinks).mockResolvedValue(input.ingredientLinks);
+    gateway.getProductionRecord = vi.fn().mockResolvedValue({
+      location,
+      recordedAt: Math.floor(NOW.getTime() / 1_000),
+    });
+    vi.mocked(gateway.getReceivedAvailable).mockClear();
+    vi.mocked(gateway.getReceivedAvailable).mockResolvedValue('0');
+    vi.mocked(gateway.getIngredient).mockClear();
+
+    await expect(service.prepareProduct('session', input)).resolves.toMatchObject({
+      batchId: transactionInput.batchId,
+      links: input.ingredientLinks,
+      state: 'COMPLETE',
+    });
+    expect(gateway.getReceivedAvailable).not.toHaveBeenCalled();
+    expect(gateway.getIngredient).not.toHaveBeenCalled();
+    expect(gateway.prepareProduct).toHaveBeenCalledOnce();
   });
   it('lists and produces from received stock without evidence queries or evidence permission', async () => {
     vi.mocked(gateway.getAccess).mockImplementation(

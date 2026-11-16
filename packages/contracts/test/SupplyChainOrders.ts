@@ -1891,6 +1891,39 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
     expect(stock.consumed).to.equal(60000n);
     expect((await system.ingredients.getBatch(system.batchId)).availableQuantity).to.equal(100000n);
   });
+  it('allows exact received-stock consumption and preserves the product ingredient link', async function () {
+    const system = await networkHelpers.loadFixture(fixture);
+    await received(system);
+    const productId = ethers.id('exactly-consumed-product');
+
+    await signed(system.products, system.manufacturer).createProductAt(
+      productId,
+      ethers.id('exactly-consumed-product-metadata'),
+      'encrypted',
+      4,
+      ethers.encodeBytes32String('each'),
+      await networkHelpers.time.latest(),
+      system.expiry - 1,
+      [system.batchId],
+      [95000],
+      system.destination,
+    );
+
+    const stock = await system.ingredients.getReceivedStock(
+      system.batchId,
+      system.manufacturer.address,
+      system.destination,
+    );
+    expect(stock.usable).to.equal(0n);
+    expect(stock.consumed).to.equal(95000n);
+    expect(
+      await system.ingredients.manufacturerUsable(system.batchId, system.manufacturer.address),
+    ).to.equal(0n);
+    const links = await system.products.getIngredientLinks(productId);
+    expect(links).to.have.length(1);
+    expect(links[0].batchId).to.equal(system.batchId);
+    expect(links[0].quantity).to.equal(95000n);
+  });
   it('rejects competing reservations and releases only undispatched stock on cancellation', async function () {
     const system = await networkHelpers.loadFixture(fixture);
     await signed(system.orders, system.supplier).allocate(system.orderId, 100000);

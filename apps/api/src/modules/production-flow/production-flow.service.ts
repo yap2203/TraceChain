@@ -1173,52 +1173,6 @@ export class ProductionFlowService {
         'Select each ingredient batch only once.',
         400,
       );
-    for (const link of input.ingredientLinks) {
-      const batch = await this.requireActiveIngredient(link.batchId);
-      const received = await this.dependencies.gateway.getReceivedAvailable?.(
-        link.batchId,
-        session.address,
-        input.productionLocation,
-      );
-      if (
-        received != null &&
-        this.dependencies.gateway.supportsOptionalProductionEvidence &&
-        !(await this.safeGateway(() =>
-          this.dependencies.gateway.supportsOptionalProductionEvidence!(),
-        ))
-      )
-        throw new ProductionFlowApiError(
-          'OPTIONAL_EVIDENCE_DEPLOYMENT_REQUIRED',
-          'Deploy the updated registry suite to create products from received stock without mandatory ingredient evidence.',
-          409,
-        );
-      if (
-        received == null &&
-        !(await this.safeGateway(() =>
-          this.dependencies.gateway.getAccepted(link.batchId, session.address),
-        ))
-      ) {
-        throw new ProductionFlowApiError(
-          'EVIDENCE_NOT_ACCEPTED',
-          'Every ingredient must have accepted evidence for this Manufacturer.',
-          409,
-        );
-      }
-      if (received !== null && received !== undefined && !input.productionLocation) {
-        throw new ProductionFlowApiError(
-          'PRODUCTION_LOCATION_REQUIRED',
-          'Select your registered production location. Only accepted stock held at that location can be consumed.',
-          400,
-        );
-      }
-      if (BigInt(link.quantity) > BigInt(received ?? batch.availableQuantity)) {
-        throw new ProductionFlowApiError(
-          'INSUFFICIENT_INGREDIENT_QUANTITY',
-          'An ingredient does not have enough accepted usable stock at this production location.',
-          409,
-        );
-      }
-    }
     const batchId = id(input.batchReference);
     const metadata = canonical({
       batchReference: input.batchReference,
@@ -1264,6 +1218,56 @@ export class ProductionFlowService {
         state: 'COMPLETE' as const,
         status: existing.status,
       };
+    }
+
+    // Availability is a pre-transaction rule. Once the product exists, the linked ingredients
+    // are verified from the product record above because exact consumption legitimately leaves
+    // the location balance at zero.
+    for (const link of input.ingredientLinks) {
+      const batch = await this.requireActiveIngredient(link.batchId);
+      const received = await this.dependencies.gateway.getReceivedAvailable?.(
+        link.batchId,
+        session.address,
+        input.productionLocation,
+      );
+      if (
+        received != null &&
+        this.dependencies.gateway.supportsOptionalProductionEvidence &&
+        !(await this.safeGateway(() =>
+          this.dependencies.gateway.supportsOptionalProductionEvidence!(),
+        ))
+      )
+        throw new ProductionFlowApiError(
+          'OPTIONAL_EVIDENCE_DEPLOYMENT_REQUIRED',
+          'Deploy the updated registry suite to create products from received stock without mandatory ingredient evidence.',
+          409,
+        );
+      if (
+        received == null &&
+        !(await this.safeGateway(() =>
+          this.dependencies.gateway.getAccepted(link.batchId, session.address),
+        ))
+      ) {
+        throw new ProductionFlowApiError(
+          'EVIDENCE_NOT_ACCEPTED',
+          'Every ingredient must have accepted evidence for this Manufacturer.',
+          409,
+        );
+      }
+      if (received !== null && received !== undefined && !input.productionLocation) {
+        throw new ProductionFlowApiError(
+          'PRODUCTION_LOCATION_REQUIRED',
+          'Select your registered production location. Only accepted stock held at that location can be consumed.',
+          400,
+        );
+      }
+      if (BigInt(link.quantity) > BigInt(received ?? batch.availableQuantity)) {
+        throw new ProductionFlowApiError(
+          'INSUFFICIENT_INGREDIENT_QUANTITY',
+          'An ingredient does not have enough accepted usable stock at this production location.',
+          409,
+        );
+      }
     }
     if (!workflow) {
       const stored = await this.store(metadata, batchId);

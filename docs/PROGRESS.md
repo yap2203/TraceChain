@@ -1,18 +1,35 @@
 # Project Progress
 
+## 2026-11-17 — Exact-balance product production recovery
+
+- Fixed Manufacturer product confirmation when production consumes the final accepted unit at a
+  location. New production still rejects only quantities greater than the exact bigint balance;
+  confirmed-product readback now checks the product batch and its stored ingredient links before
+  applying pre-transaction availability rules, so a legitimate zero remaining balance is retained
+  as historical traceability rather than reported as insufficient stock.
+- The product form keeps exact integer unit conversion, displays a locally known zero remaining
+  balance when positive-stock queries omit the consumed batch, and treats a mined transaction with
+  temporarily unavailable readback as confirmed/pending refresh. The creation action is removed in
+  that state and Refresh records performs a read-only idempotent check without another MetaMask
+  transaction.
+- Regression coverage includes partial, exact and excessive API quantities, zero-balance product
+  readback with preserved ingredient links, decimal conversion, duplicate-submission prevention and
+  exact on-chain consumption. All 25 production-flow API tests, 308 frontend tests and 62 contract
+  tests pass; monorepo type checking and the production build pass. The initial sandboxed Hardhat
+  launch hit the known Windows `uv_os_get_passwd` error and the unchanged isolated suite passed
+  outside that sandbox. No contract source, deployment, environment or chain state changed.
+
 ## 2026-11-16 - Consolidate company management
 
 - Renamed the Admin Company credentials navigation/page to Manage companies. Individual permission editing now exists only inside the selected company Manage details; removed the separate Permissions sidebar entry, Access Control tab and company picker. Role permissions and the permission matrix remain separate.
 - Existing /admin/permissions/companies and /admin/personal links resolve to Manage companies. The established /admin/credentials URL remains compatible. Preserved credential lifecycle actions and exact-wallet MetaMask confirmation, with no API/contract changes.
 - Validation: ten relevant company permission/navigation/login tests and frontend type checking passed.
 
-
 ## 2026-11-16 - Individual permissions in credential management
 
 - Added the existing individual company permission editor directly to Company Credentials Manage details, locked to the credential subject wallet. Extracted one shared component for the existing Access Control page and credential details; Allow/Deny/Inherit and explicit MetaMask confirmation use the same API/contracts. Role defaults remain separate.
 - Normalize role names to exclude System Admin for both enum and display names; revoked/unregistered wallets cannot be selected. Added Refresh permissions for read failures and confirmed-transaction refresh recovery without resending.
 - Validation: five relevant UI tests and frontend type checking passed; includes selected-credential wallet binding, confirmation before write and protected Admin handling. No API, contract, deployment or permission-state changes.
-
 
 ## 2026-11-17 — Compact Manufacturer ingredient-order detail
 
