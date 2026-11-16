@@ -12,8 +12,18 @@ export interface StoredEncryptedCredential {
   cid: string;
   payload: EncryptedCredentialPayload;
 }
+export class CredentialRetrievalError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public httpStatus?: number,
+  ) {
+    super(message);
+  }
+}
 
 export interface CredentialContentStore {
+  retrieveAndDecrypt?(cid: string): Promise<string>;
   decrypt(payload: EncryptedCredentialPayload): Promise<string>;
   encryptAndStore(
     serializedCredential: string,
@@ -26,8 +36,42 @@ export class IpfsEncryptedCredentialStore implements CredentialContentStore {
     private readonly encryptionKey: Buffer,
     private readonly pinningApiUrl: string,
     private readonly pinningToken: string,
+    private readonly gatewayUrl = 'https://gateway.pinata.cloud/ipfs',
   ) {
     if (encryptionKey.length !== 32) throw new Error('Credential encryption key must be 32 bytes.');
+  }
+
+  async retrieveAndDecrypt(reference: string) {
+    const cid = reference.replace(/^ipfs:\/\//, '');
+    if (!/^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{20,})$/.test(cid))
+      throw new Error('Invalid encrypted credential CID.');
+    let response: Response;
+    try {
+      response = await fetch(`${this.gatewayUrl.replace(/\/$/, '')}/${encodeURIComponent(cid)}`, {
+        signal: AbortSignal.timeout(20000),
+        redirect: 'error',
+      });
+    } catch {
+      throw new CredentialRetrievalError(
+        'IPFS_NETWORK_UNAVAILABLE',
+        'The IPFS gateway is unreachable or timed out.',
+      );
+    }
+    if (!response.ok)
+      throw new CredentialRetrievalError(
+        'IPFS_HTTP_UNAVAILABLE',
+        'The pinned credential could not be retrieved from IPFS.',
+        response.status,
+      );
+    const payload = (await response.json()) as EncryptedCredentialPayload;
+    if (
+      payload.algorithm !== 'aes-256-gcm' ||
+      payload.version !== 1 ||
+      Buffer.from(payload.iv ?? '', 'base64').length !== 12 ||
+      Buffer.from(payload.authTag ?? '', 'base64').length !== 16
+    )
+      throw new Error('The pinned encrypted credential envelope is invalid.');
+    return this.decrypt(payload);
   }
 
   async encryptAndStore(serializedCredential: string, credentialId: string) {

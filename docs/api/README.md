@@ -474,6 +474,11 @@ Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend
 
 ## Storage and production limitations
 
+Backend IPFS/KMS key export and restore checks have no HTTP endpoint. The former
+`POST /api/ssi/storage-key-backup` route is removed and returns 404. Credential issuance,
+authenticated IPFS retrieval/verification and holder-signing recovery remain available.
+See [storage and recovery](../STORAGE_AND_RECOVERY.md).
+
 ### Role workflows (2026-11-16)
 
 - `GET /api/orders/traceability?kind=ingredient|product&batchId=<bytes32>` returns company-scoped

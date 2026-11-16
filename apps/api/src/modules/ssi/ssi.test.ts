@@ -15,7 +15,8 @@ import type { DIDResolver } from 'did-resolver';
 import { computeAddress, getAddress, isAddress, Wallet } from 'ethers';
 import request from 'supertest';
 import { SiweMessage } from 'siwe';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { IpfsEncryptedCredentialStore } from './encrypted-credential.store.js';
 
 import { createApp } from '../../app.js';
 import { InMemoryNonceRepository, InMemorySessionRepository } from '../auth/auth.repository.js';
@@ -74,6 +75,14 @@ const localEthrResolver: DIDResolver = async (did, parsed) => {
 };
 
 describe('Company Role Credential presentation API', () => {
+  it('does not expose backend-key export or restore checks over HTTP', async () => {
+    for (const body of [
+      { password: 'test-only-backup-password' },
+      { password: 'test-only-backup-password', backup: {} },
+    ]) {
+      await request(app).post('/api/ssi/storage-key-backup').send(body).expect(404);
+    }
+  });
   let agent: TraceChainAgent;
   let app: ReturnType<typeof createApp>;
   let authorityDid: string;
@@ -430,6 +439,95 @@ describe('Company Role Credential presentation API', () => {
     const verified = await service.verifyMyCompanyIdentity('company-session');
     expect(verified.verification).toMatchObject({ outcome: 'CHECKS_PASSED' });
     expect(verified.verification?.checks.every((check) => check.status === 'PASSED')).toBe(true);
+    // Simulated Pinata HTTP with real AES-GCM: the next sessions have no local VC cache/journal.
+    const cid = 'b' + 'a'.repeat(58);
+    let pinned: string | undefined;
+    let downloads = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      if (init?.method === 'POST') {
+        const file = (init.body as FormData).get('file') as Blob;
+        pinned = await file.text();
+        return new Response(JSON.stringify({ IpfsHash: cid }));
+      }
+      downloads++;
+      return new Response(pinned, { headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+    try {
+      const store = new IpfsEncryptedCredentialStore(
+        Buffer.alloc(32, 7),
+        'https://pin.example.invalid',
+        'test-token',
+        'https://gateway.example.invalid/ipfs',
+      );
+      await store.encryptAndStore(JSON.stringify(issued.credential), credentialId);
+      expect(pinned).not.toContain('Identity Test Company');
+      const remoteGateway = {
+        ...gateway,
+        getStakeholder: async (address: string) => ({
+          ...(await gateway.getStakeholder(address)),
+          credentialCid: cid,
+        }),
+        getCredential: async (key: string) => ({
+          ...(await gateway.getCredential(key)),
+          encryptedCid: cid,
+        }),
+      } as BlockchainGateway;
+      for (let browser = 0; browser < 2; browser++) {
+        const browserAuth = new AuthService({
+          authorizationResolver: {
+            resolve: async () => ({
+              checkedAt: NOW,
+              status: 'AUTHORIZED',
+              role: CompanyRole.SUPPLIER,
+              credentialHash,
+              credentialId,
+            }),
+          },
+          clock: () => NOW,
+          configuration: {
+            chainId: CHAIN_ID,
+            domain: DOMAIN,
+            nonceTtlMs: 300000,
+            sessionTtlMs: 28800000,
+            uri: URI,
+          },
+          nonceRepository: new InMemoryNonceRepository(),
+          sessionRepository: new InMemorySessionRepository(),
+        });
+        const challenge = await browserAuth.createNonce(company.address);
+        const message = new SiweMessage({
+          address: company.address,
+          chainId: CHAIN_ID,
+          domain: DOMAIN,
+          expirationTime: challenge.expiresAt,
+          issuedAt: NOW.toISOString(),
+          nonce: challenge.nonce,
+          uri: URI,
+          version: '1',
+        }).prepareMessage();
+        const login = await browserAuth.verify(message, await company.signMessage(message));
+        const freshService = new CompanyRoleSsiService({
+          ...service['dependencies'],
+          authService: browserAuth,
+          blockchainGateway: remoteGateway,
+          credentialContentStore: store,
+          issuanceRepository: {
+            list: async () => [],
+            find: async () => undefined,
+            save: async () => {
+              throw new Error('must not reissue');
+            },
+          },
+        });
+        const restored = await freshService.verifyMyCompanyIdentity(login.sessionId);
+        expect(restored.identity.credentialId).toBe(issued.credential.id);
+        expect(restored.verification?.outcome).toBe('CHECKS_PASSED');
+      }
+      expect(downloads).toBe(2);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
 
     const otherWalletService = new CompanyRoleSsiService({
       ...service['dependencies'],

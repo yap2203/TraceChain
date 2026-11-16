@@ -147,6 +147,15 @@ describe('TraceChain SSI foundation', () => {
     expect(second.credentialIssued).toBe(false);
     expect(second.credentialId).toBe(first.credentialId);
     expect(second.credentialHash).toBe(first.credentialHash);
+    const restoredAgent = await createTraceChainAgent(config);
+    const restored = await bootstrapSystemAdmin(restoredAgent, {
+      adminWalletAddress: ADMIN_WALLET,
+      authorityDidAlias: 'bootstrap-authority',
+    });
+    expect(restored.credentialId).toBe(first.credentialId);
+    const publicText = await readFile(config.publicStorePath, 'utf8');
+    expect(publicText).not.toContain('credentialSubject');
+    expect(publicText).not.toContain('Product Traceability Authority');
   });
 
   describe('Company Role Credential issuance and verification', () => {

@@ -328,6 +328,10 @@ export function createApp({
     },
   );
   const lazyCredentialContentStore: CredentialContentStore = {
+    retrieveAndDecrypt: async (cid) => {
+      credentialContentStore ??= createIssuanceDependencies().contentStore;
+      return credentialContentStore.retrieveAndDecrypt!(cid);
+    },
     decrypt: async (payload) => {
       credentialContentStore ??= createIssuanceDependencies().contentStore;
       return credentialContentStore.decrypt(payload);
@@ -923,6 +927,7 @@ function createIssuanceDependencies() {
       storage.encryptionKey,
       storage.pinningApiUrl,
       storage.pinningToken,
+      storage.gatewayUrl,
     ),
     repository: new JsonCompanyRoleIssuanceRepository(storage.workflowStorePath),
   };

@@ -46,6 +46,21 @@ coverage/
 *.db-wal
 veramo-data/
 
+# Private exports and recovery files (including copies outside .tracechain)
+tracechain-backend-storage-keys*.json
+tracechain-presentation-key-backup*.json
+tracechain-didcomm-recovery-kit*.json
+tracechain-vault-recovery-kit*.json
+admin-company-role-credential.json
+company-role-credential-*.json
+credential-summary-*.json
+tracechain-company-identity-*.pdf
+tracechain-audit*.json
+tracechain-audit*.csv
+public-data.json
+public-data.credentials.encrypted.json
+private-keys.json
+
 # Hardhat generated files
 artifacts/
 cache/

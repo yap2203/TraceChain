@@ -11,6 +11,7 @@ const schema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/, 'IPFS_ENCRYPTION_KEY must be a 32-byte hexadecimal key'),
   IPFS_PINNING_API_URL: z.string().url(),
   IPFS_PINNING_TOKEN: z.string().min(1),
+  IPFS_GATEWAY_URL: z.string().url().default('https://gateway.pinata.cloud/ipfs'),
 });
 
 export function loadCredentialStorageEnvironment() {
@@ -20,6 +21,7 @@ export function loadCredentialStorageEnvironment() {
     encryptionKey: Buffer.from(parsed.IPFS_ENCRYPTION_KEY, 'hex'),
     pinningApiUrl: parsed.IPFS_PINNING_API_URL,
     pinningToken: parsed.IPFS_PINNING_TOKEN,
+    gatewayUrl: parsed.IPFS_GATEWAY_URL,
     ingredientWorkflowStorePath: resolve(
       repositoryRoot,
       '.tracechain/issuance/ingredient-batches.json',

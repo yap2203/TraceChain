@@ -123,6 +123,10 @@ npm run typecheck
 ```
 
 The Solidity compiler uses the optimizer with 200 runs and `viaIR: true` in both build profiles.
+On Windows, both profiles use Hardhat's WASM compiler (`preferWasm`) with the same Solidity version
+and settings. This avoids launching a downloaded native `solc.exe`, which Windows Application
+Control can block with `spawn UNKNOWN`. No security-policy change or contract redeployment is needed
+for this compiler-selection fix. Rebuild with `npm run build --workspace @tracechain/contracts -- --force`.
 
 ## Numeric enum values
 
