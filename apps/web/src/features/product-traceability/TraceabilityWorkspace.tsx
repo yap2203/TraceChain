@@ -138,6 +138,20 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
                 }))}
               />
             </div>
+            {data.root && (
+              <Card>
+                <div className="workspace-record-heading !mb-0">
+                  <Route size={24} aria-hidden="true" />
+                  <div className="workspace-record-heading__identity">
+                    <span className="workspace-record-heading__eyebrow">
+                      {data.root.kind === 'product' ? 'Product journey' : 'Ingredient journey'}
+                    </span>
+                    <h2>{data.root.name}</h2>
+                    <p>{data.root.reference}</p>
+                  </div>
+                </div>
+              </Card>
+            )}
             {data.routes.length > 1 && (
               <SelectField
                 label="Product journey"

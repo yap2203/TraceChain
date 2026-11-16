@@ -62,7 +62,17 @@ async function request<T>(
   }
   return response.json();
 }
-export const getOrders = () => request<OrdersState>('');
+let ordersRequest: Promise<OrdersState> | undefined;
+export const getOrders = () => {
+  if (ordersRequest) return ordersRequest;
+  const pending = request<OrdersState>('');
+  ordersRequest = pending;
+  const clear = () => {
+    if (ordersRequest === pending) ordersRequest = undefined;
+  };
+  void pending.then(clear, clear);
+  return pending;
+};
 export interface CompanyLocation {
   location: string;
   registeredLabel: string;
@@ -174,16 +184,67 @@ export const deliveryIdentity = (orderId: string, input: Record<string, unknown>
 export const getRecall = (batchId: string) => request<OrderRecord>(`/recall/${batchId}`);
 export const prepareOrderEvidence = (orderId: string, input: Record<string, unknown>) =>
   request<any>(`/${orderId}/evidence/prepare`, input);
-export const uploadIngredientCatalogueImage = (batchId: string, image: CatalogueImageUpload) =>
-  request<{ image: { path: string } }>(`/catalogue/ingredients/${batchId}/image`, image);
-export const uploadCompanyLogo = (wallet: string, image: CatalogueImageUpload) =>
-  request<{ branding: { logoPath: string } }>(`/branding/${wallet}/logo`, image);
+export const uploadIngredientCatalogueImage = async (
+  batchId: string,
+  image: CatalogueImageUpload,
+) => {
+  const result = await request<{ image: { path: string } }>(
+    `/catalogue/ingredients/${batchId}/image`,
+    image,
+  );
+  mediaRequests.delete(result.image.path);
+  return result;
+};
+export const uploadCompanyLogo = async (wallet: string, image: CatalogueImageUpload) => {
+  const result = await request<{ branding: { logoPath: string } }>(
+    `/branding/${wallet}/logo`,
+    image,
+  );
+  mediaRequests.delete(result.branding.logoPath);
+  return result;
+};
 export const getMyCompanyBranding = () =>
   request<{ branding: { companyName: string; logoPath?: string; role: string } }>('/branding/me');
-export async function fetchCatalogueMedia(path: string) {
-  const response = await fetch(`${base}/api/orders${path}`, { credentials: 'include' });
-  if (!response.ok) throw new Error('Catalogue image unavailable.');
-  return response.blob();
+export class CatalogueMediaError extends Error {
+  constructor(
+    readonly reason: 'missing' | 'denied' | 'unavailable',
+    readonly status: number,
+  ) {
+    super(
+      reason === 'missing'
+        ? 'No image has been provided.'
+        : reason === 'denied'
+          ? 'This image is not available to the current account.'
+          : 'The image service is unavailable.',
+    );
+  }
+}
+
+const mediaRequests = new Map<string, Promise<Blob>>();
+
+export function fetchCatalogueMedia(path: string) {
+  const existing = mediaRequests.get(path);
+  if (existing) return existing;
+  const pending = fetch(`${base}/api/orders${path}`, { credentials: 'include' }).then(
+    async (response) => {
+      if (!response.ok)
+        throw new CatalogueMediaError(
+          response.status === 404
+            ? 'missing'
+            : response.status === 401 || response.status === 403
+              ? 'denied'
+              : 'unavailable',
+          response.status,
+        );
+      return response.blob();
+    },
+  );
+  mediaRequests.set(path, pending);
+  const clear = () => {
+    if (mediaRequests.get(path) === pending) mediaRequests.delete(path);
+  };
+  void pending.then(clear, clear);
+  return pending;
 }
 
 export async function imageFilePayload(file: File): Promise<CatalogueImageUpload> {

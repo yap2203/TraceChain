@@ -1,6 +1,8 @@
 import { Building2, Image as ImageIcon, Leaf, Package } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { fetchCatalogueMedia } from './orders.api';
+import { CatalogueMediaError, fetchCatalogueMedia } from './orders.api';
+
+type MediaState = 'idle' | 'loading' | 'missing' | 'denied' | 'failed' | 'ready';
 
 export function CatalogueImage({
   path,
@@ -14,11 +16,11 @@ export function CatalogueImage({
   large?: boolean;
 }) {
   const [source, setSource] = useState('');
-  const [failed, setFailed] = useState(false);
+  const [state, setState] = useState<MediaState>('idle');
   useEffect(() => {
     let active = true;
     let url = '';
-    setFailed(false);
+    setState(path ? 'loading' : 'missing');
     setSource('');
     if (path)
       void fetchCatalogueMedia(path)
@@ -26,19 +28,33 @@ export function CatalogueImage({
           if (!active) return;
           url = URL.createObjectURL(blob);
           setSource(url);
+          setState('ready');
         })
-        .catch(() => active && setFailed(true));
+        .catch((error) => {
+          if (!active) return;
+          setState(
+            error instanceof CatalogueMediaError
+              ? error.reason === 'denied'
+                ? 'denied'
+                : error.reason === 'missing'
+                  ? 'missing'
+                  : 'failed'
+              : 'failed',
+          );
+        });
     return () => {
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
   }, [path]);
-  if (source && !failed)
+  if (source && state === 'ready')
     return (
       <img
         src={source}
         alt={alt}
-        onError={() => setFailed(true)}
+        loading="lazy"
+        decoding="async"
+        onError={() => setState('failed')}
         className={`catalogue-image ${large ? 'catalogue-image--large' : ''}`}
       />
     );
@@ -49,10 +65,26 @@ export function CatalogueImage({
     <div
       className={`catalogue-image catalogue-image--fallback ${large ? 'catalogue-image--large' : ''}`}
       role="img"
-      aria-label={`${category || 'Ingredient'} image placeholder`}
+      aria-label={
+        state === 'denied'
+          ? `${category || 'Ingredient'} image is not available to this account`
+          : state === 'failed'
+            ? `${category || 'Ingredient'} image could not be loaded`
+            : `${category || 'Ingredient'} image placeholder`
+      }
+      data-media-state={state}
     >
       <Icon aria-hidden="true" size={large ? 52 : 34} />
       <span>{category || 'Ingredient'}</span>
+      <small>
+        {state === 'denied'
+          ? 'Image access unavailable'
+          : state === 'failed'
+            ? 'Image could not be loaded'
+            : state === 'loading'
+              ? 'Loading image'
+              : 'No image provided'}
+      </small>
     </div>
   );
 }
@@ -97,7 +129,7 @@ export function CompanyAvatar({
   return (
     <span className={`company-avatar company-avatar--${size}`}>
       {source ? (
-        <img src={source} alt={`${name} company logo`} />
+        <img src={source} alt={`${name} company logo`} loading="lazy" decoding="async" />
       ) : (
         <>
           <Building2 aria-hidden="true" size={size === 'sm' ? 12 : 14} />

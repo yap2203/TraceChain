@@ -1,5 +1,15 @@
 # TraceChain
 
+**Stakeholder record views:** inventory now uses one shared searchable list/detail presentation for
+Manufacturer, Distributor and Supplier custody records, while shipment lists use the same scannable
+product, sender, destination, quantity, ETA and status columns across roles. Distributor product
+dispatch is available only after opening **View shipment**; opening the detail is read-only. Shared
+status timelines show the real current workflow step. Product details decode only known on-chain
+units (for example, `each` is shown as units) and keep unknown/raw values under Technical details.
+Authenticated catalogue images are lazy-loaded, concurrent duplicate image/state reads are
+deduplicated, and missing, denied and failed media have distinct fallbacks without weakening media
+authorization.
+
 **Workspace UI:** navigation is grouped by task for all five roles, with overview quick actions,
 separate stock/order/shipment destinations, clickable forward/backward traceability and responsive layouts.
 Distributor pickup scheduling applies to both custody offers and direct buyer deliveries. Locations

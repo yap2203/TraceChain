@@ -20,6 +20,18 @@ type RequestGroup = 'attention' | 'evidence' | 'approved' | 'closed';
 type RequestFilter = 'all' | RequestGroup;
 type RequestSort = 'newest' | 'oldest' | 'deadline' | 'updated';
 
+function fulfilmentChoice(order: OrderRecord) {
+  if (order.productDelivery)
+    return Number(order.productDelivery.mode) === 1
+      ? 'Direct Distributor delivery'
+      : Number(order.productDelivery.mode) === 2
+        ? 'Distributor custody stock'
+        : 'Awaiting fulfilment selection';
+  if (order.custodyOrder) return 'Distributor custody stock';
+  if (order.delivery) return 'Direct Distributor delivery';
+  return Number(order.decision?.status) === 1 ? 'Awaiting fulfilment selection' : 'Not selected';
+}
+
 export function RequestsOverview({
   actor,
   catalogue,
@@ -229,8 +241,9 @@ export function RequestsOverview({
             <Table
               headers={[
                 'Item',
-                'Supplier',
+                role === 'manufacturer' ? 'Retailer / buyer' : 'Supplier / seller',
                 'Quantity',
+                'Fulfilment',
                 'Requested',
                 'Updated',
                 'Status',
@@ -248,6 +261,7 @@ export function RequestsOverview({
                     <TD>
                       {entry.requested} {item?.unit ?? ''}
                     </TD>
+                    <TD>{fulfilmentChoice(entry)}</TD>
                     <TD>{dateTime(entry.createdAt ?? entry.requestedAt)}</TD>
                     <TD>{dateTime(entry.updatedAt ?? entry.decision?.recordedAt)}</TD>
                     <TD>
@@ -281,6 +295,7 @@ export function RequestsOverview({
                     </strong>{' '}
                     · {nextAction(entry, actor)}
                   </p>
+                  <p>Fulfilment: {fulfilmentChoice(entry)}</p>
                   <p>Updated {dateTime(entry.updatedAt ?? entry.decision?.recordedAt)}</p>
                   <Btn size="sm" variant="outline" onClick={() => onView(entry.orderId)}>
                     View request

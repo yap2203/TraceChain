@@ -1,5 +1,32 @@
 # Project Progress
 
+## 2026-11-16 — Shared stakeholder record layouts and media loading
+
+- Standardized stakeholder inventory lists/details, shipment summaries/details and real-state status
+  timelines while retaining role-specific data, actions and API authorization. Manufacturer and
+  Distributor inventory now share search/location filtering and quantity facts; Manufacturer,
+  Distributor and Retailer shipment rows expose the important parties, route, quantity, ETA and
+  status before a read-only detail review.
+- Refined Manufacturer product creation and product detail hierarchy, added field-level validation
+  and final review, and introduced a fail-closed unit formatter. Known `bytes32` `each` values render
+  as units (including `123 units` and `MYR 12.00 per unit`); unknown units are never guessed and raw
+  values stay in Technical details. Product orders now show fulfilment choice, and Retailer
+  traceability leads with the selected product and batch reference.
+- Moved Distributor product dispatch behind **View shipment**. Opening a shipment detail does not
+  prepare or sign a transaction; confirmation remains explicit within the detail. Intake offers now
+  use the shared icon timeline with the current real state, responsible party and next action.
+- Reused `CatalogueImage` with lazy loading and explicit missing/denied/failed states. The existing
+  authenticated API media mapping and authorization were already correct; inconsistent rendering
+  came from independent duplicate reads and a generic fallback that hid transient/request failures.
+  Identical concurrent media and workspace-state requests are now deduplicated without caching later
+  refreshes or confirmed stock/shipment updates.
+- Comparable six-file UI test runs remained effectively unchanged at 5.25 s before and 5.26 s after;
+  deterministic request coverage confirms two simultaneous identical image/state reads now make one
+  request instead of two, while a later refresh performs a fresh request. Full validation passed:
+  255 frontend tests, repository type checking and production build. The existing QR-image upload
+  issue was not changed. Live multi-wallet/chain workflow timing and narrow-screen visual review
+  remain manual follow-up checks.
+
 ## 2026-11-16 — Fresh product custody-offer inventory fix
 
 - Fixed Manufacturer custody offers for a newly created product batch whose custody inventory has

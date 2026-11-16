@@ -296,6 +296,38 @@ describe('unified warehouse shipments', () => {
     );
     expect(mocks.sign).not.toHaveBeenCalled();
   });
+  it('keeps product dispatch behind a read-only shipment review', async () => {
+    const next = structuredClone(state);
+    next.orders = [
+      {
+        orderId: hash('a'),
+        itemId: hash('5'),
+        seller: supplier,
+        sellerName: 'Actual Manufacturer',
+        buyer: ordersAddress,
+        buyerName: 'Actual Retailer',
+        requested: '2',
+        requestedBatch: batchId,
+        deliveryReceivingLocation: location,
+        productDelivery: { stage: 3, mode: 2, distributor: carrier },
+      },
+    ];
+    next.catalogue[0].kind = 2;
+    next.catalogue[0].batchReference = 'PRODUCT-001';
+    next.catalogue[0].unit = 'each';
+    mocks.get.mockResolvedValue(next);
+
+    render(<ShipmentsWorkspace role="distributor" initialKind="product" />);
+
+    const review = await screen.findByRole('button', { name: 'View shipment' });
+    expect(screen.queryByRole('button', { name: 'Confirm product pickup & dispatch' })).toBeNull();
+    fireEvent.click(review);
+    expect(
+      await screen.findByRole('button', { name: 'Confirm product pickup & dispatch' }),
+    ).toBeTruthy();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
   it('keeps custody inventory outside shipment navigation', async () => {
     render(<ShipmentsWorkspace role="distributor" />);
     await screen.findByText('Custody intake & deliveries');

@@ -15,13 +15,19 @@ import {
   Btn,
   Card,
   EmptyState,
-  T,
   Table,
   TD,
   TechnicalDetails,
   TR,
 } from '../../shared/ui';
-import { chainDate, recordStatuses, shortChainId } from '../../shared/operational-format';
+import {
+  chainDate,
+  formatOperationalPrice,
+  formatOperationalQuantity,
+  operationalUnit,
+  recordStatuses,
+  shortChainId,
+} from '../../shared/operational-format';
 export function ProductBatchDetail({
   batchId,
   onBack,
@@ -91,15 +97,19 @@ export function ProductBatchDetail({
     );
   const productName = traceability?.product.name ?? 'Registered product';
   const batchReference = traceability?.product.reference ?? 'Batch reference unavailable';
+  const catalogueItem = ingredients.find((entry) => entry.batches?.includes(p.batchId));
+  const unit = operationalUnit(p.unit);
+  const authoritativeStorage = storage.filter((entry) => entry.available !== undefined);
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
+    <div className="workspace-flow-page">
+      <div className="workspace-record-heading">
         <Btn variant="ghost" size="sm" onClick={onBack}>
           Back
         </Btn>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0, color: T.navy }}>{productName}</h2>
-          <div style={{ color: T.text2, fontSize: 12, marginTop: 3 }}>{batchReference}</div>
+        <div className="workspace-record-heading__identity">
+          <span className="workspace-record-heading__eyebrow">Finished product</span>
+          <h2>{productName}</h2>
+          <p>{batchReference}</p>
         </div>
         <Badge
           label={recordStatuses[p.status] ?? 'Unknown'}
@@ -108,42 +118,47 @@ export function ProductBatchDetail({
         <Btn onClick={onTransfer}>Transfer Product</Btn>
       </div>
       <Card>
-        <p>
-          Current Distributor storage:{' '}
-          {storage.length
-            ? storage
-                .map((entry) => `${entry.warehouseName}: ${entry.available} ${p.unit ?? ''}`)
-                .join('; ')
-            : 'No received Distributor warehouse stock recorded'}
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+        <h3>Product batch summary</h3>
+        <div className="workspace-record-facts">
           {[
+            ['Batch reference', batchReference],
+            ['Status', recordStatuses[p.status] ?? 'Unknown'],
             ['Manufacturer', p.manufacturerName ?? 'Verified Manufacturer'],
-            ['Quantity', `${p.totalQuantity} ${p.unit}`],
+            ['Quantity produced', formatOperationalQuantity(p.totalQuantity, p.unit)],
             ['Produced', chainDate(p.producedAt)],
             ['Expires', chainDate(p.expiresAt)],
             [
               'Indicative unit price',
-              (() => {
-                const item = ingredients.find((entry) => entry.batches?.includes(p.batchId));
-                return item?.price !== undefined
-                  ? `${item.currency} ${item.price} / ${p.unit}`
-                  : 'Unavailable';
-              })(),
+              formatOperationalPrice(catalogueItem?.currency, catalogueItem?.price, p.unit),
             ],
           ].map(([l, v]) => (
-            <div key={l} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 11, color: T.text2 }}>{l}</div>
-              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{v}</div>
+            <div key={l}>
+              <dt>{l}</dt>
+              <dd>{v}</dd>
             </div>
           ))}
         </div>
+        {authoritativeStorage.length > 0 && (
+          <section className="workspace-authoritative-stock" aria-label="Authoritative stock">
+            <h4>Available custody stock</h4>
+            {authoritativeStorage.map((entry) => (
+              <p key={`${entry.location ?? ''}:${entry.distributor ?? ''}`}>
+                {entry.warehouseName ?? 'Recorded Distributor location'}:{' '}
+                <strong>{formatOperationalQuantity(entry.available, p.unit)}</strong>
+              </p>
+            ))}
+          </section>
+        )}
         <TechnicalDetails
           fields={[
             { label: 'Product batch ID', value: p.batchId },
             { label: 'Manufacturer wallet', value: p.manufacturer },
             { label: 'Metadata hash', value: p.metadataHash },
             { label: 'Public CID', value: p.publicCid },
+            {
+              label: 'Raw on-chain unit',
+              value: unit.raw || 'Not recorded',
+            },
           ]}
         />
       </Card>
@@ -172,9 +187,10 @@ export function ProductBatchDetail({
                   'Unavailable'}
               </TD>
               <TD>
-                {i.quantity}{' '}
-                {ingredients.find((item) => item.batches?.includes(i.batchId))?.unit ??
-                  '(unit unavailable)'}
+                {formatOperationalQuantity(
+                  i.quantity,
+                  ingredients.find((item) => item.batches?.includes(i.batchId))?.unit,
+                )}
               </TD>
               <TD>
                 <Btn size="sm" variant="outline" onClick={() => onIngredientDetail(i.batchId)}>

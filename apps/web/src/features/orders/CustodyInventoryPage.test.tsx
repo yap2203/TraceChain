@@ -61,7 +61,9 @@ it('opens owned custody details and never renders another Distributor’s stock'
   expect(await screen.findByText('Owned flour')).toBeTruthy();
   expect(screen.queryByText('Foreign flour')).toBeNull();
   expect(screen.queryByText('Private foreign warehouse')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'View custody details' }));
+  expect(screen.getByText('My warehouse')).toBeTruthy();
+  expect(screen.getByText('50 kg')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'View details' }));
   expect(screen.getByText('70 kg')).toBeTruthy();
   expect(screen.getByText('20 kg')).toBeTruthy();
   expect(screen.getByText('50 kg')).toBeTruthy();

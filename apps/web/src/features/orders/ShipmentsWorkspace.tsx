@@ -1,7 +1,7 @@
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, Check, Package, Plus, RefreshCw, Search, Truck } from 'lucide-react';
+import { Camera, Package, Plus, RefreshCw, Search, Truck } from 'lucide-react';
 import { decodeShipmentQr } from '@tracechain/shared';
 import {
   getOrders,
@@ -26,6 +26,7 @@ import {
   Input,
   SectionTitle,
   SelectField,
+  StatusTimeline,
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
@@ -103,6 +104,7 @@ export function ShipmentsWorkspace({
     ),
     [search, setSearch] = useState('');
   const [selected, setSelected] = useState(initialShipmentId),
+    [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState(initialOrderId),
     [orderId, setOrderId] = useState(initialOrderId),
     [batchId, setBatchId] = useState(initialBatchId);
   const [from, setFrom] = useState(''),
@@ -143,6 +145,9 @@ export function ShipmentsWorkspace({
   }, [data?.actor, initialOrderId]);
   const shipments = warehouse?.shipments ?? [];
   const shipment = shipments.find((entry) => same(entry.shipmentId, selected));
+  const productDeliveryOrder = data?.orders.find(
+    (entry) => same(entry.orderId, selectedDeliveryOrder) && entry.productDelivery,
+  );
   const linkedCustodyOffer = custodyOffers.find(
     (offer) =>
       same(offer.shipmentId, shipment?.shipmentId) &&
@@ -533,7 +538,21 @@ export function ShipmentsWorkspace({
           </ul>
         </Card>
       )}
-      {view === 'shipments' && !selected && (
+      {view === 'shipments' && !selected && productDeliveryOrder && (
+        <div className="grid min-w-0 gap-[12px]">
+          <Btn variant="outline" onClick={() => setSelectedDeliveryOrder('')}>
+            Back to shipments
+          </Btn>
+          <ProductDeliveryPanel
+            data={data}
+            order={productDeliveryOrder}
+            item={data.catalogue.find((item) => same(item.itemId, productDeliveryOrder.itemId))}
+            onChanged={load}
+            initialQr={same(productDeliveryOrder.orderId, initialOrderId) ? initialQr : ''}
+          />
+        </div>
+      )}
+      {view === 'shipments' && !selected && !productDeliveryOrder && (
         <>
           {section !== 'intake' &&
             kind === 'product' &&
@@ -543,14 +562,66 @@ export function ShipmentsWorkspace({
                   entry.productDelivery && same(entry.productDelivery.distributor, data.actor),
               )
               .map((entry) => (
-                <ProductDeliveryPanel
-                  key={entry.orderId}
-                  data={data}
-                  order={entry}
-                  item={data.catalogue.find((item) => same(item.itemId, entry.itemId))}
-                  onChanged={load}
-                  initialQr={same(entry.orderId, initialOrderId) ? initialQr : ''}
-                />
+                <Card key={entry.orderId}>
+                  <div className="workspace-record-card">
+                    <div className="workspace-record-heading">
+                      <div className="workspace-record-heading__identity">
+                        <span className="workspace-record-heading__eyebrow">Product shipment</span>
+                        <h3>
+                          {data.catalogue.find((item) => same(item.itemId, entry.itemId))?.name ??
+                            'Registered product'}
+                        </h3>
+                        <p>
+                          {data.catalogue.find((item) => same(item.itemId, entry.itemId))
+                            ?.batchReference ?? short(entry.requestedBatch)}
+                        </p>
+                      </div>
+                      <Badge
+                        label={
+                          [
+                            'Awaiting approval',
+                            'Delivery selection',
+                            'Awaiting Distributor review',
+                            'Ready for dispatch',
+                            'In transit',
+                            'Received',
+                            'Closed',
+                          ][Number(entry.productDelivery.stage)] ?? 'In progress'
+                        }
+                        variant={Number(entry.productDelivery.stage) === 5 ? 'verified' : 'pending'}
+                      />
+                    </div>
+                    <dl className="workspace-record-facts">
+                      <div>
+                        <dt>Quantity</dt>
+                        <dd>
+                          {entry.requested}{' '}
+                          {data.catalogue.find((item) => same(item.itemId, entry.itemId))?.unit ??
+                            ''}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Sender</dt>
+                        <dd>{entry.sellerName ?? short(entry.seller)}</dd>
+                      </div>
+                      <div>
+                        <dt>Recipient</dt>
+                        <dd>{entry.buyerName ?? short(entry.buyer)}</dd>
+                      </div>
+                      <div>
+                        <dt>Destination</dt>
+                        <dd>
+                          {label(
+                            entry.deliveryReceivingLocation ?? entry.details?.receivingLocation,
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    <Btn variant="outline" onClick={() => setSelectedDeliveryOrder(entry.orderId)}>
+                      View shipment
+                    </Btn>
+                  </div>
+                </Card>
               ))}
           {section !== 'intake' &&
             kind === 'ingredient' &&
@@ -648,13 +719,19 @@ export function ShipmentsWorkspace({
                 <table className="w-full text-left">
                   <thead>
                     <tr>
-                      {['Reference / item', 'Type', 'Route', 'Quantity', 'Status', ''].map(
-                        (header) => (
-                          <th key={header} className="p-[12px]">
-                            {header}
-                          </th>
-                        ),
-                      )}
+                      {[
+                        'Shipment / item',
+                        'Batch',
+                        'Sender',
+                        'Destination',
+                        'Expected / received',
+                        'ETA / status',
+                        '',
+                      ].map((header) => (
+                        <th key={header} className="p-[12px]">
+                          {header}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
@@ -663,19 +740,29 @@ export function ShipmentsWorkspace({
                         <td className="p-[12px]">
                           SHP-{entry.shipmentId.slice(2, 10).toUpperCase()}
                           <br />
-                          {entry.itemName ?? item(entry.batchId)?.name ?? 'Registered batch'}
+                          <strong>
+                            {entry.itemName ?? item(entry.batchId)?.name ?? 'Registered batch'}
+                          </strong>
                         </td>
                         <td className="p-[12px]">
-                          {entry.kind === 'ingredient' ? 'Ingredient' : 'Product'}
+                          {item(entry.batchId)?.batchReference ?? short(entry.batchId)}
                         </td>
+                        <td className="p-[12px]">{entry.senderName ?? short(entry.sender)}</td>
                         <td className="p-[12px]">
-                          {entry.senderName ?? short(entry.sender)} →{' '}
-                          {entry.recipientName ?? short(entry.recipient)}
+                          {label(entry.toLocation)}
+                          <br />
+                          <small>{entry.recipientName ?? short(entry.recipient)}</small>
                         </td>
                         <td className="p-[12px]">
                           {entry.quantity} {entry.unit}
+                          <br />
+                          <small>
+                            Received {entry.received ?? '0'} {entry.unit}
+                          </small>
                         </td>
                         <td className="p-[12px]">
+                          {when(entry.expectedAt)}
+                          <br />
                           <Badge
                             label={stateLabel(entry)}
                             variant={Number(entry.status) >= 3 ? 'verified' : 'pending'}
@@ -994,21 +1081,23 @@ export function ShipmentsWorkspace({
                 ? 'Distributor warehouse → Manufacturer'
                 : 'Finished-product custody transfer'}
           </p>
-          <ol
-            className="grid list-none grid-cols-1 gap-[12px] p-0 sm:grid-cols-2"
-            aria-label="Shipment status"
-          >
-            <li className="rounded-lg border border-[var(--c-teal)] p-[12px]">
-              <Check size={18} /> Dispatched by {shipment.senderName ?? short(shipment.sender)}
-              <br />
-              {when(shipment.dispatchedAt)}
-            </li>
-            <li className="rounded-lg border border-[var(--c-border)] p-[12px]">
-              {stateLabel(shipment)} by {shipment.recipientName ?? short(shipment.recipient)}
-              <br />
-              Received {shipment.received ?? '0'} / {shipment.quantity} {shipment.unit}
-            </li>
-          </ol>
+          <StatusTimeline
+            label="Shipment status"
+            steps={[
+              {
+                actor: shipment.senderName ?? short(shipment.sender),
+                detail: when(shipment.dispatchedAt),
+                label: 'Dispatched',
+                state: 'complete',
+              },
+              {
+                actor: shipment.recipientName ?? short(shipment.recipient),
+                detail: `Received ${shipment.received ?? '0'} / ${shipment.quantity} ${shipment.unit}`,
+                label: stateLabel(shipment),
+                state: Number(shipment.status) >= 2 ? 'complete' : 'current',
+              },
+            ]}
+          />
           <dl className="grid grid-cols-1 gap-[12px] sm:grid-cols-2">
             {[
               [

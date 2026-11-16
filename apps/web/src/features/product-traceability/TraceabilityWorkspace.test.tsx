@@ -101,6 +101,8 @@ it('opens actual recorded stages, reverses their order and leaves missing stages
     </MemoryRouter>,
   );
   expect(await screen.findByText('Actual Supplier')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Actual product', level: 2 })).toBeTruthy();
+  expect(screen.getByText('PROD-1')).toBeTruthy();
   expect(screen.queryByText('never-display')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: /Manufacturer/ }));
   expect(screen.getByText('Actual Manufacturer')).toBeTruthy();
