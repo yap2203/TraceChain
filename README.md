@@ -140,7 +140,8 @@ specialized effects, animations, print styles and runtime/data-dependent inline 
 where needed. Existing media/container breakpoints are retained. To validate styling changes,
 run `npm run test:frontend`, `npm run typecheck` and `npm run build --workspace @tracechain/web`.
 
-Supplier workspaces now use **Ingredient batches** (a searchable ingredient grid), **Order
+Supplier workspaces now use **Ingredient batches** (a searchable inventory with a remembered compact
+List or three-column Grid view), **Order
 requests** (a responsive Manufacturer quantity-request inbox), and **Information requests**
 (separate Received and Sent evidence tables). The request inbox provides calculated status
 summaries, search, workflow filters, sorting and structured review dialogs while keeping wallets and

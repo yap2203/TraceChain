@@ -4,7 +4,11 @@ import {
   Archive,
   Boxes,
   CalendarClock,
+  ChevronDown,
+  ChevronUp,
   FilterX,
+  LayoutGrid,
+  List as ListIcon,
   PackageCheck,
   Pencil,
   Plus,
@@ -39,6 +43,10 @@ import {
 } from '../../shared/ui';
 
 type BatchStatus = 'active' | 'suspended' | 'recalled' | 'expired' | 'archived';
+type IngredientView = 'list' | 'grid';
+
+const INGREDIENT_VIEW_STORAGE_KEY = 'tracechain:supplier-ingredient-view';
+
 type InventoryItem = OrderRecord & {
   active: boolean;
   batch: OrderRecord;
@@ -48,6 +56,7 @@ type InventoryItem = OrderRecord & {
 };
 
 export function IngredientBatches({ onNew }: { onNew: () => void }) {
+  const [view, setView] = useState<IngredientView>(readIngredientView);
   const [data, setData] = useState<OrdersState>();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -59,6 +68,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
   const [status, setStatus] = useState<'all' | BatchStatus>('all');
   const [sort, setSort] = useState('newest');
   const [showArchived, setShowArchived] = useState(false);
+  const [expandedBatchIds, setExpandedBatchIds] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<InventoryItem>();
   const [editing, setEditing] = useState<InventoryItem>();
   const [archiving, setArchiving] = useState<InventoryItem>();
@@ -157,6 +167,24 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
     setStatus('all');
     setSort('newest');
     setShowArchived(false);
+  };
+
+  const toggleExpanded = (batchId: string) => {
+    setExpandedBatchIds((current) => {
+      const next = new Set(current);
+      if (next.has(batchId)) next.delete(batchId);
+      else next.add(batchId);
+      return next;
+    });
+  };
+
+  const changeView = (nextView: IngredientView) => {
+    setView(nextView);
+    try {
+      window.localStorage.setItem(INGREDIENT_VIEW_STORAGE_KEY, nextView);
+    } catch {
+      // Storage can be unavailable in privacy-restricted browsers; the in-memory choice still works.
+    }
   };
 
   const openEdit = (item: InventoryItem) => {
@@ -364,10 +392,33 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
           </div>
 
           <div className="ingredient-results-heading">
-            <strong aria-live="polite">
-              {shown.length} {shown.length === 1 ? 'batch' : 'batches'}
-            </strong>
-            <span>Supplier images and descriptions are presentation information.</span>
+            <div className="ingredient-results-copy">
+              <strong aria-live="polite">
+                {shown.length} {shown.length === 1 ? 'batch' : 'batches'}
+              </strong>
+              <span>Supplier images and descriptions are presentation information.</span>
+            </div>
+            <div className="ingredient-view-selector" role="group" aria-label="Ingredient view">
+              <span>View</span>
+              <button
+                type="button"
+                aria-label="List view"
+                aria-pressed={view === 'list'}
+                onClick={() => changeView('list')}
+              >
+                <ListIcon size={15} aria-hidden="true" />
+                <span>List</span>
+              </button>
+              <button
+                type="button"
+                aria-label="Grid view"
+                aria-pressed={view === 'grid'}
+                onClick={() => changeView('grid')}
+              >
+                <LayoutGrid size={15} aria-hidden="true" />
+                <span>Grid</span>
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -389,7 +440,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
           action={<Btn onClick={clearFilters}>Clear filters</Btn>}
         />
       ) : (
-        <div className="ingredient-grid">
+        <div className={`ingredient-grid ingredient-grid--${view}`}>
           {shown.map((item) => (
             <IngredientCard
               key={item.itemId}
@@ -398,9 +449,12 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
                 (stock) => stock.batchId.toLowerCase() === item.batchId.toLowerCase(),
               )}
               busy={busy}
+              expanded={expandedBatchIds.has(item.batchId)}
+              view={view}
               onDetails={() => setSelected(item)}
               onEdit={() => openEdit(item)}
               onArchive={() => setArchiving(item)}
+              onToggle={() => toggleExpanded(item.batchId)}
               onRestore={() =>
                 void save('ingredient-archive', { batchId: item.batchId, archived: false })
               }
@@ -549,103 +603,210 @@ function IngredientCard({
   item,
   stock,
   busy,
+  expanded,
+  view,
   onDetails,
   onEdit,
   onArchive,
   onRestore,
+  onToggle,
 }: {
   item: InventoryItem;
   stock?: SupplierStock;
   busy: boolean;
+  expanded: boolean;
+  view: IngredientView;
   onDetails: () => void;
   onEdit: () => void;
   onArchive: () => void;
   onRestore: () => void;
+  onToggle: () => void;
 }) {
+  const detailsId = `ingredient-card-details-${item.batchId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const credentialActive = Number(item.credentialStatus) === 1;
+  const listingStatus = statusBadge(item.inventoryStatus);
+
+  const toggleButton = (
+    <button
+      type="button"
+      className="ingredient-card__toggle"
+      aria-expanded={expanded}
+      aria-controls={detailsId}
+      onClick={onToggle}
+    >
+      <span>{expanded ? 'Show less' : 'Show more'}</span>
+      {expanded ? (
+        <ChevronUp size={16} aria-hidden="true" />
+      ) : (
+        <ChevronDown size={16} aria-hidden="true" />
+      )}
+    </button>
+  );
+
+  const primaryActions = (
+    <div className="ingredient-card__primary-actions">
+      <Btn onClick={onDetails}>View details</Btn>
+      {toggleButton}
+    </div>
+  );
+
   return (
-    <article className="ingredient-card">
+    <article
+      className={`ingredient-card ingredient-card--${view}${expanded ? ' is-expanded' : ''}`}
+    >
       <div className="ingredient-card__media">
         <CatalogueImage
           path={item.imagePath}
           category={item.category}
           alt={`Supplier-provided image of ${item.name}`}
         />
-        <div className="ingredient-card__status">
-          <Badge {...statusBadge(item.inventoryStatus)} />
-        </div>
+        {view === 'grid' && (
+          <div className="ingredient-card__status">
+            <Badge {...listingStatus} />
+          </div>
+        )}
       </div>
-      <div className="ingredient-card__body">
-        <div className="ingredient-card__identity">
-          <h3 title={item.name}>{item.name}</h3>
-          <p>{item.batchReference || 'Batch reference unavailable'}</p>
+      {view === 'grid' ? (
+        <div className="ingredient-card__body">
+          <IngredientIdentity item={item} />
+          <dl className="ingredient-card__highlights">
+            <Fact
+              label="Available"
+              value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
+            />
+            <Fact label="Indicative price" value={price(item)} />
+          </dl>
+          <dl className="ingredient-card__dates ingredient-card__dates--collapsed">
+            <Fact label="Expires" value={date(item.batch.expiresAt)} />
+          </dl>
+          <div className="ingredient-card__credential">
+            <span>Credential</span>
+            <CredentialStatus active={credentialActive} />
+          </div>
+          {primaryActions}
         </div>
-        <div className="ingredient-card__meta">
-          <span>{item.category || 'Category unavailable'}</span>
-          {item.countryOfOrigin && <span>{item.countryOfOrigin}</span>}
-        </div>
-        <dl className="ingredient-card__highlights">
-          <Fact
-            label="Available"
-            value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
-          />
-          <Fact label="Indicative price" value={price(item)} />
-        </dl>
-        {stock && <SupplierStockSummary stock={stock} />}
-        <dl className="ingredient-card__dates">
-          <Fact label="Produced" value={date(item.batch.producedAt)} />
-          <Fact label="Expires" value={date(item.batch.expiresAt)} />
-        </dl>
-        {expiryWarning(item.batch.expiresAt) && (
-          <p className="catalogue-warning">{expiryWarning(item.batch.expiresAt)}</p>
-        )}
-        <div className="ingredient-card__credential">
-          <span>Credential</span>
-          <Badge
-            label={Number(item.credentialStatus) === 1 ? 'Active' : 'Status unavailable'}
-            variant={Number(item.credentialStatus) === 1 ? 'verified' : 'pending'}
-            size="xs"
-          />
-        </div>
-        {item.listingSupported === false && (
-          <p className="ingredient-card__notice">
-            Listing controls require the current registry deployment.
-          </p>
-        )}
-        <div className="ingredient-card__actions">
-          <Btn onClick={onDetails}>View details</Btn>
-          <Btn
-            icon={<Pencil size={14} />}
-            variant="outline"
-            size="sm"
-            disabled={busy || !item.listingSupported || item.inventoryStatus === 'archived'}
-            onClick={onEdit}
-          >
-            Edit listing
-          </Btn>
-          {item.inventoryStatus === 'archived' ? (
+      ) : (
+        <>
+          <div className="ingredient-card__list-content">
+            <div className="ingredient-card__list-heading">
+              <IngredientIdentity item={item} />
+              <div className="ingredient-card__list-status" aria-label="Listing status">
+                <span>Listing status</span>
+                <Badge {...listingStatus} />
+              </div>
+            </div>
+            <dl className="ingredient-card__list-metrics">
+              <Fact
+                label="Available quantity"
+                value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
+              />
+              <Fact label="Indicative price" value={price(item)} />
+              <Fact label="Expires" value={date(item.batch.expiresAt)} />
+              <Fact
+                label="Credential status"
+                value={<CredentialStatus active={credentialActive} />}
+              />
+            </dl>
+          </div>
+          {primaryActions}
+        </>
+      )}
+
+      <div
+        id={detailsId}
+        className="ingredient-card__expandable"
+        aria-hidden={!expanded}
+        inert={!expanded || undefined}
+      >
+        <div className="ingredient-card__expandable-inner">
+          <dl className="ingredient-card__expanded-facts">
+            <Fact label="Category" value={item.category || 'Not recorded'} />
+            <Fact label="Country of origin" value={item.countryOfOrigin || 'Not recorded'} />
+            <Fact label="Production date" value={date(item.batch.producedAt)} />
+            <Fact label="Expiry information" value={expiryInformation(item.batch.expiresAt)} />
+            <Fact
+              label="Registered quantity"
+              value={quantity(item.batch.totalQuantity, item.unit, 'Not recorded')}
+            />
+            <Fact
+              label="Available quantity"
+              value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
+            />
+            <Fact
+              label="Credential lifecycle"
+              value={item.evidenceAvailability || (credentialActive ? 'Active' : 'Unavailable')}
+            />
+            <Fact
+              label="Last updated"
+              value={dateValue(item.updatedAt ?? item.listingUpdatedAt ?? item.batch.updatedAt)}
+            />
+          </dl>
+          {stock && <SupplierStockSummary stock={stock} />}
+          {item.listingSupported === false && (
+            <p className="ingredient-card__notice">
+              Listing controls require the current registry deployment.
+            </p>
+          )}
+          <div className="ingredient-card__description">
+            <span>Description</span>
+            <p>{item.description || 'No description provided.'}</p>
+          </div>
+          <div className="ingredient-card__secondary-actions">
             <Btn
-              icon={<RotateCcw size={14} />}
+              icon={<Pencil size={14} />}
               variant="outline"
               size="sm"
-              disabled={busy || !item.listingSupported}
-              onClick={onRestore}
+              disabled={busy || !item.listingSupported || item.inventoryStatus === 'archived'}
+              onClick={onEdit}
             >
-              Restore
+              Edit listing
             </Btn>
-          ) : (
-            <Btn
-              icon={<Archive size={14} />}
-              variant="ghost"
-              size="sm"
-              disabled={busy || !item.listingSupported}
-              onClick={onArchive}
-            >
-              Archive
-            </Btn>
-          )}
+            {item.inventoryStatus === 'archived' ? (
+              <Btn
+                icon={<RotateCcw size={14} />}
+                variant="outline"
+                size="sm"
+                disabled={busy || !item.listingSupported}
+                onClick={onRestore}
+              >
+                Restore
+              </Btn>
+            ) : (
+              <Btn
+                icon={<Archive size={14} />}
+                variant="ghost"
+                size="sm"
+                disabled={busy || !item.listingSupported}
+                onClick={onArchive}
+              >
+                Archive
+              </Btn>
+            )}
+          </div>
         </div>
       </div>
     </article>
+  );
+}
+
+function IngredientIdentity({ item }: { item: InventoryItem }) {
+  return (
+    <div className="ingredient-card__identity">
+      <h3 title={item.name}>{item.name}</h3>
+      <p title={item.batchReference || 'Batch reference unavailable'}>
+        {item.batchReference || 'Batch reference unavailable'}
+      </p>
+    </div>
+  );
+}
+
+function CredentialStatus({ active }: { active: boolean }) {
+  return (
+    <Badge
+      label={active ? 'Active' : 'Status unavailable'}
+      variant={active ? 'verified' : 'pending'}
+      size="xs"
+    />
   );
 }
 
@@ -857,13 +1018,22 @@ function InventorySummaryCard({
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
+function Fact({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
   );
+}
+
+function readIngredientView(): IngredientView {
+  try {
+    const stored = window.localStorage.getItem(INGREDIENT_VIEW_STORAGE_KEY);
+    return stored === 'grid' ? 'grid' : 'list';
+  } catch {
+    return 'list';
+  }
 }
 
 function inventoryStatus(item: OrderRecord): BatchStatus {
@@ -942,6 +1112,15 @@ function date(value: unknown) {
     : 'Not recorded';
 }
 
+function dateValue(value: unknown) {
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed))
+      return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(parsed);
+  }
+  return date(value);
+}
+
 function expiryDays(value: unknown) {
   return Number(value)
     ? Math.ceil((Number(value) * 1_000 - Date.now()) / 86_400_000)
@@ -953,6 +1132,12 @@ function expiryWarning(value: unknown) {
   if (!Number.isFinite(days)) return '';
   if (days < 0) return 'Expired';
   return days <= 30 ? `Expires in ${days} days` : '';
+}
+
+function expiryInformation(value: unknown) {
+  const recordedDate = date(value);
+  const warning = expiryWarning(value);
+  return warning ? `${recordedDate} · ${warning}` : recordedDate;
 }
 
 function numeric(value: unknown, fallback = 0) {

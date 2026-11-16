@@ -22,6 +22,7 @@ const BASE_WORKFLOW = {
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -228,6 +229,122 @@ describe('Supplier ingredient batch workflow', () => {
     ).toBeTruthy();
   });
 
+  it.each([1, 2, 3, 4])(
+    'renders %i ingredient batches as separate compact list rows',
+    async (count) => {
+      mockOrders({
+        actor: BASE_WORKFLOW.supplierWallet,
+        catalogue: Array.from({ length: count }, (_, index) =>
+          catalogueItem({
+            itemId: String(index + 1),
+            name: `Ingredient ${index + 1}`,
+            reference: `BATCH-${index + 1}`,
+          }),
+        ),
+      });
+      const { container } = render(<IngredientBatches onNew={vi.fn()} />);
+
+      await screen.findByText('Ingredient 1');
+      const grid = container.querySelector('.ingredient-grid')!;
+      expect(grid).toBeTruthy();
+      expect(grid.classList.contains('ingredient-grid--list')).toBe(true);
+      const cards = grid.querySelectorAll(':scope > .ingredient-card');
+      expect(cards).toHaveLength(count);
+      expect(grid.querySelectorAll(':scope > .ingredient-card--list')).toHaveLength(count);
+      expect(
+        grid.querySelectorAll(':scope > .ingredient-card .ingredient-card__media'),
+      ).toHaveLength(count);
+      expect(
+        grid.querySelectorAll(':scope > .ingredient-card .ingredient-card__primary-actions'),
+      ).toHaveLength(count);
+    },
+  );
+
+  it('switches views without resetting filters or refetching and restores the saved choice', async () => {
+    const fetchMock = mockOrders({
+      actor: BASE_WORKFLOW.supplierWallet,
+      catalogue: [
+        catalogueItem({ itemId: 'cocoa', name: 'Cocoa Powder', reference: 'COCOA-001' }),
+        catalogueItem({ itemId: 'milk', name: 'Milk Powder', reference: 'MILK-001' }),
+      ],
+    });
+    const page = render(<IngredientBatches onNew={vi.fn()} />);
+
+    await screen.findByRole('heading', { name: 'Cocoa Powder' });
+    expect(screen.getByRole('button', { name: 'List view' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(page.container.querySelector('.ingredient-grid--list')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search batches'), { target: { value: 'COCOA-001' } });
+    fireEvent.click(screen.getByLabelText('Show archived'));
+    fireEvent.click(screen.getByRole('button', { name: 'Grid view' }));
+
+    expect((screen.getByLabelText('Search batches') as HTMLInputElement).value).toBe('COCOA-001');
+    expect((screen.getByLabelText('Show archived') as HTMLInputElement).checked).toBe(true);
+    expect(page.container.querySelector('.ingredient-grid--grid')).toBeTruthy();
+    expect(page.container.querySelectorAll('.ingredient-card--grid')).toHaveLength(1);
+    expect(window.localStorage.getItem('tracechain:supplier-ingredient-view')).toBe('grid');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    page.unmount();
+    const restored = render(<IngredientBatches onNew={vi.fn()} />);
+    await screen.findByRole('heading', { name: 'Cocoa Powder' });
+    expect(screen.getByRole('button', { name: 'Grid view' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(restored.container.querySelector('.ingredient-grid--grid')).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('expands cards independently and preserves expansion while filtering and sorting', async () => {
+    const fetchMock = mockOrders({
+      actor: BASE_WORKFLOW.supplierWallet,
+      catalogue: [
+        catalogueItem({ itemId: 'cocoa', name: 'Cocoa Powder', reference: 'COCOA-001' }),
+        catalogueItem({ itemId: 'milk', name: 'Milk Powder', reference: 'MILK-001' }),
+      ],
+    });
+    render(<IngredientBatches onNew={vi.fn()} />);
+
+    const cocoaHeading = await screen.findByRole('heading', { name: 'Cocoa Powder' });
+    const cocoaCard = cocoaHeading.closest('article')!;
+    const milkCard = screen.getByRole('heading', { name: 'Milk Powder' }).closest('article')!;
+    const cocoaToggle = within(cocoaCard).getByRole('button', { name: 'Show more' });
+    const milkToggle = within(milkCard).getByRole('button', { name: 'Show more' });
+
+    expect(cocoaToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(milkToggle.getAttribute('aria-expanded')).toBe('false');
+    const detailsId = cocoaToggle.getAttribute('aria-controls')!;
+    expect(document.getElementById(detailsId)?.getAttribute('aria-hidden')).toBe('true');
+
+    fireEvent.click(cocoaToggle);
+    expect(within(cocoaCard).getByRole('button', { name: 'Show less' })).toBeTruthy();
+    expect(document.getElementById(detailsId)?.getAttribute('aria-hidden')).toBe('false');
+    expect(within(cocoaCard).getByText('Country of origin')).toBeTruthy();
+    expect(within(cocoaCard).getByText('Registered quantity')).toBeTruthy();
+    expect(within(cocoaCard).getByText('Supplier-provided listing description')).toBeTruthy();
+    expect(within(milkCard).getByRole('button', { name: 'Show more' })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Search batches'), { target: { value: 'MILK-001' } });
+    expect(screen.queryByRole('heading', { name: 'Cocoa Powder' })).toBeNull();
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'name' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+    const restoredCocoaCard = screen
+      .getByRole('heading', { name: 'Cocoa Powder' })
+      .closest('article')!;
+    expect(within(restoredCocoaCard).getByRole('button', { name: 'Show less' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Grid view' }));
+    const gridCocoaCard = screen.getByRole('heading', { name: 'Cocoa Powder' }).closest('article')!;
+    const gridMilkCard = screen.getByRole('heading', { name: 'Milk Powder' }).closest('article')!;
+    expect(gridCocoaCard.classList.contains('ingredient-card--grid')).toBe(true);
+    expect(within(gridCocoaCard).getByRole('button', { name: 'Show less' })).toBeTruthy();
+    expect(within(gridMilkCard).getByRole('button', { name: 'Show more' })).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it('calculates real summaries without combining different quantity units', async () => {
     const wallet = BASE_WORKFLOW.supplierWallet;
     mockOrders({
@@ -332,8 +449,8 @@ describe('Supplier ingredient batch workflow', () => {
 
     expect(screen.getByRole('img', { name: 'Cocoa image placeholder' })).toBeTruthy();
     expect(screen.getByText(longReference)).toBeTruthy();
-    expect(screen.getByText('77 kg')).toBeTruthy();
-    expect(screen.getByText('Expires in 10 days')).toBeTruthy();
+    expect(screen.getAllByText('77 kg')).toHaveLength(2);
+    expect(screen.getByText(/Expires in 10 days/)).toBeTruthy();
     expect(screen.getAllByText('Active').length).toBeGreaterThan(1);
     const gridText = container.querySelector('.ingredient-grid')?.textContent ?? '';
     expect(gridText).not.toContain(wallet);
@@ -400,14 +517,13 @@ describe('Supplier ingredient batch workflow', () => {
 });
 
 function mockOrders({ actor, catalogue }: { actor: string; catalogue: unknown[] }) {
-  vi.stubGlobal(
-    'fetch',
-    vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ actor, catalogue, orders: [], locations: [], shipments: [] }),
-    }),
-  );
+  const fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ actor, catalogue, orders: [], locations: [], shipments: [] }),
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
 }
 
 function catalogueItem({

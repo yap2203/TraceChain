@@ -113,7 +113,13 @@ describe('Supplier ingredient and request management', () => {
     });
     Object.defineProperty(window, 'ethereum', { configurable: true, value: { request: vi.fn() } });
     mount(<OrdersPage role="supplier" mode="manage" initialOrderId="order" />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Arrange ingredient delivery' }));
+    fireEvent.click(
+      await screen.findByRole(
+        'button',
+        { name: 'Arrange ingredient delivery' },
+        { timeout: 3_000 },
+      ),
+    );
     await waitFor(() =>
       expect(api.prepareLogistics).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'arrange-delivery', orderId: 'order' }),
@@ -138,6 +144,7 @@ describe('Supplier ingredient and request management', () => {
       ],
     });
     const grid = mount(<IngredientBatches onNew={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
     await screen.findByText('88 g');
     expect(screen.getByText('Remaining after open requests')).toBeTruthy();
     expect(
@@ -157,6 +164,7 @@ describe('Supplier ingredient and request management', () => {
   it('edits only listing fields and requires confirmation before archiving', async () => {
     mount(<IngredientBatches onNew={vi.fn()} />);
     await screen.findByText('Supplier cocoa');
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit listing' }));
     fireEvent.change(screen.getByLabelText(/Listing name/), {
       target: { value: 'Supplier cocoa listing' },
@@ -211,6 +219,7 @@ describe('Supplier ingredient and request management', () => {
     await screen.findByText('No batches match these filters');
     fireEvent.click(screen.getByLabelText('Show archived'));
     expect(screen.getByText('Supplier cocoa')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
     fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
     await waitFor(() =>
       expect(api.prepareOrder).toHaveBeenCalledWith(
