@@ -125,3 +125,53 @@ it('keeps the sender waiting until pickup is arranged and exposes only sender ha
   expect((handoff as HTMLButtonElement).disabled).toBe(true);
   expect(screen.queryByRole('button', { name: 'Confirm pickup time' })).toBeNull();
 });
+
+it('shows the validated Manufacturer balance for the selected production pickup location', async () => {
+  api.list.mockResolvedValue({ offers: [] });
+  api.orders.mockResolvedValue({
+    actor: sender,
+    role: 'MANUFACTURER',
+    orders: [],
+    catalogue: [
+      {
+        active: true,
+        archived: false,
+        batches: ['fresh-product'],
+        itemId: 'product-item',
+        kind: 2,
+        name: 'Fresh finished product',
+        seller: sender,
+        unit: 'units',
+      },
+    ],
+    locations: [{ company: sender, label: 'Main production floor', location: 'factory' }],
+    logistics: {
+      productStock: [
+        {
+          available: '123',
+          batchId: 'fresh-product',
+          initialized: false,
+          locations: [],
+          productionLocation: 'factory',
+          tracked: false,
+        },
+      ],
+      warehouses: [{ distributor, location: 'warehouse', name: 'Actual Distributor warehouse' }],
+    },
+  });
+  render(
+    <MemoryRouter>
+      <CustodyOffersWorkspace role="manufacturer" />
+    </MemoryRouter>,
+  );
+
+  fireEvent.change(await screen.findByLabelText('Your stock'), {
+    target: { value: 'fresh-product' },
+  });
+  fireEvent.change(screen.getByLabelText('Pickup location'), { target: { value: 'factory' } });
+
+  expect((await screen.findByText(/Available at this pickup location:/)).textContent).toBe(
+    'Available at this pickup location: 123 units',
+  );
+  expect(api.create).not.toHaveBeenCalled();
+});

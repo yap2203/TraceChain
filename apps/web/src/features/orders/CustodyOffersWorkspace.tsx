@@ -119,6 +119,20 @@ export function CustodyOffersWorkspace({
   const warehouses = data?.logistics?.warehouses ?? [];
   const chosenWarehouse = warehouses.find((site) => same(site.location, warehouse));
   const selectedItem = stock.find((item) => same(item.batchId, batch));
+  const selectedProductStock =
+    kind === 2
+      ? data?.logistics?.productStock?.find((item) => same(item.batchId, batch))
+      : undefined;
+  const availableAtPickup =
+    selectedProductStock && from
+      ? selectedProductStock.tracked
+        ? ((selectedProductStock.locations ?? []).find((item: OrderRecord) =>
+            same(item.location, from),
+          )?.available ?? '0')
+        : same(selectedProductStock.productionLocation, from)
+          ? selectedProductStock.available
+          : '0'
+      : undefined;
   const stage = selected
     ? ['REQUESTED', 'ACCEPTED', 'SCHEDULED', 'DISPATCHED', 'RECEIVED'].indexOf(selected.status)
     : -1;
@@ -451,18 +465,26 @@ export function CustodyOffersWorkspace({
                     })),
                   ]}
                 />
-                <SelectField
-                  label="Pickup location"
-                  value={from}
-                  onChange={setFrom}
-                  options={[
-                    { value: '', label: 'Select your registered location' },
-                    ...sites.map((site) => ({
-                      value: site.location,
-                      label: site.label ?? 'Registered location',
-                    })),
-                  ]}
-                />
+                <div className="workspace-offer-field">
+                  <SelectField
+                    label="Pickup location"
+                    value={from}
+                    onChange={setFrom}
+                    options={[
+                      { value: '', label: 'Select your registered location' },
+                      ...sites.map((site) => ({
+                        value: site.location,
+                        label: site.label ?? 'Registered location',
+                      })),
+                    ]}
+                  />
+                  {availableAtPickup !== undefined && selectedItem && (
+                    <p role="status" className="workspace-offer-availability">
+                      Available at this pickup location: <strong>{availableAtPickup}</strong>{' '}
+                      {selectedItem.unit}
+                    </p>
+                  )}
+                </div>
                 <SelectField
                   label="Distributor warehouse"
                   value={warehouse}

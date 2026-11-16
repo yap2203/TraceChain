@@ -52,6 +52,7 @@ const productAbi = [
 ] as const;
 const custodyAbi = [
   'error InvalidInput()',
+  'event InventoryInitialized(bytes32 indexed productBatchId,address indexed manufacturer,uint256 quantity)',
   'event TransferCreated(bytes32 indexed transferId,bytes32 indexed productBatchId,address indexed sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid)',
   'function getTransfer(bytes32) view returns (tuple(bytes32 productBatchId,address sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid,uint64 dispatchedAt,uint64 expectedAt,uint8 status,uint256 usable,uint256 damaged,uint256 rejected))',
   'function getInventory(bytes32,address) view returns (tuple(uint256 available,uint256 reserved,uint256 damaged,uint256 rejected))',
@@ -388,7 +389,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
   async getInventory(batchId: string, holder: string) {
     const [r, events] = await Promise.all([
       this.custody.getInventory(batchId, holder),
-      this.custody.queryFilter(this.custody.filters.TransferCreated(null, batchId, holder)),
+      this.custody.queryFilter(this.custody.filters.InventoryInitialized(batchId)),
     ]);
     const available = BigInt(r.available);
     const reserved = BigInt(r.reserved);

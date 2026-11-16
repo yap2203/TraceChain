@@ -2247,6 +2247,16 @@
   .workspace-offer-facts {
     @apply grid grid-cols-2 gap-[16px] mb-[20px];
   }
+  .workspace-offer-field {
+    @apply grid gap-[6px] min-w-0;
+  }
+  .workspace-offer-availability {
+    @apply m-0 text-[12px];
+    color: var(--c-text2);
+  }
+  .workspace-offer-availability strong {
+    color: var(--c-text);
+  }
   .workspace-offer-facts dt {
     @apply text-[12px] mb-[4px];
     color: var(--c-text2);

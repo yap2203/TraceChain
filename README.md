@@ -6,6 +6,12 @@ Distributor pickup scheduling applies to both custody offers and direct buyer de
 are registered and edited in Profile. See the [role workflow test guide](docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md)
 and [UI review](docs/UI_REFINEMENT.md).
 
+Manufacturer **Send products to custody** shows the validated balance for the selected pickup
+location. For a verifiably untouched product batch, its original quantity is available only at its
+recorded production location. Once custody inventory has been initialized, the actual location
+balance is authoritative, including zero. Creating an offer remains read-only and does not initialize,
+reserve or transfer on-chain stock.
+
 **Product orders:** Retailer requests → Manufacturer approves/rejects → Manufacturer chooses direct
 Distributor delivery or sufficient received Distributor custody → Distributor dispatches → Retailer
 scans and confirms receipt. Manufacturer proof requests use Information requests; Manufacturer now

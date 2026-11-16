@@ -1,6 +1,7 @@
 import { decodeBytes32String } from 'ethers';
 import { encodeShipmentQr } from '@tracechain/shared';
 import type { OrdersGateway, ChainRecord } from './orders.gateway.js';
+import { readProductInventorySnapshot } from './product-inventory.js';
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const unit = (value: string) => {
   try {
@@ -16,12 +17,14 @@ export async function readLogistics(
   reviewSupported = false,
   productDeliverySupported = false,
 ) {
-  const [warehouseEvents, positionEvents, shipmentEvents, productEvents] = await Promise.all([
-    gateway.events('delivery', 'WarehouseRegistered'),
-    gateway.events('delivery', 'CustodyPositionCreated'),
-    gateway.events('delivery', 'RoadShipmentDispatched'),
-    gateway.events('custody', 'TransferCreated'),
-  ]);
+  const [warehouseEvents, positionEvents, shipmentEvents, productEvents, inventoryEvents] =
+    await Promise.all([
+      gateway.events('delivery', 'WarehouseRegistered'),
+      gateway.events('delivery', 'CustodyPositionCreated'),
+      gateway.events('delivery', 'RoadShipmentDispatched'),
+      gateway.events('custody', 'TransferCreated'),
+      gateway.events('custody', 'InventoryInitialized'),
+    ]);
   const warehouses: ChainRecord[] = await Promise.all(
     warehouseEvents.map(async (entry) => ({
       ...(await gateway.read('delivery', 'warehouses', [entry.location])),
@@ -154,15 +157,14 @@ export async function readLogistics(
     .forEach((entry) => productBatches.add(entry.batchId ?? entry.productBatchId));
   const productStock = await Promise.all(
     [...productBatches].map(async (batchId) => {
-      const batch = await gateway.read('products', 'getProduct', [batchId]),
-        stock = await gateway.read('custody', 'getInventory', [batchId, actor]);
-      const tracked = await gateway.read('custody', 'locationTracked', [batchId, actor]);
-      const available =
-        !tracked &&
-        !productEvents.some((event) => (event.productBatchId ?? event.batchId) === batchId) &&
-        same(batch.manufacturer, actor)
-          ? batch.totalQuantity
-          : stock.available;
+      const batch = await gateway.read('products', 'getProduct', [batchId]);
+      const inventory = await readProductInventorySnapshot(
+        gateway,
+        batchId,
+        actor,
+        batch,
+        inventoryEvents,
+      );
       const locationIds = [
         ...new Set(
           shipments
@@ -172,13 +174,14 @@ export async function readLogistics(
       ];
       return {
         batchId,
-        productionLocation: await gateway.read('products', 'productionLocation', [batchId]),
+        productionLocation: inventory.productionLocation,
         producedAt: batch.producedAt,
         unit: unit(batch.unit),
-        available,
-        reserved: stock.reserved,
-        quantity: available,
-        tracked,
+        available: inventory.available,
+        initialized: inventory.initialized,
+        reserved: inventory.inventory.reserved,
+        quantity: inventory.available,
+        tracked: inventory.tracked,
         locations: await Promise.all(
           locationIds.map(async (location) => ({
             location,

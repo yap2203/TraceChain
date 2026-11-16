@@ -9,6 +9,7 @@ const source = '0x1000000000000000000000000000000000000001',
   foreign = '0x3000000000000000000000000000000000000003';
 const batchId = id('batch'),
   from = id('source'),
+  otherFrom = id('other-source'),
   to = id('warehouse'),
   metadataHash = id('signed-batch');
 const input = {
@@ -21,7 +22,15 @@ const input = {
   distributor: carrier,
   expiresAt: Math.floor(Date.now() / 1000) + 7200,
 };
-function fixture() {
+function fixture(
+  options: {
+    inventoryAvailable?: string;
+    inventoryInitialized?: boolean;
+    locationStock?: string;
+    locationTracked?: boolean;
+    totalQuantity?: string;
+  } = {},
+) {
   let actor = source,
     role = CompanyRole.SUPPLIER,
     active = true,
@@ -44,7 +53,13 @@ function fixture() {
   const gateway = {
     chainId: 31337,
     address: source,
-    events: vi.fn(async () => [{ batchId, blockHash: id('registration-block') }]),
+    events: vi.fn(async (_contract: string, event: string) =>
+      event === 'InventoryInitialized'
+        ? options.inventoryInitialized
+          ? [{ batchId, manufacturer: source, quantity: options.totalQuantity ?? '123' }]
+          : []
+        : [{ batchId, blockHash: id('registration-block') }],
+    ),
     prepare: vi.fn(),
     read: vi.fn(async (_contract: string, method: string, args?: any[]) => {
       if (method === 'getBatch' || method === 'getProduct')
@@ -55,14 +70,24 @@ function fixture() {
           metadataHash,
           expiresAt: input.expiresAt + 1000,
           status: 1,
+          totalQuantity: options.totalQuantity ?? '123',
           unit: encodeBytes32String('kg'),
         };
       if (method === 'isAuthorized') return active;
       if (method === 'warehouses') return { distributor: carrier };
-      if (method === 'locationOwner') return args?.[0] === from ? source : carrier;
+      if (method === 'locationOwner')
+        return args?.[0] === from || args?.[0] === otherFrom ? source : carrier;
       if (method === 'getRoadShipment' || method === 'getTransfer') return shipment;
-      if (method === 'locationTracked') return true;
-      if (method === 'locationStock') return '100';
+      if (method === 'locationTracked') return options.locationTracked ?? true;
+      if (method === 'locationStock') return options.locationStock ?? '100';
+      if (method === 'productionLocation') return from;
+      if (method === 'getInventory')
+        return {
+          available: options.inventoryAvailable ?? '0',
+          reserved: '0',
+          damaged: '0',
+          rejected: '0',
+        };
       if (method === 'dispatchLocation') return from;
       if (method === 'receivingLocation') return to;
       return 0;
@@ -111,6 +136,95 @@ function fixture() {
   };
 }
 describe('custody offer, acceptance, pickup and handoff', () => {
+  it('accepts a small offer from a fresh product batch only at its production location', async () => {
+    const f = fixture({
+      inventoryAvailable: '0',
+      inventoryInitialized: false,
+      locationTracked: false,
+      totalQuantity: '123',
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+
+    const result = await f.offers.create('s', {
+      ...input,
+      kind: 2,
+      quantity: '2',
+    });
+    expect(result.offer.quantity).toBe('2');
+    expect(f.prepare).not.toHaveBeenCalled();
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+
+    await expect(
+      f.offers.create('s', {
+        ...input,
+        operationId: crypto.randomUUID(),
+        kind: 2,
+        quantity: '124',
+      }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_STOCK' });
+    await expect(
+      f.offers.create('s', {
+        ...input,
+        operationId: crypto.randomUUID(),
+        kind: 2,
+        quantity: '2',
+        fromLocation: otherFrom,
+      }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_STOCK' });
+  });
+
+  it.each(['0', '1'])(
+    'rejects initialized product inventory with only %s available',
+    async (available) => {
+      const f = fixture({
+        inventoryAvailable: '123',
+        inventoryInitialized: true,
+        locationStock: available,
+        locationTracked: true,
+        totalQuantity: '123',
+      });
+      f.actor(source, CompanyRole.MANUFACTURER);
+
+      await expect(
+        f.offers.create('s', { ...input, kind: 2, quantity: '2' }),
+      ).rejects.toMatchObject({ code: 'INSUFFICIENT_STOCK' });
+    },
+  );
+
+  it('does not assume a zeroed product inventory is fresh when initialization cannot be verified', async () => {
+    const f = fixture({
+      inventoryAvailable: '0',
+      inventoryInitialized: false,
+      locationTracked: false,
+      totalQuantity: '123',
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const events = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, event) => {
+      if (event === 'InventoryInitialized') throw new Error('Inventory event lookup unavailable');
+      return events(contract, event);
+    });
+
+    await expect(f.offers.create('s', { ...input, kind: 2, quantity: '2' })).rejects.toThrow(
+      'Inventory event lookup unavailable',
+    );
+    expect(f.repo.savePrivate).not.toHaveBeenCalled();
+  });
+
+  it('keeps Supplier custody offers bound to IngredientRegistry availability', async () => {
+    const f = fixture({ inventoryAvailable: '0', inventoryInitialized: false });
+    await expect(f.offers.create('s', { ...input, quantity: '100' })).resolves.toMatchObject({
+      offer: { kind: 1, quantity: '100' },
+    });
+    await expect(
+      f.offers.create('s', {
+        ...input,
+        operationId: crypto.randomUUID(),
+        quantity: '101',
+      }),
+    ).rejects.toMatchObject({ code: 'INSUFFICIENT_STOCK' });
+  });
+
   it('expires without a fake stock transaction and rejects a changed chain registration anchor', async () => {
     const f = fixture();
     const { offer } = await f.offers.create('s', input);

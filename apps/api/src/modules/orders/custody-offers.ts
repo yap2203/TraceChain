@@ -4,6 +4,7 @@ import { CompanyRole } from '@tracechain/shared';
 import type { ProductionFlowRepository } from '../production-flow/production-flow.repository.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { OrdersGateway, ChainRecord } from './orders.gateway.js';
+import { readProductAvailableAtLocation } from './product-inventory.js';
 const same = (left?: string, right?: string) =>
   !!left && !!right && left.toLowerCase() === right.toLowerCase();
 export class CustodyOfferError extends Error {
@@ -267,26 +268,18 @@ export class CustodyOffers {
           'The selected route does not belong to the sender and Distributor.',
           403,
         );
-      const tracked =
-        input.kind === 2
-          ? await gateway.read('custody', 'locationTracked', [input.batchId, session.address])
-          : false;
       const available =
         input.kind === 1
           ? batch.availableQuantity
-          : tracked
-            ? await gateway.read('custody', 'locationStock', [
+          : (
+              await readProductAvailableAtLocation(
+                gateway,
                 input.batchId,
                 session.address,
                 input.fromLocation,
-              ])
-            : same(
-                  await gateway.read('products', 'productionLocation', [input.batchId]),
-                  input.fromLocation,
-                )
-              ? (await gateway.read('custody', 'getInventory', [input.batchId, session.address]))
-                  .available
-              : '0';
+                batch,
+              )
+            ).available;
       if (BigInt(input.quantity) > BigInt(available))
         throw new CustodyOfferError(
           'INSUFFICIENT_STOCK',

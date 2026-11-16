@@ -60,6 +60,47 @@ function gateway() {
   } satisfies OrdersGateway;
 }
 describe('on-chain warehouse views', () => {
+  it.each([
+    { initialized: false, expectedAvailable: '123' },
+    { initialized: true, expectedAvailable: '0' },
+  ])(
+    'reports $expectedAvailable available for a zeroed Manufacturer inventory when initialized=$initialized',
+    async ({ initialized, expectedAvailable }) => {
+      const f = gateway(),
+        events = f.events.getMockImplementation()!,
+        read = f.read.getMockImplementation()!;
+      const product = id('fresh-product');
+      f.events.mockImplementation(async (contract, event) => {
+        if (event === 'ProductCreated') return [{ batchId: product, manufacturer }];
+        if (event === 'InventoryInitialized')
+          return initialized ? [{ productBatchId: product, manufacturer, quantity: '123' }] : [];
+        return events(contract, event);
+      });
+      f.read.mockImplementation(async (contract, method, args) => {
+        if (method === 'getProduct')
+          return {
+            manufacturer,
+            producedAt: 1_800_000_000,
+            totalQuantity: '123',
+            unit: encodeBytes32String('units'),
+          };
+        if (method === 'getInventory')
+          return { available: '0', reserved: '0', damaged: '0', rejected: '0' };
+        if (method === 'locationTracked') return false;
+        if (method === 'productionLocation') return location;
+        return read(contract, method, args);
+      });
+
+      expect((await readLogistics(f, manufacturer)).productStock[0]).toMatchObject({
+        available: expectedAvailable,
+        initialized,
+        productionLocation: location,
+        quantity: expectedAvailable,
+        tracked: false,
+      });
+    },
+  );
+
   it('keeps reserved/in-transit products out of available physical warehouse quantity', async () => {
     const f = gateway(),
       events = f.events.getMockImplementation()!,

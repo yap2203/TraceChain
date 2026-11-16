@@ -1,5 +1,19 @@
 # Project Progress
 
+## 2026-11-16 — Fresh product custody-offer inventory fix
+
+- Fixed Manufacturer custody offers for a newly created product batch whose custody inventory has
+  not yet been initialized. The original product quantity is considered available only when the
+  initialization event is verifiably absent, the authenticated holder is the Manufacturer and the
+  selected pickup is the recorded production location.
+- Initialized inventory now always uses its actual location balance, including zero. Failed
+  initialization-history reads fail closed rather than treating a batch as fresh. Supplier custody
+  offers keep their existing ingredient-availability path, and offer creation remains read-only.
+- The Manufacturer offer form now shows the validated available units at the selected pickup using
+  the existing logistics response. Regression coverage includes fresh 123-unit acceptance of 2,
+  excess and wrong-location rejection, initialized zero/insufficient stock and unchanged Supplier
+  behavior.
+
 ## 2026-11-16 — Single traceability flow
 
 - Removed both direction buttons and their unused state/styles. The batch selector uses the available width; stage details and evidence requests remain accessible. Supplier/Manufacturer/Distributor use forward order, Retailer uses backward order.
