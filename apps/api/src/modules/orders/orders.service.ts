@@ -7,7 +7,9 @@ import {
   solidityPackedKeccak256,
   ZeroAddress,
   ZeroHash,
+  verifyMessage,
 } from 'ethers';
+import { companyLogoBindingMessage } from '@tracechain/shared';
 import type { IngredientBatchWorkflowRepository } from '../ingredient-batches/ingredient-batch.repository.js';
 import {
   CompanyRole,
@@ -975,10 +977,23 @@ export class OrdersService {
       async (wallets) => {
         const identities = (await this.directory?.resolveMany(wallets)) ?? [];
         return new Map(
-          identities.map((identity) => [
-            identity.walletAddress.toLowerCase(),
-            identity.companyName,
-          ]),
+          await Promise.all(
+            identities.map(
+              async (identity) =>
+                [
+                  identity.walletAddress.toLowerCase(),
+                  {
+                    companyName: identity.companyName,
+                    logoPath: (await this.companyLogoRecord(
+                      identity.walletAddress,
+                      identity.applicationId,
+                    ))
+                      ? `/branding/${getAddress(identity.walletAddress)}/logo`
+                      : undefined,
+                  },
+                ] as const,
+            ),
+          ),
         );
       },
     );
@@ -1602,6 +1617,68 @@ export class OrdersService {
     };
   }
 
+  async savePendingCompanyLogo(input: {
+    applicationId: string;
+    applicantWallet: string;
+    profileHash: string;
+    logoSignature: string;
+    logo: CatalogueImageInput;
+  }) {
+    const applicantWallet = getAddress(input.applicantWallet);
+    const image = validateImage(input.logo);
+    const logoDigest = id(`${image.mimeType}:${image.data}`);
+    let recovered: string;
+    try {
+      recovered = getAddress(
+        verifyMessage(
+          companyLogoBindingMessage({
+            applicationId: input.applicationId,
+            applicantWallet,
+            profileHash: input.profileHash,
+            logoDigest,
+          }),
+          input.logoSignature,
+        ),
+      );
+    } catch {
+      throw new OrdersError(
+        'COMPANY_LOGO_SIGNATURE_INVALID',
+        'The company logo binding signature is invalid.',
+        400,
+      );
+    }
+    if (!same(recovered, applicantWallet))
+      throw new OrdersError(
+        'COMPANY_LOGO_SIGNATURE_INVALID',
+        'The company logo must be signed by the applicant wallet.',
+        403,
+      );
+    await this.replacePresentationRecord(
+      pendingCompanyLogoKey(input.applicationId),
+      applicantWallet,
+      {
+        version: 1,
+        applicationId: input.applicationId.toLowerCase(),
+        applicantWallet,
+        image,
+      },
+    );
+  }
+
+  async hasPendingCompanyLogo(applicationId: string, applicantWallet: string) {
+    return Boolean(await this.pendingCompanyLogoRecord(applicationId, applicantWallet));
+  }
+
+  async pendingCompanyLogo(applicationId: string, applicantWallet: string) {
+    const record = await this.pendingCompanyLogoRecord(applicationId, applicantWallet);
+    if (!record) throw new OrdersError('MEDIA_NOT_FOUND', 'Company logo was not found.', 404);
+    const stored = await this.decodeCompanyLogo(record, true);
+    return {
+      ...stored,
+      fileName: `company-${createHash('sha256').update(applicationId.toLowerCase()).digest('hex').slice(0, 16)}.${extensionFor(stored.mimeType)}`,
+    };
+  }
+
   async myBranding(sessionId: string | undefined) {
     const session = await this.authorizedSession(sessionId);
     const identity = await this.directory?.resolve(session.address);
@@ -1611,17 +1688,11 @@ export class OrdersService {
         'A current verified company identity is required.',
         403,
       );
-    const logo = await this.repository.findPrivate(
-      'products',
-      mediaKey('company', session.address),
-    );
+    const logo = await this.companyLogoRecord(session.address, identity.applicationId);
     return {
       branding: {
         companyName: identity.companyName,
-        logoPath:
-          logo && same(logo.owner, session.address)
-            ? `/branding/${getAddress(session.address)}/logo`
-            : undefined,
+        logoPath: logo ? `/branding/${getAddress(session.address)}/logo` : undefined,
         role: identity.role,
       },
     };
@@ -1636,8 +1707,26 @@ export class OrdersService {
     let owner: string;
     if (kind === 'company') {
       owner = getAddress(reference);
-      if (!(await this.directory?.resolve(owner)))
+      const identity = await this.directory?.resolve(owner);
+      if (!identity)
         throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+      const record = await this.companyLogoRecord(owner, identity.applicationId);
+      if (!record) throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+      try {
+        const stored = await this.decodeCompanyLogo(
+          record,
+          record.id !== mediaKey('company', owner),
+        );
+        return {
+          bytes: stored.bytes,
+          contentHash: record.contentHash,
+          fileName: `${kind}-${createHash('sha256').update(reference.toLowerCase()).digest('hex').slice(0, 16)}.${extensionFor(stored.mimeType)}`,
+          mimeType: stored.mimeType,
+        };
+      } catch (error) {
+        if (error instanceof OrdersError) throw error;
+        throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+      }
     } else {
       const batch = await this.gateway.read('ingredients', 'getBatch', [reference]);
       owner = batch.supplier;
@@ -1659,6 +1748,30 @@ export class OrdersService {
       if (error instanceof OrdersError) throw error;
       throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
     }
+  }
+
+  private async pendingCompanyLogoRecord(applicationId: string, applicantWallet: string) {
+    const record = await this.repository.findPrivate(
+      'products',
+      pendingCompanyLogoKey(applicationId),
+    );
+    return record && same(record.owner, applicantWallet) ? record : undefined;
+  }
+
+  private async companyLogoRecord(wallet: string, applicationId?: string) {
+    const active = await this.repository.findPrivate('products', mediaKey('company', wallet));
+    if (active && same(active.owner, wallet)) return active;
+    return applicationId ? this.pendingCompanyLogoRecord(applicationId, wallet) : undefined;
+  }
+
+  private async decodeCompanyLogo(
+    record: Awaited<ReturnType<ProductionFlowRepository['findPrivate']>>,
+    pending = false,
+  ) {
+    if (!record) throw new OrdersError('MEDIA_NOT_FOUND', 'Company logo was not found.', 404);
+    const stored = JSON.parse(await this.store.decrypt(record.payload));
+    const image = pending || stored?.image ? stored.image : stored;
+    return decodeStoredCatalogueImage(image);
   }
   async state(sessionId?: string) {
     const session = await this.session(sessionId);
@@ -2033,7 +2146,11 @@ export class OrdersService {
           []),
       ]),
     ];
-    const identities = (await this.directory?.resolveMany(wallets)) ?? [];
+    const directoryCompanies = (await this.directory?.list()) ?? [];
+    const identities =
+      (await this.directory?.resolveMany([
+        ...new Set([...wallets, ...directoryCompanies.map((company) => company.walletAddress)]),
+      ])) ?? [];
     const name = (wallet: string) =>
       identities.find((identity) => same(identity.walletAddress, wallet))?.companyName;
     const role = (wallet: string) =>
@@ -2041,12 +2158,8 @@ export class OrdersService {
     const logoWallets = new Set<string>();
     await Promise.all(
       identities.map(async (identity) => {
-        const logo = await this.repository.findPrivate(
-          'products',
-          mediaKey('company', identity.walletAddress),
-        );
-        if (logo && same(logo.owner, identity.walletAddress))
-          logoWallets.add(identity.walletAddress.toLowerCase());
+        const logo = await this.companyLogoRecord(identity.walletAddress, identity.applicationId);
+        if (logo) logoWallets.add(identity.walletAddress.toLowerCase());
       }),
     );
     return {
@@ -2095,7 +2208,13 @@ export class OrdersService {
             shipments: logistics.shipments.map((shipment) => ({
               ...shipment,
               senderName: name(shipment.sender),
+              senderLogoPath: logoWallets.has(shipment.sender.toLowerCase())
+                ? `/branding/${getAddress(shipment.sender)}/logo`
+                : undefined,
               recipientName: name(shipment.recipient),
+              recipientLogoPath: logoWallets.has(shipment.recipient.toLowerCase())
+                ? `/branding/${getAddress(shipment.recipient)}/logo`
+                : undefined,
               itemName: catalogue.find((item) =>
                 item.batches.some((batch: string) => same(batch, shipment.batchId)),
               )?.name,
@@ -2108,21 +2227,27 @@ export class OrdersService {
           }
         : undefined,
       companies: warehouseSupported
-        ? ((await this.directory?.list()) ?? []).map((company) => ({
+        ? directoryCompanies.map((company) => ({
             wallet: company.walletAddress,
             companyName: company.companyName,
             role: company.role,
+            logoPath: logoWallets.has(company.walletAddress.toLowerCase())
+              ? `/branding/${getAddress(company.walletAddress)}/logo`
+              : undefined,
           }))
         : undefined,
       chainId: this.gateway.chainId,
       ordersAddress: this.gateway.address,
       distributors:
         ingredientDeliverySupported && session.role === CompanyRole.SUPPLIER
-          ? ((await this.directory?.list()) ?? [])
+          ? directoryCompanies
               .filter((identity) => identity.active && identity.role === CompanyRole.DISTRIBUTOR)
               .map((identity) => ({
                 wallet: identity.walletAddress,
                 companyName: identity.companyName,
+                logoPath: logoWallets.has(identity.walletAddress.toLowerCase())
+                  ? `/branding/${getAddress(identity.walletAddress)}/logo`
+                  : undefined,
               }))
           : [],
       ...(session.role === CompanyRole.SUPPLIER
@@ -2185,16 +2310,34 @@ export class OrdersService {
       orders: orders.map((order) => ({
         ...order,
         buyerName: name(order.buyer),
+        buyerLogoPath: logoWallets.has(order.buyer.toLowerCase())
+          ? `/branding/${getAddress(order.buyer)}/logo`
+          : undefined,
         sellerName: name(order.seller),
+        sellerLogoPath: logoWallets.has(order.seller.toLowerCase())
+          ? `/branding/${getAddress(order.seller)}/logo`
+          : undefined,
         delivery: order.delivery
-          ? { ...order.delivery, distributorName: name(order.delivery.distributor) }
+          ? {
+              ...order.delivery,
+              distributorName: name(order.delivery.distributor),
+              distributorLogoPath: logoWallets.has(order.delivery.distributor.toLowerCase())
+                ? `/branding/${getAddress(order.delivery.distributor)}/logo`
+                : undefined,
+            }
           : undefined,
         deliveryQr: order.delivery ? this.deliveryQr(order.orderId) : undefined,
       })),
       shipments: shipments.map((shipment): ChainRecord => ({
         ...shipment,
         senderName: name(shipment.sender),
+        senderLogoPath: logoWallets.has(shipment.sender.toLowerCase())
+          ? `/branding/${getAddress(shipment.sender)}/logo`
+          : undefined,
         recipientName: name(shipment.recipient),
+        recipientLogoPath: logoWallets.has(shipment.recipient.toLowerCase())
+          ? `/branding/${getAddress(shipment.recipient)}/logo`
+          : undefined,
       })),
       locations: safeLocations,
     };
@@ -3150,6 +3293,10 @@ export class OrdersService {
 
 function mediaKey(kind: 'company' | 'ingredient', reference: string) {
   return id(`catalogue-media:${kind}:${reference.toLowerCase()}`);
+}
+
+function pendingCompanyLogoKey(applicationId: string) {
+  return id(`pending-company-logo:${applicationId.toLowerCase()}`);
 }
 
 function validateImage(input: CatalogueImageInput) {

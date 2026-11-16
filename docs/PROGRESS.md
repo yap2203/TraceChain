@@ -1,5 +1,20 @@
 # Project Progress
 
+## 2026-11-16 — Application-bound company branding
+
+- Added an optional Company logo field to registration, separate from supporting documents, with
+  PNG/JPEG/WebP selection, 2 MB client guidance, preview, replace/remove and review-screen preview.
+  Registration remains valid without a logo.
+- Bound pending branding to the exact application ID, applicant wallet, profile hash and image
+  digest using an applicant MetaMask signature. The API validates the actual image bytes, encrypts
+  the media through the existing off-chain content store and exposes it only to authorized Admin
+  application review until the same application becomes the stakeholder's active verified identity.
+  Pending or rejected logos remain unavailable through normal stakeholder branding routes.
+- Reused `CompanyAvatar` with initials fallback in workspace headers, company identity, catalogues,
+  product/ingredient details, order and shipment lists/details, Admin application review and
+  authenticated business traceability. Approved-company upload/replace behavior is preserved; no
+  logo was added to the public QR page and no contract, credential claim or authorization rule changed.
+
 ## 2026-11-16 — Shared stakeholder record layouts and media loading
 
 - Standardized stakeholder inventory lists/details, shipment summaries/details and real-state status

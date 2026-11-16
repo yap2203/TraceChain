@@ -1,6 +1,6 @@
 import { CompanyRole } from '@tracechain/shared';
 import type { NextFunction, Request, Response } from 'express';
-import { ZodError } from 'zod';
+import { z, ZodError } from 'zod';
 import { id } from 'ethers';
 
 import type { AuthService } from '../auth/auth.service.js';
@@ -8,6 +8,8 @@ import type { BlockchainGateway } from './blockchain-gateway.service.js';
 import type { ApplicationMetadataRepository } from './application-metadata.repository.js';
 import type { CompanyRoleIssuanceRepository } from '../ssi/issuance.repository.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
+import { OrdersError } from '../orders/orders.service.js';
+import type { CatalogueImageInput } from '../orders/catalogue-media.js';
 import {
   applicationTransactionSchema,
   credentialLifecycleTransactionSchema,
@@ -95,6 +97,20 @@ export class BlockchainController {
     private readonly applicationMetadata: ApplicationMetadataRepository,
     private readonly issuanceRepository: CompanyRoleIssuanceRepository,
     private readonly stakeholderDirectory?: StakeholderDirectory,
+    private readonly applicationBranding?: {
+      savePendingCompanyLogo(input: {
+        applicationId: string;
+        applicantWallet: string;
+        profileHash: string;
+        logoSignature: string;
+        logo: CatalogueImageInput;
+      }): Promise<void>;
+      hasPendingCompanyLogo(applicationId: string, applicantWallet: string): Promise<boolean>;
+      pendingCompanyLogo(
+        applicationId: string,
+        applicantWallet: string,
+      ): Promise<{ bytes: Buffer; mimeType: string; fileName: string }>;
+    },
   ) {}
 
   listApplications = async (request: Request, response: Response, next: NextFunction) => {
@@ -103,10 +119,24 @@ export class BlockchainController {
       const applications = await this.gateway.listApplications();
       response.json({
         applications: await Promise.all(
-          applications.map(async (application) => ({
-            ...application,
-            ...(await this.applicationMetadata.find(application.id)),
-          })),
+          applications.map(async (application) => {
+            const metadata = await this.applicationMetadata.find(application.id);
+            const hasPendingLogo = Boolean(
+              metadata?.applicantWallet &&
+              application.applicant.toLowerCase() === metadata.applicantWallet.toLowerCase() &&
+              (await this.applicationBranding?.hasPendingCompanyLogo(
+                application.id,
+                application.applicant,
+              )),
+            );
+            return {
+              ...application,
+              ...metadata,
+              pendingLogoPath: hasPendingLogo
+                ? `/api/blockchain/applications/${application.id}/logo`
+                : undefined,
+            };
+          }),
         ),
       });
     } catch (error) {
@@ -369,18 +399,75 @@ export class BlockchainController {
       const input = applicationTransactionSchema.parse(request.body);
       await this.applicationMetadata.save({
         applicationId: input.applicationId,
+        applicantWallet: input.applicantWallet,
         companyName: input.companyName,
         companyRegistrationNumber: input.companyRegistrationNumber,
         initialLocationName: input.initialLocationName,
         profileHash: input.profileHash,
       });
+      if (input.logo && input.applicantWallet && input.logoSignature) {
+        if (!this.applicationBranding)
+          throw new BlockchainApiError(
+            'COMPANY_BRANDING_UNAVAILABLE',
+            'Company logo storage is unavailable.',
+            503,
+          );
+        await this.applicationBranding.savePendingCompanyLogo({
+          applicationId: input.applicationId,
+          applicantWallet: input.applicantWallet,
+          logo: input.logo,
+          logoSignature: input.logoSignature,
+          profileHash: input.profileHash,
+        });
+      }
       const {
+        applicantWallet: _applicantWallet,
         companyName: _companyName,
         companyRegistrationNumber: _registrationNumber,
         initialLocationName: _initialLocation,
+        logo: _logo,
+        logoSignature: _logoSignature,
         ...transactionInput
       } = input;
       response.json(this.gateway.prepareApplication(transactionInput));
+    } catch (error) {
+      this.handleError(error, response, next);
+    }
+  };
+
+  getApplicationLogo = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      await this.requireAdministrator(request);
+      if (!this.applicationBranding)
+        throw new BlockchainApiError(
+          'COMPANY_BRANDING_UNAVAILABLE',
+          'Company logo storage is unavailable.',
+          503,
+        );
+      const applicationId = z
+        .string()
+        .regex(/^0x[0-9a-fA-F]{64}$/)
+        .parse(request.params.applicationId);
+      const application = (await this.gateway.listApplications()).find(
+        (record) => record.id.toLowerCase() === applicationId.toLowerCase(),
+      );
+      const metadata = await this.applicationMetadata.find(applicationId);
+      if (
+        !application ||
+        !metadata?.applicantWallet ||
+        application.applicant.toLowerCase() !== metadata.applicantWallet.toLowerCase()
+      )
+        throw new BlockchainApiError('MEDIA_NOT_FOUND', 'Company logo was not found.', 404);
+      const logo = await this.applicationBranding.pendingCompanyLogo(
+        applicationId,
+        application.applicant,
+      );
+      response.setHeader('Cache-Control', 'private, no-store');
+      response.setHeader('Content-Type', logo.mimeType);
+      response.setHeader('Content-Disposition', `inline; filename="${logo.fileName}"`);
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      response.send(logo.bytes);
     } catch (error) {
       this.handleError(error, response, next);
     }
@@ -448,6 +535,10 @@ export class BlockchainController {
       return;
     }
     if (error instanceof BlockchainApiError) {
+      response.status(error.status).json({ error: { code: error.code, message: error.message } });
+      return;
+    }
+    if (error instanceof OrdersError) {
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
       return;
     }

@@ -13,6 +13,7 @@ import {
 } from './workspace-navigation';
 import { WorkspaceGuide } from './WorkspaceGuide';
 import './workspace.css';
+import { CompanyAvatar } from '../orders/CatalogueMedia';
 
 interface WorkspaceLayoutProps {
   role: WorkspaceRole;
@@ -24,6 +25,7 @@ interface WorkspaceLayoutProps {
   identity?: {
     companyName: string;
     credentialStatus: string;
+    logoPath?: string;
     role: CompanyRole | WorkspaceRole;
     walletAddress: string;
   };
@@ -161,7 +163,12 @@ export function WorkspaceLayout({
               {current?.[1] ?? 'Page not found'}
             </h1>
             <span className="workspace-status">{status}</span>
-            {identity && <span className="workspace-company">{identity.companyName}</span>}
+            {identity && (
+              <span className="workspace-company">
+                <CompanyAvatar name={identity.companyName} logoPath={identity.logoPath} size="sm" />
+                <span>{identity.companyName}</span>
+              </span>
+            )}
             <button
               className="workspace-theme"
               aria-label={light ? 'Use dark theme' : 'Use light theme'}

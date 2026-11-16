@@ -257,7 +257,16 @@ export function RequestsOverview({
                 return (
                   <TR key={entry.orderId}>
                     <TD bold>{item?.name ?? 'Item name unavailable'}</TD>
-                    <TD>{counterpartyName(entry, actor)}</TD>
+                    <TD>
+                      <span className="workspace-company-cell">
+                        <CompanyAvatar
+                          name={counterpartyName(entry, actor)}
+                          logoPath={counterpartyLogoPath(entry, actor)}
+                          size="sm"
+                        />
+                        {counterpartyName(entry, actor)}
+                      </span>
+                    </TD>
                     <TD>
                       {entry.requested} {item?.unit ?? ''}
                     </TD>
@@ -288,7 +297,14 @@ export function RequestsOverview({
                     <h4>{item?.name ?? 'Item name unavailable'}</h4>
                     <Badge label={state.label} variant={state.variant} />
                   </div>
-                  <p>{counterpartyName(entry, actor)}</p>
+                  <p className="workspace-company-cell">
+                    <CompanyAvatar
+                      name={counterpartyName(entry, actor)}
+                      logoPath={counterpartyLogoPath(entry, actor)}
+                      size="sm"
+                    />
+                    {counterpartyName(entry, actor)}
+                  </p>
                   <p>
                     <strong>
                       {entry.requested} {item?.unit ?? ''}
@@ -366,7 +382,7 @@ function SupplierRequestCard({
             <span>Batch reference: {item?.batchReference || 'Not disclosed'}</span>
           </div>
           <div className="supplier-request-company">
-            <CompanyAvatar name={manufacturer} size="lg" />
+            <CompanyAvatar name={manufacturer} logoPath={entry.buyerLogoPath} size="lg" />
             <div>
               <span>Manufacturer</span>
               <strong>{manufacturer}</strong>
@@ -616,4 +632,8 @@ function counterpartyName(order: OrderRecord, actor: string) {
   return same(order.seller, actor)
     ? (order.buyerName ?? 'Company name unavailable')
     : (order.sellerName ?? 'Company name unavailable');
+}
+
+function counterpartyLogoPath(order: OrderRecord, actor: string) {
+  return same(order.seller, actor) ? order.buyerLogoPath : order.sellerLogoPath;
 }

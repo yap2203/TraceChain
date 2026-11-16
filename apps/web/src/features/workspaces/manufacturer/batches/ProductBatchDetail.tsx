@@ -1,6 +1,7 @@
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useState } from 'react';
 import { getOrders, type OrderRecord } from '../../../orders/orders.api';
+import { CompanyAvatar } from '../../../orders/CatalogueMedia';
 
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import {
@@ -119,11 +120,18 @@ export function ProductBatchDetail({
       </div>
       <Card>
         <h3>Product batch summary</h3>
+        <div className="workspace-company-cell mb-[16px]">
+          <CompanyAvatar
+            name={p.manufacturerName ?? 'Verified Manufacturer'}
+            logoPath={catalogueItem?.sellerLogoPath}
+            size="lg"
+          />
+          <strong>{p.manufacturerName ?? 'Verified Manufacturer'}</strong>
+        </div>
         <div className="workspace-record-facts">
           {[
             ['Batch reference', batchReference],
             ['Status', recordStatuses[p.status] ?? 'Unknown'],
-            ['Manufacturer', p.manufacturerName ?? 'Verified Manufacturer'],
             ['Quantity produced', formatOperationalQuantity(p.totalQuantity, p.unit)],
             ['Produced', chainDate(p.producedAt)],
             ['Expires', chainDate(p.expiresAt)],
@@ -183,8 +191,20 @@ export function ProductBatchDetail({
                   shortChainId(i.batchId)}
               </TD>
               <TD>
-                {ingredients.find((item) => item.batches?.includes(i.batchId))?.sellerName ??
-                  'Unavailable'}
+                <span className="workspace-company-cell">
+                  <CompanyAvatar
+                    name={
+                      ingredients.find((item) => item.batches?.includes(i.batchId))?.sellerName ??
+                      'Unavailable'
+                    }
+                    logoPath={
+                      ingredients.find((item) => item.batches?.includes(i.batchId))?.sellerLogoPath
+                    }
+                    size="sm"
+                  />
+                  {ingredients.find((item) => item.batches?.includes(i.batchId))?.sellerName ??
+                    'Unavailable'}
+                </span>
               </TD>
               <TD>
                 {formatOperationalQuantity(

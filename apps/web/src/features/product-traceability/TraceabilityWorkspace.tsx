@@ -20,6 +20,7 @@ import {
 import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { recordStatuses, shortChainId } from '../workspaces/shared/operational-format';
+import { CompanyAvatar } from '../orders/CatalogueMedia';
 
 const fields: Record<string, string> = {
   name: 'Ingredient',
@@ -224,9 +225,26 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
                               <div key={key}>
                                 <dt>{fields[key]}</dt>
                                 <dd>
-                                  {key === 'reference' && /^0x/.test(String(value))
-                                    ? shortChainId(String(value))
-                                    : valueFor(key, value)}
+                                  {[
+                                    'supplier',
+                                    'company',
+                                    'sender',
+                                    'recipient',
+                                    'distributor',
+                                  ].includes(key) ? (
+                                    <span className="workspace-company-cell">
+                                      <CompanyAvatar
+                                        name={String(value)}
+                                        logoPath={record[`${key}LogoPath`]}
+                                        size="sm"
+                                      />
+                                      {String(value)}
+                                    </span>
+                                  ) : key === 'reference' && /^0x/.test(String(value)) ? (
+                                    shortChainId(String(value))
+                                  ) : (
+                                    valueFor(key, value)
+                                  )}
                                 </dd>
                               </div>
                             ))}

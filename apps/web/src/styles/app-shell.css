@@ -661,8 +661,43 @@
     @apply text-[length:0.75rem] leading-[1.6];
   }
   .registration-field--wide,
-  .wallet-field {
+  .wallet-field,
+  .registration-logo-field {
     grid-column: 1 / -1;
+  }
+  .registration-logo-field {
+    @apply grid gap-[8px] p-[16px] rounded-[var(--radius-medium)];
+    border: 1px solid var(--color-border-strong);
+    background: #07111e;
+  }
+  .registration-logo-field__content {
+    @apply flex items-center gap-[16px] min-w-0;
+  }
+  .registration-logo-field__content p,
+  .registration-logo-field > small {
+    @apply m-0 text-[length:0.66rem];
+    color: var(--color-text-muted);
+  }
+  .registration-logo-field__actions {
+    @apply flex flex-wrap gap-[8px] mt-[8px];
+  }
+  .registration-logo-field__actions label {
+    @apply relative cursor-pointer;
+  }
+  .registration-logo-field__actions input {
+    @apply absolute w-[1px] h-[1px] opacity-0;
+    overflow: hidden;
+  }
+  .registration-logo-preview {
+    @apply grid place-items-center shrink-0 overflow-hidden w-[88px] h-[88px] rounded-[18px] font-extrabold;
+    color: #02151a;
+    background: var(--color-primary);
+  }
+  .registration-logo-preview img {
+    @apply w-full h-full object-cover;
+  }
+  .registration-logo-preview--review {
+    @apply w-[64px] h-[64px] rounded-[14px];
   }
   .registration-form textarea {
     @apply min-h-[90px] resize-y;
@@ -778,6 +813,9 @@
     color: #dbe5ee;
     @apply text-[length:0.78rem];
     overflow-wrap: anywhere;
+  }
+  .registration-review-logo dd {
+    @apply flex items-center gap-[12px];
   }
   .registration-declaration {
     @apply flex items-start gap-[0.75rem] mt-[1.25rem] p-[1rem];
@@ -951,6 +989,9 @@
     .registration-form .field:first-child,
     .registration-form .ui-button {
       grid-column: auto;
+    }
+    .registration-logo-field__content {
+      @apply items-start flex-col;
     }
 
     .registration-progress strong {

@@ -216,11 +216,15 @@ indicative price per registered unit and a three-letter currency code; existing 
 unavailable until recorded in new registration metadata.
 
 Suppliers can upload one optional PNG/JPEG/WebP catalogue image per owned ingredient batch, and a
-verified company can upload its own optional logo, each limited to 2 MB. These files are validated,
-encrypted and stored through the existing off-chain content abstraction. Catalogue responses expose
-authenticated media routes rather than storage CIDs or ciphertext. Images and prices are
-Supplier-provided presentation data and are not credential claims or independent physical-quality
-evidence.
+verified company can upload or replace its own optional logo, each limited to 2 MB. Company
+registration also accepts an optional logo separately from supporting documents. The applicant
+signs a binding over the exact application ID, wallet, profile hash and logo digest; the API checks
+the actual image bytes and stores the pending logo encrypted off-chain. It is visible only to an
+authorized Admin during review and becomes available through authenticated stakeholder branding
+routes only after that exact application is active. Rejected and still-pending logos are not exposed
+to other stakeholders. Catalogue responses expose authenticated media routes rather than storage
+CIDs or ciphertext. Images and prices are presentation data, not credential claims or independent
+physical-quality evidence. The public QR traceability page does not display company logos.
 
 The receiver of a quantity request can request Company Identity Proof before sharing evidence.
 New request-linked company proofs use an authority-derived SD-JWT attestation tied to the existing
@@ -323,7 +327,7 @@ The current version includes a responsive React application, five stakeholder wo
 
 | Area                                     | Status                                                                                       |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Public login and company-registration UI | Three-step onboarding UI implemented; final API submission is not connected                  |
+| Public login and company-registration UI | Three-step onboarding submits real local applications; optional logo is encrypted off-chain  |
 | MetaMask and ERC-4361 authentication     | Environment-driven; local chain 31337 for testing and Sepolia as the public target           |
 | Nonce and session storage                | Implemented in process memory for development                                                |
 | Stakeholder workspace UI                 | Admin, custody receipt, and Supplier batch registration use authenticated services           |
@@ -446,7 +450,7 @@ Distributor's SSI credential.
 
 MetaMask can add the configured local network automatically. Hardhat account 0 is the deployed System Admin; use a different generated account to test a new company application because an active administrator cannot submit a stakeholder application. Hardhat development private keys are public test keys and must never be funded or reused on a public network.
 
-The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. The API durably retains the submitted company name and registration number, bound to the application ID and profile hash, so the Admin issuance form is populated automatically. During this local-only phase the contract still records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
+The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. The API durably retains the submitted company name and registration number, bound to the application ID and profile hash, so the Admin issuance form is populated automatically. An optional company logo is separately signed by the applicant, byte-validated and encrypted; it is not part of the supporting-document bundle or an on-chain credential claim. During this local-only phase the contract still records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
 
 ### Environment variables
 

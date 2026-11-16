@@ -1,4 +1,5 @@
-export type ApplicationStatus = 'pending' | 'additional evidence required' | 'approved' | 'rejected' | 'withdrawn';
+export type ApplicationStatus =
+  'pending' | 'additional evidence required' | 'approved' | 'rejected' | 'withdrawn';
 
 export interface ChainApplication {
   companyName?: string;
@@ -7,6 +8,7 @@ export interface ChainApplication {
   encryptedProfileCid: string;
   id: string;
   previousApplicationId: string;
+  pendingLogoPath?: string;
   profileHash: string;
   requestedRole: 'Supplier' | 'Manufacturer' | 'Distributor' | 'Retailer';
   status: ApplicationStatus;

@@ -506,12 +506,44 @@
     @apply text-[length:12px];
   }
   .workspace-company {
-    @apply max-w-[220px];
+    @apply flex items-center gap-[8px] max-w-[240px];
     overflow: hidden;
     color: var(--c-navy);
     @apply text-[length:12px] font-semibold;
     text-overflow: ellipsis;
     @apply whitespace-nowrap;
+  }
+  .workspace-company > span:last-child {
+    @apply truncate;
+  }
+  .workspace-company-cell,
+  .workspace-company-review {
+    @apply flex items-center gap-[10px] min-w-0;
+  }
+  .workspace-company-review {
+    @apply mb-[16px] pb-[16px];
+    border-bottom: 1px solid var(--c-border);
+  }
+  .workspace-company-review > div {
+    @apply grid gap-[2px] min-w-0;
+  }
+  .workspace-company-review span {
+    color: var(--c-text2);
+    @apply text-[12px];
+  }
+  .workspace-shipment-parties {
+    @apply grid grid-cols-1 gap-[10px] mb-[16px] sm:grid-cols-2;
+  }
+  .workspace-shipment-parties > span {
+    @apply p-[12px] rounded-[9px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .workspace-shipment-parties .workspace-company-cell > span {
+    @apply grid min-w-0;
+  }
+  .workspace-shipment-parties small {
+    color: var(--c-text2);
   }
   .workspace-account-details {
     @apply m-[8px_0];

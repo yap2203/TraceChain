@@ -16,6 +16,7 @@ import { submitProductionTransaction } from '../production-flow/production-flow.
 import { ProductQrDisplay } from '../product-traceability/ProductQrDisplay';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
 import { ProductDeliveryPanel } from './ProductDeliveryPanel';
+import { CompanyAvatar } from './CatalogueMedia';
 import { ZxingTransferQrReader, cameraErrorMessage } from '../custody-transfers/qr-reader';
 import {
   Alert,
@@ -602,11 +603,25 @@ export function ShipmentsWorkspace({
                       </div>
                       <div>
                         <dt>Sender</dt>
-                        <dd>{entry.sellerName ?? short(entry.seller)}</dd>
+                        <dd className="workspace-company-cell">
+                          <CompanyAvatar
+                            name={entry.sellerName ?? short(entry.seller)}
+                            logoPath={entry.sellerLogoPath}
+                            size="sm"
+                          />
+                          {entry.sellerName ?? short(entry.seller)}
+                        </dd>
                       </div>
                       <div>
                         <dt>Recipient</dt>
-                        <dd>{entry.buyerName ?? short(entry.buyer)}</dd>
+                        <dd className="workspace-company-cell">
+                          <CompanyAvatar
+                            name={entry.buyerName ?? short(entry.buyer)}
+                            logoPath={entry.buyerLogoPath}
+                            size="sm"
+                          />
+                          {entry.buyerName ?? short(entry.buyer)}
+                        </dd>
                       </div>
                       <div>
                         <dt>Destination</dt>
@@ -747,11 +762,27 @@ export function ShipmentsWorkspace({
                         <td className="p-[12px]">
                           {item(entry.batchId)?.batchReference ?? short(entry.batchId)}
                         </td>
-                        <td className="p-[12px]">{entry.senderName ?? short(entry.sender)}</td>
+                        <td className="p-[12px]">
+                          <span className="workspace-company-cell">
+                            <CompanyAvatar
+                              name={entry.senderName ?? short(entry.sender)}
+                              logoPath={entry.senderLogoPath}
+                              size="sm"
+                            />
+                            {entry.senderName ?? short(entry.sender)}
+                          </span>
+                        </td>
                         <td className="p-[12px]">
                           {label(entry.toLocation)}
                           <br />
-                          <small>{entry.recipientName ?? short(entry.recipient)}</small>
+                          <small className="workspace-company-cell">
+                            <CompanyAvatar
+                              name={entry.recipientName ?? short(entry.recipient)}
+                              logoPath={entry.recipientLogoPath}
+                              size="sm"
+                            />
+                            {entry.recipientName ?? short(entry.recipient)}
+                          </small>
                         </td>
                         <td className="p-[12px]">
                           {entry.quantity} {entry.unit}
@@ -1081,6 +1112,30 @@ export function ShipmentsWorkspace({
                 ? 'Distributor warehouse → Manufacturer'
                 : 'Finished-product custody transfer'}
           </p>
+          <div className="workspace-shipment-parties" aria-label="Shipment companies">
+            <span className="workspace-company-cell">
+              <CompanyAvatar
+                name={shipment.senderName ?? short(shipment.sender)}
+                logoPath={shipment.senderLogoPath}
+                size="md"
+              />
+              <span>
+                <small>Sender</small>
+                <strong>{shipment.senderName ?? short(shipment.sender)}</strong>
+              </span>
+            </span>
+            <span className="workspace-company-cell">
+              <CompanyAvatar
+                name={shipment.recipientName ?? short(shipment.recipient)}
+                logoPath={shipment.recipientLogoPath}
+                size="md"
+              />
+              <span>
+                <small>Recipient</small>
+                <strong>{shipment.recipientName ?? short(shipment.recipient)}</strong>
+              </span>
+            </span>
+          </div>
           <StatusTimeline
             label="Shipment status"
             steps={[

@@ -9,12 +9,12 @@ notes are not exposed to carriers. Manufacturer custody projections contain only
 
 `POST /api/orders/logistics/prepare` accepts these unsigned-transaction actions:
 
-| Action | Fields besides operationId/orderId | Authorized actor |
-| --- | --- | --- |
-| `product-order-select` | mode 1/2, distributor, fromLocation, toLocation | Original Manufacturer |
-| `product-order-respond` | accept | Assigned direct Distributor |
-| `product-order-dispatch` | vehicle, occurredAt, expectedAt; qrPayload mandatory for direct pickup | Assigned Distributor |
-| `product-order-close` | none | Manufacturer before dispatch; actual participants for expired cleanup |
+| Action                   | Fields besides operationId/orderId                                     | Authorized actor                                                      |
+| ------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `product-order-select`   | mode 1/2, distributor, fromLocation, toLocation                        | Original Manufacturer                                                 |
+| `product-order-respond`  | accept                                                                 | Assigned direct Distributor                                           |
+| `product-order-dispatch` | vehicle, occurredAt, expectedAt; qrPayload mandatory for direct pickup | Assigned Distributor                                                  |
+| `product-order-close`    | none                                                                   | Manufacturer before dispatch; actual participants for expired cleanup |
 
 Existing product shipment receipt preparation remains recipient-only, uses the final shipment QR
 and completes the coordinator through CustodyTransfer. Existing delivery company-proof endpoints
@@ -432,6 +432,19 @@ credential, stakeholder, batch or inventory state.
   the authenticated Supplier is the authoritative on-chain batch owner.
 - `GET /api/orders/catalogue/ingredients/:batchId/image` rechecks that batch ownership before
   returning the safe image bytes.
+
+`POST /api/blockchain/transactions/company-application` also accepts an optional company-logo
+envelope together with the applicant wallet and binding signature. The signature covers the exact
+application ID, wallet, profile hash and image digest. All three branding fields must be present
+together. The server validates the actual PNG/JPEG/WebP bytes (maximum 2 MB) and stores the pending
+record encrypted off-chain; applications without a logo keep the existing request shape.
+
+Authorized System Admin application responses include `pendingLogoPath` when a pending logo belongs
+to the exact on-chain applicant. `GET /api/blockchain/applications/:applicationId/logo` is Admin-only
+and serves that private review image with no-store and content-sniffing protections. The normal
+`GET /api/orders/branding/:wallet/logo` route does not expose it until the verified active stakeholder
+identity references the same application ID. A rejected or unrelated pending application therefore
+cannot leak branding into stakeholder views.
 
 Upload validation checks the allowlisted MIME type, matching filename extension, base64 encoding,
 binary signature, dimensions and maximum size before encrypted storage. Catalogue JSON exposes only

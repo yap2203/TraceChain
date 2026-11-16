@@ -24,11 +24,11 @@ export interface OrdersState {
     productStock: OrderRecord[];
     productPositions?: OrderRecord[];
   };
-  companies?: Array<{ wallet: string; companyName: string; role: string }>;
+  companies?: Array<{ wallet: string; companyName: string; role: string; logoPath?: string }>;
   ingredientDeliverySupported?: boolean;
   chainId?: number;
   ordersAddress?: string;
-  distributors?: Array<{ wallet: string; companyName: string }>;
+  distributors?: Array<{ wallet: string; companyName: string; logoPath?: string }>;
   supplierStock?: SupplierStock[];
   approvedReceiptsSupported?: boolean;
   listingBatches?: Array<{ batchId: string; unit: string; eligible: boolean; reason: string }>;
@@ -225,20 +225,19 @@ const mediaRequests = new Map<string, Promise<Blob>>();
 export function fetchCatalogueMedia(path: string) {
   const existing = mediaRequests.get(path);
   if (existing) return existing;
-  const pending = fetch(`${base}/api/orders${path}`, { credentials: 'include' }).then(
-    async (response) => {
-      if (!response.ok)
-        throw new CatalogueMediaError(
-          response.status === 404
-            ? 'missing'
-            : response.status === 401 || response.status === 403
-              ? 'denied'
-              : 'unavailable',
-          response.status,
-        );
-      return response.blob();
-    },
-  );
+  const mediaUrl = path.startsWith('/api/') ? `${base}${path}` : `${base}/api/orders${path}`;
+  const pending = fetch(mediaUrl, { credentials: 'include' }).then(async (response) => {
+    if (!response.ok)
+      throw new CatalogueMediaError(
+        response.status === 404
+          ? 'missing'
+          : response.status === 401 || response.status === 403
+            ? 'denied'
+            : 'unavailable',
+        response.status,
+      );
+    return response.blob();
+  });
   mediaRequests.set(path, pending);
   const clear = () => {
     if (mediaRequests.get(path) === pending) mediaRequests.delete(path);

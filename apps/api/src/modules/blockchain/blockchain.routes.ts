@@ -9,6 +9,7 @@ export function createBlockchainRouter(controller: BlockchainController) {
     next();
   });
   router.get('/applications', controller.listApplications);
+  router.get('/applications/:applicationId/logo', controller.getApplicationLogo);
   router.get('/credentials', controller.listCredentials);
   router.get('/credentials/me', controller.getMyCredential);
   router.get('/role-permissions', controller.listRolePermissions);

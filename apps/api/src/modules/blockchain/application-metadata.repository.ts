@@ -3,6 +3,7 @@ import { dirname } from 'node:path';
 
 export interface ApplicationMetadata {
   applicationId: string;
+  applicantWallet?: string;
   companyName: string;
   companyRegistrationNumber: string;
   profileHash: string;
@@ -25,7 +26,13 @@ export class JsonApplicationMetadataRepository implements ApplicationMetadataRep
     const records = await this.read();
     const key = record.applicationId.toLowerCase();
     const existing = records[key];
-    if (existing && existing.profileHash.toLowerCase() !== record.profileHash.toLowerCase())
+    if (
+      existing &&
+      (existing.profileHash.toLowerCase() !== record.profileHash.toLowerCase() ||
+        (existing.applicantWallet &&
+          record.applicantWallet &&
+          existing.applicantWallet.toLowerCase() !== record.applicantWallet.toLowerCase()))
+    )
       throw new Error('Application metadata conflicts with the persisted profile hash.');
     records[key] = record;
     await mkdir(dirname(this.path), { recursive: true });

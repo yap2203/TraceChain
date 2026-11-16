@@ -303,7 +303,14 @@ export function createApp({
       return resolvedGateway.prepareRolePermission(input);
     },
   };
-  const companyApplicationMetadata = applicationMetadataRepository ?? new JsonApplicationMetadataRepository(fileURLToPath(new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url)));
+  const companyApplicationMetadata =
+    applicationMetadataRepository ??
+    new JsonApplicationMetadataRepository(
+      fileURLToPath(
+        new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url),
+      ),
+    );
+  let resolveOrders!: () => OrdersService;
   const blockchainController = new BlockchainController(
     lazyGateway,
     resolvedAuthService,
@@ -311,6 +318,13 @@ export function createApp({
     companyApplicationMetadata,
     lazyIssuanceRepository,
     stakeholderDirectory,
+    {
+      savePendingCompanyLogo: (input) => resolveOrders().savePendingCompanyLogo(input),
+      hasPendingCompanyLogo: (applicationId, applicantWallet) =>
+        resolveOrders().hasPendingCompanyLogo(applicationId, applicantWallet),
+      pendingCompanyLogo: (applicationId, applicantWallet) =>
+        resolveOrders().pendingCompanyLogo(applicationId, applicantWallet),
+    },
   );
   const lazyCredentialContentStore: CredentialContentStore = {
     decrypt: async (payload) => {
@@ -332,7 +346,7 @@ export function createApp({
     env.AUTH_COOKIE_NAME,
   );
   let ordersService: OrdersService | undefined;
-  const resolveOrders = () => {
+  resolveOrders = () => {
     if (!ordersService) {
       const chain = loadBlockchainEnvironment();
       if (!process.env.SUPPLY_ORDERS_ADDRESS) throw new Error('Order registry is not configured.');
@@ -507,7 +521,7 @@ export function createApp({
   );
   app.use(
     '/api/blockchain',
-    express.json({ limit: '32kb' }),
+    express.json({ limit: '4mb' }),
     createBlockchainRouter(blockchainController),
   );
   app.use(

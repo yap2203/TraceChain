@@ -5,6 +5,7 @@ import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from
 import { AppDetail } from './ApplicationDetail';
 import type { ApplicationStatus, ChainApplication } from './types';
 import { useChainApplications } from './useChainApplications';
+import { CompanyAvatar } from '../../../orders/CatalogueMedia';
 
 export function Applications() {
   const { applications, error, loading, reload } = useChainApplications();
@@ -94,7 +95,16 @@ export function Applications() {
             >
               {filtered.map((application) => (
                 <TR key={application.id} onClick={() => setSelected(application)}>
-                  <TD bold>{application.companyName || 'Company name unavailable'}</TD>
+                  <TD bold>
+                    <span className="workspace-company-cell">
+                      <CompanyAvatar
+                        name={application.companyName || 'Company'}
+                        logoPath={application.pendingLogoPath}
+                        size="sm"
+                      />
+                      {application.companyName || 'Company name unavailable'}
+                    </span>
+                  </TD>
                   <TD mono>{short(application.applicant)}</TD>
                   <TD>{application.requestedRole}</TD>
                   <TD muted>{new Date(application.submittedAt * 1000).toLocaleString()}</TD>

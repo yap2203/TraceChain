@@ -218,6 +218,7 @@ export function prepareRolePermission(input: {
 
 export function prepareCompanyApplication(input: {
   applicationId: string;
+  applicantWallet?: string;
   companyName: string;
   companyRegistrationNumber: string;
   initialLocationName?: string;
@@ -225,6 +226,12 @@ export function prepareCompanyApplication(input: {
   previousApplicationId: string;
   profileHash: string;
   requestedRole: number;
+  logo?: {
+    data: string;
+    fileName: string;
+    mimeType: 'image/png' | 'image/jpeg' | 'image/webp';
+  };
+  logoSignature?: string;
 }) {
   return blockchainRequest<PreparedTransaction>('/transactions/company-application', {
     body: JSON.stringify(input),

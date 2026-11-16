@@ -440,12 +440,29 @@ export function OrdersPage({
                     <p>Batch reference: {item?.batchReference || 'Not disclosed'}</p>
                     <div className="request-detail-company">
                       <CompanyAvatar
-                        name={order.buyerName ?? 'Company name unavailable'}
+                        name={
+                          same(order.seller, data.actor)
+                            ? (order.buyerName ?? 'Company name unavailable')
+                            : (order.sellerName ?? 'Company name unavailable')
+                        }
+                        logoPath={
+                          same(order.seller, data.actor)
+                            ? order.buyerLogoPath
+                            : order.sellerLogoPath
+                        }
                         size="lg"
                       />
                       <div>
-                        <span>Requesting company</span>
-                        <strong>{order.buyerName ?? 'Company name unavailable'}</strong>
+                        <span>
+                          {same(order.seller, data.actor)
+                            ? 'Requesting company'
+                            : 'Supplying company'}
+                        </span>
+                        <strong>
+                          {same(order.seller, data.actor)
+                            ? (order.buyerName ?? 'Company name unavailable')
+                            : (order.sellerName ?? 'Company name unavailable')}
+                        </strong>
                       </div>
                     </div>
                   </div>

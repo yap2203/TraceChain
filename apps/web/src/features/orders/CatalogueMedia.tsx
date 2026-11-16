@@ -129,7 +129,13 @@ export function CompanyAvatar({
   return (
     <span className={`company-avatar company-avatar--${size}`}>
       {source ? (
-        <img src={source} alt={`${name} company logo`} loading="lazy" decoding="async" />
+        <img
+          src={source}
+          alt={`${name} company logo`}
+          loading="lazy"
+          decoding="async"
+          onError={() => setSource('')}
+        />
       ) : (
         <>
           <Building2 aria-hidden="true" size={size === 'sm' ? 12 : 14} />
