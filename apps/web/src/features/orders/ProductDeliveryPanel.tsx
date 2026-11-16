@@ -1,10 +1,21 @@
 import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Truck } from 'lucide-react';
+import { Camera, Factory, Store, Truck } from 'lucide-react';
 import { decodeShipmentQr } from '@tracechain/shared';
-import { Alert, Btn, Input, SelectField, WorkflowHelp } from '../workspaces/shared/ui';
+import {
+  Alert,
+  Btn,
+  Input,
+  SelectField,
+  StatusTimeline,
+  WorkflowHelp,
+} from '../workspaces/shared/ui';
 import { ProductQrDisplay } from '../product-traceability/ProductQrDisplay';
-import { ZxingTransferQrReader, cameraErrorMessage } from '../custody-transfers/qr-reader';
+import {
+  ZxingTransferQrReader,
+  cameraErrorMessage,
+  qrImageErrorMessage,
+} from '../custody-transfers/qr-reader';
 import { prepareLogistics, type OrdersState, type OrderRecord } from './orders.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { workspacePath } from '../workspaces/workspace-paths';
@@ -161,22 +172,40 @@ export function ProductDeliveryPanel({
       className="delivery-panel grid min-w-0 gap-[16px] rounded-xl border border-[var(--c-border)] p-[16px]"
     >
       <h3 className="m-0">Manufacturer → Distributor → Retailer</h3>
-      <ol
-        aria-label="Product delivery progress"
-        className="m-0 grid list-none gap-[12px] p-0 sm:grid-cols-3"
-      >
-        {['Manufacturer approves', 'Distributor delivers', 'Retailer receives'].map((label, i) => (
-          <li
-            key={label}
-            className="delivery-progress-step min-w-0 rounded-lg border border-[var(--c-border)] p-[12px]"
-            aria-current={
-              (stage === 1 ? i === 0 : stage <= 4 ? i === 1 : i === 2) ? 'step' : undefined
-            }
-          >
-            {i + 1}. {label}
-          </li>
-        ))}
-      </ol>
+      <StatusTimeline
+        label="Product delivery progress"
+        variant="arrival"
+        steps={[
+          {
+            label: 'Manufacturer approves',
+            actor: order.sellerName ?? 'Manufacturer',
+            icon: <Factory size={22} />,
+            state:
+              stage === 6
+                ? ('pending' as const)
+                : stage > 1
+                  ? ('complete' as const)
+                  : ('current' as const),
+          },
+          {
+            label: 'Distributor delivers',
+            actor: r?.distributorName ?? 'Delivery company',
+            icon: <Truck size={22} />,
+            state:
+              stage >= 5
+                ? ('complete' as const)
+                : stage >= 2 && stage <= 4
+                  ? ('current' as const)
+                  : ('pending' as const),
+          },
+          {
+            label: 'Retailer receives',
+            actor: order.buyerName ?? 'Retailer',
+            icon: <Store size={22} />,
+            state: stage === 5 ? ('complete' as const) : ('pending' as const),
+          },
+        ]}
+      />
       <strong role="status">
         {
           [
@@ -378,8 +407,8 @@ export function ProductDeliveryPanel({
                     if (!file) return;
                     try {
                       check(await reader.current.decodeImage(file));
-                    } catch (c) {
-                      setError(reportError(c, 'QR image could not be read.'));
+                    } catch (cause) {
+                      setError(qrImageErrorMessage(cause));
                     }
                   }}
                 />

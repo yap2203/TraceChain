@@ -1,7 +1,17 @@
+import { Box, ChevronLeft, MapPin, PackageCheck, Truck, Warehouse } from 'lucide-react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
-import { Alert, Badge, Btn, Card, EmptyState, T, TechnicalDetails } from '../../shared/ui';
+import {
+  Alert,
+  Badge,
+  Btn,
+  Card,
+  EmptyState,
+  StatusTimeline,
+  TechnicalDetails,
+} from '../../shared/ui';
 import { chainDate, shortChainId, transferStatuses } from '../../shared/operational-format';
+
 export function ReceiveProduct({
   shipmentId,
   onBack,
@@ -12,10 +22,10 @@ export function ReceiveProduct({
   onViewHistory: (batch: string) => void;
 }) {
   const { data, error, loading } = useOperationalData();
-  const t = data.transfers.find((x) => x.transferId === shipmentId);
+  const transfer = data.transfers.find((entry) => entry.transferId === shipmentId);
   if (error) return <Alert type="error" message={error} />;
   if (loading) return <LoadingIndicator page label="Reading CustodyTransfer…" />;
-  if (!t)
+  if (!transfer)
     return (
       <EmptyState
         icon={<span />}
@@ -23,54 +33,117 @@ export function ReceiveProduct({
         sub="This transfer is not addressed to the authenticated wallet."
       />
     );
+
+  const received = transfer.status === 2;
   return (
-    <div>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
-        <Btn variant="ghost" size="sm" onClick={onBack}>
-          Back
-        </Btn>
-        <h2 style={{ margin: 0, color: T.navy, flex: 1 }}>
-          Receive product · {shortChainId(t.transferId)}
-        </h2>
-        <Badge
-          label={transferStatuses[t.status] ?? 'Unknown'}
-          variant={t.status === 2 ? 'active' : 'transfer-pending'}
-        />
-        <Btn variant="outline" onClick={() => onViewHistory(t.productBatchId)}>
+    <section className="workspace-arrival-detail" aria-label="Retailer product receipt detail">
+      <button type="button" className="workspace-process-back" onClick={onBack}>
+        <ChevronLeft size={17} aria-hidden="true" /> Back to receipts
+      </button>
+      <header className="workspace-arrival-detail__header">
+        <span className="workspace-arrival-detail__header-icon" aria-hidden="true">
+          <Box size={31} />
+        </span>
+        <div>
+          <h2>Product Receipt</h2>
+          <p>Review the transfer and continue to verified receipt confirmation.</p>
+        </div>
+        <Btn variant="outline" onClick={() => onViewHistory(transfer.productBatchId)}>
           Product history
         </Btn>
-      </div>
+      </header>
+
+      <StatusTimeline
+        label="Retailer receipt progress"
+        variant="arrival"
+        steps={[
+          {
+            actor: chainDate(transfer.dispatchedAt),
+            icon: <PackageCheck size={24} />,
+            label: 'Dispatched',
+            state: 'complete',
+          },
+          {
+            actor: received ? 'Transit completed' : 'Shipment is on the way',
+            icon: <Truck size={24} />,
+            label: 'In Transit',
+            state: received ? 'complete' : 'current',
+          },
+          {
+            actor: received ? 'Receipt recorded' : 'Awaiting arrival verification',
+            icon: <MapPin size={24} />,
+            label: 'Arrived',
+            state: received ? 'complete' : 'pending',
+          },
+          {
+            actor: received ? 'Confirmed on chain' : 'Pending confirmation',
+            icon: <Warehouse size={24} />,
+            label: 'Received',
+            state: received ? 'complete' : 'pending',
+          },
+        ]}
+      />
+
       <Card>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+        <div className="workspace-arrival-summary__heading">
+          <h3>Transfer Summary</h3>
+          <Badge
+            label={transferStatuses[transfer.status] ?? 'Unknown'}
+            variant={received ? 'active' : 'transfer-pending'}
+          />
+        </div>
+        <dl className="workspace-arrival-summary__facts workspace-process-summary-facts">
           {[
-            ['Sender', t.senderName ?? 'Verified Distributor'],
-            ['Recipient', t.recipientName ?? 'Receiving company'],
-            ['Quantity', t.quantity],
-            ['Dispatched', chainDate(t.dispatchedAt)],
-            ['Expected', chainDate(t.expectedAt)],
-            ['Usable received', t.usable],
-            ['Damaged', t.damaged],
-            ['Rejected', t.rejected],
-          ].map(([l, v]) => (
-            <div key={l} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}>
-              <div style={{ fontSize: 11, color: T.text2 }}>{l}</div>
-              <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{v}</div>
+            ['Transfer reference', shortChainId(transfer.transferId)],
+            ['Quantity', transfer.quantity],
+            ['Dispatched', chainDate(transfer.dispatchedAt)],
+            ['Expected arrival', chainDate(transfer.expectedAt)],
+          ].map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
             </div>
           ))}
-        </div>
+        </dl>
+      </Card>
+
+      <div className="workspace-arrival-detail__columns">
+        <section className="workspace-arrival-panel">
+          <h3>Delivery Information</h3>
+          <dl className="workspace-arrival-delivery-list">
+            {[
+              ['Sender', transfer.senderName ?? 'Verified Distributor'],
+              ['Recipient', transfer.recipientName ?? 'Receiving company'],
+              ['Usable received', transfer.usable],
+              ['Damaged', transfer.damaged],
+              ['Rejected', transfer.rejected],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+        <section className="workspace-arrival-panel">
+          <h3>Next Action</h3>
+          <Alert
+            type="info"
+            message="Use the receipt QR flow to prepare and sign custody confirmation. This screen does not simulate a blockchain write."
+          />
+        </section>
+      </div>
+
+      <div className="workspace-arrival-detail__technical">
         <TechnicalDetails
           fields={[
-            { label: 'Transfer ID', value: t.transferId },
-            { label: 'Product batch ID', value: t.productBatchId },
-            { label: 'Sender wallet', value: t.sender },
-            { label: 'Recipient wallet', value: t.recipient },
+            { label: 'Transfer ID', value: transfer.transferId },
+            { label: 'Product batch ID', value: transfer.productBatchId },
+            { label: 'Sender wallet', value: transfer.sender },
+            { label: 'Recipient wallet', value: transfer.recipient },
           ]}
         />
-      </Card>
-      <Alert
-        type="info"
-        message="Use the receipt QR flow to prepare and sign custody confirmation. This screen does not simulate a blockchain write."
-      />
-    </div>
+      </div>
+    </section>
   );
 }

@@ -2401,26 +2401,6 @@
     background: var(--c-surface2);
     border: 1px solid var(--c-border2);
   }
-  .order-lifecycle ol {
-    @apply grid grid-cols-4 list-none gap-[8px] m-0 p-0;
-  }
-  .order-lifecycle li {
-    @apply flex items-center gap-[8px] text-[12px] p-[10px] rounded-[8px];
-    color: var(--c-text2);
-    border: 1px solid var(--c-border);
-  }
-  .order-lifecycle li > span {
-    @apply inline-flex shrink-0 items-center justify-center w-[24px] h-[24px] rounded-full;
-    border: 1px solid var(--c-border2);
-  }
-  .order-lifecycle li.is-complete {
-    color: var(--c-green);
-  }
-  .order-lifecycle li[aria-current='step'] {
-    background: var(--c-teal-light);
-    border-color: var(--c-teal);
-    color: var(--c-teal);
-  }
   .order-next-action {
     @apply grid gap-[10px] text-[13px];
   }
@@ -2446,9 +2426,6 @@
     }
     .workspace-profile-form {
       grid-template-columns: minmax(0, 1fr);
-    }
-    .order-lifecycle ol {
-      @apply grid-cols-2;
     }
     .workspace-profile-form > button {
       @apply w-full;
@@ -2601,6 +2578,609 @@
   .workspace-status-timeline li.is-current .workspace-status-timeline__icon {
     color: var(--c-teal);
     border-color: var(--c-teal);
+  }
+  .workspace-custody-detail-header {
+    @apply grid gap-[12px] min-w-0;
+  }
+  .workspace-custody-detail-header__back {
+    @apply inline-flex items-center gap-[7px] w-fit p-0 border-0 bg-transparent text-[13px] cursor-pointer;
+    color: var(--c-text2);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .workspace-custody-detail-header__back:hover,
+  .workspace-custody-detail-header__back:focus-visible {
+    color: var(--c-teal);
+  }
+  .workspace-custody-detail-header__title-row {
+    @apply flex items-center justify-between gap-[16px] min-w-0;
+  }
+  .workspace-custody-detail-header__title-row h2 {
+    @apply m-0 min-w-0 text-[24px] leading-tight;
+    color: var(--c-navy);
+  }
+  .workspace-custody-detail {
+    @apply grid gap-[16px] min-w-0;
+  }
+  .workspace-custody-detail > .workspace-card {
+    @apply grid gap-[24px];
+  }
+  .workspace-custody-detail__item {
+    @apply flex items-center gap-[12px] min-w-0 flex-wrap;
+  }
+  .workspace-custody-detail__item > svg {
+    @apply shrink-0;
+    color: var(--c-teal);
+  }
+  .workspace-custody-detail__item h3 {
+    @apply m-0 text-[20px] leading-tight min-w-0 break-words;
+    color: var(--c-navy);
+  }
+  .workspace-status-timeline--custody {
+    @apply grid-cols-5 gap-[28px] mb-0;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .workspace-status-timeline--custody li {
+    @apply relative flex-col items-center gap-[10px] p-0 text-center overflow-visible;
+    border: 0;
+    background: transparent;
+  }
+  .workspace-status-timeline--custody li.is-complete,
+  .workspace-status-timeline--custody li.is-current {
+    border: 0;
+    background: transparent;
+  }
+  .workspace-status-timeline--custody li:not(:last-child)::after {
+    content: '→';
+    position: absolute;
+    top: 24px;
+    left: calc(50% + 42px);
+    width: calc(100% - 54px);
+    color: var(--c-border2);
+    font-size: 24px;
+    line-height: 1;
+  }
+  .workspace-status-timeline--custody .workspace-status-timeline__icon {
+    @apply relative w-[68px] h-[68px];
+    border-width: 2px;
+    background: var(--c-surface2);
+  }
+  .workspace-status-timeline--custody .workspace-status-timeline__copy {
+    @apply justify-items-center gap-[4px];
+  }
+  .workspace-status-timeline--custody .workspace-status-timeline__copy strong {
+    @apply text-[13px] leading-tight;
+    color: var(--c-text);
+  }
+  .workspace-status-timeline--custody .workspace-status-timeline__copy span {
+    @apply text-[11px] leading-snug;
+  }
+  .workspace-status-timeline--custody li.is-complete::after {
+    color: color-mix(in srgb, var(--c-green) 60%, var(--c-border2));
+  }
+  .workspace-status-timeline--custody li.is-complete .workspace-status-timeline__icon {
+    background: var(--c-green-bg);
+  }
+  .workspace-status-timeline--custody li.is-current .workspace-status-timeline__icon {
+    background: var(--c-teal-light);
+  }
+  .workspace-status-timeline__check {
+    @apply absolute flex items-center justify-center w-[20px] h-[20px] rounded-full;
+    top: -4px;
+    right: -4px;
+    color: var(--c-surface);
+    background: var(--c-green);
+    border: 2px solid var(--c-surface);
+  }
+  .workspace-status-timeline--arrival {
+    @apply grid-cols-4 gap-[32px] mb-0;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .workspace-status-timeline--arrival li,
+  .workspace-status-timeline--arrival li.is-complete,
+  .workspace-status-timeline--arrival li.is-current {
+    @apply relative flex-col items-center gap-[8px] p-0 text-center overflow-visible;
+    border: 0;
+    background: transparent;
+  }
+  .workspace-status-timeline--arrival li:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 27px;
+    left: calc(50% + 34px);
+    width: calc(100% - 36px);
+    height: 2px;
+    background: var(--c-border2);
+  }
+  .workspace-status-timeline--arrival li.is-complete::after {
+    background: color-mix(in srgb, var(--c-green) 70%, var(--c-teal));
+  }
+  .workspace-status-timeline--arrival .workspace-status-timeline__icon {
+    @apply w-[56px] h-[56px];
+    border-width: 2px;
+    background: var(--c-surface2);
+  }
+  .workspace-status-timeline--arrival .workspace-status-timeline__copy {
+    @apply justify-items-center gap-[3px];
+  }
+  .workspace-status-timeline--arrival .workspace-status-timeline__copy strong {
+    color: var(--c-text);
+  }
+  .workspace-status-timeline--arrival li.is-complete .workspace-status-timeline__icon {
+    color: var(--c-green);
+    background: var(--c-green-bg);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-green) 10%, transparent);
+  }
+  .workspace-status-timeline--arrival li.is-current .workspace-status-timeline__icon {
+    color: var(--c-teal);
+    background: var(--c-teal-light);
+    box-shadow:
+      0 0 0 4px color-mix(in srgb, var(--c-teal) 16%, transparent),
+      0 0 18px color-mix(in srgb, var(--c-teal) 24%, transparent);
+  }
+  .workspace-arrival-detail {
+    @apply grid gap-[18px] min-w-0;
+  }
+  .workspace-process-back {
+    @apply inline-flex items-center gap-[4px] justify-self-start p-0 border-0 bg-transparent font-semibold;
+    color: var(--c-text2);
+    cursor: pointer;
+  }
+  .workspace-process-back:hover,
+  .workspace-process-back:focus-visible {
+    color: var(--c-teal);
+    text-decoration: underline;
+  }
+  .workspace-process-page-heading {
+    @apply grid gap-[4px] min-w-0;
+  }
+  .workspace-process-page-heading h3 {
+    @apply m-0 mt-[8px] text-[22px];
+    color: var(--c-navy);
+  }
+  .workspace-process-page-heading p {
+    @apply m-0 text-[13px];
+    color: var(--c-text2);
+  }
+  .workspace-arrival-detail__header {
+    @apply grid items-center gap-[14px] min-w-0;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+  .workspace-arrival-detail__header-icon {
+    @apply flex items-center justify-center w-[54px] h-[54px] rounded-[12px];
+    color: var(--c-teal);
+    background: var(--c-teal-light);
+    border: 1px solid var(--c-border2);
+  }
+  .workspace-arrival-detail__header h2 {
+    @apply m-0 text-[24px] leading-tight;
+    color: var(--c-navy);
+  }
+  .workspace-arrival-detail__header p {
+    @apply m-0 mt-[3px] text-[13px];
+    color: var(--c-text2);
+  }
+  .workspace-arrival-summary__heading {
+    @apply flex items-center justify-between gap-[12px] mb-[14px] min-w-0;
+  }
+  .workspace-arrival-summary__heading h3 {
+    @apply m-0 text-[16px];
+    color: var(--c-navy);
+  }
+  .workspace-arrival-summary {
+    @apply flex items-center gap-[18px] min-w-0;
+  }
+  .workspace-arrival-summary__identity {
+    @apply flex items-center gap-[12px] min-w-0;
+    flex: 0 1 330px;
+  }
+  .workspace-arrival-summary__image {
+    @apply w-[112px] h-[88px] shrink-0 overflow-hidden rounded-[9px];
+  }
+  .workspace-arrival-summary__image .catalogue-image {
+    @apply w-full h-full rounded-[9px];
+    object-fit: cover;
+  }
+  .workspace-arrival-summary__identity > div:last-child {
+    @apply grid gap-[5px] min-w-0;
+  }
+  .workspace-arrival-summary__identity strong {
+    @apply text-[16px] leading-snug break-words;
+    color: var(--c-text);
+  }
+  .workspace-arrival-summary__identity span {
+    @apply text-[12px];
+    color: var(--c-text2);
+  }
+  .workspace-arrival-summary__facts {
+    @apply grid grid-cols-4 gap-0 m-0 min-w-0;
+    flex: 1 1 620px;
+  }
+  .workspace-process-summary-facts {
+    width: 100%;
+  }
+  .workspace-arrival-summary__facts > div {
+    @apply min-w-0 px-[16px];
+    border-left: 1px solid var(--c-border);
+  }
+  .workspace-arrival-summary__facts dt {
+    @apply flex items-center gap-[6px] text-[11px] mb-[4px];
+    color: var(--c-text2);
+  }
+  .workspace-arrival-summary__facts dt svg {
+    @apply shrink-0;
+    color: var(--c-teal);
+  }
+  .workspace-arrival-summary__facts dd {
+    @apply m-0 text-[13px] font-semibold leading-snug break-words;
+    color: var(--c-text);
+  }
+  .workspace-arrival-detail__columns {
+    @apply grid gap-[16px] min-w-0;
+    grid-template-columns: minmax(0, 0.92fr) minmax(340px, 1.08fr);
+    align-items: start;
+  }
+  .workspace-arrival-panel {
+    @apply grid content-start gap-[16px] min-w-0 p-[20px] rounded-[12px];
+    background: var(--c-surface);
+    border: 1px solid var(--c-border2);
+  }
+  .workspace-arrival-panel > h3 {
+    @apply flex items-center gap-[8px] m-0 text-[17px];
+    color: var(--c-navy);
+  }
+  .workspace-arrival-panel > h3 svg {
+    @apply shrink-0;
+    color: var(--c-teal);
+  }
+  .workspace-arrival-delivery-list {
+    @apply grid gap-[10px] m-0;
+  }
+  .workspace-arrival-delivery-list > div {
+    @apply grid gap-[12px] min-w-0 pb-[9px];
+    grid-template-columns: minmax(120px, 0.65fr) minmax(0, 1.35fr);
+    border-bottom: 1px solid var(--c-border);
+  }
+  .workspace-arrival-delivery-list dt {
+    @apply text-[12px];
+    color: var(--c-text2);
+  }
+  .workspace-arrival-delivery-list dd {
+    @apply m-0 text-[13px] font-medium break-words;
+    color: var(--c-text);
+  }
+  .workspace-arrival-receipt {
+    @apply grid gap-[14px] min-w-0;
+  }
+  .workspace-arrival-receipt__choices {
+    @apply grid grid-cols-2 gap-[12px] min-w-0;
+  }
+  .workspace-arrival-receipt__choice {
+    @apply grid place-items-center content-center gap-[8px] min-h-[148px] p-[16px] rounded-[10px] text-center cursor-pointer;
+    border: 1px dashed var(--c-border2);
+    background: var(--c-surface2);
+    color: var(--c-text);
+  }
+  button.workspace-arrival-receipt__choice {
+    font: inherit;
+  }
+  .workspace-arrival-receipt__choice:hover,
+  .workspace-arrival-receipt__choice:focus-within,
+  .workspace-arrival-receipt__choice:focus-visible {
+    border-color: var(--c-teal);
+    background: var(--c-teal-light);
+  }
+  .workspace-arrival-receipt__choice svg {
+    color: var(--c-teal);
+  }
+  .workspace-arrival-receipt__choice strong {
+    @apply text-[13px];
+  }
+  .workspace-arrival-receipt__choice small {
+    @apply text-[11px];
+    color: var(--c-text2);
+  }
+  .workspace-arrival-receipt__choice input {
+    @apply absolute w-px h-px overflow-hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .workspace-arrival-receipt__verified {
+    @apply flex items-start gap-[9px] p-[10px] rounded-[8px] text-[12px] break-words;
+    color: var(--c-green);
+    background: var(--c-green-bg);
+    border: 1px solid color-mix(in srgb, var(--c-green) 28%, var(--c-border));
+  }
+  .workspace-arrival-receipt__verified svg {
+    @apply shrink-0 mt-[1px];
+  }
+  .workspace-arrival-receipt__form {
+    @apply grid gap-[12px] p-[14px] rounded-[9px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .workspace-arrival-receipt__confirm {
+    @apply w-full;
+  }
+  .workspace-arrival-receipt__metamask-note {
+    @apply m-0 text-[11px] text-center;
+    color: var(--c-text2);
+  }
+  .workspace-arrival-camera {
+    @apply grid gap-[8px] p-[10px] rounded-[9px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .workspace-arrival-camera[hidden] {
+    display: none;
+  }
+  .workspace-arrival-camera video {
+    @apply w-full max-h-[220px] rounded-[8px];
+    background: var(--c-bg);
+  }
+  .workspace-arrival-detail__technical details {
+    @apply mt-0;
+  }
+  .workspace-arrival-detail__extras {
+    @apply grid gap-[12px] min-w-0;
+  }
+  .workspace-arrival-detail__vehicle-form {
+    @apply flex items-end gap-[10px] min-w-0 flex-wrap;
+  }
+  .workspace-arrival-detail__vehicle-form > div {
+    flex: 1 1 240px;
+  }
+  @container workspace (max-width: 1000px) {
+    .workspace-arrival-summary {
+      @apply items-start flex-wrap;
+    }
+    .workspace-arrival-summary__identity {
+      flex-basis: 100%;
+    }
+    .workspace-arrival-summary__facts {
+      flex-basis: 100%;
+    }
+    .workspace-arrival-summary__facts > div:first-child {
+      border-left: 0;
+      padding-left: 0;
+    }
+    .workspace-arrival-detail__columns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @container workspace (max-width: 700px) {
+    .workspace-status-timeline--arrival {
+      @apply grid-cols-1 gap-[24px];
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .workspace-status-timeline--arrival li,
+    .workspace-status-timeline--arrival li.is-complete,
+    .workspace-status-timeline--arrival li.is-current {
+      @apply flex-row items-center text-left;
+    }
+    .workspace-status-timeline--arrival li:not(:last-child)::after {
+      top: 58px;
+      left: 27px;
+      width: 2px;
+      height: 18px;
+    }
+    .workspace-status-timeline--arrival .workspace-status-timeline__copy {
+      @apply justify-items-start;
+    }
+    .workspace-arrival-summary__facts {
+      @apply grid-cols-2 gap-y-[14px];
+    }
+    .workspace-arrival-summary__facts > div:nth-child(odd) {
+      border-left: 0;
+      padding-left: 0;
+    }
+  }
+  @container workspace (max-width: 520px) {
+    .workspace-arrival-detail__header {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .workspace-arrival-detail__header > button {
+      @apply w-full;
+      grid-column: 1 / -1;
+    }
+    .workspace-arrival-detail__header h2 {
+      @apply text-[21px];
+    }
+    .workspace-arrival-summary__heading {
+      @apply items-start flex-col;
+    }
+    .workspace-arrival-summary__identity {
+      @apply items-start;
+    }
+    .workspace-arrival-summary__image {
+      @apply w-[96px] h-[82px];
+    }
+    .workspace-arrival-summary__facts {
+      @apply grid-cols-1;
+    }
+    .workspace-arrival-summary__facts > div {
+      @apply px-0 pt-[10px];
+      border-left: 0;
+      border-top: 1px solid var(--c-border);
+    }
+    .workspace-arrival-detail__columns {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .workspace-arrival-panel {
+      @apply p-[16px];
+    }
+    .workspace-arrival-delivery-list > div {
+      @apply gap-[4px];
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .workspace-arrival-receipt__choices {
+      @apply grid-cols-1;
+    }
+    .workspace-arrival-receipt__choice {
+      @apply min-h-[116px];
+    }
+  }
+  .workspace-custody-detail__panels {
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(260px, 0.85fr);
+    gap: 16px;
+    min-width: 0;
+  }
+  .workspace-custody-detail__panel {
+    @apply grid content-start gap-[16px] min-w-0 p-[18px] rounded-[10px];
+    border: 1px solid var(--c-border2);
+    background: var(--c-surface2);
+  }
+  .workspace-custody-detail__panel > h3 {
+    @apply m-0 text-[17px];
+    color: var(--c-navy);
+  }
+  .workspace-custody-detail__facts {
+    @apply grid grid-cols-2 gap-x-[22px] gap-y-[14px] m-0;
+  }
+  .workspace-custody-detail__facts dt {
+    @apply text-[11px] mb-[3px];
+    color: var(--c-text2);
+  }
+  .workspace-custody-detail__facts dd {
+    @apply m-0 text-[13px] font-semibold leading-snug break-words;
+    color: var(--c-text);
+  }
+  .workspace-custody-detail__route {
+    @apply flex items-center gap-[12px] min-w-0 p-[12px] rounded-[8px] text-[13px] font-semibold;
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+  }
+  .workspace-custody-detail__route span:not([aria-hidden='true']) {
+    @apply min-w-0 break-words;
+  }
+  .workspace-custody-detail__route span[aria-hidden='true'] {
+    @apply shrink-0;
+    color: var(--c-teal);
+  }
+  .workspace-custody-detail__next-copy {
+    @apply flex items-start gap-[11px] min-w-0;
+  }
+  .workspace-custody-detail__next-copy > span {
+    @apply flex items-center justify-center shrink-0 w-[38px] h-[38px] rounded-full;
+    color: var(--c-teal);
+    background: var(--c-teal-light);
+  }
+  .workspace-custody-detail__next-copy p {
+    @apply m-0 text-[13px] leading-relaxed break-words;
+  }
+  .workspace-custody-detail__evidence-link {
+    @apply flex items-center justify-center min-w-0 p-[9px] rounded-[8px] text-[13px] font-semibold text-center break-words;
+    border: 1px solid var(--c-border2);
+    color: var(--c-text);
+    background: var(--c-surface);
+  }
+  .workspace-custody-detail__evidence-link:hover,
+  .workspace-custody-detail__evidence-link:focus-visible {
+    border-color: var(--c-teal);
+    color: var(--c-teal);
+  }
+  .workspace-custody-detail__panel--action .workspace-pickup-plan {
+    @apply p-[12px];
+  }
+  .workspace-custody-detail__handoff {
+    @apply gap-[12px] p-[12px] rounded-[8px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface);
+  }
+  .workspace-custody-detail__handoff h4 {
+    @apply m-0 text-[13px];
+    color: var(--c-navy);
+  }
+  .workspace-custody-detail__confirmation {
+    @apply flex items-start gap-[8px] text-[12px] leading-relaxed;
+    color: var(--c-text2);
+  }
+  .workspace-custody-detail__technical details {
+    @apply mt-0;
+  }
+  .workspace-custody-detail__technical summary {
+    @apply flex items-center gap-[10px] text-[13px] font-semibold;
+    list-style: none;
+  }
+  .workspace-custody-detail__technical summary::-webkit-details-marker {
+    display: none;
+  }
+  .workspace-custody-detail__technical summary::after {
+    content: '⌄';
+    margin-left: auto;
+    color: var(--c-text2);
+    font-size: 18px;
+    line-height: 1;
+    transition: transform 150ms ease;
+  }
+  .workspace-custody-detail__technical details[open] summary::after {
+    transform: rotate(180deg);
+  }
+  @container workspace (max-width: 900px) {
+    .workspace-status-timeline--custody {
+      gap: 18px;
+    }
+    .workspace-custody-detail__panels {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+  @container workspace (max-width: 700px) {
+    .workspace-status-timeline--custody {
+      @apply grid-cols-1 gap-[28px];
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .workspace-status-timeline--custody li {
+      @apply flex-row text-left items-center;
+    }
+    .workspace-status-timeline--custody li:not(:last-child)::after {
+      content: '↓';
+      top: auto;
+      bottom: -24px;
+      left: 23px;
+      width: 20px;
+      font-size: 20px;
+      text-align: center;
+    }
+    .workspace-status-timeline--custody .workspace-status-timeline__icon {
+      @apply w-[54px] h-[54px] shrink-0;
+    }
+    .workspace-status-timeline--custody .workspace-status-timeline__icon > svg:first-child {
+      width: 24px;
+      height: 24px;
+    }
+    .workspace-status-timeline--custody .workspace-status-timeline__copy {
+      @apply justify-items-start;
+    }
+  }
+  @container workspace (max-width: 520px) {
+    .workspace-custody-detail-header__title-row {
+      @apply items-start flex-wrap;
+    }
+    .workspace-custody-detail-header__title-row h2 {
+      @apply text-[21px];
+      flex: 1 1 220px;
+    }
+    .workspace-custody-detail__item {
+      @apply items-start;
+    }
+    .workspace-custody-detail__item h3 {
+      @apply text-[18px];
+      flex: 1 1 calc(100% - 48px);
+    }
+    .workspace-custody-detail__item > span {
+      margin-left: 42px;
+    }
+    .workspace-custody-detail__facts {
+      @apply grid-cols-1;
+    }
+    .workspace-custody-detail__route {
+      @apply items-start flex-wrap;
+    }
+    .workspace-custody-detail__panel .workspace-location-actions > button {
+      @apply w-full;
+    }
   }
   @container workspace (max-width:560px) {
     .workspace-record-heading {

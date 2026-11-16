@@ -30,6 +30,7 @@ export function Btn({
   type = 'button',
   'aria-current': ariaCurrent,
   'aria-pressed': ariaPressed,
+  'aria-label': ariaLabel,
 }: {
   children: ReactNode;
   onClick?: MouseEventHandler<HTMLButtonElement>;
@@ -42,12 +43,14 @@ export function Btn({
   type?: 'button' | 'submit';
   'aria-current'?: 'page';
   'aria-pressed'?: boolean;
+  'aria-label'?: string;
 }) {
   return (
     <button
       type={type}
       aria-current={ariaCurrent}
       aria-pressed={ariaPressed}
+      aria-label={ariaLabel}
       onClick={onClick}
       disabled={disabled || (!onClick && type !== 'submit')}
       title={!onClick && type !== 'submit' ? 'This action is not available yet' : undefined}

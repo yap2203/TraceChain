@@ -2,7 +2,7 @@ import { reportError } from '../../components/ui/feedback';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { ChevronLeft, RefreshCw } from 'lucide-react';
 import { targetChainId } from '../../config/chain';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
@@ -403,15 +403,23 @@ export function OrdersPage({
                 </nav>
               </>
             )}
-          {role !== 'supplier' && (
+          {role !== 'supplier' && !order && (
             <>
-              <h3>{order ? 'Request details' : 'My requests'}</h3>
+              <h3>My requests</h3>
             </>
           )}
           {order && role !== 'supplier' && !evidenceOnly && (
-            <Btn variant="outline" onClick={() => setSelected('')}>
-              Back to requests
-            </Btn>
+            <div className="workspace-process-page-heading">
+              <button
+                type="button"
+                className="workspace-process-back"
+                onClick={() => setSelected('')}
+              >
+                <ChevronLeft size={17} aria-hidden="true" /> Back to requests
+              </button>
+              <h3>Order request</h3>
+              <p>Review the request, its current stage and the next required action.</p>
+            </div>
           )}
           {!order && !evidenceOnly && (
             <RequestsOverview

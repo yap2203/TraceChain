@@ -1,14 +1,15 @@
 import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
-import { Check, PackageCheck, ScanQrCode, Truck } from 'lucide-react';
+import { PackageCheck, ScanQrCode, Truck } from 'lucide-react';
 import { decodeIngredientDeliveryQr } from '@tracechain/shared';
 import { ProductQrDisplay } from '../product-traceability/ProductQrDisplay';
 import {
   ZxingTransferQrReader,
   cameraErrorMessage,
+  qrImageErrorMessage,
   type TransferQrReader,
 } from '../custody-transfers/qr-reader';
-import { Alert, Btn, Input, SelectField } from '../workspaces/shared/ui';
+import { Alert, Btn, Input, SelectField, StatusTimeline } from '../workspaces/shared/ui';
 import { prepareOrder, prepareLogistics, type OrdersState, type OrderRecord } from './orders.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { workspacePath } from '../workspaces/workspace-paths';
@@ -170,11 +171,10 @@ export function IngredientDeliveryPanel({
         <h3 className="m-0">Ingredient delivery</h3>
         <strong role="status">{labels[stage]}</strong>
       </div>
-      <ol
-        aria-label="Supplier to Distributor to Manufacturer"
-        className="m-0 grid list-none grid-cols-1 gap-[12px] p-0 sm:grid-cols-3"
-      >
-        {[
+      <StatusTimeline
+        label="Supplier to Distributor to Manufacturer"
+        variant="arrival"
+        steps={[
           [
             'Supplier',
             order.sellerName ?? 'Registered Supplier',
@@ -197,33 +197,18 @@ export function IngredientDeliveryPanel({
             stage === 5,
             stage === 5 ? 'Receipt confirmed' : 'Awaiting physical delivery',
           ],
-        ].map(([role, name, done, detail], index) => (
-          <li
-            key={String(role)}
-            aria-current={
-              stage !== 6 && (stage === 1 ? index === 0 : stage <= 3 ? index === 1 : index === 2)
-                ? 'step'
-                : undefined
-            }
-            className={`min-w-0 rounded-lg border p-[12px] ${done ? 'border-[var(--c-teal)] bg-[var(--c-surface2)]' : 'border-[var(--c-border)]'}`}
-          >
-            <div className="flex items-center gap-[8px]">
-              {done ? (
-                <Check size={18} />
-              ) : index === 1 ? (
-                <Truck size={18} />
-              ) : (
-                <PackageCheck size={18} />
-              )}
-              <strong>
-                {String(index + 1)}. {String(role)}
-              </strong>
-            </div>
-            <p className="break-words">{String(name)}</p>
-            <small>{String(detail)}</small>
-          </li>
-        ))}
-      </ol>
+        ].map(([roleName, name, done, detail], index) => ({
+          label: String(roleName),
+          actor: String(name),
+          detail: String(detail),
+          icon: index === 1 ? <Truck size={22} /> : <PackageCheck size={22} />,
+          state: done
+            ? ('complete' as const)
+            : stage !== 6 && (stage === 1 ? index === 0 : stage <= 3 ? index === 1 : index === 2)
+              ? ('current' as const)
+              : ('pending' as const),
+        }))}
+      />
       <p className="m-0">
         {item?.name ?? 'Registered ingredient'} · {order.requested} {item?.unit} · Received:{' '}
         {order.approvedReceivedQuantity ?? '0'} {item?.unit}
@@ -487,7 +472,7 @@ export function IngredientDeliveryPanel({
                 void qrReader.current
                   .decodeImage(file)
                   .then(validate)
-                  .catch(() => setError('No readable delivery QR was found in this image.'));
+                  .catch((cause) => setError(qrImageErrorMessage(cause)));
               }}
             />
           </label>

@@ -35,6 +35,22 @@ describe('Ingredient delivery locators', () => {
     expect(decodeIngredientDeliveryQr(qr, config)).toEqual({ orderId: config.orderId });
     expect(qr).not.toContain('credential');
   });
+  it('reports shipment, network and contract mismatches separately', () => {
+    const expected = { ...config, shipmentId: config.orderId, kind: 'ingredient' as const };
+    const qr = encodeShipmentQr(expected);
+    expect(() => decodeShipmentQr(qr, { ...expected, shipmentId: `0x${'22'.repeat(32)}` })).toThrow(
+      'different shipment',
+    );
+    expect(() => decodeShipmentQr(qr, { ...expected, chainId: 11_155_111 })).toThrow(
+      'different blockchain network',
+    );
+    expect(() =>
+      decodeShipmentQr(qr, {
+        ...expected,
+        ordersAddress: '0x2000000000000000000000000000000000000002',
+      }),
+    ).toThrow('different Orders contract');
+  });
   it.each([
     (qr: string) => qr.replace('https://tracechain.example', 'https://attacker.example'),
     (qr: string) => qr.replace('31337', '11155111'),

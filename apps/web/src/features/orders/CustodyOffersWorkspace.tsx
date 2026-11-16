@@ -2,7 +2,21 @@ import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CalendarClock, Inbox, Package, RefreshCw, Send } from 'lucide-react';
+import {
+  ArrowLeft,
+  CalendarClock,
+  CheckCircle2,
+  ClipboardCheck,
+  Clock3,
+  Handshake,
+  Hourglass,
+  Inbox,
+  Package,
+  RefreshCw,
+  Send,
+  Warehouse,
+  XCircle,
+} from 'lucide-react';
 import {
   actCustodyOffer,
   createCustodyOffer,
@@ -48,6 +62,375 @@ const statusLabel: Record<CustodyOffer['status'], string> = {
   RECEIVED: 'Received into custody',
   EXPIRED: 'Expired',
 };
+
+function CustodyRequestDetail({
+  offer,
+  role,
+  receiver,
+  actor,
+  busy,
+  pickup,
+  setPickup,
+  vehicle,
+  setVehicle,
+  actual,
+  setActual,
+  eta,
+  setEta,
+  confirmed,
+  setConfirmed,
+  qr,
+  run,
+  setNotice,
+  locationLabel,
+}: {
+  offer: CustodyOffer;
+  role: WorkspaceRole;
+  receiver: boolean;
+  actor: string;
+  busy: boolean;
+  pickup: string;
+  setPickup: (value: string) => void;
+  vehicle: string;
+  setVehicle: (value: string) => void;
+  actual: string;
+  setActual: (value: string) => void;
+  eta: string;
+  setEta: (value: string) => void;
+  confirmed: boolean;
+  setConfirmed: (value: boolean) => void;
+  qr?: string;
+  run: (action: () => Promise<void>) => Promise<void>;
+  setNotice: (value: string) => void;
+  locationLabel: (location: string) => string;
+}) {
+  const currentStage: Partial<Record<CustodyOffer['status'], number>> = {
+    REQUESTED: 1,
+    ACCEPTED: 2,
+    SCHEDULED: 3,
+    DISPATCHED: 4,
+    RECEIVED: 5,
+  };
+  const activeStage = currentStage[offer.status];
+  const terminal = offer.status === 'REJECTED' || offer.status === 'EXPIRED';
+  const steps = [
+    { actor: offer.senderName, icon: <Send size={30} />, label: 'Offer sent' },
+    {
+      actor: offer.distributorName,
+      icon: <ClipboardCheck size={30} />,
+      label: 'Distributor accepts',
+    },
+    {
+      actor: offer.distributorName,
+      icon: <CalendarClock size={30} />,
+      label: 'Pickup arranged',
+    },
+    { actor: offer.senderName, icon: <Handshake size={30} />, label: 'Physical handoff' },
+    {
+      actor: offer.distributorName,
+      icon: <Warehouse size={30} />,
+      label: 'Warehouse received',
+    },
+  ].map((step, index) => ({
+    ...step,
+    state:
+      offer.status === 'RECEIVED' || (!terminal && activeStage !== undefined && index < activeStage)
+        ? ('complete' as const)
+        : !terminal && index === activeStage
+          ? ('current' as const)
+          : ('pending' as const),
+  }));
+  const nextAction =
+    offer.status === 'REQUESTED'
+      ? `${offer.distributorName} is reviewing the custody offer.`
+      : offer.status === 'ACCEPTED'
+        ? `${offer.distributorName} accepted the offer and must arrange pickup.`
+        : offer.status === 'SCHEDULED'
+          ? `${offer.senderName} must confirm the physical handoff at pickup.`
+          : offer.status === 'DISPATCHED'
+            ? `${offer.distributorName} must scan the shipment and confirm warehouse receipt.`
+            : offer.status === 'RECEIVED'
+              ? 'Warehouse receipt is complete.'
+              : offer.status === 'REJECTED'
+                ? 'This custody offer was rejected.'
+                : 'This custody offer expired.';
+  const NextIcon =
+    offer.status === 'REQUESTED'
+      ? Hourglass
+      : offer.status === 'ACCEPTED'
+        ? CalendarClock
+        : offer.status === 'SCHEDULED'
+          ? Handshake
+          : offer.status === 'DISPATCHED'
+            ? Warehouse
+            : offer.status === 'RECEIVED'
+              ? CheckCircle2
+              : offer.status === 'REJECTED'
+                ? XCircle
+                : Clock3;
+  const stockNotice =
+    offer.status === 'REJECTED' || offer.status === 'EXPIRED'
+      ? 'No stock moved for this custody offer.'
+      : offer.status === 'DISPATCHED' || offer.status === 'RECEIVED'
+        ? 'Stock moved when the physical handoff was confirmed.'
+        : 'Stock moves only after physical handoff is confirmed.';
+
+  return (
+    <div className="workspace-custody-detail">
+      <Alert type="info" message={stockNotice} />
+      <Card>
+        <div className="workspace-custody-detail__item">
+          <Package size={30} aria-hidden="true" />
+          <h3>{offer.itemName}</h3>
+          <Badge
+            label={statusLabel[offer.status]}
+            variant={
+              offer.status === 'RECEIVED'
+                ? 'verified'
+                : offer.status === 'REJECTED'
+                  ? 'rejected'
+                  : offer.status === 'EXPIRED'
+                    ? 'expired'
+                    : 'pending'
+            }
+          />
+        </div>
+        <StatusTimeline label="Custody request progress" steps={steps} variant="custody" />
+        <div className="workspace-custody-detail__panels">
+          <section
+            className="workspace-custody-detail__panel workspace-custody-detail__panel--transfer"
+            aria-labelledby="custody-transfer-details-title"
+          >
+            <h3 id="custody-transfer-details-title">Transfer details</h3>
+            <dl className="workspace-custody-detail__facts">
+              <div>
+                <dt>Quantity</dt>
+                <dd>
+                  {offer.quantity} {offer.unit}
+                </dd>
+              </div>
+              <div>
+                <dt>Request expiry</dt>
+                <dd>{new Date(offer.expiresAt * 1000).toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt>Sender</dt>
+                <dd>{offer.senderName}</dd>
+              </div>
+              <div>
+                <dt>Distributor</dt>
+                <dd>{offer.distributorName}</dd>
+              </div>
+              {offer.pickupAt && (
+                <div>
+                  <dt>Planned pickup</dt>
+                  <dd>{new Date(offer.pickupAt * 1000).toLocaleString()}</dd>
+                </div>
+              )}
+            </dl>
+            <div className="workspace-custody-detail__route" aria-label="Custody route">
+              <span>{offer.fromLocationName ?? locationLabel(offer.fromLocation)}</span>
+              <span aria-hidden="true">→</span>
+              <span>{offer.toLocationName ?? locationLabel(offer.toLocation)}</span>
+            </div>
+          </section>
+          <section
+            className="workspace-custody-detail__panel workspace-custody-detail__panel--action"
+            aria-labelledby="custody-next-action-title"
+          >
+            <h3 id="custody-next-action-title">Next action</h3>
+            <div className="workspace-custody-detail__next-copy">
+              <span aria-hidden="true">
+                <NextIcon size={22} />
+              </span>
+              <p>{nextAction}</p>
+            </div>
+            {['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
+              <Link
+                className="workspace-custody-detail__evidence-link"
+                to={
+                  workspacePath(role, receiver ? 'sent-requests' : 'requests') +
+                  '?' +
+                  new URLSearchParams({ context: 'custody', referenceId: offer.offerId })
+                }
+              >
+                {receiver
+                  ? 'Request or verify sender company evidence'
+                  : 'Manage requested company evidence'}
+              </Link>
+            )}
+            {receiver && offer.status === 'REQUESTED' && (
+              <div className="workspace-location-actions">
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await actCustodyOffer(offer.offerId, { action: 'accept' });
+                      setNotice('Offer accepted. Arrange the pickup time next.');
+                    })
+                  }
+                >
+                  Accept custody offer
+                </Btn>
+                <Btn
+                  variant="danger"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await actCustodyOffer(offer.offerId, { action: 'reject' });
+                      setNotice('Custody offer rejected. No stock moved.');
+                    })
+                  }
+                >
+                  Reject offer
+                </Btn>
+              </div>
+            )}
+            {receiver && ['ACCEPTED', 'SCHEDULED'].includes(offer.status) && !offer.shipmentId && (
+              <section className="workspace-pickup-plan" aria-label="Pickup arrangement">
+                <h4>
+                  <CalendarClock size={18} />
+                  Arrange pickup
+                </h4>
+                <Input
+                  label="Planned custody pickup"
+                  type="datetime-local"
+                  value={pickup}
+                  onChange={setPickup}
+                  required
+                  min={local()}
+                  max={local(offer.expiresAt * 1000 - Date.now())}
+                />
+                <Btn
+                  disabled={
+                    busy ||
+                    !(
+                      Date.parse(pickup) > Date.now() && Date.parse(pickup) < offer.expiresAt * 1000
+                    )
+                  }
+                  onClick={() =>
+                    void run(async () => {
+                      await actCustodyOffer(offer.offerId, {
+                        action: 'schedule',
+                        pickupAt: Math.floor(Date.parse(pickup) / 1000),
+                      });
+                      setNotice('Pickup time shared with the sender.');
+                    })
+                  }
+                >
+                  {offer.pickupAt ? 'Update pickup time' : 'Confirm pickup time'}
+                </Btn>
+              </section>
+            )}
+            {!receiver && offer.status === 'SCHEDULED' && (
+              <section
+                className="workspace-custody-detail__handoff workspace-flow-page"
+                aria-label="Physical handoff confirmation"
+              >
+                <h4>Confirm physical handoff at pickup</h4>
+                <Input
+                  label="Pickup vehicle registration"
+                  value={vehicle}
+                  onChange={(value) => setVehicle(value.toUpperCase())}
+                  maxLength={32}
+                  required
+                />
+                <Input
+                  label="Actual handoff time"
+                  type="datetime-local"
+                  value={actual}
+                  onChange={setActual}
+                  required
+                />
+                <Input
+                  label="Expected warehouse arrival"
+                  type="datetime-local"
+                  value={eta}
+                  onChange={setEta}
+                  required
+                />
+                <label className="workspace-custody-detail__confirmation">
+                  <input
+                    type="checkbox"
+                    checked={confirmed}
+                    onChange={(event) => setConfirmed(event.target.checked)}
+                  />
+                  The goods were physically handed to this Distributor.
+                </label>
+                <Btn
+                  icon={<Send size={16} />}
+                  disabled={
+                    busy ||
+                    !confirmed ||
+                    !/^(?=.*[A-Z0-9])[A-Z0-9 -]{2,32}$/.test(vehicle) ||
+                    !(Date.parse(actual) <= Date.now() && Date.parse(eta) > Date.now())
+                  }
+                  onClick={() =>
+                    void run(async () => {
+                      const prepared = await prepareCustodyOffer(offer.offerId, {
+                        vehicle,
+                        occurredAt: Math.floor(Date.parse(actual) / 1000),
+                        expectedAt: Math.floor(Date.parse(eta) / 1000),
+                      });
+                      await submitProductionTransaction(prepared.transaction, actor);
+                      setConfirmed(false);
+                      setNotice(
+                        'Physical handoff recorded. The Distributor scans receipt at its warehouse.',
+                      );
+                    })
+                  }
+                >
+                  Confirm handoff with MetaMask
+                </Btn>
+              </section>
+            )}
+            {offer.shipmentId && ['DISPATCHED', 'RECEIVED'].includes(offer.status) && (
+              <Link
+                className="workspace-custody-detail__evidence-link"
+                to={
+                  workspacePath(role, receiver ? 'arrivals' : 'shipments') +
+                  '?shipmentId=' +
+                  encodeURIComponent(offer.shipmentId)
+                }
+              >
+                {receiver ? 'Open warehouse arrival & scan receipt' : 'Track this shipment'}
+              </Link>
+            )}
+          </section>
+        </div>
+        {!receiver && qr && (
+          <ProductQrDisplay
+            batchId={offer.batchId}
+            batchReference={offer.itemName}
+            productName={offer.itemName}
+            labelTitle="Custody Shipment QR"
+            encodedPayload={qr}
+            instruction="Attach this label to the goods. The Distributor scans it at warehouse receipt."
+          />
+        )}
+        {!receiver &&
+          !qr &&
+          offer.shipmentId &&
+          ['DISPATCHED', 'RECEIVED'].includes(offer.status) && (
+            <Alert
+              type="info"
+              message="The shipment is recorded, but its QR label is unavailable. Open shipment tracking to check the configured QR URL before warehouse receipt."
+            />
+          )}
+        <div className="workspace-custody-detail__technical">
+          <TechnicalDetails
+            fields={[
+              { label: 'Custody request', value: offer.offerId },
+              { label: 'Batch', value: offer.batchId },
+              { label: 'Source location', value: offer.fromLocation },
+              { label: 'Warehouse location', value: offer.toLocation },
+            ]}
+          />
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 export function CustodyOffersWorkspace({
   role,
@@ -134,9 +517,6 @@ export function CustodyOffersWorkspace({
           ? selectedProductStock.available
           : '0'
       : undefined;
-  const stage = selected
-    ? ['REQUESTED', 'ACCEPTED', 'SCHEDULED', 'DISPATCHED', 'RECEIVED'].indexOf(selected.status)
-    : -1;
   const visible = offers.filter(
     (offer) => data && same(receiver ? offer.distributor : offer.sender, data.actor),
   );
@@ -169,306 +549,73 @@ export function CustodyOffersWorkspace({
       className="workspace-flow-page"
       aria-label={receiver ? 'Custody requests' : 'Send stock into custody'}
     >
-      <SectionTitle
-        title={receiver ? 'Custody requests' : 'Send stock to Distributor custody'}
-        action={
-          <Btn
-            variant="outline"
-            icon={<RefreshCw size={16} />}
-            disabled={loading || busy}
-            onClick={() => void run(async () => {})}
+      {params.get('offerId') ? (
+        <header className="workspace-custody-detail-header">
+          <Link
+            className="workspace-custody-detail-header__back"
+            to={workspacePath(role, receiver ? 'intake' : 'transfers')}
           >
-            Refresh
-          </Btn>
-        }
-        sub={
-          receiver
-            ? 'Review the offer, then arrange pickup. Warehouse receipt is confirmed separately.'
-            : 'Choose your stock and a Distributor warehouse. The Distributor accepts and schedules pickup first.'
-        }
-      />
+            <ArrowLeft size={17} aria-hidden="true" />
+            Custody requests
+          </Link>
+          <div className="workspace-custody-detail-header__title-row">
+            <h2>Distributor custody request</h2>
+            <Btn
+              variant="outline"
+              icon={<RefreshCw size={16} />}
+              disabled={loading || busy}
+              onClick={() => void run(async () => {})}
+            >
+              Refresh
+            </Btn>
+          </div>
+        </header>
+      ) : (
+        <SectionTitle
+          title={receiver ? 'Custody requests' : 'Send stock to Distributor custody'}
+          action={
+            <Btn
+              variant="outline"
+              icon={<RefreshCw size={16} />}
+              disabled={loading || busy}
+              onClick={() => void run(async () => {})}
+            >
+              Refresh
+            </Btn>
+          }
+          sub={
+            receiver
+              ? 'Review the offer, then arrange pickup. Warehouse receipt is confirmed separately.'
+              : 'Choose your stock and a Distributor warehouse. The Distributor accepts and schedules pickup first.'
+          }
+        />
+      )}
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
       {loading ? (
         <LoadingIndicator page label="Loading custody requests…" />
       ) : selected && data ? (
-        <>
-          <Btn variant="outline" onClick={() => setParams({})}>
-            Back to custody requests
-          </Btn>
-          <Card>
-            <SectionTitle
-              title={selected.itemName}
-              action={
-                <Badge
-                  label={statusLabel[selected.status]}
-                  variant={
-                    selected.status === 'RECEIVED'
-                      ? 'verified'
-                      : selected.status === 'REJECTED'
-                        ? 'rejected'
-                        : 'pending'
-                  }
-                />
-              }
-            />
-            <StatusTimeline
-              label="Custody request progress"
-              steps={[
-                ['Offer sent', selected.senderName],
-                ['Distributor accepts', selected.distributorName],
-                ['Pickup arranged', selected.distributorName],
-                ['Physical handoff', selected.senderName],
-                ['Warehouse received', selected.distributorName],
-              ].map(([label, actor], index) => ({
-                actor,
-                label,
-                state:
-                  selected.status === 'RECEIVED' || index < stage
-                    ? ('complete' as const)
-                    : index === stage
-                      ? ('current' as const)
-                      : ('pending' as const),
-              }))}
-            />
-            <dl className="workspace-offer-facts">
-              <div>
-                <dt>Quantity</dt>
-                <dd>
-                  {selected.quantity} {selected.unit}
-                </dd>
-              </div>
-              <div>
-                <dt>Sender</dt>
-                <dd>{selected.senderName}</dd>
-              </div>
-              <div>
-                <dt>Distributor</dt>
-                <dd>{selected.distributorName}</dd>
-              </div>
-              <div>
-                <dt>Route</dt>
-                <dd>
-                  {selected.fromLocationName ?? label(selected.fromLocation)} →{' '}
-                  {selected.toLocationName ?? label(selected.toLocation)}
-                </dd>
-              </div>
-              <div>
-                <dt>Request expiry</dt>
-                <dd>{new Date(selected.expiresAt * 1000).toLocaleString()}</dd>
-              </div>
-              {selected.pickupAt && (
-                <div>
-                  <dt>Planned pickup</dt>
-                  <dd>{new Date(selected.pickupAt * 1000).toLocaleString()}</dd>
-                </div>
-              )}
-            </dl>
-            <Alert
-              type="info"
-              message={
-                selected.status === 'REQUESTED'
-                  ? `Next action: ${selected.distributorName} reviews the custody offer.`
-                  : selected.status === 'ACCEPTED'
-                    ? `Next action: ${selected.distributorName} arranges pickup.`
-                    : selected.status === 'SCHEDULED'
-                      ? `Next action: ${selected.senderName} confirms the physical handoff.`
-                      : selected.status === 'DISPATCHED'
-                        ? `Next action: ${selected.distributorName} scans the shipment and confirms physical receipt.`
-                        : selected.status === 'RECEIVED'
-                          ? 'Custody receipt is complete.'
-                          : `This custody offer is ${statusLabel[selected.status].toLowerCase()}.`
-              }
-            />
-            {['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(selected.status) && (
-              <Link
-                to={
-                  workspacePath(role, receiver ? 'sent-requests' : 'requests') +
-                  '?' +
-                  new URLSearchParams({ context: 'custody', referenceId: selected.offerId })
-                }
-              >
-                {receiver
-                  ? 'Request or verify sender company evidence'
-                  : 'Manage requested company evidence'}
-              </Link>
-            )}
-            {receiver && selected.status === 'REQUESTED' && (
-              <div className="workspace-location-actions">
-                <Btn
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await actCustodyOffer(selected.offerId, { action: 'accept' });
-                      setNotice('Offer accepted. Arrange the pickup time next.');
-                    })
-                  }
-                >
-                  Accept custody offer
-                </Btn>
-                <Btn
-                  variant="danger"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await actCustodyOffer(selected.offerId, { action: 'reject' });
-                      setNotice('Custody offer rejected. No stock moved.');
-                    })
-                  }
-                >
-                  Reject offer
-                </Btn>
-              </div>
-            )}
-            {receiver &&
-              ['ACCEPTED', 'SCHEDULED'].includes(selected.status) &&
-              !selected.shipmentId && (
-                <section className="workspace-pickup-plan">
-                  <h4>
-                    <CalendarClock size={18} />
-                    Arrange pickup
-                  </h4>
-                  <div className="workspace-profile-form">
-                    <Input
-                      label="Planned custody pickup"
-                      type="datetime-local"
-                      value={pickup}
-                      onChange={setPickup}
-                      required
-                      min={local()}
-                      max={local(selected.expiresAt * 1000 - Date.now())}
-                    />
-                    <Btn
-                      disabled={
-                        busy ||
-                        !(
-                          Date.parse(pickup) > Date.now() &&
-                          Date.parse(pickup) < selected.expiresAt * 1000
-                        )
-                      }
-                      onClick={() =>
-                        void run(async () => {
-                          await actCustodyOffer(selected.offerId, {
-                            action: 'schedule',
-                            pickupAt: Math.floor(Date.parse(pickup) / 1000),
-                          });
-                          setNotice('Pickup time shared with the sender.');
-                        })
-                      }
-                    >
-                      {selected.pickupAt ? 'Update pickup time' : 'Confirm pickup time'}
-                    </Btn>
-                  </div>
-                </section>
-              )}
-            {!receiver && ['REQUESTED', 'ACCEPTED'].includes(selected.status) && (
-              <p className="workspace-list-guidance">
-                {selected.status === 'REQUESTED'
-                  ? 'Waiting for the Distributor’s decision.'
-                  : 'The Distributor will arrange the pickup time next.'}
-              </p>
-            )}
-            {!receiver && selected.status === 'SCHEDULED' && (
-              <section className="delivery-action-section workspace-flow-page">
-                <h3>Confirm physical handoff at pickup</h3>
-                <Input
-                  label="Pickup vehicle registration"
-                  value={vehicle}
-                  onChange={(value) => setVehicle(value.toUpperCase())}
-                  maxLength={32}
-                  required
-                />
-                <div className="workspace-profile-form">
-                  <Input
-                    label="Actual handoff time"
-                    type="datetime-local"
-                    value={actual}
-                    onChange={setActual}
-                    required
-                  />
-                  <Input
-                    label="Expected warehouse arrival"
-                    type="datetime-local"
-                    value={eta}
-                    onChange={setEta}
-                    required
-                  />
-                </div>
-                <label className="flex items-start gap-[8px]">
-                  <input
-                    type="checkbox"
-                    checked={confirmed}
-                    onChange={(event) => setConfirmed(event.target.checked)}
-                  />
-                  The goods were physically handed to this Distributor.
-                </label>
-                <Btn
-                  icon={<Send size={16} />}
-                  disabled={
-                    busy ||
-                    !confirmed ||
-                    !/^(?=.*[A-Z0-9])[A-Z0-9 -]{2,32}$/.test(vehicle) ||
-                    !(Date.parse(actual) <= Date.now() && Date.parse(eta) > Date.now())
-                  }
-                  onClick={() =>
-                    void run(async () => {
-                      const prepared = await prepareCustodyOffer(selected.offerId, {
-                        vehicle,
-                        occurredAt: Math.floor(Date.parse(actual) / 1000),
-                        expectedAt: Math.floor(Date.parse(eta) / 1000),
-                      });
-                      await submitProductionTransaction(prepared.transaction, data.actor);
-                      setConfirmed(false);
-                      setNotice(
-                        'Physical handoff recorded. The Distributor scans receipt at its warehouse.',
-                      );
-                    })
-                  }
-                >
-                  Confirm handoff with MetaMask
-                </Btn>
-              </section>
-            )}
-            {selected.shipmentId && ['DISPATCHED', 'RECEIVED'].includes(selected.status) && (
-              <Link
-                to={
-                  workspacePath(role, receiver ? 'arrivals' : 'shipments') +
-                  '?shipmentId=' +
-                  encodeURIComponent(selected.shipmentId)
-                }
-              >
-                {receiver ? 'Open warehouse arrival & scan receipt' : 'Track this shipment'}
-              </Link>
-            )}
-            {!receiver && qr && (
-              <ProductQrDisplay
-                batchId={selected.batchId}
-                batchReference={selected.itemName}
-                productName={selected.itemName}
-                labelTitle="Custody Shipment QR"
-                encodedPayload={qr}
-                instruction="Attach this label to the goods. The Distributor scans it at warehouse receipt."
-              />
-            )}
-            {!receiver &&
-              !qr &&
-              selected.shipmentId &&
-              ['DISPATCHED', 'RECEIVED'].includes(selected.status) && (
-                <Alert
-                  type="info"
-                  message="The shipment is recorded, but its QR label is unavailable. Open shipment tracking to check the configured QR URL before warehouse receipt."
-                />
-              )}
-            <TechnicalDetails
-              fields={[
-                { label: 'Custody request', value: selected.offerId },
-                { label: 'Batch', value: selected.batchId },
-                { label: 'Source location', value: selected.fromLocation },
-                { label: 'Warehouse location', value: selected.toLocation },
-              ]}
-            />
-          </Card>
-        </>
+        <CustodyRequestDetail
+          offer={selected}
+          role={role}
+          receiver={receiver}
+          actor={data.actor}
+          busy={busy}
+          pickup={pickup}
+          setPickup={setPickup}
+          vehicle={vehicle}
+          setVehicle={setVehicle}
+          actual={actual}
+          setActual={setActual}
+          eta={eta}
+          setEta={setEta}
+          confirmed={confirmed}
+          setConfirmed={setConfirmed}
+          qr={qr}
+          run={run}
+          setNotice={setNotice}
+          locationLabel={label}
+        />
       ) : (
         <>
           {!receiver && data && (

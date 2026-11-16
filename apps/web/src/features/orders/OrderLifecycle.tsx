@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
+import { ClipboardCheck, PackageCheck, Send, Warehouse } from 'lucide-react';
 import type { OrderRecord } from './orders.api';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { workspacePath } from '../workspaces/workspace-paths';
-import { Badge } from '../workspaces/shared/ui';
+import { Badge, StatusTimeline } from '../workspaces/shared/ui';
 const same = (left?: string, right?: string) =>
   !!left && !!right && left.toLowerCase() === right.toLowerCase();
 export function OrderLifecycle({
@@ -56,18 +57,32 @@ export function OrderLifecycle({
       : 'The request deadline has passed. Check the recorded delivery state before taking further action.';
   return (
     <section className="order-lifecycle" aria-label="Order progress">
-      <ol>
-        {['Requested', 'Seller review', 'Delivery', 'Received'].map((label, index) => (
-          <li
-            key={label}
-            aria-current={!cancelled && !expired && index === step ? 'step' : undefined}
-            className={index < step && !cancelled ? 'is-complete' : ''}
-          >
-            <span>{index + 1}</span>
-            {label}
-          </li>
-        ))}
-      </ol>
+      <StatusTimeline
+        label="Order progress"
+        variant="arrival"
+        steps={[
+          { label: 'Requested', icon: <Send size={22} /> },
+          { label: 'Seller review', icon: <ClipboardCheck size={22} /> },
+          { label: 'Delivery', icon: <PackageCheck size={22} /> },
+          { label: 'Received', icon: <Warehouse size={22} /> },
+        ].map((item, index) => ({
+          ...item,
+          actor:
+            index === 0
+              ? (order.buyerName ?? 'Requesting company')
+              : index === 1
+                ? (order.sellerName ?? 'Supplying company')
+                : index === 2
+                  ? 'Physical handoff'
+                  : (order.buyerName ?? 'Receiving company'),
+          state:
+            received || (!cancelled && !expired && index < step)
+              ? ('complete' as const)
+              : !cancelled && !expired && index === step
+                ? ('current' as const)
+                : ('pending' as const),
+        }))}
+      />
       <div className="order-next-action">
         <Badge
           label={

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ZxingTransferQrReader,
   cameraErrorMessage,
+  qrImageErrorMessage,
   type TransferQrReader,
 } from '../custody-transfers/qr-reader';
 import {
@@ -170,8 +171,8 @@ export function ProductTraceabilityPage({
                       setPayload(value);
                       return resolve(value);
                     })
-                    .catch(() => {
-                      setError('No valid product QR was found in that image.');
+                    .catch((cause) => {
+                      setError(qrImageErrorMessage(cause));
                       setState('error');
                     });
                 }}

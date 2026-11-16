@@ -1,7 +1,10 @@
 import { CompanyRole } from '@tracechain/shared';
 import { encodeBytes32String, id } from 'ethers';
+import express from 'express';
+import request from 'supertest';
 import { describe, expect, it, vi } from 'vitest';
 import { CustodyOffers } from './custody-offers.js';
+import { createOrdersRouter } from './orders.routes.js';
 import { OrdersService } from './orders.service.js';
 
 const source = '0x1000000000000000000000000000000000000001',
@@ -114,7 +117,15 @@ function fixture(
       role,
     })),
   };
+  const service = new OrdersService(auth as any, gateway, store as any, repo as any);
+  const app = express();
+  app.use(express.json());
+  app.use(
+    '/api/orders',
+    createOrdersRouter(() => service, 'session'),
+  );
   return {
+    app,
     offers,
     records,
     store,
@@ -136,6 +147,142 @@ function fixture(
   };
 }
 describe('custody offer, acceptance, pickup and handoff', () => {
+  it('lists a valid offer while omitting stale ingredient and product offers', async () => {
+    const f = fixture();
+    const validBatch = id('current-ingredient-batch');
+    const staleIngredient = id('stale-ingredient-batch');
+    const staleProduct = id('stale-product-batch');
+    const registrationHash = id('current-registration-block');
+    let ingredientRegistrations = [validBatch, staleIngredient].map((value) => ({
+      batchId: value,
+      blockHash: registrationHash,
+    }));
+    let productRegistrations = [{ productBatchId: staleProduct, blockHash: registrationHash }];
+    const events = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, event) => {
+      if (event === 'IngredientBatchRegistered') return ingredientRegistrations;
+      if (event === 'ProductCreated') return productRegistrations;
+      return events(contract, event);
+    });
+
+    const valid = await f.offers.create('s', {
+      ...input,
+      batchId: validBatch,
+      operationId: crypto.randomUUID(),
+    });
+    await f.offers.create('s', {
+      ...input,
+      batchId: staleIngredient,
+      operationId: crypto.randomUUID(),
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+    await f.offers.create('s', {
+      ...input,
+      batchId: staleProduct,
+      kind: 2,
+      operationId: crypto.randomUUID(),
+    });
+
+    ingredientRegistrations = ingredientRegistrations.slice(0, 1);
+    productRegistrations = [];
+    f.actor(source, CompanyRole.SUPPLIER);
+    const read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (
+        (method === 'getBatch' && args?.[0] === staleIngredient) ||
+        (method === 'getProduct' && args?.[0] === staleProduct)
+      )
+        throw Object.assign(new Error('missing current batch'), { code: 'CALL_EXCEPTION' });
+      return read(contract, method, args);
+    });
+
+    const response = await request(f.app).get('/api/orders/custody-offers').expect(200);
+    expect(response.body.offers).toHaveLength(1);
+    expect(response.body.offers[0].offerId).toBe(valid.offer.offerId);
+    expect(f.records).toHaveProperty('size', 3);
+  });
+
+  it('returns an empty list when every saved offer is stale and still creates current offers', async () => {
+    const f = fixture();
+    const staleBatch = id('stale-only-batch');
+    const currentBatch = id('new-current-batch');
+    const registrationHash = id('registration-block');
+    let registrations = [{ batchId: staleBatch, blockHash: registrationHash }];
+    const events = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, event) =>
+      event === 'IngredientBatchRegistered' ? registrations : events(contract, event),
+    );
+    await f.offers.create('s', {
+      ...input,
+      batchId: staleBatch,
+      operationId: crypto.randomUUID(),
+    });
+    registrations = [];
+    const read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (method === 'getBatch' && args?.[0] === staleBatch)
+        throw Object.assign(new Error('missing current batch'), { code: 'CALL_EXCEPTION' });
+      return read(contract, method, args);
+    });
+
+    const response = await request(f.app).get('/api/orders/custody-offers').expect(200);
+    expect(response.body.offers).toEqual([]);
+    expect(f.records).toHaveProperty('size', 1);
+
+    registrations = [{ batchId: currentBatch, blockHash: registrationHash }];
+    await expect(
+      f.offers.create('s', {
+        ...input,
+        batchId: currentBatch,
+        operationId: crypto.randomUUID(),
+      }),
+    ).resolves.toMatchObject({ offer: { batchId: currentBatch } });
+  });
+
+  it('propagates a registration-event lookup failure instead of treating offers as stale', async () => {
+    const f = fixture();
+    await f.offers.create('s', input);
+    f.gateway.events.mockRejectedValue(new Error('registration lookup unavailable'));
+
+    const response = await request(f.app).get('/api/orders/custody-offers').expect(503);
+    expect(response.body.error.code).toBe('ORDER_SERVICE_UNAVAILABLE');
+    await expect(f.offers.list('s')).rejects.toThrow('registration lookup unavailable');
+  });
+
+  it('does not classify a registered offer as stale when its batch read fails', async () => {
+    const f = fixture();
+    await f.offers.create('s', input);
+    const read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (method === 'getBatch')
+        throw Object.assign(new Error('batch RPC unavailable'), { code: 'CALL_EXCEPTION' });
+      return read(contract, method, args);
+    });
+
+    const response = await request(f.app).get('/api/orders/custody-offers').expect(503);
+    expect(response.body.error.code).toBe('ORDER_SERVICE_UNAVAILABLE');
+    await expect(f.offers.list('s')).rejects.toMatchObject({ code: 'CALL_EXCEPTION' });
+  });
+
+  it('does not allow a stale offer opened directly to be acted on', async () => {
+    const f = fixture();
+    const { offer } = await f.offers.create('s', input);
+    f.gateway.events.mockResolvedValue([]);
+    const read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (method === 'getBatch')
+        throw Object.assign(new Error('missing current batch'), { code: 'CALL_EXCEPTION' });
+      return read(contract, method, args);
+    });
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+
+    await expect(f.offers.act('s', offer.offerId, { action: 'accept' })).rejects.toMatchObject({
+      code: 'OFFER_NOT_FOUND',
+    });
+    expect(f.records.get(offer.offerId)?.recordType).toBe('custody-offer');
+    expect(f.repo.savePrivate).toHaveBeenCalledTimes(1);
+  });
+
   it('accepts a small offer from a fresh product batch only at its production location', async () => {
     const f = fixture({
       inventoryAvailable: '0',

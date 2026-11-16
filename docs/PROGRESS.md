@@ -26,6 +26,34 @@
 - Added owner/current-Admin review routes, sandboxed preview/download in Admin application details and company Profile, and pending-applicant review on Login. Added applicant-only legacy reattachment; saved sets cannot be overwritten and original application hashes are preserved.
 - Files are stored in encrypted IPFS and an ignored encrypted local cache. No keys, credentials, contracts or old documents were changed. Historical hashes cannot recover missing document bytes.
 - Validation: all 345 API tests and 262 frontend tests passed; shared/API/frontend type checks and root production build passed. Six new API security/storage tests and three document UI tests cover separate-company denial, current/pending-owner access, immutable legacy attachment, encrypted restart persistence, signature substitution, malformed/oversized files, storage failure and explicit preview. Tests use temporary encrypted stores and simulated IPFS; no real supporting documents were uploaded. Existing Vite chunk/directive warnings remain.
+## 2026-11-16 — Resilient shipment QR image decoding
+
+- Reproduced ZXing's message-less `NotFoundException` in `GridSampler.checkAndNudgePoints` for a
+  dense downloaded 57-module shipment QR rendered at 10 pixels per module. The same unchanged
+  payload decodes after nearest-neighbour downscaling, confirming an image-sampling failure rather
+  than a payload, shipment or authorization problem.
+- Hardened the shared QR image reader while retaining the original decode attempt. It now waits for
+  image loading, flattens transparency onto white, retries bounded aspect-ratio-preserving sizes and
+  a high-contrast variant, optionally uses `BarcodeDetector`, and releases all object URLs, images
+  and temporary canvases. Camera scanning and post-decode chain, contract, shipment, recipient and
+  status validation remain unchanged.
+- Warehouse-arrival uploads now distinguish unreadable/corrupted images from malformed labels and
+  shipment/chain/contract mismatches, and show the selected filename with **Shipment QR verified**
+  before receipt confirmation is enabled. Added real generated PNG/JPEG/WebP and cleanup regression
+  coverage; all 284 frontend tests, frontend type checking and the production build pass.
+
+## 2026-11-16 — Unified transaction workflow details
+
+- Standardized active order, ingredient-delivery, product-delivery, shipment-tracking and Retailer
+  receipt details around the same responsive circular progress flow, compact summary, information /
+  next-action panels and collapsed Technical details hierarchy.
+- Shipment details now reuse one role-aware presentation for Supplier, Manufacturer, Distributor and
+  Retailer routes. Existing QR verification, image upload, camera, MetaMask, evidence, inventory and
+  role-specific controls are unchanged; the superseded duplicate shipment-detail markup was removed.
+- Added focused Retailer receipt coverage. All 271 frontend tests, repository type checking and the
+  production build pass. The repository-wide formatter still reports its existing unrelated baseline;
+  every file changed for this UI update passes the focused Prettier check.
+
 ## 2026-11-16 — Ingredient photo review preview
 
 - Replaced the Supplier ingredient-registration review's filename-only optional-image row with a
@@ -65,6 +93,7 @@
 - Added migration/restart/preservation, encryption/wrong-key/tamper/gateway, same-wallet two-session SIWE retrieval, Admin backup-access and no-terminal UI tests. Extended holder recovery tests to sign a new bound selective presentation with the recovered key and reject an unrelated key. Automated Pinata tests use simulated HTTP with real encryption; live results are recorded separately.
 - Added `docs/STORAGE_AND_RECOVERY.md` and optional backend `IPFS_GATEWAY_URL` configuration. Contracts, issued credential contents/IDs, roles, wallet records and stock are preserved. Public-media publishing and moving historical vehicle fields off-chain remain outside this storage-recovery stage.
 - Validation: 25 SSI, 334 API and 251 frontend tests passed; root type checking and production build passed. Four backup-dialog mobile/desktop browser checks passed. Live read-only IPFS recovery matched 41 pinned credentials; 4 non-IPFS/unsupported references were skipped. Actual portable backup creation remains an explicit Admin UI download with the user's password, not a claimed automatic export.
+
 ## 2026-11-16 — Company-logo review hardening
 
 - Required an applicant-wallet signature for every registration, including applications without a
