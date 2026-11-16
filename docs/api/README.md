@@ -433,11 +433,13 @@ credential, stakeholder, batch or inventory state.
 - `GET /api/orders/catalogue/ingredients/:batchId/image` rechecks that batch ownership before
   returning the safe image bytes.
 
-`POST /api/blockchain/transactions/company-application` also accepts an optional company-logo
-envelope together with the applicant wallet and binding signature. The signature covers the exact
-application ID, wallet, profile hash and image digest. All three branding fields must be present
-together. The server validates the actual PNG/JPEG/WebP bytes (maximum 2 MB) and stores the pending
-record encrypted off-chain; applications without a logo keep the existing request shape.
+`POST /api/blockchain/transactions/company-application` requires `applicantWallet` and
+`applicantSignature` for every request, including applications without a logo. The signature covers
+the exact application ID, wallet, company metadata, profile reference/hash, prior application, role
+and initial location. When a company-logo envelope is present, the same signed message includes its
+validated image digest. The server validates the signature and actual PNG/JPEG/WebP bytes (maximum
+2 MB) before persisting metadata or media. Identical retries are idempotent; reusing an application
+ID with any changed signed value returns a conflict even when the profile hash is unchanged.
 
 Authorized System Admin application responses include `pendingLogoPath` when a pending logo belongs
 to the exact on-chain applicant. `GET /api/blockchain/applications/:applicationId/logo` is Admin-only

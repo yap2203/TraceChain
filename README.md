@@ -217,10 +217,13 @@ unavailable until recorded in new registration metadata.
 
 Suppliers can upload one optional PNG/JPEG/WebP catalogue image per owned ingredient batch, and a
 verified company can upload or replace its own optional logo, each limited to 2 MB. Company
-registration also accepts an optional logo separately from supporting documents. The applicant
-signs a binding over the exact application ID, wallet, profile hash and logo digest; the API checks
-the actual image bytes and stores the pending logo encrypted off-chain. It is visible only to an
-authorized Admin during review and becomes available through authenticated stakeholder branding
+registration also accepts an optional logo separately from supporting documents. Every application,
+including one without a logo, requires an applicant-wallet signature over the exact application ID
+and all submitted metadata. When present, the same proof includes the validated logo digest. The API
+validates the complete proof and actual image bytes before persisting either record, rejects
+conflicting application-ID retries and keeps identical retries idempotent. It stores pending logos
+encrypted off-chain. They are visible only to an authorized Admin during review and become available
+through authenticated stakeholder branding
 routes only after that exact application is active. Rejected and still-pending logos are not exposed
 to other stakeholders. Catalogue responses expose authenticated media routes rather than storage
 CIDs or ciphertext. Images and prices are presentation data, not credential claims or independent
@@ -450,7 +453,7 @@ Distributor's SSI credential.
 
 MetaMask can add the configured local network automatically. Hardhat account 0 is the deployed System Admin; use a different generated account to test a new company application because an active administrator cannot submit a stakeholder application. Hardhat development private keys are public test keys and must never be funded or reused on a public network.
 
-The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. The API durably retains the submitted company name and registration number, bound to the application ID and profile hash, so the Admin issuance form is populated automatically. An optional company logo is separately signed by the applicant, byte-validated and encrypted; it is not part of the supporting-document bundle or an on-chain credential claim. During this local-only phase the contract still records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
+The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. Before retaining metadata, the API verifies an applicant-wallet signature bound to every submitted registration field. An optional company logo is included in that proof, byte-validated and encrypted; it is not part of the supporting-document bundle or an on-chain credential claim. Application metadata uses atomic, concurrency-safe JSON persistence so simultaneous registrations do not overwrite one another. During this local-only phase the contract still records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
 
 ### Environment variables
 

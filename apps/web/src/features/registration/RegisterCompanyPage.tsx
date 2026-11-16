@@ -1,4 +1,4 @@
-import { companyLogoBindingMessage } from '@tracechain/shared';
+import { companyApplicationBindingMessage } from '@tracechain/shared';
 import { BrowserProvider, ZeroHash, hexlify, id, isAddress, randomBytes } from 'ethers';
 import {
   Check,
@@ -286,20 +286,10 @@ export function RegisterCompanyPage() {
         }),
       );
       const logoPayload = logo ? await imageFilePayload(logo) : undefined;
-      const logoSignature = logoPayload
-        ? await signer.signMessage(
-            companyLogoBindingMessage({
-              applicationId,
-              applicantWallet: data.wallet,
-              profileHash,
-              logoDigest: id(`${logoPayload.mimeType}:${logoPayload.data}`),
-            }),
-          )
-        : undefined;
       const localContentReference = `local://${profileHash}`;
-      const prepared = await prepareCompanyApplication({
+      const applicationInput = {
         applicationId,
-        ...(logoPayload ? { applicantWallet: data.wallet, logo: logoPayload, logoSignature } : {}),
+        applicantWallet: data.wallet,
         companyName: data.companyName.trim(),
         companyRegistrationNumber: data.registrationNumber.trim(),
         initialLocationName: data.initialLocationName.trim(),
@@ -307,6 +297,19 @@ export function RegisterCompanyPage() {
         previousApplicationId: ZeroHash,
         profileHash,
         requestedRole: roleValues[data.requestedRole],
+        ...(logoPayload ? { logo: logoPayload } : {}),
+      };
+      const applicantSignature = await signer.signMessage(
+        companyApplicationBindingMessage({
+          ...applicationInput,
+          logoDigest: logoPayload ? id(`${logoPayload.mimeType}:${logoPayload.data}`) : undefined,
+          logoFileName: logoPayload?.fileName,
+          logoMimeType: logoPayload?.mimeType,
+        }),
+      );
+      const prepared = await prepareCompanyApplication({
+        ...applicationInput,
+        applicantSignature,
       });
       if (BigInt(prepared.chainId) !== targetChainId)
         throw new Error('The API transaction targets a different chain.');

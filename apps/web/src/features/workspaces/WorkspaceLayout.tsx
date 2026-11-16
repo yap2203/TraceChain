@@ -26,6 +26,7 @@ interface WorkspaceLayoutProps {
     companyName: string;
     credentialStatus: string;
     logoPath?: string;
+    logoRevision?: number;
     role: CompanyRole | WorkspaceRole;
     walletAddress: string;
   };
@@ -165,7 +166,12 @@ export function WorkspaceLayout({
             <span className="workspace-status">{status}</span>
             {identity && (
               <span className="workspace-company">
-                <CompanyAvatar name={identity.companyName} logoPath={identity.logoPath} size="sm" />
+                <CompanyAvatar
+                  name={identity.companyName}
+                  logoPath={identity.logoPath}
+                  revision={identity.logoRevision}
+                  size="sm"
+                />
                 <span>{identity.companyName}</span>
               </span>
             )}

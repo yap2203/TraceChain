@@ -1,17 +1,35 @@
-export interface CompanyLogoBinding {
+export interface CompanyApplicationBinding {
   applicationId: string;
   applicantWallet: string;
+  companyName: string;
+  companyRegistrationNumber: string;
+  encryptedProfileCid: string;
+  initialLocationName?: string;
+  logoDigest?: string;
+  logoFileName?: string;
+  logoMimeType?: string;
+  previousApplicationId: string;
   profileHash: string;
-  logoDigest: string;
+  requestedRole: number;
 }
 
-export function companyLogoBindingMessage(binding: CompanyLogoBinding) {
+export function companyApplicationBindingMessage(binding: CompanyApplicationBinding) {
   return [
-    'TraceChain company registration logo',
-    `Application: ${binding.applicationId.toLowerCase()}`,
-    `Applicant: ${binding.applicantWallet.toLowerCase()}`,
-    `Profile: ${binding.profileHash.toLowerCase()}`,
-    `Logo: ${binding.logoDigest.toLowerCase()}`,
-    'Purpose: bind this optional presentation logo to this exact company application.',
+    'TraceChain company application',
+    JSON.stringify({
+      applicationId: binding.applicationId.toLowerCase(),
+      applicantWallet: binding.applicantWallet.toLowerCase(),
+      companyName: binding.companyName,
+      companyRegistrationNumber: binding.companyRegistrationNumber,
+      encryptedProfileCid: binding.encryptedProfileCid,
+      initialLocationName: binding.initialLocationName ?? null,
+      logoDigest: binding.logoDigest?.toLowerCase() ?? null,
+      logoFileName: binding.logoFileName ?? null,
+      logoMimeType: binding.logoMimeType ?? null,
+      previousApplicationId: binding.previousApplicationId.toLowerCase(),
+      profileHash: binding.profileHash.toLowerCase(),
+      requestedRole: binding.requestedRole,
+    }),
+    'Purpose: prove ownership of the applicant wallet and bind every submitted field to this exact application.',
   ].join('\n');
 }

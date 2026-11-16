@@ -1,5 +1,20 @@
 # Project Progress
 
+## 2026-11-16 — Company-logo review hardening
+
+- Required an applicant-wallet signature for every registration, including applications without a
+  logo. The signed message binds the application ID and every submitted field, plus the validated
+  logo digest when present. Signature and image-byte validation now finish before metadata or media
+  persistence; rejected submissions leave no records. Identical retries are no-ops, while any changed
+  signed input conflicts even if it reuses the same profile hash.
+- Serialized the complete application-metadata JSON read–modify–write cycle per file while retaining
+  temporary-file rename persistence. Concurrent saves through separate repository instances no longer
+  lose either application, and existing records remain readable.
+- Added shared company-branding state and media revisions. Replacing a logo updates My company
+  identity and the workspace header immediately, uses the unchanged authenticated endpoint, bypasses
+  an older in-flight media promise and preserves initials fallback. Pending/rejected visibility and
+  exact active-application checks remain unchanged.
+
 ## 2026-11-16 — Application-bound company branding
 
 - Added an optional Company logo field to registration, separate from supporting documents, with

@@ -14,10 +14,8 @@ export const personalPermissionTransactionSchema = z
 export const applicationTransactionSchema = z
   .object({
     applicationId: bytes32Schema,
-    applicantWallet: z
-      .string()
-      .regex(/^0x[0-9a-fA-F]{40}$/)
-      .optional(),
+    applicantWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    applicantSignature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
     companyName: z.string().trim().min(1).max(200),
     companyRegistrationNumber: z.string().trim().min(1).max(120),
     initialLocationName: z.string().trim().min(1).max(160).optional(),
@@ -26,21 +24,8 @@ export const applicationTransactionSchema = z
     profileHash: bytes32Schema,
     requestedRole: z.number().int().min(2).max(5),
     logo: catalogueImageSchema.optional(),
-    logoSignature: z
-      .string()
-      .regex(/^0x[0-9a-fA-F]{130}$/)
-      .optional(),
   })
-  .strict()
-  .superRefine((value, context) => {
-    const brandingFields = [value.applicantWallet, value.logo, value.logoSignature].filter(Boolean);
-    if (brandingFields.length !== 0 && brandingFields.length !== 3)
-      context.addIssue({
-        code: 'custom',
-        message: 'Applicant wallet, logo and logo signature must be provided together.',
-        path: ['logo'],
-      });
-  });
+  .strict();
 
 export const rejectionTransactionSchema = z
   .object({

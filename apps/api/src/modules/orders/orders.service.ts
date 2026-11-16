@@ -7,9 +7,7 @@ import {
   solidityPackedKeccak256,
   ZeroAddress,
   ZeroHash,
-  verifyMessage,
 } from 'ethers';
-import { companyLogoBindingMessage } from '@tracechain/shared';
 import type { IngredientBatchWorkflowRepository } from '../ingredient-batches/ingredient-batch.repository.js';
 import {
   CompanyRole,
@@ -38,6 +36,7 @@ import {
   extensionFor,
   validateCatalogueImage,
   type CatalogueImageInput,
+  type StoredCatalogueImage,
 } from './catalogue-media.js';
 
 export class OrdersError extends Error {
@@ -1617,42 +1616,17 @@ export class OrdersService {
     };
   }
 
+  validatePendingCompanyLogo(logo: CatalogueImageInput) {
+    const image = validateImage(logo);
+    return { image, logoDigest: id(`${image.mimeType}:${image.data}`) };
+  }
+
   async savePendingCompanyLogo(input: {
     applicationId: string;
     applicantWallet: string;
-    profileHash: string;
-    logoSignature: string;
-    logo: CatalogueImageInput;
+    image: StoredCatalogueImage;
   }) {
     const applicantWallet = getAddress(input.applicantWallet);
-    const image = validateImage(input.logo);
-    const logoDigest = id(`${image.mimeType}:${image.data}`);
-    let recovered: string;
-    try {
-      recovered = getAddress(
-        verifyMessage(
-          companyLogoBindingMessage({
-            applicationId: input.applicationId,
-            applicantWallet,
-            profileHash: input.profileHash,
-            logoDigest,
-          }),
-          input.logoSignature,
-        ),
-      );
-    } catch {
-      throw new OrdersError(
-        'COMPANY_LOGO_SIGNATURE_INVALID',
-        'The company logo binding signature is invalid.',
-        400,
-      );
-    }
-    if (!same(recovered, applicantWallet))
-      throw new OrdersError(
-        'COMPANY_LOGO_SIGNATURE_INVALID',
-        'The company logo must be signed by the applicant wallet.',
-        403,
-      );
     await this.replacePresentationRecord(
       pendingCompanyLogoKey(input.applicationId),
       applicantWallet,
@@ -1660,7 +1634,7 @@ export class OrdersService {
         version: 1,
         applicationId: input.applicationId.toLowerCase(),
         applicantWallet,
-        image,
+        image: input.image,
       },
     );
   }

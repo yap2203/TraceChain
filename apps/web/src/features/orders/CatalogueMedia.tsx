@@ -92,10 +92,12 @@ export function CatalogueImage({
 export function CompanyAvatar({
   name,
   logoPath,
+  revision = 0,
   size = 'md',
 }: {
   name: string;
   logoPath?: string;
+  revision?: number;
   size?: 'sm' | 'md' | 'lg';
 }) {
   const [source, setSource] = useState('');
@@ -114,7 +116,7 @@ export function CompanyAvatar({
     let url = '';
     setSource('');
     if (logoPath)
-      void fetchCatalogueMedia(logoPath)
+      void fetchCatalogueMedia(logoPath, revision)
         .then((blob) => {
           if (!active) return;
           url = URL.createObjectURL(blob);
@@ -125,7 +127,7 @@ export function CompanyAvatar({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [logoPath]);
+  }, [logoPath, revision]);
   return (
     <span className={`company-avatar company-avatar--${size}`}>
       {source ? (

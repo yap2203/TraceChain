@@ -10,6 +10,12 @@ import { workspaces } from './workspace-config';
 import { workspaceNavigation, type WorkspaceRole } from './workspace-navigation';
 import { workspacePage, workspacePath } from './workspace-paths';
 import { getMyCompanyBranding } from '../orders/orders.api';
+import {
+  clearCompanyBrandingState,
+  loadCompanyBranding,
+  selectCompanyBranding,
+  useCompanyBrandingState,
+} from './shared/company-branding.state';
 
 const WorkspaceScreen = lazy(() =>
   import('./WorkspaceScreen').then((module) => ({ default: module.WorkspaceScreen })),
@@ -19,7 +25,7 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   const authentication = useWalletAuthentication();
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
-  const [logoPath, setLogoPath] = useState<string>();
+  const brandingState = useCompanyBrandingState();
   const { '*': route = '' } = useParams();
   const [search] = useSearchParams();
   const state = authentication.state;
@@ -29,18 +35,18 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   const authenticated = state.phase === 'authenticated';
   useEffect(() => {
     let active = true;
-    if (!authenticated || !state.authorizationReady) {
-      setLogoPath(undefined);
+    if (!authenticated || !state.authorizationReady || !state.address) {
+      clearCompanyBrandingState();
       return;
     }
-    setLogoPath(undefined);
-    void getMyCompanyBranding()
-      .then(({ branding }) => active && setLogoPath(branding.logoPath))
-      .catch(() => active && setLogoPath(undefined));
+    void loadCompanyBranding(state.address, getMyCompanyBranding).catch(() => {
+      if (active) clearCompanyBrandingState();
+    });
     return () => {
       active = false;
     };
   }, [authenticated, state.authorizationReady, state.address]);
+  const companyBranding = selectCompanyBranding(state.address);
   const status =
     state.phase === 'restoring'
       ? 'Checking session'
@@ -81,7 +87,8 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
           ? {
               companyName: state.companyName ?? workspaces[role].roleLabel,
               credentialStatus: state.authorizationStatus ?? 'UNAVAILABLE',
-              logoPath,
+              logoPath: companyBranding.branding?.logoPath,
+              logoRevision: companyBranding.revision,
               role: state.role,
               walletAddress: state.address,
             }

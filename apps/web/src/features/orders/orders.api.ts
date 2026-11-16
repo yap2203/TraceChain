@@ -222,8 +222,9 @@ export class CatalogueMediaError extends Error {
 
 const mediaRequests = new Map<string, Promise<Blob>>();
 
-export function fetchCatalogueMedia(path: string) {
-  const existing = mediaRequests.get(path);
+export function fetchCatalogueMedia(path: string, revision = 0) {
+  const requestKey = `${path}#${revision}`;
+  const existing = mediaRequests.get(requestKey);
   if (existing) return existing;
   const mediaUrl = path.startsWith('/api/') ? `${base}${path}` : `${base}/api/orders${path}`;
   const pending = fetch(mediaUrl, { credentials: 'include' }).then(async (response) => {
@@ -238,9 +239,9 @@ export function fetchCatalogueMedia(path: string) {
       );
     return response.blob();
   });
-  mediaRequests.set(path, pending);
+  mediaRequests.set(requestKey, pending);
   const clear = () => {
-    if (mediaRequests.get(path) === pending) mediaRequests.delete(path);
+    if (mediaRequests.get(requestKey) === pending) mediaRequests.delete(requestKey);
   };
   void pending.then(clear, clear);
   return pending;

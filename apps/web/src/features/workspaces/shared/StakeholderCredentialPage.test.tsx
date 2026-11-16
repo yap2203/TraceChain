@@ -28,6 +28,7 @@ import {
   createIdentitySummaryPdfSource,
   StakeholderCredentialPage,
 } from './StakeholderCredentialPage';
+import { clearCompanyBrandingState } from './company-branding.state';
 
 const identity: CompanyIdentityResponse = {
   identity: {
@@ -58,6 +59,7 @@ const identity: CompanyIdentityResponse = {
 describe('My Company Identity', () => {
   afterEach(cleanup);
   beforeEach(() => {
+    clearCompanyBrandingState();
     api.get.mockReset().mockResolvedValue(identity);
     api.verify.mockReset();
     brandingApi.get.mockReset().mockResolvedValue({

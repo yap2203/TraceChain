@@ -319,6 +319,7 @@ export function createApp({
     lazyIssuanceRepository,
     stakeholderDirectory,
     {
+      validatePendingCompanyLogo: (input) => resolveOrders().validatePendingCompanyLogo(input),
       savePendingCompanyLogo: (input) => resolveOrders().savePendingCompanyLogo(input),
       hasPendingCompanyLogo: (applicationId, applicantWallet) =>
         resolveOrders().hasPendingCompanyLogo(applicationId, applicantWallet),
