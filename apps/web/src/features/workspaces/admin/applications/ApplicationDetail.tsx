@@ -1,5 +1,5 @@
 import { ApplicationDocumentsPanel } from '../../../registration/ApplicationDocumentsPanel';
-import { reportError } from '../../../../components/ui/feedback';
+import { notify, reportError } from '../../../../components/ui/feedback';
 import { BrowserProvider, id } from 'ethers';
 import { useState } from 'react';
 
@@ -98,9 +98,11 @@ export function AppDetail({
         const transaction = await sendPreparedTransaction(signer, prepared);
         if (!(await transaction.wait())) throw new Error('A transaction was not confirmed.');
       }
-      if (issued.issuanceState === 'CREDENTIAL_ACTIVE' || transactions.length > 0) {
-        downloadCredential(issued.credential, issued.credentialId);
-      }
+      setApproving(false);
+      notify(
+        'Company credential approved and activated. The company can access it from My Company Identity.',
+        'success',
+      );
       await onChanged();
     } catch (cause) {
       setError(reportError(cause, 'Credential issuance failed.'));
@@ -183,7 +185,7 @@ export function AppDetail({
           <Btn onClick={() => setApproving(true)}>
             {app.status === 'pending'
               ? 'Issue credential & approve'
-              : 'Resume or export credential'}
+              : 'Complete credential activation'}
           </Btn>
           {app.status === 'pending' && (
             <Btn onClick={() => setRejecting(true)} variant="danger">
@@ -278,14 +280,4 @@ export function AppDetail({
 
 function roleNumber(role: ChainApplication['requestedRole']) {
   return { Supplier: 2, Manufacturer: 3, Distributor: 4, Retailer: 5 }[role];
-}
-
-function downloadCredential(credential: Record<string, unknown>, credentialId: string) {
-  const blob = new Blob([JSON.stringify(credential, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `company-role-credential-${credentialId.slice(-12)}.json`;
-  link.click();
-  URL.revokeObjectURL(url);
 }

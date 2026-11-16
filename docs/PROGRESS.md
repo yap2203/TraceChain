@@ -1,5 +1,11 @@
 # Project Progress
 
+## 2026-11-16 - Admin approval without credential download
+
+- Removed the automatic plaintext Company Role VC download and its helper from application approval. Renamed the approved-application action to Complete credential activation, preserving resumable registry writes. Successful issuance closes the dialog and tells Admin that the company accesses its credential through My Company Identity.
+- Preserved encrypted credential storage/retrieval, existing exports/backups and holder recovery. No API, contract or key changes. Five application UI tests passed, including new/resumed approvals without file downloads; frontend type checking passed.
+
+
 ## 2026-11-16 - Registration document storage and review
 
 - Fixed registration hashing filenames without uploading bytes. PDF/PNG/JPEG supporting document contents now participate in the applicant signature, undergo size/type/signature validation and are encrypted before IPFS pinning. Pinning failure prevents transaction preparation.

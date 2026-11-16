@@ -539,6 +539,10 @@ For Sepolia, set `CHAIN_ID=11155111`, `CHAIN_NAME=Sepolia`, and replace `CHAIN_R
 
 SSI variables are loaded lazily when an SSI request or command needs the Veramo agent, so API startup and SIWE-only tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping or presenting a credential. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
 
+Admin approval activates the encrypted Company Role Credential without automatically downloading
+a readable credential file. The company retrieves its own credential through **My Company Identity**.
+Approved applications retain **Complete credential activation** for unfinished registry transactions.
+
 ### Reviewing registration documents
 
 - Admin: open **Company applications ? application details ? Registration documents** to view or
