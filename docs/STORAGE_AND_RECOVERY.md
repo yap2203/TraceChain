@@ -87,4 +87,4 @@ in docs/PROGRESS.md.
 This stage does not change contracts or rewrite historical chain data. Vehicle numbers already stored
 on-chain remain visible; moving them off-chain requires a separate contract/data migration. Catalogue
 media remains encrypted under the existing authenticated media flow; public unencrypted media/video
-publishing and general supporting-document persistence are not newly implemented by this change.
+publishing is not newly implemented by this change. Registration supporting documents now use encrypted IPFS plus an encrypted local review cache; only the confirmed applicant or current authorized Admin can list/download them. Old filename-only registrations require applicant reattachment; the original on-chain application hash is preserved.

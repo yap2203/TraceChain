@@ -1,3 +1,4 @@
+import { ApplicationDocumentsPanel } from '../registration/ApplicationDocumentsPanel';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { COMPANY_ROLE_TO_WORKSPACE } from '@tracechain/shared';
@@ -503,6 +504,11 @@ function LoginPage() {
                       : ''}
                   </p>
                 )}
+                {walletState.phase === 'authenticated' &&
+                  walletState.applicationId &&
+                  !walletState.authorizationReady && (
+                    <ApplicationDocumentsPanel applicationId={walletState.applicationId} />
+                  )}
                 <Link className="register-button" to="/register-company">
                   Register a company
                 </Link>

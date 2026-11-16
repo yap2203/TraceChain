@@ -1,3 +1,4 @@
+import type { ApplicationDocuments } from './application-documents.js';
 import { CompanyRole, companyApplicationBindingMessage } from '@tracechain/shared';
 import type { NextFunction, Request, Response } from 'express';
 import { z, ZodError } from 'zod';
@@ -116,6 +117,7 @@ export class BlockchainController {
         applicantWallet: string,
       ): Promise<{ bytes: Buffer; mimeType: string; fileName: string }>;
     },
+    private readonly applicationDocuments?: ApplicationDocuments,
   ) {}
 
   listApplications = async (request: Request, response: Response, next: NextFunction) => {
@@ -418,6 +420,7 @@ export class BlockchainController {
         companyRegistrationNumber: input.companyRegistrationNumber,
         encryptedProfileCid: input.encryptedProfileCid,
         initialLocationName: input.initialLocationName,
+        documentsDigest: input.documents ? id(JSON.stringify(input.documents)) : undefined,
         logoDigest: preparedLogo?.logoDigest,
         logoFileName: input.logo?.fileName,
         logoMimeType: input.logo?.mimeType,
@@ -450,6 +453,19 @@ export class BlockchainController {
         profileHash: input.profileHash,
         submissionDigest: id(bindingMessage),
       });
+      if (input.documents) {
+        if (!this.applicationDocuments)
+          throw new BlockchainApiError(
+            'DOCUMENT_STORAGE_UNAVAILABLE',
+            'Supporting document storage is unavailable.',
+            503,
+          );
+        await this.applicationDocuments.save(
+          input.applicationId,
+          input.applicantWallet,
+          input.documents,
+        );
+      }
       if (preparedLogo) {
         await this.applicationBranding!.savePendingCompanyLogo({
           applicationId: input.applicationId,
@@ -463,6 +479,7 @@ export class BlockchainController {
         companyName: _companyName,
         companyRegistrationNumber: _registrationNumber,
         initialLocationName: _initialLocation,
+        documents: _documents,
         logo: _logo,
         ...transactionInput
       } = input;

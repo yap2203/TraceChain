@@ -223,6 +223,7 @@ export function prepareCompanyApplication(input: {
   companyName: string;
   companyRegistrationNumber: string;
   initialLocationName?: string;
+  documents?: { kind: string; fileName: string; mimeType: string; data: string }[];
   encryptedProfileCid: string;
   previousApplicationId: string;
   profileHash: string;

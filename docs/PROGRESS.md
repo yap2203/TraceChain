@@ -1,5 +1,17 @@
 # Project Progress
 
+## 2026-11-16 - Admin approval without credential download
+
+- Removed the automatic plaintext Company Role VC download and its helper from application approval. Renamed the approved-application action to Complete credential activation, preserving resumable registry writes. Successful issuance closes the dialog and tells Admin that the company accesses its credential through My Company Identity.
+- Preserved encrypted credential storage/retrieval, existing exports/backups and holder recovery. No API, contract or key changes. Five application UI tests passed, including new/resumed approvals without file downloads; frontend type checking passed.
+
+
+## 2026-11-16 - Registration document storage and review
+
+- Fixed registration hashing filenames without uploading bytes. PDF/PNG/JPEG supporting document contents now participate in the applicant signature, undergo size/type/signature validation and are encrypted before IPFS pinning. Pinning failure prevents transaction preparation.
+- Added owner/current-Admin review routes, sandboxed preview/download in Admin application details and company Profile, and pending-applicant review on Login. Added applicant-only legacy reattachment; saved sets cannot be overwritten and original application hashes are preserved.
+- Files are stored in encrypted IPFS and an ignored encrypted local cache. No keys, credentials, contracts or old documents were changed. Historical hashes cannot recover missing document bytes.
+- Validation: all 345 API tests and 262 frontend tests passed; shared/API/frontend type checks and root production build passed. Six new API security/storage tests and three document UI tests cover separate-company denial, current/pending-owner access, immutable legacy attachment, encrypted restart persistence, signature substitution, malformed/oversized files, storage failure and explicit preview. Tests use temporary encrypted stores and simulated IPFS; no real supporting documents were uploaded. Existing Vite chunk/directive warnings remain.
 ## 2026-11-16 — Resilient shipment QR image decoding
 
 - Reproduced ZXing's message-less `NotFoundException` in `GridSampler.checkAndNudgePoints` for a

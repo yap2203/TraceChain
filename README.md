@@ -468,7 +468,7 @@ Distributor's SSI credential.
 
 MetaMask can add the configured local network automatically. Hardhat account 0 is the deployed System Admin; use a different generated account to test a new company application because an active administrator cannot submit a stakeholder application. Hardhat development private keys are public test keys and must never be funded or reused on a public network.
 
-The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. Before retaining metadata, the API verifies an applicant-wallet signature bound to every submitted registration field. An optional company logo is included in that proof, byte-validated and encrypted; it is not part of the supporting-document bundle or an on-chain credential claim. Application metadata uses atomic, concurrency-safe JSON persistence so simultaneous registrations do not overwrite one another. During this local-only phase the contract still records a `local://` profile reference containing no document bytes. Production use still requires encrypted IPFS upload before the transaction.
+The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. Before retaining metadata, the API verifies an applicant-wallet signature bound to every submitted registration field. An optional company logo is included in that proof, byte-validated and encrypted; it is not part of the supporting-document bundle or an on-chain credential claim. Application metadata uses atomic, concurrency-safe JSON persistence so simultaneous registrations do not overwrite one another. Supporting files are now encrypted and pinned before the transaction is prepared, with an encrypted local review cache. Their exact contents are bound into the applicant signature. The existing on-chain profile reference remains unchanged; the document CID and encrypted cache are maintained off-chain, without a contract change.
 
 ### Environment variables
 
@@ -539,6 +539,33 @@ For Sepolia, set `CHAIN_ID=11155111`, `CHAIN_NAME=Sepolia`, and replace `CHAIN_R
 
 SSI variables are loaded lazily when an SSI request or command needs the Veramo agent, so API startup and SIWE-only tests do not require SSI secrets. Replace every SSI placeholder locally before bootstrapping or presenting a credential. `BOOTSTRAP_ADMIN_WALLET` is a public address; never provide its private key or recovery phrase.
 
+Admin approval activates the encrypted Company Role Credential without automatically downloading
+a readable credential file. The company retrieves its own credential through **My Company Identity**.
+Approved applications retain **Complete credential activation** for unfinished registry transactions.
+
+### Reviewing registration documents
+
+- Admin: open **Company applications ? application details ? Registration documents** to view or
+  download applicant-provided PDF/image files before making an approval decision.
+- Applicant: open **Profile ? Company profile ? Registration documents**. Pending applicants can
+  review documents from the signed-in application status screen on Login without workspace access.
+- Older applications saved only filenames/hashes; those hashes cannot recover the files. The
+  applicant can attach the three original documents again from either applicant view. This is a
+  supplemental upload and does not change the original application/profile hash. Saved sets cannot
+  be overwritten, and Admin cannot attach files on behalf of the applicant.
+
+Files remain private: the API checks the confirmed application's owner or the currently authorized
+on-chain Administrator before listing or serving them. Other companies receive no file access.
+Allowed formats are PDF, PNG and JPEG, up to 10 MB each; all three required document kinds must be
+present. Preview is sandboxed, with Download available if the browser blocks inline PDF rendering.
+Reviewing an uploaded file does not cryptographically verify its claims or certify its contents.
+
+The backend stores AES-256-GCM encrypted IPFS copies and an encrypted review cache at ignored
+`.tracechain/applications/documents.encrypted.json`. Original bytes are decrypted only for an
+authorized request. No files, private keys or decryption keys are placed on-chain or in browser
+localStorage. Keep the encrypted cache backed up with existing operator state. Browser key-backup
+controls remain removed. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
+
 ## SSI and System Admin bootstrap
 
 `@tracechain/ssi` configures Veramo 7 with did:ethr on Sepolia, JWT credentials, DID/credential/message metadata in a public JSON store, and SecretBox-encrypted private issuer keys in a separate JSON store. Runtime files are written under `.tracechain/veramo/` and ignored by Git. The beta `@veramo/data-store-json` package is accepted for this FYP prototype, not presented as an automatic production recommendation.
@@ -575,7 +602,7 @@ The root route redirects to `/login`. Unknown routes also return to the login pa
 
 Each role root redirects to its overview. Internal page identifiers such as `/supplier/batches` are normalized to their canonical system paths while retaining search parameters used by detail screens.
 
-The `/register-company` route provides the complete three-step application interface: company and representative information, MetaMask wallet association, required supporting-document selection with 10 MB validation, review, and declaration. It can submit a real application transaction to the configured local registry. Encrypted-IPFS document submission remains fail-closed until its application API is connected.
+The `/register-company` route provides the complete three-step application interface: company and representative information, MetaMask wallet association, required supporting-document selection with 10 MB validation, review, and declaration. It can submit a real application transaction to the configured local registry. Actual PDF/PNG/JPEG document bytes are encrypted and pinned through the configured content store; storage failure prevents transaction preparation.
 
 ### Local workspace access
 
