@@ -81,9 +81,9 @@ export const workspacePages: Record<string, PageDefinition> = {
     icon: 'applications',
   },
   'admin:credentials': {
-    title: 'Company credentials',
-    description: 'View the future Company Role Credential issuance workspace.',
-    actionLabel: 'Issue credential',
+    title: 'Manage companies',
+    description: 'Manage company credentials, individual permissions and lifecycle status.',
+    actionLabel: 'Manage company',
     icon: 'credentials',
   },
   'admin:stakeholders': {

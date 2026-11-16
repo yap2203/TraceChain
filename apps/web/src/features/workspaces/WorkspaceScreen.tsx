@@ -138,13 +138,11 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     if (tab === 'overview') return <AdminOverview onNav={nav} />;
     if (tab === 'applications') return <Applications />;
     if (tab === 'credentials') return <CompanyCredentials />;
-    if (['accesscontrol', 'roles', 'personal', 'matrix'].includes(tab))
+    if (['accesscontrol', 'roles', 'matrix'].includes(tab))
       return (
         <AccessControlScreen
           key={tab}
-          section={
-            tab === 'accesscontrol' ? 'stakeholders' : (tab as 'roles' | 'personal' | 'matrix')
-          }
+          section={tab === 'accesscontrol' ? 'stakeholders' : (tab as 'roles' | 'matrix')}
         />
       );
     if (tab === 'discrepancies') return <DiscrepancyManagement />;

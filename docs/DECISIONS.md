@@ -2,6 +2,8 @@
 
 ## Repository and implementation
 
+- Consolidate individual company permissions under Admin Manage companies (user-confirmed 2026-11-16). Rename the Company credentials navigation/page, remove the standalone individual-permission sidebar/tab, preserve role defaults/matrix and redirect legacy individual-permission links to company management. Credential lifecycle and permission writes retain their existing authorization and MetaMask confirmation.
+
 - Stop readable Veramo VC/VP/claim/message cache persistence while preserving the Admin bootstrap/export lookup dependency (user-confirmed 2026-11-16). Store that cache in a separate AES-GCM file derived from the KMS secret; encrypt/read back legacy contents before removing them from public DID metadata. Keep business credentials encrypted on Pinata and retrieve the authenticated wallet's registry CID for identity display/verification.
 - Remove browser-based backend IPFS/KMS key backup and restore-check tools and their dedicated HTTP endpoint (user-confirmed 2026-11-16; supersedes the earlier Admin UI backup decision). Preserve existing keys, encrypted files, downloaded backups and server-only operator helpers. Holder-signing recovery, credential issuance/verification, IPFS retrieval and SIWE remain separate and unchanged.
 

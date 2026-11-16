@@ -543,6 +543,11 @@ Admin approval activates the encrypted Company Role Credential without automatic
 a readable credential file. The company retrieves its own credential through **My Company Identity**.
 Approved applications retain **Complete credential activation** for unfinished registry transactions.
 
+Admin can also open **Manage companies ? Manage ? Individual company permissions** to set
+Allow, Deny or Inherit for that exact company wallet. This uses the existing company permission API and
+requires an explicit MetaMask confirmation. The separate Individual permissions tab is removed from Permissions. Role defaults remain in Access Control; individual
+overrides cannot bypass credential expiry, suspension, revocation or protected Admin authority.
+
 ### Reviewing registration documents
 
 - Admin: open **Company applications ? application details ? Registration documents** to view or

@@ -91,11 +91,11 @@ export function CompanyCredentials() {
   return (
     <div>
       <SectionTitle
-        title="Company Credentials"
+        title="Manage companies"
         sub={
           loading
             ? 'Reading CredentialRegistry...'
-            : `${credentials.length} issued Company Role Credentials`
+            : `${credentials.length} company records ? Manage credentials and individual permissions`
         }
         action={
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>

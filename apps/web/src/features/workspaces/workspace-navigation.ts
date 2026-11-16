@@ -6,7 +6,6 @@
   ChartNoAxesCombined,
   Layers,
   Inbox,
-  ContactRound,
   Package,
   ArrowRightLeft,
   Truck,
@@ -26,10 +25,9 @@ export const workspaceNavigation = {
   admin: [
     ['overview', 'Overview', LayoutDashboard],
     ['applications', 'Applications', ClipboardList],
-    ['credentials', 'Company credentials', BadgeCheck],
+    ['credentials', 'Manage companies', BadgeCheck],
     ['accesscontrol', 'Stakeholders', ShieldCheck],
     ['roles', 'Role permissions', ShieldCheck],
-    ['personal', 'Individual permissions', ContactRound],
     ['matrix', 'Permission matrix', Layers],
     ['discrepancies', 'Receipt discrepancies', AlertTriangle],
     ['audit', 'Audit reports', ChartNoAxesCombined],
@@ -104,7 +102,7 @@ export function workspaceNavigationGroups(role: WorkspaceRole) {
       ? [
           ['Workspace', ['overview']],
           ['Company administration', ['applications', 'credentials', 'accesscontrol']],
-          ['Permissions', ['roles', 'personal', 'matrix']],
+          ['Permissions', ['roles', 'matrix']],
           ['Review & records', ['discrepancies', 'audit']],
         ]
       : [

@@ -5,7 +5,6 @@ const paths: Record<WorkspaceRole, Record<string, string>> = {
   admin: {
     accesscontrol: 'stakeholders',
     roles: 'permissions/roles',
-    personal: 'permissions/companies',
     matrix: 'permissions/matrix',
     audit: 'reports',
   },
@@ -48,6 +47,8 @@ export function workspacePath(role: WorkspaceRole, page: string) {
 }
 
 export function workspacePage(role: WorkspaceRole, path: string) {
+  if (role === 'admin' && ['personal', 'permissions/companies'].includes(path))
+    return 'credentials';
   if (role === 'retailer' && path === 'incoming-products') return 'shipments';
   if (role === 'distributor' && path === 'transfers') return 'product-shipments';
   if ((role === 'supplier' || role === 'retailer') && path === 'evidence-requests')
