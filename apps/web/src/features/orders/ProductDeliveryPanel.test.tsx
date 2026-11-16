@@ -27,6 +27,7 @@ vi.mock('../custody-transfers/qr-reader', () => ({
     }
   },
   cameraErrorMessage: (e: Error) => e.message,
+  qrImageErrorMessage: (e: Error) => e.message,
 }));
 import { ProductDeliveryPanel } from './ProductDeliveryPanel';
 import type { OrdersState } from './orders.api';

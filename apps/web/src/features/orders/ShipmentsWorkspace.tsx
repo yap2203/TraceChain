@@ -1,7 +1,16 @@
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, Package, Plus, RefreshCw, Search, Truck } from 'lucide-react';
+import {
+  Camera,
+  CheckCircle2,
+  Package,
+  Plus,
+  RefreshCw,
+  Search,
+  Truck,
+  Upload,
+} from 'lucide-react';
 import { decodeShipmentQr } from '@tracechain/shared';
 import {
   getOrders,
@@ -17,7 +26,11 @@ import { ProductQrDisplay } from '../product-traceability/ProductQrDisplay';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
 import { ProductDeliveryPanel } from './ProductDeliveryPanel';
 import { CompanyAvatar } from './CatalogueMedia';
-import { ZxingTransferQrReader, cameraErrorMessage } from '../custody-transfers/qr-reader';
+import {
+  ZxingTransferQrReader,
+  cameraErrorMessage,
+  qrImageErrorMessage,
+} from '../custody-transfers/qr-reader';
 import {
   Alert,
   Badge,
@@ -32,6 +45,7 @@ import {
 } from '../workspaces/shared/ui';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { workspacePath } from '../workspaces/workspace-paths';
+import { ShipmentWorkflowDetail } from './ShipmentWorkflowDetail';
 
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const short = (value?: string) =>
@@ -120,6 +134,8 @@ export function ShipmentsWorkspace({
   const [siteName, setSiteName] = useState(''),
     [existingSite, setExistingSite] = useState(''),
     [checked, setChecked] = useState(''),
+    [qrFileName, setQrFileName] = useState(''),
+    [cameraActive, setCameraActive] = useState(false),
     [receiveVehicle, setReceiveVehicle] = useState(''),
     [recordVehicle, setRecordVehicle] = useState('');
   const lock = useRef(false),
@@ -146,6 +162,7 @@ export function ShipmentsWorkspace({
   }, [data?.actor, initialOrderId]);
   const shipments = warehouse?.shipments ?? [];
   const shipment = shipments.find((entry) => same(entry.shipmentId, selected));
+  const workflowDetail = view === 'shipments' && !!shipment;
   const productDeliveryOrder = data?.orders.find(
     (entry) => same(entry.orderId, selectedDeliveryOrder) && entry.productDelivery,
   );
@@ -173,6 +190,7 @@ export function ShipmentsWorkspace({
     short(id);
   const item = (id?: string) =>
     data?.catalogue.find((entry) => entry.batches?.some((batch: string) => same(batch, id)));
+  const shipmentItem = item(shipment?.batchId);
   const run = async (operation: () => Promise<void>) => {
     if (lock.current) return;
     lock.current = true;
@@ -217,14 +235,19 @@ export function ShipmentsWorkspace({
       setChecked(value);
       setError('');
       stop.current?.();
+      setCameraActive(false);
+      return true;
     } catch (cause) {
       setChecked('');
       setError(reportError(cause, 'Invalid shipment label.'));
+      return false;
     }
   };
   useEffect(() => {
     setConfirmed(false);
     setChecked('');
+    setQrFileName('');
+    setCameraActive(false);
     setActual(localTime());
     setQuantity('');
   }, [selected]);
@@ -358,40 +381,318 @@ export function ShipmentsWorkspace({
         message="Deploy the warehouse-first registry suite and update the configured addresses to use Shipments and Distributor custody ordering. Existing records are preserved."
       />
     );
+  const arrivalNeedsReview =
+    !!shipment &&
+    intake &&
+    !linkedCustodyOffer &&
+    same(shipment.recipient, data.actor) &&
+    Number(shipment.status) === 1 &&
+    Number(shipment.custodyDecision ?? 0) === 0;
+  const arrivalCanReceive =
+    !!shipment &&
+    (returning ||
+      (same(shipment.recipient, data.actor) &&
+        ((shipment.kind === 'ingredient' &&
+          [1, 2].includes(Number(shipment.status)) &&
+          (!intake ||
+            (data.shipmentReviewSupported &&
+              (Number(shipment.custodyDecision) === 1 || !!linkedCustodyOffer)))) ||
+          (shipment.kind === 'product' && Number(shipment.status) === 1))));
+  const arrivalReceiptDisabled =
+    !shipment ||
+    busy ||
+    !checked ||
+    !confirmed ||
+    (!returning && intake && proofPending) ||
+    (returning && quantity !== String(shipment.quantity)) ||
+    !/^[1-9]\d*$/.test(quantity) ||
+    BigInt(quantity || '0') >
+      BigInt(shipment?.quantity ?? '0') - BigInt(shipment?.received ?? '0') ||
+    !Number.isFinite(at) ||
+    at > Date.now() / 1000 ||
+    at < Number(shipment?.dispatchedAt ?? 0);
+  const arrivalReceiptContent = !shipment ? null : arrivalNeedsReview ? (
+    <div className="workspace-arrival-receipt">
+      <Alert
+        type="info"
+        message="Accept or reject this custody delivery first. Acceptance does not credit inventory; physical receipt still requires QR verification and a separate confirmation."
+      />
+      {proofPending && (
+        <Alert
+          type="warning"
+          message="Verify the requested Supplier company proof before accepting custody."
+        />
+      )}
+      <a
+        className="workspace-custody-detail__evidence-link"
+        href={
+          workspacePath(role, 'sent-requests') +
+          '?context=delivery&referenceId=' +
+          encodeURIComponent(shipment.shipmentId)
+        }
+      >
+        Manage Supplier credential request
+      </a>
+      <div className="workspace-location-actions">
+        <Btn
+          disabled={busy || !data.shipmentReviewSupported || proofPending}
+          onClick={() =>
+            void run(async () => {
+              await submit({
+                action: 'warehouse-decision',
+                shipmentId: shipment.shipmentId,
+                decision: 1,
+              });
+            })
+          }
+        >
+          Accept custody delivery
+        </Btn>
+        <Btn
+          variant="outline"
+          disabled={busy || !data.shipmentReviewSupported}
+          onClick={() =>
+            void run(async () => {
+              await submit({
+                action: 'warehouse-decision',
+                shipmentId: shipment.shipmentId,
+                decision: 2,
+              });
+            })
+          }
+        >
+          Reject custody delivery
+        </Btn>
+      </div>
+    </div>
+  ) : arrivalCanReceive ? (
+    <div className="workspace-arrival-receipt">
+      {linkedCustodyOffer && intake && Number(shipment.custodyDecision ?? 0) === 0 && (
+        <Alert
+          type="info"
+          message="The custody offer was accepted before pickup. Receipt will first record that acceptance on-chain, then confirm the scanned physical receipt."
+        />
+      )}
+      <div className="workspace-arrival-receipt__choices">
+        <button
+          type="button"
+          aria-label="Scan package QR"
+          className="workspace-arrival-receipt__choice"
+          onClick={() => {
+            setQrFileName('');
+            stop.current?.();
+            const attempt = ++cameraAttempt.current;
+            setCameraActive(true);
+            void scanner.current
+              .startCamera(
+                video.current!,
+                (value) => {
+                  setQrFileName('');
+                  verifyLabel(value);
+                },
+                (cause) => {
+                  setCameraActive(false);
+                  setError(cameraErrorMessage(cause));
+                },
+              )
+              .then((cleanup) => {
+                if (attempt !== cameraAttempt.current) cleanup();
+                else stop.current = cleanup;
+              })
+              .catch((cause) => {
+                setCameraActive(false);
+                setError(cameraErrorMessage(cause));
+              });
+          }}
+        >
+          <Camera size={34} aria-hidden="true" />
+          <strong>Scan QR code</strong>
+          <small>Use this device’s camera</small>
+        </button>
+        <label className="workspace-arrival-receipt__choice">
+          <Upload size={36} aria-hidden="true" />
+          <strong>Upload QR image</strong>
+          <small>PNG, JPEG or WebP · up to 5 MB</small>
+          <input
+            aria-label="Upload QR image"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              setQrFileName('');
+              if (!file) return;
+              if (
+                file.size > 5 * 1024 * 1024 ||
+                !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)
+              ) {
+                setError('Select a supported image up to 5 MB.');
+                return;
+              }
+              void scanner.current
+                .decodeImage(file)
+                .then((payload) => {
+                  if (verifyLabel(payload)) setQrFileName(file.name);
+                })
+                .catch((cause) => {
+                  setChecked('');
+                  setError(qrImageErrorMessage(cause));
+                });
+            }}
+          />
+        </label>
+      </div>
+      <div className="workspace-arrival-camera" hidden={!cameraActive}>
+        <video ref={video} playsInline muted />
+        <Btn
+          variant="outline"
+          full
+          onClick={() => {
+            cameraAttempt.current++;
+            stop.current?.();
+            setCameraActive(false);
+          }}
+        >
+          Stop camera
+        </Btn>
+      </div>
+      {checked && (
+        <div className="workspace-arrival-receipt__verified" role="status">
+          <CheckCircle2 size={17} aria-hidden="true" />
+          <span>
+            {qrFileName
+              ? `Shipment QR verified · ${qrFileName}`
+              : 'Shipment QR verified successfully.'}
+          </span>
+        </div>
+      )}
+      {checked && (
+        <div className="workspace-arrival-receipt__form">
+          <Input
+            label={`Quantity physically received (${shipment.unit})`}
+            value={quantity}
+            onChange={setQuantity}
+            type="number"
+            min="1"
+            max={(BigInt(shipment.quantity) - BigInt(shipment.received ?? '0')).toString()}
+          />
+          <Input
+            label="Actual receipt date and time"
+            type="datetime-local"
+            step="1"
+            value={actual}
+            onChange={setActual}
+          />
+          {shipment.kind === 'ingredient' && !returning && (
+            <Input
+              label="Vehicle registration number (optional)"
+              value={receiveVehicle}
+              onChange={(value) => setReceiveVehicle(value.toUpperCase())}
+              placeholder="e.g. VAB 1234"
+              maxLength={32}
+            />
+          )}
+          <label className="workspace-custody-detail__confirmation">
+            <input
+              type="checkbox"
+              checked={confirmed}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            I physically received {returning ? 'the returned goods' : 'these goods'} at{' '}
+            {label(returning ? shipment.fromLocation : shipment.toLocation)}.
+          </label>
+        </div>
+      )}
+      <Btn
+        full
+        aria-label={
+          returning ? 'Confirm physical return with MetaMask' : 'Confirm receipt with MetaMask'
+        }
+        disabled={arrivalReceiptDisabled}
+        onClick={() =>
+          void run(async () => {
+            if (
+              !returning &&
+              intake &&
+              linkedCustodyOffer &&
+              Number(shipment.custodyDecision ?? 0) === 0
+            )
+              await submit({
+                action: 'warehouse-decision',
+                shipmentId: shipment.shipmentId,
+                decision: 1,
+              });
+            await submit({
+              action: returning ? 'shipment-return' : 'shipment-receive',
+              shipmentId: shipment.shipmentId,
+              ...(!returning ? { kind: shipment.kind, quantity } : {}),
+              occurredAt: at,
+              qrPayload: checked,
+              ...(!returning && receiveVehicle.trim() ? { vehicle: receiveVehicle.trim() } : {}),
+            });
+            setReceiveVehicle('');
+            setConfirmed(false);
+            setQuantity('');
+          })
+        }
+      >
+        {returning ? 'Confirm Return' : 'Confirm Receipt'}
+      </Btn>
+      <p className="workspace-arrival-receipt__metamask-note">
+        MetaMask confirmation is required. Receipt is submitted only after you approve the
+        transaction.
+      </p>
+    </div>
+  ) : Number(shipment.status) === 4 && intake ? (
+    <Alert
+      type="warning"
+      message="Custody delivery rejected. No warehouse stock was credited. Supplier stock remains unavailable until physical return is confirmed."
+    />
+  ) : (
+    <Alert
+      type="info"
+      message={
+        Number(shipment.status) >= 3
+          ? 'Warehouse receipt has already been recorded.'
+          : 'Receipt confirmation is not currently available for this shipment.'
+      }
+    />
+  );
   return (
     <div className="grid min-w-0 gap-[16px]">
-      <SectionTitle
-        title={
-          view === 'locations'
-            ? 'Company profile & locations'
-            : section === 'intake'
-              ? 'Custody intake'
-              : view === 'transfer'
-                ? 'Create road transfer'
-                : role === 'supplier'
-                  ? 'Stock sent & delivery tracking'
-                  : role === 'distributor'
-                    ? 'Custody intake & deliveries'
-                    : 'My shipments'
-        }
-        sub={
-          role === 'supplier'
-            ? 'Track stock sent to custody and deliveries arranged from approved orders.'
-            : role === 'distributor'
-              ? 'Review custody offers, scan incoming stock and dispatch assigned deliveries.'
-              : 'Track incoming goods. Scan the shipment QR when they arrive.'
-        }
-        action={
-          <Btn
-            variant="outline"
-            icon={<RefreshCw size={16} />}
-            disabled={busy}
-            onClick={() => void run(load)}
-          >
-            Refresh
-          </Btn>
-        }
-      />
+      {!workflowDetail && (
+        <SectionTitle
+          title={
+            view === 'locations'
+              ? 'Company profile & locations'
+              : section === 'intake'
+                ? 'Custody intake'
+                : view === 'transfer'
+                  ? 'Create road transfer'
+                  : role === 'supplier'
+                    ? 'Stock sent & delivery tracking'
+                    : role === 'distributor'
+                      ? 'Custody intake & deliveries'
+                      : 'My shipments'
+          }
+          sub={
+            role === 'supplier'
+              ? 'Track stock sent to custody and deliveries arranged from approved orders.'
+              : role === 'distributor'
+                ? 'Review custody offers, scan incoming stock and dispatch assigned deliveries.'
+                : 'Track incoming goods. Scan the shipment QR when they arrive.'
+          }
+          action={
+            <Btn
+              variant="outline"
+              icon={<RefreshCw size={16} />}
+              disabled={busy}
+              onClick={() => void run(load)}
+            >
+              Refresh
+            </Btn>
+          }
+        />
+      )}
       {!section && (
         <nav className="workspace-task-toolbar" aria-label="Shipment actions">
           <Btn
@@ -1090,400 +1391,141 @@ export function ShipmentsWorkspace({
           </Btn>
         </Card>
       )}
-      {shipment && view === 'shipments' && (
-        <Card>
-          <Btn
-            variant="ghost"
-            onClick={() => {
-              setSelected('');
-              setChecked('');
-            }}
-          >
-            Back to shipments
-          </Btn>
-          <h3>
-            {shipment.itemName ?? item(shipment.batchId)?.name ?? 'Registered batch'} · SHP-
-            {shipment.shipmentId.slice(2, 10).toUpperCase()}
-          </h3>
-          <p>
-            {shipment.kind === 'ingredient' && Number(shipment.leg) === 1
-              ? 'Supplier → Distributor warehouse'
-              : shipment.kind === 'ingredient'
-                ? 'Distributor warehouse → Manufacturer'
-                : 'Finished-product custody transfer'}
-          </p>
-          <div className="workspace-shipment-parties" aria-label="Shipment companies">
-            <span className="workspace-company-cell">
-              <CompanyAvatar
-                name={shipment.senderName ?? short(shipment.sender)}
-                logoPath={shipment.senderLogoPath}
-                size="md"
-              />
-              <span>
-                <small>Sender</small>
-                <strong>{shipment.senderName ?? short(shipment.sender)}</strong>
-              </span>
-            </span>
-            <span className="workspace-company-cell">
-              <CompanyAvatar
-                name={shipment.recipientName ?? short(shipment.recipient)}
-                logoPath={shipment.recipientLogoPath}
-                size="md"
-              />
-              <span>
-                <small>Recipient</small>
-                <strong>{shipment.recipientName ?? short(shipment.recipient)}</strong>
-              </span>
-            </span>
-          </div>
-          <StatusTimeline
-            label="Shipment status"
-            steps={[
-              {
-                actor: shipment.senderName ?? short(shipment.sender),
-                detail: when(shipment.dispatchedAt),
-                label: 'Dispatched',
-                state: 'complete',
-              },
-              {
-                actor: shipment.recipientName ?? short(shipment.recipient),
-                detail: `Received ${shipment.received ?? '0'} / ${shipment.quantity} ${shipment.unit}`,
-                label: stateLabel(shipment),
-                state: Number(shipment.status) >= 2 ? 'complete' : 'current',
-              },
-            ]}
-          />
-          <dl className="grid grid-cols-1 gap-[12px] sm:grid-cols-2">
-            {[
-              [
-                'Order',
-                shipment.orderId && !/^0x0+$/.test(shipment.orderId)
-                  ? 'ORD-' + shipment.orderId.slice(2, 10).toUpperCase()
-                  : 'Warehouse stock placement',
-              ],
-              [
-                'Ingredient / product batch',
-                item(shipment.batchId)?.batchReference ?? short(shipment.batchId),
-              ],
-              ['From', label(shipment.fromLocation)],
-              ['To', label(shipment.toLocation)],
-              ['Vehicle', shipment.vehicle || 'Pending carrier / distributor record'],
-              ['Actual dispatch', when(shipment.dispatchedAt)],
-              ['Expected arrival', when(shipment.expectedAt)],
-              ['Blockchain recording time', when(shipment.recordedAt)],
-              [
-                'Confirmed by',
+      {shipment && view === 'shipments' && workflowDetail && (
+        <ShipmentWorkflowDetail
+          shipment={shipment}
+          catalogueItem={shipmentItem}
+          senderName={shipment.senderName ?? short(shipment.sender)}
+          recipientName={shipment.recipientName ?? short(shipment.recipient)}
+          sourceName={label(shipment.fromLocation)}
+          destinationName={label(shipment.toLocation)}
+          qrVerified={!!checked}
+          busy={busy}
+          title={
+            section === 'intake'
+              ? 'Custody Intake'
+              : role === 'retailer'
+                ? 'Product Receipt'
+                : role === 'distributor'
+                  ? 'Delivery Tracking'
+                  : 'Shipment Tracking'
+          }
+          subtitle={
+            section === 'intake'
+              ? 'Review shipment details and confirm warehouse receipt.'
+              : same(shipment.recipient, data.actor)
+                ? 'Review shipment details and confirm the physical receipt.'
+                : 'Follow this shipment from dispatch to verified receipt.'
+          }
+          actionTitle={
+            same(shipment.recipient, data.actor) || returning
+              ? 'Receipt Confirmation'
+              : 'Next Action'
+          }
+          backLabel="Back to shipments"
+          onBack={() => {
+            setSelected('');
+            setChecked('');
+          }}
+          onRefresh={() => void run(load)}
+          receiptContent={arrivalReceiptContent}
+          additionalContent={
+            <div className="workspace-arrival-detail__extras">
+              {shipment.qrPayload && same(shipment.sender, data.actor) && (
+                <ProductQrDisplay
+                  batchId={shipment.shipmentId}
+                  batchReference={'SHP-' + shipment.shipmentId.slice(2, 10).toUpperCase()}
+                  productName={shipment.itemName ?? 'Registered shipment'}
+                  encodedPayload={shipment.qrPayload}
+                  labelTitle="Shipment receipt QR"
+                  instruction="Attach to this shipment. The intended recipient scans this label before confirming physical receipt."
+                />
+              )}
+              {intake && data.shipmentReviewSupported && Number(shipment.status) < 3 && (
+                <a
+                  className="workspace-custody-detail__evidence-link"
+                  href={
+                    workspacePath(role, 'sent-requests') +
+                    (linkedCustodyOffer
+                      ? '?context=custody&referenceId='
+                      : '?context=delivery&referenceId=') +
+                    encodeURIComponent(linkedCustodyOffer?.offerId ?? shipment.shipmentId)
+                  }
+                >
+                  Manage Supplier credential request in Information requests
+                </a>
+              )}
+              {role === 'distributor' &&
+                shipment.kind === 'ingredient' &&
+                Number(shipment.status) < 4 &&
+                same(shipment.recipient, data.actor) &&
+                Number(shipment.custodyDecision) === 1 && (
+                  <section className="workspace-arrival-panel" aria-label="Vehicle record">
+                    <h3>
+                      <Truck size={20} aria-hidden="true" /> Vehicle record
+                    </h3>
+                    <p className="m-0 text-[12px] text-ws-text2">
+                      Record or update the vehicle registration after accepting this shipment.
+                    </p>
+                    <div className="workspace-arrival-detail__vehicle-form">
+                      <Input
+                        label="Vehicle registration number"
+                        value={recordVehicle}
+                        onChange={(value) => setRecordVehicle(value.toUpperCase())}
+                        placeholder={shipment.vehicle || 'e.g. VAB 1234'}
+                        maxLength={32}
+                      />
+                      <Btn
+                        disabled={busy || !/^[A-Z0-9 -]{2,32}$/.test(recordVehicle.trim())}
+                        onClick={() =>
+                          void run(async () => {
+                            await submit({
+                              action: 'shipment-vehicle',
+                              shipmentId: shipment.shipmentId,
+                              vehicle: recordVehicle.trim(),
+                            });
+                            setRecordVehicle('');
+                            setNotice('Vehicle registration updated successfully.');
+                          })
+                        }
+                      >
+                        Save vehicle
+                      </Btn>
+                    </div>
+                  </section>
+                )}
+              {role === 'distributor' &&
+                same(shipment.recipient, data.actor) &&
+                shipment.kind === 'product' &&
+                Number(shipment.status) === 2 && (
+                  <Btn icon={<Truck size={16} />} onClick={() => compose(shipment.kind, shipment)}>
+                    Arrange onward transfer
+                  </Btn>
+                )}
+            </div>
+          }
+          technicalFields={[
+            { label: 'Shipment ID', value: shipment.shipmentId },
+            { label: 'Original batch ID', value: shipment.batchId },
+            { label: 'Order ID', value: shipment.orderId ?? 'Not order-bound' },
+            { label: 'Sender wallet', value: shipment.sender },
+            { label: 'Recipient wallet', value: shipment.recipient },
+            {
+              label: 'Confirmed by wallet',
+              value:
                 shipment.confirmedBy && !/^0x0+$/.test(shipment.confirmedBy)
                   ? shipment.confirmedBy
                   : shipment.sender,
-              ],
-            ].map(([name, value]) => (
-              <div key={String(name)}>
-                <dt>{name}</dt>
-                <dd className="m-0 break-words">{value}</dd>
-              </div>
-            ))}
-          </dl>
-          {shipment.qrPayload && same(shipment.sender, data.actor) && (
-            <ProductQrDisplay
-              batchId={shipment.shipmentId}
-              batchReference={'SHP-' + shipment.shipmentId.slice(2, 10).toUpperCase()}
-              productName={shipment.itemName ?? 'Registered shipment'}
-              encodedPayload={shipment.qrPayload}
-              labelTitle="Shipment receipt QR"
-              instruction="Attach to this shipment. The intended recipient scans this label before confirming physical receipt."
-            />
-          )}
-          {intake && data.shipmentReviewSupported && Number(shipment.status) < 3 && (
-            <a
-              href={
-                workspacePath(role, role === 'distributor' ? 'sent-requests' : 'requests') +
-                (linkedCustodyOffer
-                  ? '?context=custody&referenceId='
-                  : '?context=delivery&referenceId=') +
-                encodeURIComponent(linkedCustodyOffer?.offerId ?? shipment.shipmentId)
-              }
-            >
-              Manage Supplier credential request in Information requests
-            </a>
-          )}
-          {intake &&
-            !linkedCustodyOffer &&
-            same(shipment.recipient, data.actor) &&
-            Number(shipment.status) === 1 &&
-            Number(shipment.custodyDecision ?? 0) === 0 && (
-              <section className="grid gap-[12px] rounded-lg border border-[var(--c-border)] p-[16px]">
-                <h4>Review Supplier custody delivery</h4>
-                <p>
-                  Accept or reject this custody offer. Acceptance does not credit inventory: scan
-                  the package QR and confirm physical receipt separately. You may request Supplier
-                  company evidence in Information requests.
-                </p>
-                {proofPending && (
-                  <Alert
-                    type="info"
-                    message="Verify the requested Supplier company proof before accepting custody."
-                  />
-                )}
-                <div className="flex flex-wrap gap-[8px]">
-                  <Btn
-                    disabled={busy || !data.shipmentReviewSupported || proofPending}
-                    onClick={() =>
-                      void run(async () => {
-                        await submit({
-                          action: 'warehouse-decision',
-                          shipmentId: shipment.shipmentId,
-                          decision: 1,
-                        });
-                      })
-                    }
-                  >
-                    Accept custody delivery
-                  </Btn>
-                  <Btn
-                    variant="outline"
-                    disabled={busy || !data.shipmentReviewSupported}
-                    onClick={() =>
-                      void run(async () => {
-                        await submit({
-                          action: 'warehouse-decision',
-                          shipmentId: shipment.shipmentId,
-                          decision: 2,
-                        });
-                      })
-                    }
-                  >
-                    Reject custody delivery
-                  </Btn>
-                </div>
-              </section>
-            )}
-          {Number(shipment.status) === 4 && intake && (
-            <Alert
-              type="warning"
-              message="Custody delivery rejected. No warehouse stock was credited. Supplier stock remains unavailable until the Supplier scans and confirms physical return."
-            />
-          )}
-          {(returning ||
-            (same(shipment.recipient, data.actor) &&
-              ((shipment.kind === 'ingredient' &&
-                [1, 2].includes(Number(shipment.status)) &&
-                (!intake ||
-                  (data.shipmentReviewSupported &&
-                    (Number(shipment.custodyDecision) === 1 || !!linkedCustodyOffer)))) ||
-                (shipment.kind === 'product' && Number(shipment.status) === 1)))) && (
-            <section className="grid gap-[12px]">
-              {linkedCustodyOffer && intake && Number(shipment.custodyDecision ?? 0) === 0 && (
-                <Alert
-                  type="info"
-                  message="The custody offer was accepted before pickup. Receipt requires two MetaMask confirmations: record that acceptance on-chain, then confirm the scanned physical receipt."
-                />
-              )}
-              <h4>
-                {returning
-                  ? 'Scan and confirm returned goods'
-                  : 'Scan and confirm physical receipt'}
-              </h4>
-              <video ref={video} playsInline muted className="max-h-[220px] w-full" />
-              <Btn
-                icon={<Camera size={16} />}
-                onClick={() => {
-                  stop.current?.();
-                  const attempt = ++cameraAttempt.current;
-                  void scanner.current
-                    .startCamera(video.current!, verifyLabel, (cause) =>
-                      setError(cameraErrorMessage(cause)),
-                    )
-                    .then((cleanup) => {
-                      if (attempt !== cameraAttempt.current) cleanup();
-                      else stop.current = cleanup;
-                    })
-                    .catch((cause) => setError(cameraErrorMessage(cause)));
-                }}
-              >
-                Scan package QR
-              </Btn>
-              <Btn
-                variant="outline"
-                onClick={() => {
-                  cameraAttempt.current++;
-                  stop.current?.();
-                }}
-              >
-                Stop camera
-              </Btn>
-              <label>
-                Upload QR image
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    if (
-                      file.size > 5 * 1024 * 1024 ||
-                      !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)
-                    ) {
-                      setError('Select a supported image up to 5 MB.');
-                      return;
-                    }
-                    void scanner.current
-                      .decodeImage(file)
-                      .then(verifyLabel)
-                      .catch(() => setError('No readable shipment QR found.'));
-                  }}
-                />
-              </label>
-              {checked && (
-                <>
-                  {checked && (
-                    <Alert
-                      type="success"
-                      message="The label matches this shipment and deployment. Review the physical goods before confirming."
-                    />
-                  )}
-                  <Input
-                    label={`Quantity physically received (${shipment.unit})`}
-                    value={quantity}
-                    onChange={setQuantity}
-                    type="number"
-                    min="1"
-                    max={(BigInt(shipment.quantity) - BigInt(shipment.received ?? '0')).toString()}
-                  />
-                  <Input
-                    label="Actual receipt date and time"
-                    type="datetime-local"
-                    step="1"
-                    value={actual}
-                    onChange={setActual}
-                  />
-                  {shipment.kind === 'ingredient' && !returning && (
-                    <Input
-                      label="Vehicle registration number (optional)"
-                      value={receiveVehicle}
-                      onChange={(val) => setReceiveVehicle(val.toUpperCase())}
-                      placeholder="e.g. VAB 1234"
-                      maxLength={32}
-                    />
-                  )}
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={confirmed}
-                      onChange={(event) => setConfirmed(event.target.checked)}
-                    />{' '}
-                    I physically received {returning ? 'the returned goods' : 'these goods'} at{' '}
-                    {label(returning ? shipment.fromLocation : shipment.toLocation)}.
-                  </label>
-                  <Btn
-                    disabled={
-                      busy ||
-                      !checked ||
-                      !confirmed ||
-                      (!returning && intake && proofPending) ||
-                      (returning && quantity !== String(shipment.quantity)) ||
-                      !/^[1-9]\d*$/.test(quantity) ||
-                      BigInt(quantity || '0') >
-                        BigInt(shipment.quantity) - BigInt(shipment.received ?? '0') ||
-                      !Number.isFinite(at) ||
-                      at > Date.now() / 1000 ||
-                      at < Number(shipment.dispatchedAt)
-                    }
-                    onClick={() =>
-                      void run(async () => {
-                        if (
-                          !returning &&
-                          intake &&
-                          linkedCustodyOffer &&
-                          Number(shipment.custodyDecision ?? 0) === 0
-                        )
-                          await submit({
-                            action: 'warehouse-decision',
-                            shipmentId: shipment.shipmentId,
-                            decision: 1,
-                          });
-                        await submit({
-                          action: returning ? 'shipment-return' : 'shipment-receive',
-                          shipmentId: shipment.shipmentId,
-                          ...(!returning ? { kind: shipment.kind, quantity } : {}),
-                          occurredAt: at,
-                          qrPayload: checked,
-                          ...(!returning && receiveVehicle.trim()
-                            ? { vehicle: receiveVehicle.trim() }
-                            : {}),
-                        });
-                        setReceiveVehicle('');
-                        setConfirmed(false);
-                        setQuantity('');
-                      })
-                    }
-                  >
-                    {returning
-                      ? 'Confirm physical return with MetaMask'
-                      : 'Confirm receipt with MetaMask'}
-                  </Btn>
-                </>
-              )}
-            </section>
-          )}
-          {role === 'distributor' &&
-            same(shipment.recipient, data.actor) &&
-            shipment.kind === 'product' &&
-            Number(shipment.status) === 2 && (
-              <Btn icon={<Truck size={16} />} onClick={() => compose(shipment.kind, shipment)}>
-                Arrange onward transfer
-              </Btn>
-            )}
-          {role === 'distributor' &&
-            shipment.kind === 'ingredient' &&
-            Number(shipment.status) < 4 &&
-            same(shipment.recipient, data.actor) &&
-            Number(shipment.custodyDecision) === 1 && (
-              <div className="mt-[16px] rounded-lg border border-[var(--c-border)] p-[16px]">
-                <h4>Record vehicle registration</h4>
-                <p className="text-sm text-[var(--c-muted)]">
-                  The Distributor can record or update the vehicle registration for this shipment
-                  after accepting it.
-                </p>
-                <div className="mt-[8px] flex flex-wrap items-end gap-[8px]">
-                  <div className="flex-1 min-w-[200px]">
-                    <Input
-                      label="Vehicle registration number"
-                      value={recordVehicle}
-                      onChange={(val) => setRecordVehicle(val.toUpperCase())}
-                      placeholder={shipment.vehicle || 'e.g. VAB 1234'}
-                      maxLength={32}
-                    />
-                  </div>
-                  <Btn
-                    disabled={busy || !/^[A-Z0-9 -]{2,32}$/.test(recordVehicle.trim())}
-                    onClick={() =>
-                      void run(async () => {
-                        await submit({
-                          action: 'shipment-vehicle',
-                          shipmentId: shipment.shipmentId,
-                          vehicle: recordVehicle.trim(),
-                        });
-                        setRecordVehicle('');
-                        setNotice('Vehicle registration updated successfully.');
-                      })
-                    }
-                  >
-                    Save vehicle
-                  </Btn>
-                </div>
-              </div>
-            )}
-          <TechnicalDetails
-            fields={[
-              { label: 'Shipment ID', value: shipment.shipmentId },
-              { label: 'Original batch ID', value: shipment.batchId },
-              { label: 'Order ID', value: shipment.orderId ?? 'Not order-bound' },
-              { label: 'Dispatch location ID', value: shipment.fromLocation },
-              { label: 'Receiving location ID', value: shipment.toLocation },
-            ]}
-          />
-        </Card>
+            },
+            { label: 'Dispatch location ID', value: shipment.fromLocation },
+            { label: 'Receiving location ID', value: shipment.toLocation },
+            { label: 'Orders contract', value: data.ordersAddress ?? '' },
+            {
+              label: 'Transaction hash',
+              value: String(shipment.transactionHash ?? shipment.txHash ?? ''),
+            },
+          ]}
+        />
       )}
     </div>
   );

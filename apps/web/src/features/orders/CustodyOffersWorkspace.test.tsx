@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({
@@ -79,6 +79,12 @@ function show(receiver = true) {
 it('requires Distributor acceptance then explicit pickup scheduling without moving inventory', async () => {
   show();
   await screen.findByText('Actual ingredient');
+  expect(screen.getByRole('heading', { name: 'Distributor custody request' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Custody requests' }).getAttribute('href')).toBe(
+    '/distributor/intake',
+  );
+  expect(screen.getByRole('region', { name: 'Transfer details' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Next action' })).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Accept custody offer' }));
   await screen.findByLabelText(/Planned custody pickup/);
@@ -97,12 +103,64 @@ it('requires Distributor acceptance then explicit pickup scheduling without movi
   expect(api.prepare).not.toHaveBeenCalled();
   expect(api.sign).not.toHaveBeenCalled();
 });
+it('presents the Supplier custody request detail as a compact workflow', async () => {
+  api.orders.mockResolvedValue({
+    actor: sender,
+    role: 'SUPPLIER',
+    orders: [],
+    catalogue: [],
+    locations: [],
+    logistics: { warehouses: [] },
+  });
+  show(false);
+
+  await screen.findByRole('heading', { name: 'Distributor custody request' });
+  expect(screen.getByRole('link', { name: 'Custody requests' }).getAttribute('href')).toBe(
+    '/supplier/transfers',
+  );
+  expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
+
+  const timeline = screen.getByRole('list', { name: 'Custody request progress' });
+  const stages = within(timeline).getAllByRole('listitem');
+  expect(stages).toHaveLength(5);
+  expect(stages[0]?.classList.contains('is-complete')).toBe(true);
+  expect(stages[1]?.classList.contains('is-current')).toBe(true);
+  expect(stages[1]?.getAttribute('aria-current')).toBe('step');
+  expect(within(timeline).getAllByText('Actual Supplier')).toHaveLength(2);
+  expect(within(timeline).getAllByText('Actual Distributor')).toHaveLength(3);
+
+  expect(screen.getByRole('region', { name: 'Transfer details' })).toBeTruthy();
+  expect(screen.getByRole('region', { name: 'Next action' })).toBeTruthy();
+  expect(screen.getByText('Actual source site')).toBeTruthy();
+  expect(screen.getByText('Actual warehouse')).toBeTruthy();
+  expect(screen.getByText(/Stock moves only after physical handoff/)).toBeTruthy();
+
+  const technical = screen.getByText('Technical details').closest('details');
+  expect(technical?.open).toBe(false);
+});
 it('rejects a custody offer without a dispatch or stock transaction', async () => {
   show();
   fireEvent.click(await screen.findByRole('button', { name: 'Reject offer' }));
   await screen.findByText('Custody offer rejected. No stock moved.');
   expect(api.sign).not.toHaveBeenCalled();
   expect(api.prepare).not.toHaveBeenCalled();
+});
+it('keeps expired Distributor requests visible without actionable workflow controls', async () => {
+  offer.status = 'EXPIRED';
+  api.orders.mockResolvedValue({
+    actor: sender,
+    role: 'SUPPLIER',
+    orders: [],
+    catalogue: [],
+    locations: [],
+    logistics: { warehouses: [] },
+  });
+  show(false);
+
+  expect(await screen.findByText('Expired')).toBeTruthy();
+  expect(screen.getByText('This custody offer expired.')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Accept custody offer' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Confirm pickup time' })).toBeNull();
 });
 it('keeps the sender waiting until pickup is arranged and exposes only sender handoff controls afterwards', async () => {
   api.orders.mockResolvedValue({
@@ -114,7 +172,7 @@ it('keeps the sender waiting until pickup is arranged and exposes only sender ha
     logistics: { warehouses: [] },
   });
   const view = show(false);
-  await screen.findByText('Waiting for the Distributor’s decision.');
+  await screen.findByText('Actual Distributor is reviewing the custody offer.');
   expect(screen.queryByRole('button', { name: 'Accept custody offer' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
   view.unmount();

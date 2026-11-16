@@ -16,6 +16,7 @@ vi.mock('../custody-transfers/qr-reader', () => ({
     }
   },
   cameraErrorMessage: (cause: Error) => cause.message,
+  qrImageErrorMessage: (cause: Error) => cause.message,
 }));
 vi.mock('./orders.api', () => ({
   prepareOrder: mocks.prepare,

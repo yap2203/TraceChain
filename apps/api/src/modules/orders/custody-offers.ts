@@ -114,6 +114,9 @@ export class CustodyOffers {
       !same(offer.ordersAddress, gateway.address)
     )
       return undefined;
+    const registrationBlockHash = await this.registration(offer.kind, offer.batchId);
+    if (!registrationBlockHash || !same(registrationBlockHash, offer.registrationBlockHash))
+      return undefined;
     const batch = await gateway.read(
       offer.kind === 1 ? 'ingredients' : 'products',
       offer.kind === 1 ? 'getBatch' : 'getProduct',
@@ -123,8 +126,6 @@ export class CustodyOffers {
       !same(offer.kind === 1 ? batch.supplier : batch.manufacturer, offer.sender) ||
       !same(batch.metadataHash, offer.metadataHash)
     )
-      return undefined;
-    if (!same(await this.registration(offer.kind, offer.batchId), offer.registrationBlockHash))
       return undefined;
     if (
       !same(await gateway.read('orders', 'locationOwner', [offer.fromLocation]), offer.sender) ||

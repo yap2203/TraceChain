@@ -15,7 +15,12 @@ import type {
   PreparedReceiptConfirmation,
   ResolvedCustodyTransfer,
 } from './custody-transfer.types';
-import { cameraErrorMessage, type TransferQrReader, ZxingTransferQrReader } from './qr-reader';
+import {
+  cameraErrorMessage,
+  qrImageErrorMessage,
+  type TransferQrReader,
+  ZxingTransferQrReader,
+} from './qr-reader';
 import { receiptConfirmationMessage, submitReceiptConfirmation } from './receipt-confirmation';
 import {
   ReceiptReconciliationForm,
@@ -181,8 +186,8 @@ export function TransferQrScanner({
       const payload = await readerRef.current.decodeImage(file);
       setResolving(false);
       await submitPayload(payload);
-    } catch {
-      setError('No readable QR code was found in that image. Try a clearer PNG or JPG.');
+    } catch (imageError) {
+      setError(qrImageErrorMessage(imageError));
       setResolving(false);
     } finally {
       if (fileRef.current) fileRef.current.value = '';

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeShipmentQr } from '@tracechain/shared';
 const mocks = vi.hoisted(() => ({
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   image: vi.fn(),
   camera: vi.fn(),
   offers: vi.fn(),
+  media: vi.fn(),
 }));
 vi.mock('../custody-transfers/qr-reader', () => ({
   ZxingTransferQrReader: class {
@@ -20,9 +21,14 @@ vi.mock('../custody-transfers/qr-reader', () => ({
     }
   },
   cameraErrorMessage: (cause: Error) => cause.message,
+  qrImageErrorMessage: (cause: Error) => cause.message,
 }));
 vi.mock('./orders.api', () => ({
+  CatalogueMediaError: class CatalogueMediaError extends Error {
+    reason = 'missing';
+  },
   deliveryIdentity: vi.fn(),
+  fetchCatalogueMedia: mocks.media,
   getOrders: mocks.get,
   getCustodyOffers: mocks.offers,
   prepareLogistics: mocks.prepare,
@@ -95,6 +101,9 @@ const state: OrdersState = {
         batchId,
         sender: supplier,
         recipient: carrier,
+        senderName: 'Actual Supplier Company',
+        recipientName: 'Actual Distributor Company',
+        itemName: 'Actual flour',
         kind: 'ingredient',
         leg: 1,
         custodyDecision: 1,
@@ -123,6 +132,7 @@ beforeEach(() => {
     transaction: { chainId: 31337, to: ordersAddress, data: '0x', value: '0x0' },
   });
   mocks.sign.mockResolvedValue(undefined);
+  mocks.media.mockRejectedValue(new Error('missing'));
   const qr = encodeShipmentQr({
     shipmentId: shipmentId as `0x${string}`,
     kind: 'ingredient',
@@ -138,9 +148,49 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
 });
 describe('unified warehouse shipments', () => {
+  it('renders the responsive custody-intake hierarchy with live names and a safe image fallback', async () => {
+    render(
+      <ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Custody Intake' })).toBeTruthy();
+    expect(screen.getByText('Review shipment details and confirm warehouse receipt.')).toBeTruthy();
+    const progress = screen.getByRole('list', { name: 'Shipment progress' });
+    expect(within(progress).getAllByRole('listitem')).toHaveLength(4);
+    for (const stage of ['Dispatched', 'In Transit', 'Arrived', 'Received'])
+      expect(within(progress).getByText(stage)).toBeTruthy();
+    expect(screen.getByText('Actual flour')).toBeTruthy();
+    expect(screen.getByText('Actual Supplier Company')).toBeTruthy();
+    expect(screen.getByText('Actual Distributor Company')).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Ingredient image placeholder' })).toBeTruthy();
+    expect(document.querySelector('.workspace-arrival-detail__columns')).toBeTruthy();
+
+    const confirm = screen.getByRole('button', { name: 'Confirm receipt with MetaMask' });
+    expect((confirm as HTMLButtonElement).disabled).toBe(true);
+    const technical = screen.getByText('Technical details').closest('details');
+    expect(technical?.open).toBe(false);
+  });
+
+  it('shows the authenticated ingredient image when catalogue media is available', async () => {
+    const next = structuredClone(state);
+    next.catalogue[0].imagePath = '/catalogue/ingredients/actual/image';
+    mocks.get.mockResolvedValue(next);
+    mocks.media.mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:ingredient');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    render(
+      <ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />,
+    );
+
+    const image = await screen.findByRole('img', { name: 'Actual flour' });
+    expect(image.getAttribute('src')).toBe('blob:ingredient');
+    expect(mocks.media).toHaveBeenCalledWith('/catalogue/ingredients/actual/image');
+  });
   it('uses the accepted custody offer and requires scanning before both chain receipt confirmations', async () => {
     const next = structuredClone(state);
     next.logistics!.shipments[0].custodyDecision = 0;
@@ -252,7 +302,7 @@ describe('unified warehouse shipments', () => {
   it('uses Supplier-specific tracking and no inbound acceptance controls', async () => {
     mocks.get.mockResolvedValue({ ...structuredClone(state), actor: supplier });
     render(<ShipmentsWorkspace role="supplier" initialShipmentId={shipmentId} />);
-    expect(await screen.findByText('Stock sent & delivery tracking')).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Shipment Tracking' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Accept custody delivery' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Scan package QR' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Send stock to custody' })).toBeTruthy();
@@ -335,9 +385,17 @@ describe('unified warehouse shipments', () => {
     expect(screen.queryByText(/In custody: 70 kg/)).toBeNull();
   });
   it('requires an exact shipment label and explicit physical receipt before signing', async () => {
-    render(<ShipmentsWorkspace role="distributor" initialShipmentId={shipmentId} />);
+    render(
+      <ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />,
+    );
     await screen.findByText('VAB 1234');
-    expect(screen.queryByRole('button', { name: 'Confirm receipt with MetaMask' })).toBeNull();
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Confirm receipt with MetaMask',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
     expect(screen.queryByLabelText('Shipment QR link')).toBeNull();
     const qr = encodeShipmentQr({
       shipmentId: shipmentId as `0x${string}`,
@@ -352,6 +410,7 @@ describe('unified warehouse shipments', () => {
     const confirm = (await screen.findByRole('button', {
       name: 'Confirm receipt with MetaMask',
     })) as HTMLButtonElement;
+    expect(screen.getByText('Shipment QR verified · label.png')).toBeTruthy();
     expect(confirm.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText('Quantity physically received (kg)'), {
       target: { value: '40' },
@@ -381,7 +440,87 @@ describe('unified warehouse shipments', () => {
     });
     render(<ShipmentsWorkspace role="distributor" initialShipmentId={shipmentId} initialQr={qr} />);
     await screen.findByRole('button', { name: 'Scan package QR' });
-    expect(screen.queryByRole('button', { name: 'Confirm receipt with MetaMask' })).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: 'Confirm receipt with MetaMask' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it('distinguishes an unreadable QR image from a readable label for another shipment', async () => {
+    render(
+      <ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />,
+    );
+    const upload = await screen.findByLabelText('Upload QR image');
+    mocks.image.mockRejectedValueOnce(new Error('No QR code was detected in the selected image.'));
+    fireEvent.change(upload, {
+      target: { files: [new File(['bad'], 'unreadable.png', { type: 'image/png' })] },
+    });
+    expect(await screen.findByText('No QR code was detected in the selected image.')).toBeTruthy();
+
+    mocks.image.mockResolvedValueOnce(
+      encodeShipmentQr({
+        shipmentId: hash('7') as `0x${string}`,
+        kind: 'ingredient',
+        chainId: 31337,
+        ordersAddress,
+        publicAppUrl: 'http://localhost:5173',
+      }),
+    );
+    fireEvent.change(upload, {
+      target: { files: [new File(['qr'], 'different.png', { type: 'image/png' })] },
+    });
+    expect(await screen.findByText('This QR belongs to a different shipment.')).toBeTruthy();
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Confirm receipt with MetaMask',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+  });
+  it.each([
+    [
+      'a readable non-TraceChain QR',
+      'https://example.com/not-a-tracechain-label',
+      'The selected QR is not a valid TraceChain shipment label.',
+    ],
+    [
+      'a shipment QR for another chain',
+      encodeShipmentQr({
+        shipmentId: shipmentId as `0x${string}`,
+        kind: 'ingredient',
+        chainId: 11_155_111,
+        ordersAddress,
+        publicAppUrl: 'http://localhost:5173',
+      }),
+      'This shipment QR is for a different blockchain network.',
+    ],
+    [
+      'a shipment QR for another contract',
+      encodeShipmentQr({
+        shipmentId: shipmentId as `0x${string}`,
+        kind: 'ingredient',
+        chainId: 31_337,
+        ordersAddress: '0x2000000000000000000000000000000000000002',
+        publicAppUrl: 'http://localhost:5173',
+      }),
+      'This shipment QR belongs to a different Orders contract.',
+    ],
+  ])('rejects %s after image decoding', async (_case, decodedValue, expectedMessage) => {
+    mocks.image.mockResolvedValue(decodedValue);
+    render(
+      <ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />,
+    );
+    const upload = await screen.findByLabelText('Upload QR image');
+    fireEvent.change(upload, {
+      target: { files: [new File(['qr'], 'readable.png', { type: 'image/png' })] },
+    });
+
+    expect(await screen.findByText(expectedMessage)).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Confirm receipt with MetaMask' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
     expect(mocks.sign).not.toHaveBeenCalled();
   });
   it('allows supplier to dispatch stock by choosing distributor without receiving location or vehicle', async () => {
