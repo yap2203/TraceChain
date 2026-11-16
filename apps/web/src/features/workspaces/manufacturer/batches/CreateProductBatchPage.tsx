@@ -1,6 +1,6 @@
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   listProductionIngredients,
@@ -12,10 +12,24 @@ import {
   WorkflowRefreshPendingError,
 } from '../../../production-flow/production-flow.transaction';
 import { ProductQrDisplay } from '../../../product-traceability';
-import { Alert, Badge, Btn, Card, Input, SelectField, StepProgress, T } from '../../shared/ui';
+import {
+  Alert,
+  Badge,
+  Btn,
+  Card,
+  Input,
+  SelectField,
+  StepProgress,
+  T,
+  Textarea,
+} from '../../shared/ui';
 import { registeredIngredientQuantity, ingredientUnitOptions } from './ingredient-quantities';
 import { shortChainId } from '../../shared/operational-format';
-import { getOrders } from '../../../orders/orders.api';
+import {
+  getOrders,
+  imageFilePayload,
+  uploadProductCatalogueImage,
+} from '../../../orders/orders.api';
 import {
   textError,
   quantityError,
@@ -29,6 +43,7 @@ type SubmittedProduct = {
   batchId?: string;
   batchReference: string;
   ingredientBalances: IngredientBalance[];
+  imageFile?: File;
   producedAt: string;
   productName: string;
   request: ProductPreparationInput;
@@ -48,14 +63,20 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [productName, setProductName] = useState('');
   const [batchReference, setBatchReference] = useState('');
   const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
   const [currency, setCurrency] = useState('MYR');
+  const [imageFile, setImageFile] = useState<File>();
+  const [imagePreview, setImagePreview] = useState('');
+  const [imageError, setImageError] = useState('');
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [unit, setUnit] = useState('each');
   const [producedAt, setProducedAt] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [presentationWarning, setPresentationWarning] = useState('');
   const [refreshPending, setRefreshPending] = useState<SubmittedProduct>();
   const [createdProduct, setCreatedProduct] = useState<{
     production?: { location: string; recordedAt: number };
@@ -65,6 +86,16 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     ingredientBalances: IngredientBalance[];
     productName: string;
   }>();
+
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview('');
+      return;
+    }
+    const preview = URL.createObjectURL(imageFile);
+    setImagePreview(preview);
+    return () => URL.revokeObjectURL(preview);
+  }, [imageFile]);
 
   useEffect(() => {
     void getOrders()
@@ -144,13 +175,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       : '';
   const datesError = producedAt && expiresAt ? productionDateError(producedAt, expiresAt) : '';
   const detailsComplete =
-    !!productName &&
-    !!batchReference &&
-    !!category &&
-    !!quantity &&
-    !!unit &&
-    !!producedAt &&
-    !!expiresAt;
+    !!productName && !!batchReference && !!quantity && !!unit && !!producedAt && !!expiresAt;
   const refreshStock = async (location: string) => {
     try {
       setConfirmedStock((await listProductionIngredients(location, 'production')).batches);
@@ -167,6 +192,22 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   ) => {
     if (!result.batchId)
       throw new Error('The confirmed product did not include its on-chain batch ID.');
+    if (submitted.imageFile) {
+      try {
+        await uploadProductCatalogueImage(
+          result.batchId,
+          await imageFilePayload(submitted.imageFile),
+        );
+        setPresentationWarning('');
+      } catch (cause) {
+        setPresentationWarning(
+          reportError(
+            cause,
+            'The product was created, but its optional image could not be saved. The on-chain product record is unchanged.',
+          ),
+        );
+      }
+    }
     setCreatedProduct({
       production: result.production,
       producedAt: submitted.producedAt,
@@ -182,7 +223,8 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     const validationError =
       textError(productName, 'Product name', 160) ||
       referenceError(batchReference) ||
-      textError(category, 'Category', 100) ||
+      (category ? textError(category, 'Category', 100) : '') ||
+      (description ? textError(description, 'Description', 1_000) : '') ||
       (price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(price)
         ? 'Enter a non-negative unit price with at most two decimal places.'
         : '') ||
@@ -204,10 +246,13 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     }
     const submittedProductName = productName.trim();
     const submittedBatchReference = batchReference.trim();
+    const selectedLocation = locations.find((entry) => entry.location === productionLocation);
     const request: ProductPreparationInput = {
       ...(productionLocation ? { productionLocation } : {}),
+      ...(selectedLocation?.label ? { productionLocationName: selectedLocation.label } : {}),
       batchReference: submittedBatchReference,
-      category,
+      category: category.trim(),
+      description: description.trim(),
       ...(price ? { price, currency } : {}),
       expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
       ingredientLinks: links,
@@ -219,6 +264,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     };
     const submitted: SubmittedProduct = {
       batchReference: submittedBatchReference,
+      ...(imageFile ? { imageFile } : {}),
       ingredientBalances: links.map((link) => {
         const ingredient = ingredients.find((item) => item.batchId === link.batchId)!;
         return {
@@ -275,6 +321,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           type="success"
           message="Product creation was verified on chain. Its permanent traceability QR is ready."
         />
+        {presentationWarning && <Alert type="warning" message={presentationWarning} />}
         <p>
           Production occurred: {createdProduct.producedAt ?? 'Unavailable'} · Recorded on-chain:{' '}
           {createdProduct.production?.recordedAt
@@ -353,8 +400,13 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
         <h2 style={{ margin: 0, color: T.navy }}>Create Product Batch</h2>
       </div>
       <StepProgress
-        steps={['Product details', 'Ingredients and quantities', 'Review and create']}
-        current={!detailsComplete ? 0 : links.length === 0 ? 1 : 2}
+        steps={[
+          'Product details',
+          'Product presentation',
+          'Ingredients and quantities',
+          'Review and create',
+        ]}
+        current={!detailsComplete ? 0 : !productionLocation ? 1 : links.length === 0 ? 2 : 3}
       />
       {error && <Alert type="error" message={error} />}
       <Card>
@@ -377,7 +429,6 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             error={batchReferenceError || undefined}
             required
           />
-          <Input label="Category" value={category} onChange={setCategory} required />
           <Input
             label="Quantity produced"
             inputMode="numeric"
@@ -421,27 +472,16 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             error={datesError || undefined}
             required
           />
-          <Input
-            label={`Price per ${unit} (optional)`}
-            value={price}
-            onChange={setPrice}
-            type="number"
-            min="0"
-            step="0.01"
-            error={priceError || undefined}
-          />
-          <Input
-            label="Currency code"
-            value={currency}
-            onChange={(value) => setCurrency(value.toUpperCase())}
-            maxLength={3}
-          />
         </div>
       </Card>
       <Card>
-        <h3>2. Select received ingredients</h3>
+        <h3>2. Product presentation</h3>
+        <p style={{ color: T.text2 }}>
+          These catalogue details are encrypted off chain and remain separate from the signed and
+          on-chain product identity.
+        </p>
         <label style={{ display: 'grid', gap: 6 }}>
-          Production stock location
+          Production location <span aria-hidden="true">*</span>
           <select
             aria-label="Production stock location"
             value={productionLocation}
@@ -455,6 +495,106 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             ))}
           </select>
         </label>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
+          <Input
+            label="Product category (optional)"
+            maxLength={100}
+            value={category}
+            onChange={setCategory}
+          />
+          <Input
+            label={`Indicative price per ${unit || 'unit'} (optional)`}
+            value={price}
+            onChange={setPrice}
+            type="number"
+            min="0"
+            step="0.01"
+            error={priceError || undefined}
+            hint="Indicative catalogue price only; this is not a payment or on-chain sale price."
+          />
+          <Input
+            label="Currency code"
+            value={currency}
+            onChange={(value) => setCurrency(value.toUpperCase())}
+            maxLength={3}
+          />
+        </div>
+        <div style={{ marginTop: 14 }}>
+          <Textarea
+            label="Product description (optional)"
+            value={description}
+            onChange={setDescription}
+            maxLength={1_000}
+            rows={4}
+          />
+        </div>
+        <div className="ingredient-photo-review">
+          <div>
+            <span className="ingredient-photo-review__label">Product image (optional)</span>
+            {imagePreview && imageFile ? (
+              <>
+                <img src={imagePreview} alt="Product image preview" />
+                <span className="ingredient-photo-review__filename" title={imageFile.name}>
+                  {imageFile.name}
+                </span>
+              </>
+            ) : (
+              <span className="ingredient-photo-review__empty">No image selected</span>
+            )}
+          </div>
+          <div>
+            <input
+              ref={imageInputRef}
+              aria-label="Product image"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              hidden
+              disabled={busy}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+                  setImageError('Choose a PNG, JPEG or WebP image.');
+                  event.currentTarget.value = '';
+                  return;
+                }
+                if (file.size > 2 * 1024 * 1024) {
+                  setImageError('Images must not exceed 2 MB.');
+                  event.currentTarget.value = '';
+                  return;
+                }
+                setImageError('');
+                setImageFile(file);
+              }}
+            />
+            <Btn
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => imageInputRef.current?.click()}
+            >
+              {imageFile ? 'Replace image' : 'Choose image'}
+            </Btn>
+            {imageFile && (
+              <Btn
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  setImageFile(undefined);
+                  setImageError('');
+                  if (imageInputRef.current) imageInputRef.current.value = '';
+                }}
+              >
+                Remove image
+              </Btn>
+            )}
+          </div>
+        </div>
+        {imageError && <Alert type="error" message={imageError} />}
+      </Card>
+      <Card>
+        <h3>3. Select received ingredients</h3>
         <p style={{ color: T.text2, fontSize: 12, marginTop: 0 }}>
           Choose received ingredients and the amount to use. Remaining stock updates automatically;
           ingredient evidence is optional.
@@ -554,7 +694,30 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
         </div>
       </Card>
       <Card>
-        <h3>3. Review and create</h3>
+        <h3>4. Review and create</h3>
+        <div className="ingredient-photo-review">
+          <div>
+            <span className="ingredient-photo-review__label">Product image</span>
+            {imagePreview && imageFile ? (
+              <>
+                <img src={imagePreview} alt="Product image review preview" />
+                <span className="ingredient-photo-review__filename" title={imageFile.name}>
+                  {imageFile.name}
+                </span>
+              </>
+            ) : (
+              <span className="ingredient-photo-review__empty">No image selected</span>
+            )}
+          </div>
+          <Btn
+            variant="outline"
+            size="sm"
+            disabled={busy}
+            onClick={() => imageInputRef.current?.click()}
+          >
+            {imageFile ? 'Change image' : 'Add image'}
+          </Btn>
+        </div>
         <dl className="workspace-record-facts">
           <div>
             <dt>Product</dt>
@@ -565,14 +728,35 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             <dd>{batchReference || 'Not entered'}</dd>
           </div>
           <div>
+            <dt>Category</dt>
+            <dd>{category || 'Not provided'}</dd>
+          </div>
+          <div>
+            <dt>Description</dt>
+            <dd>{description || 'Not provided'}</dd>
+          </div>
+          <div>
             <dt>Output</dt>
             <dd>
               {quantity && unit ? `${quantity} ${unit === 'each' ? 'units' : unit}` : 'Not entered'}
             </dd>
           </div>
           <div>
+            <dt>Indicative price</dt>
+            <dd>{price ? `${currency} ${Number(price).toFixed(2)} / ${unit}` : 'Not provided'}</dd>
+          </div>
+          <div>
             <dt>Ingredient batches</dt>
-            <dd>{links.length}</dd>
+            <dd>
+              {links.length
+                ? links
+                    .map(
+                      (link) =>
+                        `${names[link.batchId] ?? shortChainId(link.batchId)} — ${link.quantity} ${ingredients.find((item) => item.batchId === link.batchId)?.unit ?? ''}`,
+                    )
+                    .join(', ')
+                : 'None selected'}
+            </dd>
           </div>
           <div>
             <dt>Production location</dt>
@@ -580,6 +764,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
               {locations.find((entry) => entry.location === productionLocation)?.label ??
                 'Not selected'}
             </dd>
+          </div>
+          <div>
+            <dt>Production date</dt>
+            <dd>{producedAt || 'Not entered'}</dd>
           </div>
           <div>
             <dt>Expiry</dt>
@@ -596,6 +784,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             !!outputQuantityError ||
             !!priceError ||
             !!datesError ||
+            !!imageError ||
             !productionLocation ||
             stockLoading ||
             !!stockError ||

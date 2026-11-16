@@ -1,5 +1,39 @@
 # Project Progress
 
+## 2026-11-17 — Manufacturer product presentation and production location
+
+- Added a Product presentation step to real Manufacturer product creation. The stable production
+  location selected for accepted ingredient consumption is now also sent as the product's on-chain
+  location, while its readable name, optional category, description and indicative currency/unit
+  price are integrity-bound in the existing encrypted off-chain product metadata.
+- Manufacturers can preview, replace or remove an optional PNG/JPEG/WebP image before submission.
+  After the product transaction is confirmed, the image is byte-validated by the API and saved via
+  the existing encrypted catalogue-media store. Authenticated responses expose only the safe product
+  media route and allowlisted public presentation fields; raw images, CIDs and ciphertext remain
+  private.
+- Manufacturer list/detail views now display the saved image, readable production location,
+  description, category and formatted indicative price. Authenticated custody/catalogue consumers
+  receive the same safe summary, and public traceability receives only intended textual presentation
+  fields. Existing products keep honest missing-value fallbacks. Product presentation editing remains
+  unavailable because the deployed product record has no versioned metadata-update operation; no
+  Solidity, deployment, environment or existing chain data changed.
+
+## 2026-11-17 — Compact Manufacturer product inventory
+
+- Replaced the oversized Manufacturer product cards with the existing Supplier/custody inventory
+  presentation: compact summary cards, one responsive filter toolbar, a remembered List/Grid
+  selector, stable left-aligned three-column cards, compact full-width rows and independent Show
+  more/Show less details. Existing detail, transfer, refresh and create navigation remain unchanged.
+- Product rows now use the shared authenticated catalogue-image fallback, readable company identity,
+  status badges, date/price formatters and collapsed Technical details. Search covers product name,
+  batch reference and batch ID; status, expiry, archived visibility and sorting remain client-side and
+  do not refetch or change authoritative records.
+- Extended the shared operational unit formatter to decode safe bytes32 and custom named units. For
+  example, encoded `each` displays as `80 each`, custom `boxes` displays as `25 boxes`, and malformed
+  values fall back to `units` while the raw value stays in Technical details. All 312 frontend tests,
+  frontend type checking, changed-file formatting and the production build pass. Existing Vite
+  bundle/directive warnings remain; no API, contract, environment, deployment or chain data changed.
+
 ## 2026-11-17 — Exact-balance product production recovery
 
 - Fixed Manufacturer product confirmation when production consumes the final accepted unit at a

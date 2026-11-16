@@ -195,6 +195,14 @@ export const uploadIngredientCatalogueImage = async (
   mediaRequests.delete(result.image.path);
   return result;
 };
+export const uploadProductCatalogueImage = async (batchId: string, image: CatalogueImageUpload) => {
+  const result = await request<{ image: { path: string } }>(
+    `/catalogue/products/${batchId}/image`,
+    image,
+  );
+  mediaRequests.delete(result.image.path);
+  return result;
+};
 export const uploadCompanyLogo = async (wallet: string, image: CatalogueImageUpload) => {
   const result = await request<{ branding: { logoPath: string } }>(
     `/branding/${wallet}/logo`,

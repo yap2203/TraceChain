@@ -246,8 +246,10 @@ export const prepareProduct = (input: {
   price?: string;
   currency?: string;
   productionLocation?: string;
+  productionLocationName?: string;
   batchReference: string;
   category: string;
+  description: string;
   expiresAt: string;
   ingredientLinks: Array<{ batchId: string; quantity: string }>;
   privateMetadata: Record<string, string>;

@@ -1219,6 +1219,8 @@ export class OrdersService {
       batchReference: metadata.batchId ?? metadata.batchReference,
       price: metadata.price,
       currency: metadata.price !== undefined ? metadata.currency : undefined,
+      productionLocation: metadata.productionLocation,
+      productionLocationName: metadata.productionLocationName,
     };
     if (kind === 1) {
       try {
@@ -1268,6 +1270,10 @@ export class OrdersService {
           }
         } else summary.listingUnavailable = true;
       }
+    } else {
+      const image = await this.repository.findPrivate('products', mediaKey('product', batchId));
+      if (image && same(image.owner, batch.manufacturer))
+        summary.imagePath = `/catalogue/products/${batchId}/image`;
     }
     return summary;
   }
@@ -1581,6 +1587,38 @@ export class OrdersService {
     };
   }
 
+  async updateProductImage(
+    sessionId: string | undefined,
+    batchId: string,
+    input: CatalogueImageInput,
+  ) {
+    const session = await this.session(sessionId);
+    if (session.role !== CompanyRole.MANUFACTURER)
+      throw new OrdersError(
+        'PRODUCT_OWNER_REQUIRED',
+        'Only a Manufacturer can manage product images.',
+        403,
+      );
+    const product = await this.gateway.read('products', 'getProduct', [batchId]);
+    if (!same(product.manufacturer, session.address))
+      throw new OrdersError(
+        'PRODUCT_OWNER_REQUIRED',
+        'Only this product’s Manufacturer can replace its image.',
+        403,
+      );
+    const image = validateImage(input);
+    await this.replacePresentationRecord(mediaKey('product', batchId), session.address, image);
+    return {
+      image: {
+        height: image.height,
+        manufacturerProvided: true,
+        mimeType: image.mimeType,
+        path: `/catalogue/products/${batchId}/image`,
+        width: image.width,
+      },
+    };
+  }
+
   async updateCompanyLogo(
     sessionId: string | undefined,
     targetWallet: string,
@@ -1674,7 +1712,7 @@ export class OrdersService {
 
   async catalogueMedia(
     sessionId: string | undefined,
-    kind: 'company' | 'ingredient',
+    kind: 'company' | 'ingredient' | 'product',
     reference: string,
   ) {
     await this.authorizedSession(sessionId);
@@ -1701,9 +1739,12 @@ export class OrdersService {
         if (error instanceof OrdersError) throw error;
         throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
       }
-    } else {
+    } else if (kind === 'ingredient') {
       const batch = await this.gateway.read('ingredients', 'getBatch', [reference]);
       owner = batch.supplier;
+    } else {
+      const product = await this.gateway.read('products', 'getProduct', [reference]);
+      owner = product.manufacturer;
     }
     const record = await this.repository.findPrivate('products', mediaKey(kind, reference));
     if (!record || !same(record.owner, owner))
@@ -1849,6 +1890,12 @@ export class OrdersService {
                 ? { supplierAvailable: batch.availableQuantity }
                 : {
                     producedAt: batch.producedAt,
+                    recordedAt: await this.gateway.read('products', 'productionRecordedAt', [
+                      batchId,
+                    ]),
+                    productionLocation: await this.gateway.read('products', 'productionLocation', [
+                      batchId,
+                    ]),
                     ingredientLinks: await this.gateway.read('products', 'getIngredientLinks', [
                       batchId,
                     ]),
@@ -3265,7 +3312,7 @@ export class OrdersService {
   }
 }
 
-function mediaKey(kind: 'company' | 'ingredient', reference: string) {
+function mediaKey(kind: 'company' | 'ingredient' | 'product', reference: string) {
   return id(`catalogue-media:${kind}:${reference.toLowerCase()}`);
 }
 

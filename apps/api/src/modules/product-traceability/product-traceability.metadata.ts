@@ -19,8 +19,14 @@ export class RepositoryTraceabilityMetadataReader implements TraceabilityMetadat
         unknown
       >;
       return {
+        category: stringValue(metadata.category),
+        currency: stringValue(metadata.currency),
+        description: stringValue(metadata.description),
         name: stringValue(metadata.productName),
+        price: stringValue(metadata.price),
+        productionLocationName: stringValue(metadata.productionLocationName),
         reference: stringValue(metadata.batchReference),
+        unit: stringValue(metadata.unit),
       };
     } catch {
       return undefined;

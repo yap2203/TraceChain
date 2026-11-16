@@ -222,6 +222,9 @@ function TraceabilityRecord({ result }: { result: ProductTraceabilityResponse })
         <span className="product-trace-eyebrow">{result.verificationMessage}</span>
         <h1>{result.product.name}</h1>
         <p className="product-trace-muted">{result.product.reference}</p>
+        {result.product.description && (
+          <p className="product-trace-muted">{result.product.description}</p>
+        )}
         <span className={`product-trace-status ${attention ? 'attention' : ''}`}>
           {result.product.status}
         </span>
@@ -235,6 +238,27 @@ function TraceabilityRecord({ result }: { result: ProductTraceabilityResponse })
             <dt>Manufacturer</dt>
             <dd>{result.product.manufacturerName}</dd>
           </div>
+          {result.product.category && (
+            <div>
+              <dt>Category</dt>
+              <dd>{result.product.category}</dd>
+            </div>
+          )}
+          {result.product.price && (
+            <div>
+              <dt>Indicative price</dt>
+              <dd>
+                {result.product.currency ?? 'MYR'} {Number(result.product.price).toFixed(2)} /{' '}
+                {result.product.unit ?? 'unit'}
+              </dd>
+            </div>
+          )}
+          {result.product.productionLocationName && (
+            <div>
+              <dt>Production location</dt>
+              <dd>{result.product.productionLocationName}</dd>
+            </div>
+          )}
           <div>
             <dt>Current custody organisation</dt>
             <dd>{result.currentCustodianName}</dd>

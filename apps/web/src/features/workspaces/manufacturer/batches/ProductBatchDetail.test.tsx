@@ -43,11 +43,16 @@ vi.mock('../../../orders/orders.api', () => ({
     catalogue: [
       {
         batches: [`0x${'11'.repeat(32)}`],
+        category: 'Confectionery',
+        description: 'Finished cocoa product presentation.',
         currency: 'MYR',
         price: '12',
+        productionLocation: 'factory-location',
+        productionLocationName: 'Shah Alam Chocolate Plant',
         storageLocations: [],
       },
     ],
+    locations: [{ location: 'factory-location', label: 'Shah Alam Chocolate Plant' }],
   }),
 }));
 vi.mock('../../../product-traceability/product-traceability.api', async (original) => ({
@@ -111,7 +116,7 @@ describe('Manufacturer product detail QR resilience', () => {
       'textContent',
       expect.stringContaining('VITE_PUBLIC_APP_URL'),
     );
-    expect(screen.getByText('123 units')).toBeTruthy();
+    expect(screen.getByText('123 each')).toBeTruthy();
     expect(screen.getByText('Linked ingredients')).toBeTruthy();
     await waitFor(() => expect(mocks.payload).toHaveBeenCalledWith(batchId));
     expect(mocks.resolve).not.toHaveBeenCalled();
@@ -120,14 +125,16 @@ describe('Manufacturer product detail QR resilience', () => {
     mocks.resolve.mockRejectedValue(new Error('RPC unavailable'));
     mount();
     await waitFor(() => expect(mocks.resolve).toHaveBeenCalled());
-    expect(screen.getByText('123 units')).toBeTruthy();
+    expect(screen.getByText('123 each')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Product Traceability QR' })).toBeTruthy();
   });
   it('shows the resolved product and QR when configuration is valid', async () => {
     mount();
     expect(await screen.findByRole('heading', { name: 'Recorded product', level: 2 })).toBeTruthy();
-    expect(screen.getByText('123 units')).toBeTruthy();
-    expect(screen.getByText('MYR 12.00 per unit')).toBeTruthy();
+    expect(screen.getByText('123 each')).toBeTruthy();
+    expect(screen.getByText('MYR 12.00 / each')).toBeTruthy();
+    expect(screen.getByText('Finished cocoa product presentation.')).toBeTruthy();
+    expect(screen.getByText('Shah Alam Chocolate Plant')).toBeTruthy();
     expect(screen.getByText('Raw on-chain unit')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Product Traceability QR' })).toBeTruthy();
   });

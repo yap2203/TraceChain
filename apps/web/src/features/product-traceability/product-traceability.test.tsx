@@ -34,12 +34,18 @@ const response = {
     },
   ],
   product: {
+    category: 'Confectionery',
+    currency: 'MYR',
+    description: 'A finished chocolate product with verified ingredient history.',
     expiresAt: 1_900_000_000,
     manufacturerName: 'CocoaCraft Manufacturing Sdn. Bhd.',
     name: 'Dark Chocolate Bar',
+    price: '12.00',
     producedAt: 1_790_000_000,
+    productionLocationName: 'Shah Alam Chocolate Plant',
     reference: 'CHOCOLATE-2026-050',
     status: 'ACTIVE' as const,
+    unit: 'each',
   },
   technical: {
     batchId: BATCH_ID,
@@ -114,6 +120,11 @@ describe('product traceability QR and page', () => {
     expect(await screen.findByText('Dark Chocolate Bar')).toBeTruthy();
     expect(screen.getByText('FreshMart Retail Sdn. Bhd.')).toBeTruthy();
     expect(screen.getByText('ABC Ingredients Sdn. Bhd.')).toBeTruthy();
+    expect(
+      screen.getByText('A finished chocolate product with verified ingredient history.'),
+    ).toBeTruthy();
+    expect(screen.getByText('MYR 12.00 / each')).toBeTruthy();
+    expect(screen.getByText('Shah Alam Chocolate Plant')).toBeTruthy();
     expect(screen.getByText('Technical details')).toBeTruthy();
     const technicalDetails = screen.getByText('Technical details').closest('details');
     expect(technicalDetails?.open).toBe(false);

@@ -25,7 +25,8 @@ afterEach(() => vi.unstubAllEnvs());
 describe('Manufacturer-selected Retailer product delivery', () => {
   function product(actor = seller, role = CompanyRole.MANUFACTURER) {
     const f = fixture(actor, true, role),
-      previous = f.gateway.read.getMockImplementation()!;
+      previous = f.gateway.read.getMockImplementation()!,
+      expiresAt = Math.floor(Date.now() / 1000) + 3600;
     f.gateway.read.mockImplementation(async (c, m, args) => {
       if (m === 'productDeliveryPolicy') return 1;
       if (c === 'productDelivery' && m === 'get')
@@ -37,7 +38,7 @@ describe('Manufacturer-selected Retailer product delivery', () => {
           mode: 1,
           stage: 3,
         };
-      if (m === 'getOrder') return { ...(await previous(c, m)), requested: '10' };
+      if (m === 'getOrder') return { ...(await previous(c, m)), requested: '10', expiresAt };
       if (m === 'requestedBatch') return batchId;
       if (m === 'getProduct') return { manufacturer: seller };
       if (m === 'locationOwner') return args?.[0] === id('retailer-location') ? buyer : actor;
@@ -109,8 +110,12 @@ describe('Manufacturer-selected Retailer product delivery', () => {
       ordersAddress: seller,
       publicAppUrl: 'http://localhost:5173',
     });
-    await expect(f.service.prepareLogistics('session', { ...input, qrPayload })).rejects.toMatchObject({code:'PICKUP_PLAN_REQUIRED'});
-    await f.service.pickupPlan('session', orderId, {pickupAt:Math.floor(Date.now()/1000)+300});
+    await expect(
+      f.service.prepareLogistics('session', { ...input, qrPayload }),
+    ).rejects.toMatchObject({ code: 'PICKUP_PLAN_REQUIRED' });
+    await f.service.pickupPlan('session', orderId, {
+      pickupAt: Math.floor(Date.now() / 1000) + 300,
+    });
     await f.service.prepareLogistics('session', { ...input, qrPayload });
     expect(f.gateway.prepare).toHaveBeenCalledWith(outsider, 'productDelivery', 'dispatch', [
       orderId,
@@ -1138,6 +1143,118 @@ describe('order API and private metadata', () => {
       .expect('Content-Type', 'image/png');
     expect(image.headers['x-content-type-options']).toBe('nosniff');
     expect(image.body).toEqual(Buffer.from(png, 'base64'));
+  });
+
+  it('stores and serves an authorized Manufacturer product image without exposing storage references', async () => {
+    const f = fixture(buyer, true, CompanyRole.MANUFACTURER);
+    const read = f.gateway.read.getMockImplementation()!;
+    const events = f.gateway.events.getMockImplementation()!;
+    const productBatchId = id('presentation-product');
+    const location = id('manufacturer-factory');
+    const metadata = JSON.stringify({
+      batchReference: 'PRODUCT-001',
+      category: 'Confectionery',
+      description: 'Manufacturer-provided public catalogue copy.',
+      price: '12.00',
+      currency: 'MYR',
+      productName: 'Finished Chocolate',
+      productionLocation: location,
+      productionLocationName: 'Shah Alam Chocolate Plant',
+    });
+    const metadataHash = `0x${createHash('sha256').update(metadata).digest('hex')}`;
+    f.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getProduct'
+        ? {
+            manufacturer: buyer,
+            status: 1,
+            metadataHash,
+            publicCid: 'encrypted-cid',
+            totalQuantity: '123',
+            unit: encodeBytes32String('each'),
+            producedAt: 1_790_000_000,
+            expiresAt: 2_000_000_000,
+          }
+        : method === 'getIngredientLinks'
+          ? []
+          : method === 'productionLocation'
+            ? location
+            : method === 'productionRecordedAt'
+              ? 1_790_000_100
+              : read(contract, method, args),
+    );
+    f.gateway.events.mockImplementation(async (contract, name) =>
+      name === 'ProductCreated'
+        ? [{ productBatchId, manufacturer: buyer, blockNumber: 50 }]
+        : events(contract, name),
+    );
+    await f.repository.savePrivate('products', {
+      cid: 'encrypted-cid',
+      contentHash: metadataHash,
+      id: productBatchId,
+      owner: buyer,
+      payload: { ciphertext: metadata },
+    });
+    const uploaded = await request(f.app)
+      .post(`/api/orders/catalogue/products/${productBatchId}/image`)
+      .send({ data: png, fileName: 'finished-product.png', mimeType: 'image/png' })
+      .expect(200);
+    expect(uploaded.body.image).toMatchObject({
+      height: 1,
+      manufacturerProvided: true,
+      mimeType: 'image/png',
+      path: `/catalogue/products/${productBatchId}/image`,
+      width: 1,
+    });
+    expect(JSON.stringify(uploaded.body)).not.toContain('encrypted-cid');
+    const image = await request(f.app)
+      .get(`/api/orders/catalogue/products/${productBatchId}/image`)
+      .expect(200)
+      .expect('Content-Type', 'image/png');
+    expect(image.body).toEqual(Buffer.from(png, 'base64'));
+    const state = await f.service.state('session');
+    const product = state.catalogue.find((entry) => Number(entry.kind) === 2);
+    expect(product, JSON.stringify(state.catalogue, null, 2)).toMatchObject({
+      batchReference: 'PRODUCT-001',
+      category: 'Confectionery',
+      description: 'Manufacturer-provided public catalogue copy.',
+      imagePath: `/catalogue/products/${productBatchId}/image`,
+      name: 'Finished Chocolate',
+      price: '12.00',
+      currency: 'MYR',
+      productionLocation: location,
+      productionLocationName: 'Shah Alam Chocolate Plant',
+    });
+    expect(JSON.stringify(product)).not.toContain(png);
+    expect(JSON.stringify(product)).not.toContain('ciphertext');
+  });
+
+  it('rejects an oversized product image and a product image from another Manufacturer', async () => {
+    const owner = fixture(buyer, true, CompanyRole.MANUFACTURER);
+    const ownerRead = owner.gateway.read.getMockImplementation()!;
+    owner.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getProduct'
+        ? { manufacturer: buyer, status: 1 }
+        : ownerRead(contract, method, args),
+    );
+    const oversized = Buffer.alloc(2 * 1024 * 1024 + 1).toString('base64');
+    const invalid = await request(owner.app)
+      .post(`/api/orders/catalogue/products/${batchId}/image`)
+      .send({ data: oversized, fileName: 'large.png', mimeType: 'image/png' })
+      .expect(400);
+    expect(invalid.body.error.code).toBe('IMAGE_TOO_LARGE');
+
+    const other = fixture(seller, true, CompanyRole.MANUFACTURER);
+    const otherRead = other.gateway.read.getMockImplementation()!;
+    other.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getProduct'
+        ? { manufacturer: buyer, status: 1 }
+        : otherRead(contract, method, args),
+    );
+    await request(other.app)
+      .post(`/api/orders/catalogue/products/${batchId}/image`)
+      .send({ data: png, fileName: 'product.png', mimeType: 'image/png' })
+      .expect(403);
+    expect(other.store.encryptAndStore).not.toHaveBeenCalled();
   });
 
   it('rejects oversized, unsupported, mismatched and corrupt catalogue images', async () => {

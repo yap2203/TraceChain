@@ -1580,6 +1580,25 @@
   .ingredient-card__secondary-actions {
     @apply flex flex-wrap items-center gap-[8px] pt-[12px];
   }
+  .manufacturer-product-card__metrics {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  .manufacturer-product-card__actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .manufacturer-product-card__custody {
+    @apply m-0 text-[11px] leading-[1.4];
+    color: var(--c-text2);
+  }
+  .ingredient-card--grid.manufacturer-product-card .manufacturer-product-card__custody {
+    @apply mt-auto;
+  }
+  .manufacturer-product-card .workspace-company-cell {
+    @apply min-w-0;
+  }
+  .manufacturer-product-card .workspace-company-cell > :last-child {
+    overflow-wrap: anywhere;
+  }
   .ingredient-card--loading {
     @apply min-h-[470px];
     background: linear-gradient(
@@ -2092,6 +2111,9 @@
     .ingredient-card__list-metrics {
       @apply grid-cols-2 gap-x-[12px] gap-y-[9px];
     }
+    .manufacturer-product-card__actions {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
     .ingredient-card__list-metrics > div,
     .ingredient-card__list-metrics > div:first-child,
     .ingredient-card__list-metrics > div:last-child {
@@ -2213,6 +2235,9 @@
     }
     .ingredient-card--list .ingredient-card__primary-actions {
       @apply grid-cols-1;
+    }
+    .manufacturer-product-card__actions {
+      grid-template-columns: minmax(0, 1fr);
     }
     .ingredient-card__expanded-facts {
       grid-template-columns: minmax(0, 1fr);

@@ -24,7 +24,7 @@ export const chainDate = (seconds: number) =>
   seconds ? new Date(seconds * 1_000).toLocaleDateString() : '—';
 
 const knownUnits: Record<string, { quantity: string; price: string }> = {
-  each: { quantity: 'units', price: 'unit' },
+  each: { quantity: 'each', price: 'each' },
   g: { quantity: 'g', price: 'g' },
   kg: { quantity: 'kg', price: 'kg' },
   litre: { quantity: 'litres', price: 'litre' },
@@ -38,7 +38,7 @@ export interface OperationalUnit {
   raw: string;
 }
 
-/** Decode only known contract units. Unknown values stay technical and are never guessed. */
+/** Decode safe named contract units. Malformed values stay technical and use a neutral label. */
 export function operationalUnit(value: unknown): OperationalUnit {
   const raw = String(value ?? '');
   let decoded = raw.trim().toLowerCase();
@@ -46,13 +46,15 @@ export function operationalUnit(value: unknown): OperationalUnit {
     try {
       decoded = decodeBytes32String(raw).trim().toLowerCase();
     } catch {
-      return { quantityLabel: 'unit unavailable', raw };
+      return { quantityLabel: 'units', priceLabel: 'units', raw };
     }
   }
   const known = knownUnits[decoded];
-  return known
-    ? { canonical: decoded, quantityLabel: known.quantity, priceLabel: known.price, raw }
-    : { quantityLabel: 'unit unavailable', raw };
+  if (known)
+    return { canonical: decoded, quantityLabel: known.quantity, priceLabel: known.price, raw };
+  if (/^[a-z0-9._/-]{1,31}$/.test(decoded))
+    return { canonical: decoded, quantityLabel: decoded, priceLabel: decoded, raw };
+  return { quantityLabel: 'units', priceLabel: 'units', raw };
 }
 
 export function formatOperationalQuantity(quantity: unknown, unit: unknown) {
@@ -65,7 +67,5 @@ export function formatOperationalPrice(currency: unknown, price: unknown, unit: 
   if (price === undefined || price === null || price === '') return 'Unavailable';
   const amount = Number(price);
   const value = Number.isFinite(amount) ? amount.toFixed(2) : String(price);
-  return formatted.priceLabel
-    ? `${String(currency || 'MYR')} ${value} per ${formatted.priceLabel}`
-    : `${String(currency || 'MYR')} ${value} (unit unavailable)`;
+  return `${String(currency || 'MYR')} ${value} / ${formatted.priceLabel ?? 'units'}`;
 }

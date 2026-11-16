@@ -868,6 +868,34 @@ describe('production flow service', () => {
       { batchId: BATCH_ID, quantity: '4' },
     ]);
   });
+  it('encrypts product presentation metadata and uses the same stable production location for consumption and calldata', async () => {
+    const location = id('presentation-factory');
+    gateway.getReceivedAvailable = vi.fn().mockResolvedValue('500');
+    await service.prepareProduct('session', {
+      ...productInput(),
+      category: 'Confectionery',
+      description: 'Manufacturer-provided catalogue description.',
+      price: '12.00',
+      currency: 'MYR',
+      productionLocation: location,
+      productionLocationName: 'Shah Alam Chocolate Plant',
+    });
+
+    expect(gateway.getReceivedAvailable).toHaveBeenCalledWith(BATCH_ID, MANUFACTURER, location);
+    expect(gateway.prepareProduct).toHaveBeenCalledWith(
+      expect.objectContaining({ productionLocation: location }),
+    );
+    expect(JSON.parse(encryptedWrites.at(-1)!)).toMatchObject({
+      batchReference: 'PRODUCT-001',
+      category: 'Confectionery',
+      description: 'Manufacturer-provided catalogue description.',
+      price: '12.00',
+      currency: 'MYR',
+      productionLocation: location,
+      productionLocationName: 'Shah Alam Chocolate Plant',
+      productName: 'Chocolate',
+    });
+  });
   it('reads back an exactly consumed product without requiring positive ingredient stock', async () => {
     const privateRecords = new Map<
       string,
@@ -1292,6 +1320,7 @@ function productInput() {
   return {
     batchReference: 'PRODUCT-001',
     category: 'food',
+    description: '',
     expiresAt: new Date('2027-05-01'),
     ingredientLinks: [{ batchId: BATCH_ID, quantity: '500' }],
     privateMetadata: { name: 'Chocolate' },

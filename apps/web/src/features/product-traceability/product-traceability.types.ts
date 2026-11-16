@@ -3,12 +3,18 @@ export interface ProductTraceabilityResponse {
   verificationMessage: string;
   disclaimer: string;
   product: {
+    category?: string;
+    currency?: string;
+    description?: string;
     expiresAt: number;
     manufacturerName: string;
     name: string;
+    price?: string;
     producedAt: number;
+    productionLocationName?: string;
     reference: string;
     status: 'ACTIVE' | 'SUSPENDED' | 'RECALLED' | 'EXPIRED' | 'UNKNOWN';
+    unit?: string;
   };
   ingredients: Array<{
     credentialStatus: string;

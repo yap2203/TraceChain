@@ -31,8 +31,14 @@ describe('product traceability service', () => {
     viewerRole = CompanyRole.RETAILER;
     ingredientReference = vi.fn().mockResolvedValue('COCOA-2026-001');
     productMetadata = vi.fn().mockResolvedValue({
+      category: 'Confectionery',
+      currency: 'MYR',
+      description: 'Manufacturer-provided product presentation.',
       name: 'Dark Chocolate Bar',
+      price: '12.00',
+      productionLocationName: 'Shah Alam Chocolate Plant',
       reference: 'CHOCOLATE-2026-050',
+      unit: 'each',
     });
     gateway = {
       getProduct: vi.fn().mockResolvedValue({
@@ -122,8 +128,12 @@ describe('product traceability service', () => {
       accessLevel: 'PUBLIC',
       currentCustodianName: 'FreshMart Retail Sdn. Bhd.',
       product: {
+        category: 'Confectionery',
+        description: 'Manufacturer-provided product presentation.',
         manufacturerName: 'CocoaCraft Manufacturing Sdn. Bhd.',
         name: 'Dark Chocolate Bar',
+        price: '12.00',
+        productionLocationName: 'Shah Alam Chocolate Plant',
         reference: 'CHOCOLATE-2026-050',
         status: 'ACTIVE',
       },

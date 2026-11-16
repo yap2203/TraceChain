@@ -174,13 +174,19 @@ export class ProductTraceabilityService {
         disclaimer:
           'This verifies the recorded blockchain history; it does not by itself prove the physical product is genuine.',
         product: {
+          category: metadata?.category,
+          currency: metadata?.currency,
+          description: metadata?.description,
           expiresAt: product.expiresAt,
           manufacturerName:
             manufacturerIdentity?.companyName ?? 'Verified Manufacturer record unavailable',
           name: metadata?.name ?? 'Registered product',
+          price: metadata?.price,
           producedAt: product.producedAt,
+          productionLocationName: metadata?.productionLocationName,
           reference: metadata?.reference ?? 'Batch reference unavailable',
           status: state,
+          unit: metadata?.unit,
         },
         ingredients,
         credentialSummary: {

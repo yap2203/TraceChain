@@ -293,7 +293,8 @@ New authenticated endpoints: `GET /api/orders`, `POST /api/orders/prepare`,
 `POST /api/orders/:orderId/evidence/prepare`, `POST /api/orders/:orderId/identity`,
 `GET /api/orders/recall/:batchId`, `GET /api/orders/branding/me`,
 `POST|GET /api/orders/branding/:wallet/logo`, and
-`POST|GET /api/orders/catalogue/ingredients/:batchId/image`. Writes remain unsigned transaction
+`POST|GET /api/orders/catalogue/ingredients/:batchId/image`, and
+`POST|GET /api/orders/catalogue/products/:batchId/image`. Writes remain unsigned transaction
 preparations for MetaMask or authenticated presentation-media updates;
 the identity endpoint also reuses existing credential retrieval, holder-proof verification and
 backend-managed encrypted DIDComm transport. Company Role VCs remain full disclosure. Ingredient
@@ -676,6 +677,17 @@ Authenticated operational responses enrich records with verified display fields 
 The Supplier ingredient screen issues a typed `IngredientCredential` whose subject is the authenticated Supplier wallet and whose issuer is a server-derived, Supplier-specific DID. The backend verifies the signed VC before hashing it, encrypts the complete credential and private batch metadata with AES-256-GCM, pins only the encrypted envelope to IPFS, and prepares `CredentialRegistry.registerCredential` followed by `IngredientRegistry.registerBatch`. MetaMask remains the signer, retries resume the first incomplete stage, and the authenticated Supplier receives enriched private metadata only through the narrower ingredient-batch API. This JWT VC implementation does not claim selective disclosure. The prototype server-managed KMS must be replaced by an organizational stakeholder key-custody design for production.
 
 The Manufacturer production flow now uses real contract records. A Manufacturer selects an active Supplier batch, prepares an encrypted evidence request, and signs `EvidenceRegistry.requestEvidence`. The request challenge is a digest of the request ID, batch, requester, verifier, Supplier, purpose, issue time, and deadline. The intended Supplier retrieves its server-authorized issued Ingredient Credential and presents the complete JWT VC in a Veramo-signed VP whose signed context also binds those fields, the challenge, presentation dates, and exact credential ID/hash. JWT selective disclosure is not supported or claimed. Before returning unsigned `accept` calldata, the API verifies the VP and nested credential signatures plus every request binding and rechecks the exact registered batch credential, lifecycle, hash, expiry, and Supplier authorization. Accepted batches can then be consumed by a real `createProduct` transaction and transferred to an active Distributor through `createTransfer`. Only a verified `AwaitingReceipt` transfer ID is passed to the existing QR renderer.
+
+New product registrations bind the same stable Manufacturer location ID to ingredient consumption
+and the on-chain product record. The form can also capture optional product presentation data:
+PNG/JPEG/WebP image, category, description and an indicative currency/unit price. The textual
+presentation is encrypted off-chain and integrity-bound to the product metadata hash; the image is
+stored through the authenticated encrypted catalogue-media path after the product transaction is
+confirmed. Authenticated catalogue and custody views receive only allowlisted presentation fields
+and a safe media URL, while public traceability receives only the intended textual catalogue fields.
+Storage CIDs, ciphertext and raw image data are not exposed. Existing products are not assigned
+invented presentation values. Presentation editing is not currently offered because the deployed
+product record has no versioned metadata-update operation.
 
 Private evidence and receipt endpoints derive participants from the SIWE session and authoritative workflow or custody records; caller-supplied wallet values never grant access. Unrelated callers receive a not-found response so the API does not confirm that a private record exists. Workflow JSON is written atomically and corrupt files fail closed without being overwritten. If a MetaMask transaction is mined but the following authoritative refresh fails, the UI reports that confirmation succeeded and offers a refresh action instead of asking the user to submit the transaction again. Process-local SIWE sessions are still lost on API restart and require a new sign-in.
 

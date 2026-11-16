@@ -41,7 +41,19 @@ export interface TraceabilityTransferRecord {
 
 export interface TraceabilityMetadataReader {
   ingredientReference(batchId: string): Promise<string | undefined>;
-  product(batchId: string): Promise<{ name?: string; reference?: string } | undefined>;
+  product(batchId: string): Promise<
+    | {
+        category?: string;
+        currency?: string;
+        description?: string;
+        name?: string;
+        price?: string;
+        productionLocationName?: string;
+        reference?: string;
+        unit?: string;
+      }
+    | undefined
+  >;
 }
 
 export interface ProductTraceabilityConfiguration {

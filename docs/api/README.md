@@ -432,6 +432,11 @@ credential, stakeholder, batch or inventory state.
   the authenticated Supplier is the authoritative on-chain batch owner.
 - `GET /api/orders/catalogue/ingredients/:batchId/image` rechecks that batch ownership before
   returning the safe image bytes.
+- `POST /api/orders/catalogue/products/:batchId/image` accepts the same image envelope only when
+  the authenticated Manufacturer is the authoritative on-chain product owner.
+- `GET /api/orders/catalogue/products/:batchId/image` rechecks product ownership before returning
+  the safe image bytes. Catalogue responses expose only this authenticated route, never encrypted
+  storage identifiers.
 
 `POST /api/blockchain/transactions/company-application` requires `applicantWallet` and
 `applicantSignature` for every request, including applications without a logo. The signature covers

@@ -1176,9 +1176,19 @@ export class ProductionFlowService {
     const batchId = id(input.batchReference);
     const metadata = canonical({
       batchReference: input.batchReference,
-      category: input.category,
+      ...(input.category ? { category: input.category } : {}),
+      ...(input.description ? { description: input.description } : {}),
       privateMetadata: input.privateMetadata,
       productName: input.productName,
+      unit: input.unit,
+      ...(input.productionLocation
+        ? {
+            productionLocation: input.productionLocation,
+            ...(input.productionLocationName
+              ? { productionLocationName: input.productionLocationName }
+              : {}),
+          }
+        : {}),
       ...(input.price !== undefined ? { price: input.price, currency: input.currency } : {}),
     });
     const metadataHash = sha256(metadata);

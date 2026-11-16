@@ -419,11 +419,6 @@ export function OrdersPage({
                 </nav>
               </>
             )}
-          {role !== 'supplier' && !order && (
-            <>
-              <h3>My requests</h3>
-            </>
-          )}
           {order && role !== 'supplier' && !evidenceOnly && !manufacturerIngredientDetail && (
             <div className="workspace-process-page-heading">
               <button

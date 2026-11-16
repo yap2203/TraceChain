@@ -1,7 +1,7 @@
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useState } from 'react';
 import { getOrders, type OrderRecord } from '../../../orders/orders.api';
-import { CompanyAvatar } from '../../../orders/CatalogueMedia';
+import { CatalogueImage, CompanyAvatar } from '../../../orders/CatalogueMedia';
 
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import {
@@ -51,12 +51,14 @@ export function ProductBatchDetail({
   const [traceability, setTraceability] = useState<ProductTraceabilityResponse>();
   const [ingredients, setIngredients] = useState<OrderRecord[]>([]);
   const [storage, setStorage] = useState<OrderRecord[]>([]);
+  const [locations, setLocations] = useState<OrderRecord[]>([]);
   useEffect(() => {
     let active = true;
     void getOrders()
       .then((result) => {
         if (active) {
           setIngredients(result.catalogue);
+          setLocations(result.locations ?? []);
           setStorage(
             result.catalogue.find((entry) => entry.batches?.includes(batchId))?.storageLocations ??
               [],
@@ -99,6 +101,19 @@ export function ProductBatchDetail({
   const productName = traceability?.product.name ?? 'Registered product';
   const batchReference = traceability?.product.reference ?? 'Batch reference unavailable';
   const catalogueItem = ingredients.find((entry) => entry.batches?.includes(p.batchId));
+  const catalogueBatch = catalogueItem?.batchDetails?.find(
+    (entry: OrderRecord) => String(entry.batchId).toLowerCase() === p.batchId.toLowerCase(),
+  );
+  const productionLocationId =
+    catalogueItem?.productionLocation ?? catalogueBatch?.productionLocation;
+  const productionLocation =
+    catalogueItem?.productionLocationName ??
+    locations.find(
+      (location) =>
+        String(location.location).toLowerCase() ===
+        String(productionLocationId ?? '').toLowerCase(),
+    )?.label ??
+    (productionLocationId ? shortChainId(String(productionLocationId)) : 'Not recorded');
   const unit = operationalUnit(p.unit);
   const authoritativeStorage = storage.filter((entry) => entry.available !== undefined);
   return (
@@ -120,6 +135,21 @@ export function ProductBatchDetail({
       </div>
       <Card>
         <h3>Product batch summary</h3>
+        <div className="ingredient-detail__hero mb-[16px]">
+          <CatalogueImage
+            path={catalogueItem?.imagePath}
+            category={catalogueItem?.category ?? 'Product'}
+            alt={`${productName} product image`}
+            large
+          />
+          <div className="ingredient-detail__summary">
+            <div>
+              <span className="workspace-record-heading__eyebrow">Product presentation</span>
+              <h3>{productName}</h3>
+              <p>{catalogueItem?.description || 'No product description provided.'}</p>
+            </div>
+          </div>
+        </div>
         <div className="workspace-company-cell mb-[16px]">
           <CompanyAvatar
             name={p.manufacturerName ?? 'Verified Manufacturer'}
@@ -132,7 +162,9 @@ export function ProductBatchDetail({
           {[
             ['Batch reference', batchReference],
             ['Status', recordStatuses[p.status] ?? 'Unknown'],
+            ['Category', catalogueItem?.category || 'Not provided'],
             ['Quantity produced', formatOperationalQuantity(p.totalQuantity, p.unit)],
+            ['Production location', productionLocation],
             ['Produced', chainDate(p.producedAt)],
             ['Expires', chainDate(p.expiresAt)],
             [

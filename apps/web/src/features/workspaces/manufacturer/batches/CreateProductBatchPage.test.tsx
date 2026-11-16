@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   orders: vi.fn(),
   prepare: vi.fn(),
   complete: vi.fn(),
+  imagePayload: vi.fn(),
+  uploadImage: vi.fn(),
 }));
 vi.mock('../../../production-flow/production-flow.api', () => ({
   listProductionIngredients: mocks.ingredients,
@@ -17,7 +19,11 @@ vi.mock('../../../production-flow/production-flow.transaction', async (importOri
   >()),
   completePreparedWorkflow: mocks.complete,
 }));
-vi.mock('../../../orders/orders.api', () => ({ getOrders: mocks.orders }));
+vi.mock('../../../orders/orders.api', () => ({
+  getOrders: mocks.orders,
+  imageFilePayload: mocks.imagePayload,
+  uploadProductCatalogueImage: mocks.uploadImage,
+}));
 vi.mock('../../../product-traceability', () => ({ ProductQrDisplay: () => <div>Product QR</div> }));
 import { CreateProductBatch } from './CreateProductBatchPage';
 import { WorkflowRefreshPendingError } from '../../../production-flow/production-flow.transaction';
@@ -53,8 +59,21 @@ beforeEach(() => {
   });
   mocks.prepare.mockResolvedValue({ batchId: 'product', state: 'COMPLETE' });
   mocks.complete.mockImplementation((prepare: () => Promise<unknown>) => prepare());
+  mocks.imagePayload.mockResolvedValue({
+    data: 'safe-image',
+    fileName: 'product.png',
+    mimeType: 'image/png',
+  });
+  mocks.uploadImage.mockResolvedValue({ image: { path: '/catalogue/products/product/image' } });
+  vi.stubGlobal('URL', {
+    createObjectURL: vi.fn(() => 'blob:product-preview'),
+    revokeObjectURL: vi.fn(),
+  });
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 describe('multi-ingredient production', () => {
   const setup = async () => {
     render(<CreateProductBatch onBack={vi.fn()} />);
@@ -85,7 +104,7 @@ describe('multi-ingredient production', () => {
     for (const [label, value] of [
       ['Product name', 'Chocolate'],
       ['Product batch reference', 'CHOC-1'],
-      ['Category', 'Food'],
+      ['Product category', 'Food'],
       ['Quantity produced', '50'],
       ['Production date', '2026-01-01'],
       ['Expiry date', '2099-01-01'],
@@ -129,7 +148,7 @@ describe('multi-ingredient production', () => {
     for (const [label, value] of [
       ['Product name', 'Exact Chocolate'],
       ['Product batch reference', 'CHOC-EXACT'],
-      ['Category', 'Food'],
+      ['Product category', 'Food'],
       ['Quantity produced', '4'],
       ['Production date', '2026-01-01'],
       ['Expiry date', '2099-01-01'],
@@ -157,7 +176,7 @@ describe('multi-ingredient production', () => {
     for (const [label, value] of [
       ['Product name', 'Exact Chocolate'],
       ['Product batch reference', 'CHOC-PENDING'],
-      ['Category', 'Food'],
+      ['Product category', 'Food'],
       ['Quantity produced', '4'],
       ['Production date', '2026-01-01'],
       ['Expiry date', '2099-01-01'],
@@ -180,5 +199,78 @@ describe('multi-ingredient production', () => {
     expect(await screen.findByText('Cocoa: 0 g')).toBeTruthy();
     expect(mocks.complete).toHaveBeenCalledOnce();
     expect(mocks.prepare).toHaveBeenCalledOnce();
+  });
+
+  it('reviews and saves optional presentation metadata and the selected product image', async () => {
+    await setup();
+    for (const [label, value] of [
+      ['Product name', 'Presented Chocolate'],
+      ['Product batch reference', 'CHOC-PRESENTED'],
+      ['Product category', 'Confectionery'],
+      ['Product description', 'A finished cocoa product for the catalogue.'],
+      ['Quantity produced', '20'],
+      ['Indicative price', '12'],
+      ['Production date', '2026-01-01'],
+      ['Expiry date', '2099-01-01'],
+    ])
+      fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
+
+    const first = new File(['first'], 'first.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Product image'), { target: { files: [first] } });
+    expect(screen.getByAltText('Product image preview').getAttribute('src')).toBe(
+      'blob:product-preview',
+    );
+    expect(screen.getAllByText('first.png')).toHaveLength(2);
+
+    const replacement = new File(['replacement'], 'replacement.webp', { type: 'image/webp' });
+    fireEvent.change(screen.getByLabelText('Product image'), {
+      target: { files: [replacement] },
+    });
+    expect(screen.getAllByText('replacement.webp')).toHaveLength(2);
+    expect(screen.queryByText('first.png')).toBeNull();
+    expect(screen.getByText('MYR 12.00 / each')).toBeTruthy();
+    expect(screen.getAllByText('Factory').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create product with MetaMask' }));
+    await waitFor(() =>
+      expect(mocks.prepare).toHaveBeenCalledWith(
+        expect.objectContaining({
+          category: 'Confectionery',
+          description: 'A finished cocoa product for the catalogue.',
+          price: '12',
+          currency: 'MYR',
+          productionLocation: 'factory',
+          productionLocationName: 'Factory',
+        }),
+      ),
+    );
+    expect(mocks.imagePayload).toHaveBeenCalledWith(replacement);
+    expect(mocks.uploadImage).toHaveBeenCalledWith('product', expect.any(Object));
+  });
+
+  it('allows no optional presentation and supports removing or rejecting an image', async () => {
+    await setup();
+    const unsupported = new File(['svg'], 'product.svg', { type: 'image/svg+xml' });
+    fireEvent.change(screen.getByLabelText('Product image'), {
+      target: { files: [unsupported] },
+    });
+    expect(screen.getByText('Choose a PNG, JPEG or WebP image.')).toBeTruthy();
+
+    const selected = new File(['image'], 'product.jpg', { type: 'image/jpeg' });
+    fireEvent.change(screen.getByLabelText('Product image'), { target: { files: [selected] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image' }));
+    expect(screen.getAllByText('No image selected').length).toBeGreaterThan(0);
+
+    for (const [label, value] of [
+      ['Product name', 'Plain Chocolate'],
+      ['Product batch reference', 'CHOC-PLAIN'],
+      ['Quantity produced', '20'],
+      ['Production date', '2026-01-01'],
+      ['Expiry date', '2099-01-01'],
+    ])
+      fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create product with MetaMask' }));
+    await waitFor(() => expect(mocks.prepare).toHaveBeenCalled());
+    expect(mocks.uploadImage).not.toHaveBeenCalled();
   });
 });

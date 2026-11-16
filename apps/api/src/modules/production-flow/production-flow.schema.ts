@@ -31,13 +31,15 @@ export const productRequestSchema = z
       .regex(/^[A-Z]{3}$/)
       .default('MYR'),
     productionLocation: bytes32.optional(),
+    productionLocationName: z.string().trim().min(1).max(160).optional(),
     batchReference: z
       .string()
       .trim()
       .min(1)
       .max(120)
       .regex(/^[A-Za-z0-9._:/-]+$/),
-    category: z.string().trim().min(1).max(100),
+    category: z.string().trim().max(100).default(''),
+    description: z.string().trim().max(1_000).default(''),
     expiresAt: requestDateSchema,
     ingredientLinks: z
       .array(z.object({ batchId: bytes32, quantity: positiveInteger }).strict())
