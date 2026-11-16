@@ -1,5 +1,19 @@
 # Project Progress
 
+## 2026-11-16 - Consolidate company management
+
+- Renamed the Admin Company credentials navigation/page to Manage companies. Individual permission editing now exists only inside the selected company Manage details; removed the separate Permissions sidebar entry, Access Control tab and company picker. Role permissions and the permission matrix remain separate.
+- Existing /admin/permissions/companies and /admin/personal links resolve to Manage companies. The established /admin/credentials URL remains compatible. Preserved credential lifecycle actions and exact-wallet MetaMask confirmation, with no API/contract changes.
+- Validation: ten relevant company permission/navigation/login tests and frontend type checking passed.
+
+
+## 2026-11-16 - Individual permissions in credential management
+
+- Added the existing individual company permission editor directly to Company Credentials Manage details, locked to the credential subject wallet. Extracted one shared component for the existing Access Control page and credential details; Allow/Deny/Inherit and explicit MetaMask confirmation use the same API/contracts. Role defaults remain separate.
+- Normalize role names to exclude System Admin for both enum and display names; revoked/unregistered wallets cannot be selected. Added Refresh permissions for read failures and confirmed-transaction refresh recovery without resending.
+- Validation: five relevant UI tests and frontend type checking passed; includes selected-credential wallet binding, confirmation before write and protected Admin handling. No API, contract, deployment or permission-state changes.
+
+
 ## 2026-11-16 - Admin approval without credential download
 
 - Removed the automatic plaintext Company Role VC download and its helper from application approval. Renamed the approved-application action to Complete credential activation, preserving resumable registry writes. Successful issuance closes the dialog and tells Admin that the company accesses its credential through My Company Identity.

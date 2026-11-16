@@ -1,3 +1,4 @@
+import { PersonalPermissions } from '../access-control/PersonalPermissions';
 import { reportError } from '../../../../components/ui/feedback';
 import { BrowserProvider, id } from 'ethers';
 import { useState } from 'react';
@@ -139,6 +140,9 @@ export function CredDetail({
             The encrypted credential is not exposed here.
           </p>
         </Card>
+      </div>
+      <div style={{ marginTop: 18 }}>
+        <PersonalPermissions key={cred.subject} company={cred} />
       </div>
       {action && (
         <Modal

@@ -22,9 +22,31 @@ vi.mock('ethers', async (importOriginal) => ({
   },
 }));
 import AccessControl from './AccessControlPage';
+import { CredDetail } from '../credentials/CredentialDetail';
+import type { ChainCredential } from '../../../blockchain/blockchain.api';
+import { workspaceNavigation } from '../../workspace-navigation';
+import { workspacePage, workspacePath } from '../../workspace-paths';
 
 const account = '0x2000000000000000000000000000000000000002';
 describe('individual company permissions UI', () => {
+  it('names company management clearly and redirects retired individual-permission links', () => {
+    expect(
+      workspaceNavigation.admin.some(
+        ([id, label]) => id === 'credentials' && label === 'Manage companies',
+      ),
+    ).toBe(true);
+    expect(workspaceNavigation.admin.some(([id]) => String(id) === 'personal')).toBe(false);
+    expect(workspacePage('admin', 'permissions/companies')).toBe('credentials');
+    expect(workspacePage('admin', 'personal')).toBe('credentials');
+    expect(workspacePath('admin', 'credentials')).toBe('/admin/credentials');
+  });
+  it('keeps only role permissions and the matrix in Access Control', async () => {
+    render(<AccessControl />);
+    expect(await screen.findByText('Role Permissions')).toBeTruthy();
+    expect(screen.getByText('Permission Matrix')).toBeTruthy();
+    expect(screen.queryByText('Individual Permissions')).toBeNull();
+    expect(mocks.getPersonalPermissions).not.toHaveBeenCalled();
+  });
   beforeEach(() => {
     HTMLDialogElement.prototype.showModal = vi.fn();
     HTMLDialogElement.prototype.close = vi.fn();
@@ -58,10 +80,12 @@ describe('individual company permissions UI', () => {
   });
   afterEach(cleanup);
   async function open() {
-    render(<AccessControl />);
-    fireEvent.click(await screen.findByText('Individual Permissions'));
-    await screen.findByText(/Registered Supplier/);
-    fireEvent.change(screen.getByLabelText('Company wallet'), { target: { value: account } });
+    const cred = {
+      ...(await mocks.getCompanyCredentials()).credentials[0],
+      expiresAt: 2_000_000_000,
+      updatedAt: 1,
+    } as ChainCredential;
+    render(<CredDetail cred={cred} onBack={() => undefined} onChanged={async () => undefined} />);
     await screen.findByText('Denied');
   }
   it('shows actual defaults and effective access and requires confirmation before a wallet update', async () => {
@@ -94,13 +118,59 @@ describe('individual company permissions UI', () => {
   });
   it('shows read failures without fabricating effective permissions', async () => {
     mocks.getPersonalPermissions.mockRejectedValue(new Error('RPC unavailable'));
-    render(<AccessControl />);
-    fireEvent.click(await screen.findByText('Individual Permissions'));
-    await screen.findByText(/Registered Supplier/);
-    fireEvent.change(screen.getByLabelText('Company wallet'), { target: { value: account } });
+    const cred = {
+      ...(await mocks.getCompanyCredentials()).credentials[0],
+      expiresAt: 2_000_000_000,
+      updatedAt: 1,
+    } as ChainCredential;
+    render(<CredDetail cred={cred} onBack={() => undefined} onChanged={async () => undefined} />);
     await waitFor(() =>
       expect(screen.getByText(/Individual permissions could not be read/)).toBeTruthy(),
     );
     expect(screen.queryByText('Allowed')).toBeNull();
+  });
+  it('manages the credential company directly without a second wallet selection', async () => {
+    mocks.preparePersonalPermission.mockResolvedValue({ chainId: 31337 });
+    mocks.sendPreparedTransaction.mockResolvedValue({ wait: async () => ({ status: 1 }) });
+    const cred = {
+      ...(await mocks.getCompanyCredentials()).credentials[0],
+      role: 'SUPPLIER',
+      expiresAt: 2_000_000_000,
+      updatedAt: 1,
+      companyRegistrationNumber: 'TEST-1',
+      issuer: account,
+      applicationId: 'app',
+      credentialHash: 'hash',
+      encryptedCredentialCid: 'cid',
+      stakeholderUpdatedAt: 1,
+    } as ChainCredential;
+    render(<CredDetail cred={cred} onBack={() => undefined} onChanged={async () => undefined} />);
+    await screen.findByText('Denied');
+    expect(mocks.getPersonalPermissions).toHaveBeenCalledWith(account);
+    expect(screen.queryByLabelText('Company wallet')).toBeNull();
+    fireEvent.change(screen.getByLabelText('Individual setting: Register ingredient batches'), {
+      target: { value: '1' },
+    });
+    expect(mocks.preparePersonalPermission).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText('Confirm permission'));
+    await screen.findByText('Individual permission updated on-chain.');
+    expect(mocks.preparePersonalPermission).toHaveBeenCalledWith({
+      account,
+      permission: 'permission',
+      setting: 1,
+    });
+  });
+  it('does not offer individual overrides for the Admin credential', async () => {
+    const cred = {
+      ...(await mocks.getCompanyCredentials()).credentials[0],
+      role: 'SYSTEM_ADMIN',
+      expiresAt: 2_000_000_000,
+      updatedAt: 1,
+    } as ChainCredential;
+    render(<CredDetail cred={cred} onBack={() => undefined} onChanged={async () => undefined} />);
+    expect(
+      screen.getByText(/Admin authority and revoked records cannot be changed here/),
+    ).toBeTruthy();
+    expect(mocks.getPersonalPermissions).not.toHaveBeenCalled();
   });
 });

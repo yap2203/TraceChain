@@ -1,3 +1,4 @@
+import { permissionLabels } from './PersonalPermissions';
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { BrowserProvider, id } from 'ethers';
@@ -8,14 +9,11 @@ import { targetChainId } from '../../../../config/chain';
 import {
   getCompanyCredentials,
   getRolePermissions,
-  getPersonalPermissions,
-  preparePersonalPermission,
   prepareRolePermission,
   prepareStakeholderLifecycle,
   sendPreparedTransaction,
   type ChainCredential,
   type RolePermissionRecord,
-  type PersonalPermissionRecord,
 } from '../../../blockchain/blockchain.api';
 import {
   Alert,
@@ -33,17 +31,9 @@ import {
   UI,
 } from '../../shared/ui';
 
-type Tab = 'stakeholders' | 'roles' | 'matrix' | 'personal';
+type Tab = 'stakeholders' | 'roles' | 'matrix';
 const roles = ['System Admin', 'Supplier', 'Manufacturer', 'Distributor', 'Retailer'] as const;
 const operationalRoles = ['Supplier', 'Manufacturer', 'Distributor', 'Retailer'] as const;
-const permissionLabels: Record<string, string> = {
-  REGISTER_INGREDIENT: 'Register ingredient batches',
-  ISSUE_INGREDIENT_CREDENTIAL: 'Issue ingredient/evidence credentials',
-  REQUEST_EVIDENCE: 'Request supplier evidence',
-  REGISTER_PRODUCT: 'Register product batches',
-  INITIATE_TRANSFER: 'Initiate permitted custody transfers',
-  RECEIVE_TRANSFER: 'Receive intended custody transfers',
-};
 const roleColors: Record<string, string> = {
   Supplier: T.teal,
   Manufacturer: T.navy,
@@ -151,11 +141,6 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
     { id: 'stakeholders' as const, label: 'Stakeholders', description: 'Manage members & roles' },
     { id: 'roles' as const, label: 'Role Permissions', description: 'Configure per-role access' },
     { id: 'matrix' as const, label: 'Permission Matrix', description: 'Full access overview' },
-    {
-      id: 'personal' as const,
-      label: 'Individual Permissions',
-      description: 'Exceptions for one company wallet',
-    },
   ];
   if (loading) return <LoadingIndicator page label="Loading records…" />;
   return (
@@ -164,20 +149,16 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
         title={
           section === 'roles'
             ? 'Role permissions'
-            : section === 'personal'
-              ? 'Individual permissions'
-              : section === 'matrix'
-                ? 'Permission matrix'
-                : 'Stakeholder access'
+            : section === 'matrix'
+              ? 'Permission matrix'
+              : 'Stakeholder access'
         }
         sub={
           section === 'roles'
             ? 'Set the default permissions for each role.'
-            : section === 'personal'
-              ? 'Set exceptions for an individual company wallet.'
-              : section === 'matrix'
-                ? 'Compare the permissions available to each role.'
-                : 'Manage company access and lifecycle status.'
+            : section === 'matrix'
+              ? 'Compare the permissions available to each role.'
+              : 'Manage company access and lifecycle status.'
         }
       />
       {!section && (
@@ -237,7 +218,6 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
       )}
       {tab === 'matrix' && <MatrixView permissions={permissions} />}
       {tab !== 'stakeholders' && error && <Alert type="error" message={error} />}
-      {tab === 'personal' && <PersonalPermissions records={records} loadingRecords={loading} />}
       {selected && action && (
         <Modal
           title={`${capitalize(action)} stakeholder access`}
@@ -302,195 +282,6 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
         </Modal>
       )}
     </div>
-  );
-}
-
-function PersonalPermissions({
-  records,
-  loadingRecords,
-}: {
-  records: ChainCredential[];
-  loadingRecords: boolean;
-}) {
-  const [account, setAccount] = useState('');
-  const [permissions, setPermissions] = useState<PersonalPermissionRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [pending, setPending] = useState<{
-    permission: PersonalPermissionRecord;
-    setting: number;
-  } | null>(null);
-  const companies = [
-    ...new Map(
-      records
-        .filter(
-          (record) =>
-            role(record.role) !== 'System Admin' &&
-            ['active', 'suspended'].includes(record.stakeholderStatus),
-        )
-        .map((record) => [record.subject.toLowerCase(), record]),
-    ).values(),
-  ];
-  useEffect(() => {
-    let current = true;
-    setPermissions([]);
-    setError('');
-    setNotice('');
-    setPending(null);
-    setLoading(Boolean(account));
-    if (!account) return;
-    getPersonalPermissions(account)
-      .then((result) => {
-        if (current) setPermissions(result.permissions);
-      })
-      .catch(() => {
-        if (current)
-          setError(
-            'Individual permissions could not be read. Check the RPC connection and deploy the updated StakeholderRegistry before using this feature.',
-          );
-      })
-      .finally(() => {
-        if (current) setLoading(false);
-      });
-    return () => {
-      current = false;
-    };
-  }, [account]);
-  const save = async () => {
-    if (!pending || !account) return;
-    setBusy(true);
-    setError('');
-    setNotice('');
-    let confirmed = false;
-    try {
-      if (!window.ethereum) throw new Error('Connect MetaMask to update individual permissions.');
-      const prepared = await preparePersonalPermission({
-        account,
-        permission: pending.permission.id,
-        setting: pending.setting,
-      });
-      if (BigInt(prepared.chainId) !== targetChainId)
-        throw new Error('The API transaction targets a different chain.');
-      const transaction = await sendPreparedTransaction(
-        await new BrowserProvider(window.ethereum).getSigner(),
-        prepared,
-      );
-      const receipt = await transaction.wait();
-      if (!receipt || receipt.status !== 1)
-        throw new Error('The permission transaction was not confirmed.');
-      confirmed = true;
-      setPending(null);
-      setNotice('Individual permission updated on-chain.');
-      setPermissions((await getPersonalPermissions(account)).permissions);
-    } catch (cause) {
-      setError(
-        confirmed
-          ? 'The permission transaction is confirmed, but the refreshed state is unavailable. Re-select this company to refresh; do not resend the transaction.'
-          : reportError(cause, 'Individual permission update failed.'),
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Card>
-      <h3 style={{ color: T.navy }}>Individual company permissions</h3>
-      <p style={{ color: T.text2 }}>
-        Keep the role defaults and change access for one company wallet. Allow and Deny override the
-        role default; Inherit follows future role changes to permissions. These settings cannot
-        bypass role requirements, suspension, revocation or credential expiry.
-      </p>
-      <label htmlFor="personal-permission-company">Company wallet</label>
-      <select
-        id="personal-permission-company"
-        value={account}
-        disabled={busy || loadingRecords}
-        onChange={(event) => setAccount(event.target.value)}
-        style={{ display: 'block', width: '100%', padding: 10, margin: '8px 0 16px' }}
-      >
-        <option value="">Select a company</option>
-        {companies.map((record) => (
-          <option key={record.subject} value={record.subject}>
-            {record.companyName || 'Company name unavailable'} · {role(record.role)} ·{' '}
-            {record.subject}
-          </option>
-        ))}
-      </select>
-      {!loadingRecords && companies.length === 0 && (
-        <p>No registered company wallets are available.</p>
-      )}
-      {error && <Alert type="error" message={error} />}
-      {notice && <div role="status">{notice}</div>}
-      {loading && (
-        <LoadingIndicator page label="Reading individual permissions from the blockchain..." />
-      )}
-      {!loading && permissions.length > 0 && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr>
-                <th>Permission</th>
-                <th>Role default</th>
-                <th>Individual setting</th>
-                <th>Effective access now</th>
-              </tr>
-            </thead>
-            <tbody>
-              {permissions.map((permission) => (
-                <tr key={permission.id}>
-                  <td style={{ padding: '14px 8px' }}>
-                    {permissionLabels[permission.name] || permission.name}
-                  </td>
-                  <td>{permission.roleAllowed ? 'Allow' : 'Deny'}</td>
-                  <td>
-                    <select
-                      aria-label={`Individual setting: ${permissionLabels[permission.name] || permission.name}`}
-                      value={permission.setting}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setPending({ permission, setting: Number(event.target.value) })
-                      }
-                    >
-                      <option value={0}>Inherit role</option>
-                      <option value={1}>Allow</option>
-                      <option value={2}>Deny</option>
-                    </select>
-                  </td>
-                  <td>{permission.effective ? 'Allowed' : 'Denied'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {pending && (
-        <Modal
-          title="Confirm individual permission"
-          onClose={() => {
-            if (!busy) setPending(null);
-          }}
-        >
-          <p>
-            {permissionLabels[pending.permission.name]}:{' '}
-            {['Inherit role', 'Allow', 'Deny'][pending.setting]}
-          </p>
-          <p style={{ overflowWrap: 'anywhere' }}>Company wallet: {account}</p>
-          <p>
-            This changes only this wallet. MetaMask will ask you to sign an on-chain transaction.
-          </p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Btn disabled={busy} onClick={() => setPending(null)}>
-              Cancel
-            </Btn>
-            <Btn disabled={busy} onClick={() => void save()}>
-              {busy ? 'Waiting for confirmation...' : 'Confirm permission'}
-            </Btn>
-          </div>
-        </Modal>
-      )}
-    </Card>
   );
 }
 
