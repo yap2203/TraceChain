@@ -4,36 +4,40 @@ import { useEffect, useState } from 'react';
 import { CompanyAvatar } from '../../orders/CatalogueMedia';
 import { getMyCompanyBranding, imageFilePayload, uploadCompanyLogo } from '../../orders/orders.api';
 import { Alert, Btn, Card } from './ui';
-
-interface Branding {
-  companyName: string;
-  logoPath?: string;
-  role: string;
-}
+import {
+  loadCompanyBranding,
+  publishCompanyBranding,
+  selectCompanyBranding,
+  useCompanyBrandingState,
+} from './company-branding.state';
 
 export function CompanyBrandingPanel({ walletAddress }: { walletAddress: string }) {
-  const [branding, setBranding] = useState<Branding>();
+  useCompanyBrandingState();
+  const brandingState = selectCompanyBranding(walletAddress);
+  const branding = brandingState.branding;
   const [file, setFile] = useState<File>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
-    void getMyCompanyBranding()
-      .then(({ branding: value }) => setBranding(value))
-      .catch((cause) => setError(reportError(cause, 'Company branding is unavailable.')));
-  }, []);
+    void loadCompanyBranding(walletAddress, getMyCompanyBranding).catch((cause) =>
+      setError(reportError(cause, 'Company branding is unavailable.')),
+    );
+  }, [walletAddress]);
 
   const upload = async () => {
-    if (!file) return;
+    if (!file || !branding) return;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       const result = await uploadCompanyLogo(walletAddress, await imageFilePayload(file));
-      setBranding((current) =>
-        current ? { ...current, logoPath: result.branding.logoPath } : current,
-      );
+      publishCompanyBranding(walletAddress, {
+        companyName: branding.companyName,
+        logoPath: result.branding.logoPath,
+        role: branding.role,
+      });
       setFile(undefined);
       setNotice('Company logo updated for catalogue presentation. Authorization is unchanged.');
     } catch (cause) {
@@ -49,6 +53,7 @@ export function CompanyBrandingPanel({ walletAddress }: { walletAddress: string 
         <CompanyAvatar
           name={branding?.companyName ?? 'Company'}
           logoPath={branding?.logoPath}
+          revision={brandingState.revision}
           size="lg"
         />
         <div>
@@ -77,7 +82,7 @@ export function CompanyBrandingPanel({ walletAddress }: { walletAddress: string 
           size="sm"
           variant="outline"
           icon={<ImageUp size={15} />}
-          disabled={busy || !file}
+          disabled={busy || !file || !branding}
           onClick={() => void upload()}
         >
           {branding?.logoPath ? 'Replace logo' : 'Upload logo'}

@@ -10,6 +10,7 @@ import type {
 
 export interface StakeholderIdentity {
   active: true;
+  applicationId?: string;
   companyName: string;
   role: CompanyRole;
   walletAddress: string;
@@ -58,7 +59,7 @@ export class VerifiedStakeholderDirectory implements StakeholderDirectory {
     wallets: string[],
     records: CompanyRoleIssuanceRecord[],
     knownAuthorizations = new Map<string, OnChainAuthorizationSummary>(),
-  ) {
+  ): Promise<StakeholderIdentity[]> {
     const candidates = (
       await Promise.all(
         wallets.map(async (walletAddress) => {
@@ -73,6 +74,7 @@ export class VerifiedStakeholderDirectory implements StakeholderDirectory {
             const companyName = cleanName(record?.companyName) ?? fallbackName(authorization.role);
             return {
               active: true as const,
+              ...(record?.applicationId ? { applicationId: record.applicationId } : {}),
               companyName,
               role: authorization.role,
               walletAddress: address,

@@ -1,5 +1,5 @@
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { notify, reportError } from '../../components/ui/feedback';
 
@@ -9,6 +9,13 @@ import { WorkspaceLayout } from './WorkspaceLayout';
 import { workspaces } from './workspace-config';
 import { workspaceNavigation, type WorkspaceRole } from './workspace-navigation';
 import { workspacePage, workspacePath } from './workspace-paths';
+import { getMyCompanyBranding } from '../orders/orders.api';
+import {
+  clearCompanyBrandingState,
+  loadCompanyBranding,
+  selectCompanyBranding,
+  useCompanyBrandingState,
+} from './shared/company-branding.state';
 
 const WorkspaceScreen = lazy(() =>
   import('./WorkspaceScreen').then((module) => ({ default: module.WorkspaceScreen })),
@@ -18,6 +25,7 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   const authentication = useWalletAuthentication();
   const navigate = useNavigate();
   const [signingOut, setSigningOut] = useState(false);
+  const brandingState = useCompanyBrandingState();
   const { '*': route = '' } = useParams();
   const [search] = useSearchParams();
   const state = authentication.state;
@@ -25,6 +33,20 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
   const exists = workspaceNavigation[role].some(([id]) => id === page);
   const canonicalPath = workspacePath(role, page);
   const authenticated = state.phase === 'authenticated';
+  useEffect(() => {
+    let active = true;
+    if (!authenticated || !state.authorizationReady || !state.address) {
+      clearCompanyBrandingState();
+      return;
+    }
+    void loadCompanyBranding(state.address, getMyCompanyBranding).catch(() => {
+      if (active) clearCompanyBrandingState();
+    });
+    return () => {
+      active = false;
+    };
+  }, [authenticated, state.authorizationReady, state.address]);
+  const companyBranding = selectCompanyBranding(state.address);
   const status =
     state.phase === 'restoring'
       ? 'Checking session'
@@ -65,6 +87,8 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
           ? {
               companyName: state.companyName ?? workspaces[role].roleLabel,
               credentialStatus: state.authorizationStatus ?? 'UNAVAILABLE',
+              logoPath: companyBranding.branding?.logoPath,
+              logoRevision: companyBranding.revision,
               role: state.role,
               walletAddress: state.address,
             }

@@ -35,7 +35,7 @@
 
 - Present Browse & requests as a responsive B2B catalogue with search/filter/sort, verified company names, safe item details and separate quantity/evidence actions. Keep the workflow request-only: no cart, checkout, payment, reservation or automatic fulfilment.
 
-- Treat optional ingredient images and company logos as presentation metadata. Accept only validated PNG/JPEG/WebP files up to 2 MB, encrypt/store them through the existing content abstraction, require authoritative ownership for writes and authenticated safe routes for reads, and never treat them as credential claims or physical-quality evidence.
+- Treat optional ingredient images and company logos as presentation metadata. Accept only validated PNG/JPEG/WebP files up to 2 MB, encrypt/store them through the existing content abstraction, require authoritative ownership for writes and authenticated safe routes for reads, and never treat them as credential claims or physical-quality evidence. Require every company application to carry an applicant-wallet signature bound to the exact application ID and complete submitted metadata; include the validated logo digest when present and validate everything before persistence. Pending/rejected media is limited to authorized Admin review, and stakeholder visibility begins only when that exact application is active (user-confirmed 2026-11-16). Keep the public QR page logo-free for this stage.
 
 - Supplier navigation separates owned Ingredient batches, incoming My orders, and Received/Sent Information requests. Supplier does not need a separate Browse function. Order decisions and company evidence review are separate actions and do not initiate payment or physical fulfilment.
 

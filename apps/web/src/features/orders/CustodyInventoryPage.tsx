@@ -12,8 +12,10 @@ import {
   EmptyState,
   Input,
   SectionTitle,
+  SelectField,
   TechnicalDetails,
 } from '../workspaces/shared/ui';
+import { formatOperationalQuantity } from '../workspaces/shared/operational-format';
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const short = (value?: string) =>
   value ? `${value.slice(0, 10)}…${value.slice(-6)}` : 'Unavailable';
@@ -27,6 +29,7 @@ export function CustodyInventoryPage({
   const [data, setData] = useState<OrdersState>(),
     [error, setError] = useState(''),
     [search, setSearch] = useState(''),
+    [locationFilter, setLocationFilter] = useState(''),
     [kind] = useState(
       role === 'manufacturer'
         ? 'product'
@@ -83,6 +86,26 @@ export function CustodyInventoryPage({
     item(entry)?.name ??
     (entry.kind === 'ingredient' ? 'Registered ingredient' : 'Registered product');
   const openId = params.get('id');
+  const locationName = (entry: OrderRecord) =>
+    entry.warehouseName ??
+    data.locations.find((location) => same(location.location, entry.location))?.label ??
+    'Product location ledger';
+  const matchingRows = rows.filter(
+    (entry) =>
+      entry.kind === kind &&
+      (!locationFilter || same(entry.location, locationFilter)) &&
+      [title(entry), entry.supplierName, entry.distributorName, locationName(entry), entry.batchId]
+        .join(' ')
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+  );
+  const locations = Array.from(
+    new Map(
+      rows
+        .filter((entry) => entry.kind === kind && entry.location)
+        .map((entry) => [entry.location, locationName(entry)]),
+    ),
+  );
   return (
     <div className="grid min-w-0 gap-[16px]">
       <SectionTitle
@@ -135,8 +158,8 @@ export function CustodyInventoryPage({
               ],
               ['Warehouse', selected.warehouseName ?? 'See location balances'],
               [
-                selected.kind === 'product' ? 'Available physical stock' : 'Physical stock',
-                `${selected.quantity} ${selected.unit}`,
+                'Received / physical quantity',
+                formatOperationalQuantity(selected.quantity, selected.unit),
               ],
               [
                 selected.kind === 'product'
@@ -144,9 +167,9 @@ export function CustodyInventoryPage({
                   : 'Reserved',
                 selected.reserved === undefined
                   ? 'Unavailable'
-                  : `${selected.reserved} ${selected.unit}`,
+                  : formatOperationalQuantity(selected.reserved, selected.unit),
               ],
-              ['Available', `${selected.available} ${selected.unit}`],
+              ['Available', formatOperationalQuantity(selected.available, selected.unit)],
             ].map(([label, value]) => (
               <div key={label}>
                 <dt>{label}</dt>
@@ -158,7 +181,7 @@ export function CustodyInventoryPage({
             <p key={location.location}>
               {data.locations.find((entry) => same(entry.location, location.location))?.label ??
                 short(location.location)}
-              : {location.available} {selected.unit}
+              : {formatOperationalQuantity(location.available, selected.unit)}
             </p>
           ))}
           <h4>Related shipments</h4>
@@ -192,54 +215,72 @@ export function CustodyInventoryPage({
         </Card>
       ) : (
         <>
-          <Input
-            label="Search custody inventory"
-            type="search"
-            icon={<Search size={16} />}
-            placeholder="Search ingredient, product, company or warehouse"
-            value={search}
-            onChange={setSearch}
-          />
-          <div className="grid grid-cols-1 gap-[16px] md:grid-cols-2 xl:grid-cols-3">
-            {rows
-              .filter(
-                (entry) =>
-                  entry.kind === kind &&
-                  [
-                    title(entry),
-                    entry.supplierName,
-                    entry.distributorName,
-                    entry.warehouseName,
-                    entry.batchId,
-                  ]
-                    .join(' ')
-                    .toLowerCase()
-                    .includes(search.toLowerCase()),
-              )
-              .map((entry) => (
-                <Card key={entry.id}>
-                  <Warehouse size={20} />
-                  <h3>{title(entry)}</h3>
-                  <p>{entry.warehouseName ?? 'Product location ledger'}</p>
-                  <p>
-                    {entry.distributorName ?? 'Your company'} ·{' '}
-                    {entry.supplierName ?? item(entry)?.sellerName ?? 'Company unavailable'}
-                  </p>
-                  <p>
-                    Physical: {entry.quantity} {entry.unit} · Available: {entry.available}{' '}
-                    {entry.unit}
-                  </p>
-                  {entry.reserved !== undefined && (
-                    <p>
-                      Reserved: {entry.reserved} {entry.unit}
-                    </p>
-                  )}
-                  <Btn variant="outline" onClick={() => setParams({ id: entry.id })}>
-                    View custody details
-                  </Btn>
-                </Card>
-              ))}
+          <div className="workspace-inventory-filters">
+            <Input
+              label="Search custody inventory"
+              type="search"
+              icon={<Search size={16} />}
+              placeholder="Search batch, company or location"
+              value={search}
+              onChange={setSearch}
+            />
+            <SelectField
+              label="Location"
+              value={locationFilter}
+              onChange={setLocationFilter}
+              options={[
+                { value: '', label: 'All locations' },
+                ...locations.map(([value, label]) => ({ value, label })),
+              ]}
+            />
           </div>
+          <div className="workspace-inventory-grid">
+            {matchingRows.map((entry) => (
+              <Card key={entry.id}>
+                <div className="workspace-inventory-card__heading">
+                  <Warehouse size={20} aria-hidden="true" />
+                  <div>
+                    <h3>{title(entry)}</h3>
+                    <p>{item(entry)?.batchReference ?? short(entry.batchId)}</p>
+                  </div>
+                  <Badge
+                    label={item(entry)?.active === false ? 'Inactive' : 'Active'}
+                    variant={item(entry)?.active === false ? 'pending' : 'active'}
+                  />
+                </div>
+                <dl className="workspace-inventory-card__facts">
+                  <div>
+                    <dt>Location</dt>
+                    <dd>{locationName(entry)}</dd>
+                  </div>
+                  <div>
+                    <dt>Available</dt>
+                    <dd>{formatOperationalQuantity(entry.available, entry.unit)}</dd>
+                  </div>
+                  <div>
+                    <dt>Received / physical</dt>
+                    <dd>{formatOperationalQuantity(entry.quantity, entry.unit)}</dd>
+                  </div>
+                  {entry.reserved !== undefined && (
+                    <div>
+                      <dt>Reserved</dt>
+                      <dd>{formatOperationalQuantity(entry.reserved, entry.unit)}</dd>
+                    </div>
+                  )}
+                </dl>
+                <Btn variant="outline" onClick={() => setParams({ id: entry.id })}>
+                  View details
+                </Btn>
+              </Card>
+            ))}
+          </div>
+          {rows.some((entry) => entry.kind === kind) && !matchingRows.length && (
+            <EmptyState
+              icon={<Search size={32} />}
+              title="No matching inventory"
+              sub="Try another search or location filter."
+            />
+          )}
           {!rows.some((entry) => entry.kind === kind) && (
             <EmptyState
               icon={<Warehouse size={32} />}

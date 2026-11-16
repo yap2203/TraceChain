@@ -18,6 +18,7 @@ export { Alert } from './Alert';
 export { Modal } from './Modal';
 export { TxModal } from './TransactionModal';
 export { StepProgress } from './StepProgress';
+export { StatusTimeline } from './StatusTimeline';
 export { VerifyRow } from './VerifyRow';
 export { CustodyTimeline } from './CustodyTimeline';
 export { EmptyState } from './EmptyState';

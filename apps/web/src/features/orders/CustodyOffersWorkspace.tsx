@@ -25,6 +25,7 @@ import {
   Input,
   SectionTitle,
   SelectField,
+  StatusTimeline,
   Table,
   TD,
   TR,
@@ -211,20 +212,25 @@ export function CustodyOffersWorkspace({
                 />
               }
             />
-            <ol className="custody-offer-progress" aria-label="Custody request progress">
-              {[
-                'Offer sent',
-                'Distributor accepts',
-                'Pickup arranged',
-                'Physical handoff',
-                'Warehouse received',
-              ].map((label, index) => (
-                <li key={label} aria-current={stage === index ? 'step' : undefined}>
-                  <span>{index + 1}</span>
-                  {label}
-                </li>
-              ))}
-            </ol>
+            <StatusTimeline
+              label="Custody request progress"
+              steps={[
+                ['Offer sent', selected.senderName],
+                ['Distributor accepts', selected.distributorName],
+                ['Pickup arranged', selected.distributorName],
+                ['Physical handoff', selected.senderName],
+                ['Warehouse received', selected.distributorName],
+              ].map(([label, actor], index) => ({
+                actor,
+                label,
+                state:
+                  selected.status === 'RECEIVED' || index < stage
+                    ? ('complete' as const)
+                    : index === stage
+                      ? ('current' as const)
+                      : ('pending' as const),
+              }))}
+            />
             <dl className="workspace-offer-facts">
               <div>
                 <dt>Quantity</dt>
@@ -258,6 +264,22 @@ export function CustodyOffersWorkspace({
                 </div>
               )}
             </dl>
+            <Alert
+              type="info"
+              message={
+                selected.status === 'REQUESTED'
+                  ? `Next action: ${selected.distributorName} reviews the custody offer.`
+                  : selected.status === 'ACCEPTED'
+                    ? `Next action: ${selected.distributorName} arranges pickup.`
+                    : selected.status === 'SCHEDULED'
+                      ? `Next action: ${selected.senderName} confirms the physical handoff.`
+                      : selected.status === 'DISPATCHED'
+                        ? `Next action: ${selected.distributorName} scans the shipment and confirms physical receipt.`
+                        : selected.status === 'RECEIVED'
+                          ? 'Custody receipt is complete.'
+                          : `This custody offer is ${statusLabel[selected.status].toLowerCase()}.`
+              }
+            />
             {['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(selected.status) && (
               <Link
                 to={

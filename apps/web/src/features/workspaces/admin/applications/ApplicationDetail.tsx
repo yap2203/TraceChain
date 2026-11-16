@@ -11,6 +11,7 @@ import {
 import { Alert, Badge, Btn, Card, Input, Modal, T, Textarea } from '../../shared/ui';
 import type { ChainApplication } from './types';
 import { textError, futureDateError } from '../../../validation/form-validation';
+import { CompanyAvatar } from '../../../orders/CatalogueMedia';
 
 export function AppDetail({
   app,
@@ -140,6 +141,17 @@ export function AppDetail({
         />
       </div>
       <Card>
+        <div className="workspace-company-review">
+          <CompanyAvatar
+            name={app.companyName || 'Company'}
+            logoPath={app.pendingLogoPath}
+            size="lg"
+          />
+          <div>
+            <strong>{app.companyName || 'Company name unavailable'}</strong>
+            <span>Applicant-provided logo · presentation only</span>
+          </div>
+        </div>
         <div style={{ fontWeight: 700, marginBottom: 12 }}>Authoritative local-chain record</div>
         {rows.map(([label, value]) => (
           <div

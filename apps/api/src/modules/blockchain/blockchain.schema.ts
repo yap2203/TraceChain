@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { catalogueImageSchema } from '../orders/orders.schema.js';
 
 const bytes32Schema = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 
@@ -13,6 +14,8 @@ export const personalPermissionTransactionSchema = z
 export const applicationTransactionSchema = z
   .object({
     applicationId: bytes32Schema,
+    applicantWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    applicantSignature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
     companyName: z.string().trim().min(1).max(200),
     companyRegistrationNumber: z.string().trim().min(1).max(120),
     initialLocationName: z.string().trim().min(1).max(160).optional(),
@@ -20,6 +23,7 @@ export const applicationTransactionSchema = z
     previousApplicationId: bytes32Schema,
     profileHash: bytes32Schema,
     requestedRole: z.number().int().min(2).max(5),
+    logo: catalogueImageSchema.optional(),
   })
   .strict();
 

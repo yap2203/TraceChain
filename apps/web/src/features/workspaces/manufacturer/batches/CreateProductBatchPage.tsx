@@ -9,7 +9,7 @@ import {
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { ProductQrDisplay } from '../../../product-traceability';
-import { Alert, Badge, Btn, Card, Input, SelectField, T } from '../../shared/ui';
+import { Alert, Badge, Btn, Card, Input, SelectField, StepProgress, T } from '../../shared/ui';
 import { registeredIngredientQuantity, ingredientUnitOptions } from './ingredient-quantities';
 import { shortChainId } from '../../shared/operational-format';
 import { getOrders } from '../../../orders/orders.api';
@@ -119,6 +119,22 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const links = selections
     .filter((entry) => entry.quantity && !entry.error)
     .map((entry) => ({ batchId: entry.ingredient.batchId, quantity: entry.quantity! }));
+  const productNameError = productName ? textError(productName, 'Product name', 160) : '';
+  const batchReferenceError = batchReference ? referenceError(batchReference) : '';
+  const outputQuantityError = quantity ? quantityError(quantity) : '';
+  const priceError =
+    price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(price)
+      ? 'Enter a non-negative unit price with at most two decimal places.'
+      : '';
+  const datesError = producedAt && expiresAt ? productionDateError(producedAt, expiresAt) : '';
+  const detailsComplete =
+    !!productName &&
+    !!batchReference &&
+    !!category &&
+    !!quantity &&
+    !!unit &&
+    !!producedAt &&
+    !!expiresAt;
   const submit = async () => {
     const validationError =
       textError(productName, 'Product name', 160) ||
@@ -240,6 +256,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
         </Btn>
         <h2 style={{ margin: 0, color: T.navy }}>Create Product Batch</h2>
       </div>
+      <StepProgress
+        steps={['Product details', 'Ingredients and quantities', 'Review and create']}
+        current={!detailsComplete ? 0 : links.length === 0 ? 1 : 2}
+      />
       {error && <Alert type="error" message={error} />}
       <Card>
         <h3>1. Product details</h3>
@@ -249,6 +269,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             maxLength={160}
             value={productName}
             onChange={setProductName}
+            error={productNameError || undefined}
             required
           />
           <Input
@@ -257,6 +278,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             pattern="[A-Za-z0-9._:/-]+"
             value={batchReference}
             onChange={setBatchReference}
+            error={batchReferenceError || undefined}
             required
           />
           <Input label="Category" value={category} onChange={setCategory} required />
@@ -267,6 +289,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             maxLength={39}
             value={quantity}
             onChange={setQuantity}
+            error={outputQuantityError || undefined}
             required
           />
           <SelectField
@@ -299,6 +322,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             type="date"
             value={expiresAt}
             onChange={setExpiresAt}
+            error={datesError || undefined}
             required
           />
           <Input
@@ -308,6 +332,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             type="number"
             min="0"
             step="0.01"
+            error={priceError || undefined}
           />
           <Input
             label="Currency code"
@@ -431,29 +456,60 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             message="Private product metadata is encrypted off chain. The contract receives only the metadata hash, encrypted content reference, quantities, dates, and accepted ingredient links."
           />
         </div>
-        <div style={{ marginTop: 14 }}>
-          <Btn
-            full
-            disabled={
-              busy ||
-              !productName ||
-              !batchReference ||
-              !category ||
-              !quantity ||
-              !unit ||
-              !producedAt ||
-              !expiresAt ||
-              !productionLocation ||
-              stockLoading ||
-              !!stockError ||
-              selections.some((entry) => !!entry.error) ||
-              links.length === 0
-            }
-            onClick={() => void submit()}
-          >
-            {busy ? 'Confirming product…' : 'Create product with MetaMask'}
-          </Btn>
-        </div>
+      </Card>
+      <Card>
+        <h3>3. Review and create</h3>
+        <dl className="workspace-record-facts">
+          <div>
+            <dt>Product</dt>
+            <dd>{productName || 'Not entered'}</dd>
+          </div>
+          <div>
+            <dt>Batch reference</dt>
+            <dd>{batchReference || 'Not entered'}</dd>
+          </div>
+          <div>
+            <dt>Output</dt>
+            <dd>
+              {quantity && unit ? `${quantity} ${unit === 'each' ? 'units' : unit}` : 'Not entered'}
+            </dd>
+          </div>
+          <div>
+            <dt>Ingredient batches</dt>
+            <dd>{links.length}</dd>
+          </div>
+          <div>
+            <dt>Production location</dt>
+            <dd>
+              {locations.find((entry) => entry.location === productionLocation)?.label ??
+                'Not selected'}
+            </dd>
+          </div>
+          <div>
+            <dt>Expiry</dt>
+            <dd>{expiresAt || 'Not entered'}</dd>
+          </div>
+        </dl>
+        <Btn
+          full
+          disabled={
+            busy ||
+            !detailsComplete ||
+            !!productNameError ||
+            !!batchReferenceError ||
+            !!outputQuantityError ||
+            !!priceError ||
+            !!datesError ||
+            !productionLocation ||
+            stockLoading ||
+            !!stockError ||
+            selections.some((entry) => !!entry.error) ||
+            links.length === 0
+          }
+          onClick={() => void submit()}
+        >
+          {busy ? 'Confirming product…' : 'Create product with MetaMask'}
+        </Btn>
       </Card>
     </div>
   );

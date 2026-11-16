@@ -1,13 +1,18 @@
-import { CompanyRole } from '@tracechain/shared';
+import { CompanyRole, companyApplicationBindingMessage } from '@tracechain/shared';
 import type { NextFunction, Request, Response } from 'express';
-import { ZodError } from 'zod';
-import { id } from 'ethers';
+import { z, ZodError } from 'zod';
+import { getAddress, id, verifyMessage } from 'ethers';
 
 import type { AuthService } from '../auth/auth.service.js';
 import type { BlockchainGateway } from './blockchain-gateway.service.js';
-import type { ApplicationMetadataRepository } from './application-metadata.repository.js';
+import {
+  ApplicationMetadataConflictError,
+  type ApplicationMetadataRepository,
+} from './application-metadata.repository.js';
 import type { CompanyRoleIssuanceRepository } from '../ssi/issuance.repository.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
+import { OrdersError } from '../orders/orders.service.js';
+import type { CatalogueImageInput, StoredCatalogueImage } from '../orders/catalogue-media.js';
 import {
   applicationTransactionSchema,
   credentialLifecycleTransactionSchema,
@@ -95,6 +100,22 @@ export class BlockchainController {
     private readonly applicationMetadata: ApplicationMetadataRepository,
     private readonly issuanceRepository: CompanyRoleIssuanceRepository,
     private readonly stakeholderDirectory?: StakeholderDirectory,
+    private readonly applicationBranding?: {
+      validatePendingCompanyLogo(input: CatalogueImageInput): {
+        image: StoredCatalogueImage;
+        logoDigest: string;
+      };
+      savePendingCompanyLogo(input: {
+        applicationId: string;
+        applicantWallet: string;
+        image: StoredCatalogueImage;
+      }): Promise<void>;
+      hasPendingCompanyLogo(applicationId: string, applicantWallet: string): Promise<boolean>;
+      pendingCompanyLogo(
+        applicationId: string,
+        applicantWallet: string,
+      ): Promise<{ bytes: Buffer; mimeType: string; fileName: string }>;
+    },
   ) {}
 
   listApplications = async (request: Request, response: Response, next: NextFunction) => {
@@ -103,10 +124,24 @@ export class BlockchainController {
       const applications = await this.gateway.listApplications();
       response.json({
         applications: await Promise.all(
-          applications.map(async (application) => ({
-            ...application,
-            ...(await this.applicationMetadata.find(application.id)),
-          })),
+          applications.map(async (application) => {
+            const metadata = await this.applicationMetadata.find(application.id);
+            const hasPendingLogo = Boolean(
+              metadata?.applicantWallet &&
+              application.applicant.toLowerCase() === metadata.applicantWallet.toLowerCase() &&
+              (await this.applicationBranding?.hasPendingCompanyLogo(
+                application.id,
+                application.applicant,
+              )),
+            );
+            return {
+              ...application,
+              ...metadata,
+              pendingLogoPath: hasPendingLogo
+                ? `/api/blockchain/applications/${application.id}/logo`
+                : undefined,
+            };
+          }),
         ),
       });
     } catch (error) {
@@ -367,20 +402,109 @@ export class BlockchainController {
   prepareApplication = async (request: Request, response: Response, next: NextFunction) => {
     try {
       const input = applicationTransactionSchema.parse(request.body);
+      if (input.logo && !this.applicationBranding)
+        throw new BlockchainApiError(
+          'COMPANY_BRANDING_UNAVAILABLE',
+          'Company logo storage is unavailable.',
+          503,
+        );
+      const preparedLogo = input.logo
+        ? this.applicationBranding!.validatePendingCompanyLogo(input.logo)
+        : undefined;
+      const bindingMessage = companyApplicationBindingMessage({
+        applicationId: input.applicationId,
+        applicantWallet: input.applicantWallet,
+        companyName: input.companyName,
+        companyRegistrationNumber: input.companyRegistrationNumber,
+        encryptedProfileCid: input.encryptedProfileCid,
+        initialLocationName: input.initialLocationName,
+        logoDigest: preparedLogo?.logoDigest,
+        logoFileName: input.logo?.fileName,
+        logoMimeType: input.logo?.mimeType,
+        previousApplicationId: input.previousApplicationId,
+        profileHash: input.profileHash,
+        requestedRole: input.requestedRole,
+      });
+      let recoveredApplicant: string;
+      try {
+        recoveredApplicant = getAddress(verifyMessage(bindingMessage, input.applicantSignature));
+      } catch {
+        throw new BlockchainApiError(
+          'APPLICANT_SIGNATURE_INVALID',
+          'The company application signature is invalid.',
+          400,
+        );
+      }
+      if (recoveredApplicant !== getAddress(input.applicantWallet))
+        throw new BlockchainApiError(
+          'APPLICANT_SIGNATURE_INVALID',
+          'The company application must be signed by the applicant wallet.',
+          403,
+        );
       await this.applicationMetadata.save({
         applicationId: input.applicationId,
+        applicantWallet: input.applicantWallet,
         companyName: input.companyName,
         companyRegistrationNumber: input.companyRegistrationNumber,
         initialLocationName: input.initialLocationName,
         profileHash: input.profileHash,
+        submissionDigest: id(bindingMessage),
       });
+      if (preparedLogo) {
+        await this.applicationBranding!.savePendingCompanyLogo({
+          applicationId: input.applicationId,
+          applicantWallet: input.applicantWallet,
+          image: preparedLogo.image,
+        });
+      }
       const {
+        applicantWallet: _applicantWallet,
+        applicantSignature: _applicantSignature,
         companyName: _companyName,
         companyRegistrationNumber: _registrationNumber,
         initialLocationName: _initialLocation,
+        logo: _logo,
         ...transactionInput
       } = input;
       response.json(this.gateway.prepareApplication(transactionInput));
+    } catch (error) {
+      this.handleError(error, response, next);
+    }
+  };
+
+  getApplicationLogo = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      await this.requireAdministrator(request);
+      if (!this.applicationBranding)
+        throw new BlockchainApiError(
+          'COMPANY_BRANDING_UNAVAILABLE',
+          'Company logo storage is unavailable.',
+          503,
+        );
+      const applicationId = z
+        .string()
+        .regex(/^0x[0-9a-fA-F]{64}$/)
+        .parse(request.params.applicationId);
+      const application = (await this.gateway.listApplications()).find(
+        (record) => record.id.toLowerCase() === applicationId.toLowerCase(),
+      );
+      const metadata = await this.applicationMetadata.find(applicationId);
+      if (
+        !application ||
+        !metadata?.applicantWallet ||
+        application.applicant.toLowerCase() !== metadata.applicantWallet.toLowerCase()
+      )
+        throw new BlockchainApiError('MEDIA_NOT_FOUND', 'Company logo was not found.', 404);
+      const logo = await this.applicationBranding.pendingCompanyLogo(
+        applicationId,
+        application.applicant,
+      );
+      response.setHeader('Cache-Control', 'private, no-store');
+      response.setHeader('Content-Type', logo.mimeType);
+      response.setHeader('Content-Disposition', `inline; filename="${logo.fileName}"`);
+      response.setHeader('X-Content-Type-Options', 'nosniff');
+      response.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      response.send(logo.bytes);
     } catch (error) {
       this.handleError(error, response, next);
     }
@@ -449,6 +573,14 @@ export class BlockchainController {
     }
     if (error instanceof BlockchainApiError) {
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
+      return;
+    }
+    if (error instanceof OrdersError) {
+      response.status(error.status).json({ error: { code: error.code, message: error.message } });
+      return;
+    }
+    if (error instanceof ApplicationMetadataConflictError) {
+      response.status(409).json({ error: { code: error.code, message: error.message } });
       return;
     }
     next(error);

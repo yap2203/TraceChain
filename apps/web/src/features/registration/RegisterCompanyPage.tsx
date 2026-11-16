@@ -1,5 +1,15 @@
+import { companyApplicationBindingMessage } from '@tracechain/shared';
 import { BrowserProvider, ZeroHash, hexlify, id, isAddress, randomBytes } from 'ethers';
-import { Check, ChevronLeft, ChevronRight, FileCheck2, Link2, UploadCloud } from 'lucide-react';
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  FileCheck2,
+  ImageUp,
+  Link2,
+  Trash2,
+  UploadCloud,
+} from 'lucide-react';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notify, readableError } from '../../components/ui/feedback';
@@ -8,6 +18,7 @@ import { Brand } from '../../components/brand/Brand';
 import { Button, Card, Input, Select, StatusBadge } from '../../components/ui';
 import { chainConfig, targetChainId } from '../../config/chain';
 import { prepareCompanyApplication, sendPreparedTransaction } from '../blockchain/blockchain.api';
+import { imageFilePayload } from '../orders/orders.api';
 import { textError, uploadError } from '../validation/form-validation';
 
 const roleOptions = [
@@ -94,6 +105,8 @@ export function RegisterCompanyPage() {
   const [step, setStep] = useState(0);
   const [data, setData] = useState(initialData);
   const [documents, setDocuments] = useState<Record<string, File>>({});
+  const [logo, setLogo] = useState<File>();
+  const [logoPreview, setLogoPreview] = useState('');
   const [error, setError] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -101,6 +114,15 @@ export function RegisterCompanyPage() {
   useEffect(() => {
     if (error) notify(error, 'error');
   }, [error]);
+  useEffect(() => {
+    if (!logo) {
+      setLogoPreview('');
+      return;
+    }
+    const preview = URL.createObjectURL(logo);
+    setLogoPreview(preview);
+    return () => URL.revokeObjectURL(preview);
+  }, [logo]);
   const update = (field: keyof RegistrationData, value: string | boolean) => {
     setData((current) => ({ ...current, [field]: value }));
     setError('');
@@ -199,6 +221,24 @@ export function RegisterCompanyPage() {
     setError('');
   };
 
+  const selectLogo = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const invalid = uploadError(file, 2 * 1024 * 1024, /\.(png|jpe?g|webp)$/i, [
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+    ]);
+    if (invalid) {
+      event.target.value = '';
+      setLogo(undefined);
+      setError(invalid);
+      return;
+    }
+    setLogo(file);
+    setError('');
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || transaction) return;
@@ -242,11 +282,14 @@ export function RegisterCompanyPage() {
             size: file.size,
             type: file.type,
           })),
+          logo: logo ? { name: logo.name, size: logo.size, type: logo.type } : undefined,
         }),
       );
+      const logoPayload = logo ? await imageFilePayload(logo) : undefined;
       const localContentReference = `local://${profileHash}`;
-      const prepared = await prepareCompanyApplication({
+      const applicationInput = {
         applicationId,
+        applicantWallet: data.wallet,
         companyName: data.companyName.trim(),
         companyRegistrationNumber: data.registrationNumber.trim(),
         initialLocationName: data.initialLocationName.trim(),
@@ -254,6 +297,19 @@ export function RegisterCompanyPage() {
         previousApplicationId: ZeroHash,
         profileHash,
         requestedRole: roleValues[data.requestedRole],
+        ...(logoPayload ? { logo: logoPayload } : {}),
+      };
+      const applicantSignature = await signer.signMessage(
+        companyApplicationBindingMessage({
+          ...applicationInput,
+          logoDigest: logoPayload ? id(`${logoPayload.mimeType}:${logoPayload.data}`) : undefined,
+          logoFileName: logoPayload?.fileName,
+          logoMimeType: logoPayload?.mimeType,
+        }),
+      );
+      const prepared = await prepareCompanyApplication({
+        ...applicationInput,
+        applicantSignature,
       });
       if (BigInt(prepared.chainId) !== targetChainId)
         throw new Error('The API transaction targets a different chain.');
@@ -412,6 +468,44 @@ export function RegisterCompanyPage() {
                     </div>
                     <small>The wallet will own and sign this company application.</small>
                   </div>
+                  <div className="registration-logo-field">
+                    <span className="field__label">Company logo (optional)</span>
+                    <div className="registration-logo-field__content">
+                      <div className="registration-logo-preview" aria-label="Company logo preview">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Selected company logo preview" />
+                        ) : (
+                          <span>{companyInitials(data.companyName)}</span>
+                        )}
+                      </div>
+                      <div>
+                        <p>PNG, JPEG or WebP · maximum 2 MB</p>
+                        <div className="registration-logo-field__actions">
+                          <label className="ui-button ui-button--secondary ui-button--small">
+                            <ImageUp size={15} /> {logo ? 'Replace logo' : 'Choose logo'}
+                            <input
+                              aria-label="Choose company logo"
+                              type="file"
+                              accept="image/png,image/jpeg,image/webp"
+                              onChange={selectLogo}
+                            />
+                          </label>
+                          {logo && (
+                            <button
+                              className="ui-button ui-button--ghost ui-button--small"
+                              type="button"
+                              onClick={() => setLogo(undefined)}
+                            >
+                              <Trash2 size={15} /> Remove
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <small>
+                      Presentation only. It remains private until this application is approved.
+                    </small>
+                  </div>
                 </div>
               </section>
             )}
@@ -503,6 +597,19 @@ export function RegisterCompanyPage() {
                     <dt>Documents</dt>
                     <dd>{Object.keys(documents).length} file(s) selected</dd>
                   </div>
+                  <div className="registration-review--wide registration-review-logo">
+                    <dt>Company logo</dt>
+                    <dd>
+                      <span className="registration-logo-preview registration-logo-preview--review">
+                        {logoPreview ? (
+                          <img src={logoPreview} alt="Company logo selected for submission" />
+                        ) : (
+                          <span>{companyInitials(data.companyName)}</span>
+                        )}
+                      </span>
+                      {logo ? logo.name : 'No logo selected'}
+                    </dd>
+                  </div>
                 </dl>
                 <label className="registration-declaration">
                   <input
@@ -557,5 +664,17 @@ export function RegisterCompanyPage() {
         </form>
       </main>
     </div>
+  );
+}
+
+function companyInitials(name: string) {
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join('')
+      .toUpperCase() || 'CO'
   );
 }

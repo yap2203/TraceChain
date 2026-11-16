@@ -15,8 +15,8 @@ vi.mock('../../../blockchain/useOperationalData', () => ({
           batchId: `0x${'11'.repeat(32)}`,
           manufacturer: '0x1000000000000000000000000000000000000001',
           manufacturerName: 'Registered Manufacturer',
-          totalQuantity: '100',
-          unit: 'g',
+          totalQuantity: '123',
+          unit: `0x65616368${'00'.repeat(28)}`,
           status: 1,
           producedAt: 1790000000,
           expiresAt: 2000000000,
@@ -39,7 +39,16 @@ vi.mock('../../../blockchain/useOperationalData', () => ({
   }),
 }));
 vi.mock('../../../orders/orders.api', () => ({
-  getOrders: vi.fn().mockResolvedValue({ catalogue: [] }),
+  getOrders: vi.fn().mockResolvedValue({
+    catalogue: [
+      {
+        batches: [`0x${'11'.repeat(32)}`],
+        currency: 'MYR',
+        price: '12',
+        storageLocations: [],
+      },
+    ],
+  }),
 }));
 vi.mock('../../../product-traceability/product-traceability.api', async (original) => ({
   ...(await original<typeof import('../../../product-traceability/product-traceability.api')>()),
@@ -102,7 +111,7 @@ describe('Manufacturer product detail QR resilience', () => {
       'textContent',
       expect.stringContaining('VITE_PUBLIC_APP_URL'),
     );
-    expect(screen.getByText('100 g')).toBeTruthy();
+    expect(screen.getByText('123 units')).toBeTruthy();
     expect(screen.getByText('Linked ingredients')).toBeTruthy();
     await waitFor(() => expect(mocks.payload).toHaveBeenCalledWith(batchId));
     expect(mocks.resolve).not.toHaveBeenCalled();
@@ -111,12 +120,15 @@ describe('Manufacturer product detail QR resilience', () => {
     mocks.resolve.mockRejectedValue(new Error('RPC unavailable'));
     mount();
     await waitFor(() => expect(mocks.resolve).toHaveBeenCalled());
-    expect(screen.getByText('100 g')).toBeTruthy();
+    expect(screen.getByText('123 units')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Product Traceability QR' })).toBeTruthy();
   });
   it('shows the resolved product and QR when configuration is valid', async () => {
     mount();
     expect(await screen.findByRole('heading', { name: 'Recorded product', level: 2 })).toBeTruthy();
+    expect(screen.getByText('123 units')).toBeTruthy();
+    expect(screen.getByText('MYR 12.00 per unit')).toBeTruthy();
+    expect(screen.getByText('Raw on-chain unit')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Product Traceability QR' })).toBeTruthy();
   });
 });

@@ -29,3 +29,5 @@ export {
   decodeIngredientDeliveryQr,
 } from './qr/ingredient-delivery-qr.js';
 export { encodeShipmentQr, decodeShipmentQr } from './qr/ingredient-delivery-qr.js';
+export { companyApplicationBindingMessage } from './company-branding.js';
+export type { CompanyApplicationBinding } from './company-branding.js';

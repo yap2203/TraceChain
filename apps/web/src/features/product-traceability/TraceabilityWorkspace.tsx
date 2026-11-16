@@ -20,6 +20,7 @@ import {
 import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { recordStatuses, shortChainId } from '../workspaces/shared/operational-format';
+import { CompanyAvatar } from '../orders/CatalogueMedia';
 
 const fields: Record<string, string> = {
   name: 'Ingredient',
@@ -138,6 +139,20 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
                 }))}
               />
             </div>
+            {data.root && (
+              <Card>
+                <div className="workspace-record-heading !mb-0">
+                  <Route size={24} aria-hidden="true" />
+                  <div className="workspace-record-heading__identity">
+                    <span className="workspace-record-heading__eyebrow">
+                      {data.root.kind === 'product' ? 'Product journey' : 'Ingredient journey'}
+                    </span>
+                    <h2>{data.root.name}</h2>
+                    <p>{data.root.reference}</p>
+                  </div>
+                </div>
+              </Card>
+            )}
             {data.routes.length > 1 && (
               <SelectField
                 label="Product journey"
@@ -210,9 +225,26 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
                               <div key={key}>
                                 <dt>{fields[key]}</dt>
                                 <dd>
-                                  {key === 'reference' && /^0x/.test(String(value))
-                                    ? shortChainId(String(value))
-                                    : valueFor(key, value)}
+                                  {[
+                                    'supplier',
+                                    'company',
+                                    'sender',
+                                    'recipient',
+                                    'distributor',
+                                  ].includes(key) ? (
+                                    <span className="workspace-company-cell">
+                                      <CompanyAvatar
+                                        name={String(value)}
+                                        logoPath={record[`${key}LogoPath`]}
+                                        size="sm"
+                                      />
+                                      {String(value)}
+                                    </span>
+                                  ) : key === 'reference' && /^0x/.test(String(value)) ? (
+                                    shortChainId(String(value))
+                                  ) : (
+                                    valueFor(key, value)
+                                  )}
                                 </dd>
                               </div>
                             ))}

@@ -20,6 +20,62 @@
 - Added migration/restart/preservation, encryption/wrong-key/tamper/gateway, same-wallet two-session SIWE retrieval, Admin backup-access and no-terminal UI tests. Extended holder recovery tests to sign a new bound selective presentation with the recovered key and reject an unrelated key. Automated Pinata tests use simulated HTTP with real encryption; live results are recorded separately.
 - Added `docs/STORAGE_AND_RECOVERY.md` and optional backend `IPFS_GATEWAY_URL` configuration. Contracts, issued credential contents/IDs, roles, wallet records and stock are preserved. Public-media publishing and moving historical vehicle fields off-chain remain outside this storage-recovery stage.
 - Validation: 25 SSI, 334 API and 251 frontend tests passed; root type checking and production build passed. Four backup-dialog mobile/desktop browser checks passed. Live read-only IPFS recovery matched 41 pinned credentials; 4 non-IPFS/unsupported references were skipped. Actual portable backup creation remains an explicit Admin UI download with the user's password, not a claimed automatic export.
+## 2026-11-16 — Company-logo review hardening
+
+- Required an applicant-wallet signature for every registration, including applications without a
+  logo. The signed message binds the application ID and every submitted field, plus the validated
+  logo digest when present. Signature and image-byte validation now finish before metadata or media
+  persistence; rejected submissions leave no records. Identical retries are no-ops, while any changed
+  signed input conflicts even if it reuses the same profile hash.
+- Serialized the complete application-metadata JSON read–modify–write cycle per file while retaining
+  temporary-file rename persistence. Concurrent saves through separate repository instances no longer
+  lose either application, and existing records remain readable.
+- Added shared company-branding state and media revisions. Replacing a logo updates My company
+  identity and the workspace header immediately, uses the unchanged authenticated endpoint, bypasses
+  an older in-flight media promise and preserves initials fallback. Pending/rejected visibility and
+  exact active-application checks remain unchanged.
+
+## 2026-11-16 — Application-bound company branding
+
+- Added an optional Company logo field to registration, separate from supporting documents, with
+  PNG/JPEG/WebP selection, 2 MB client guidance, preview, replace/remove and review-screen preview.
+  Registration remains valid without a logo.
+- Bound pending branding to the exact application ID, applicant wallet, profile hash and image
+  digest using an applicant MetaMask signature. The API validates the actual image bytes, encrypts
+  the media through the existing off-chain content store and exposes it only to authorized Admin
+  application review until the same application becomes the stakeholder's active verified identity.
+  Pending or rejected logos remain unavailable through normal stakeholder branding routes.
+- Reused `CompanyAvatar` with initials fallback in workspace headers, company identity, catalogues,
+  product/ingredient details, order and shipment lists/details, Admin application review and
+  authenticated business traceability. Approved-company upload/replace behavior is preserved; no
+  logo was added to the public QR page and no contract, credential claim or authorization rule changed.
+
+## 2026-11-16 — Shared stakeholder record layouts and media loading
+
+- Standardized stakeholder inventory lists/details, shipment summaries/details and real-state status
+  timelines while retaining role-specific data, actions and API authorization. Manufacturer and
+  Distributor inventory now share search/location filtering and quantity facts; Manufacturer,
+  Distributor and Retailer shipment rows expose the important parties, route, quantity, ETA and
+  status before a read-only detail review.
+- Refined Manufacturer product creation and product detail hierarchy, added field-level validation
+  and final review, and introduced a fail-closed unit formatter. Known `bytes32` `each` values render
+  as units (including `123 units` and `MYR 12.00 per unit`); unknown units are never guessed and raw
+  values stay in Technical details. Product orders now show fulfilment choice, and Retailer
+  traceability leads with the selected product and batch reference.
+- Moved Distributor product dispatch behind **View shipment**. Opening a shipment detail does not
+  prepare or sign a transaction; confirmation remains explicit within the detail. Intake offers now
+  use the shared icon timeline with the current real state, responsible party and next action.
+- Reused `CatalogueImage` with lazy loading and explicit missing/denied/failed states. The existing
+  authenticated API media mapping and authorization were already correct; inconsistent rendering
+  came from independent duplicate reads and a generic fallback that hid transient/request failures.
+  Identical concurrent media and workspace-state requests are now deduplicated without caching later
+  refreshes or confirmed stock/shipment updates.
+- Comparable six-file UI test runs remained effectively unchanged at 5.25 s before and 5.26 s after;
+  deterministic request coverage confirms two simultaneous identical image/state reads now make one
+  request instead of two, while a later refresh performs a fresh request. Full validation passed:
+  255 frontend tests, repository type checking and production build. The existing QR-image upload
+  issue was not changed. Live multi-wallet/chain workflow timing and narrow-screen visual review
+  remain manual follow-up checks.
 
 ## 2026-11-16 — Fresh product custody-offer inventory fix
 

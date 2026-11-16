@@ -20,6 +20,18 @@ type RequestGroup = 'attention' | 'evidence' | 'approved' | 'closed';
 type RequestFilter = 'all' | RequestGroup;
 type RequestSort = 'newest' | 'oldest' | 'deadline' | 'updated';
 
+function fulfilmentChoice(order: OrderRecord) {
+  if (order.productDelivery)
+    return Number(order.productDelivery.mode) === 1
+      ? 'Direct Distributor delivery'
+      : Number(order.productDelivery.mode) === 2
+        ? 'Distributor custody stock'
+        : 'Awaiting fulfilment selection';
+  if (order.custodyOrder) return 'Distributor custody stock';
+  if (order.delivery) return 'Direct Distributor delivery';
+  return Number(order.decision?.status) === 1 ? 'Awaiting fulfilment selection' : 'Not selected';
+}
+
 export function RequestsOverview({
   actor,
   catalogue,
@@ -229,8 +241,9 @@ export function RequestsOverview({
             <Table
               headers={[
                 'Item',
-                'Supplier',
+                role === 'manufacturer' ? 'Retailer / buyer' : 'Supplier / seller',
                 'Quantity',
+                'Fulfilment',
                 'Requested',
                 'Updated',
                 'Status',
@@ -244,10 +257,20 @@ export function RequestsOverview({
                 return (
                   <TR key={entry.orderId}>
                     <TD bold>{item?.name ?? 'Item name unavailable'}</TD>
-                    <TD>{counterpartyName(entry, actor)}</TD>
+                    <TD>
+                      <span className="workspace-company-cell">
+                        <CompanyAvatar
+                          name={counterpartyName(entry, actor)}
+                          logoPath={counterpartyLogoPath(entry, actor)}
+                          size="sm"
+                        />
+                        {counterpartyName(entry, actor)}
+                      </span>
+                    </TD>
                     <TD>
                       {entry.requested} {item?.unit ?? ''}
                     </TD>
+                    <TD>{fulfilmentChoice(entry)}</TD>
                     <TD>{dateTime(entry.createdAt ?? entry.requestedAt)}</TD>
                     <TD>{dateTime(entry.updatedAt ?? entry.decision?.recordedAt)}</TD>
                     <TD>
@@ -274,13 +297,21 @@ export function RequestsOverview({
                     <h4>{item?.name ?? 'Item name unavailable'}</h4>
                     <Badge label={state.label} variant={state.variant} />
                   </div>
-                  <p>{counterpartyName(entry, actor)}</p>
+                  <p className="workspace-company-cell">
+                    <CompanyAvatar
+                      name={counterpartyName(entry, actor)}
+                      logoPath={counterpartyLogoPath(entry, actor)}
+                      size="sm"
+                    />
+                    {counterpartyName(entry, actor)}
+                  </p>
                   <p>
                     <strong>
                       {entry.requested} {item?.unit ?? ''}
                     </strong>{' '}
                     · {nextAction(entry, actor)}
                   </p>
+                  <p>Fulfilment: {fulfilmentChoice(entry)}</p>
                   <p>Updated {dateTime(entry.updatedAt ?? entry.decision?.recordedAt)}</p>
                   <Btn size="sm" variant="outline" onClick={() => onView(entry.orderId)}>
                     View request
@@ -351,7 +382,7 @@ function SupplierRequestCard({
             <span>Batch reference: {item?.batchReference || 'Not disclosed'}</span>
           </div>
           <div className="supplier-request-company">
-            <CompanyAvatar name={manufacturer} size="lg" />
+            <CompanyAvatar name={manufacturer} logoPath={entry.buyerLogoPath} size="lg" />
             <div>
               <span>Manufacturer</span>
               <strong>{manufacturer}</strong>
@@ -601,4 +632,8 @@ function counterpartyName(order: OrderRecord, actor: string) {
   return same(order.seller, actor)
     ? (order.buyerName ?? 'Company name unavailable')
     : (order.sellerName ?? 'Company name unavailable');
+}
+
+function counterpartyLogoPath(order: OrderRecord, actor: string) {
+  return same(order.seller, actor) ? order.buyerLogoPath : order.sellerLogoPath;
 }

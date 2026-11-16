@@ -1,4 +1,6 @@
 import request from 'supertest';
+import { companyApplicationBindingMessage } from '@tracechain/shared';
+import { Wallet } from 'ethers';
 import { describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../app.js';
@@ -66,8 +68,10 @@ describe('blockchain gateway API', () => {
       prepareCredentialLifecycle: vi.fn(() => prepared),
       prepareRejection: vi.fn(() => prepared),
     });
+    const applicant = Wallet.createRandom();
     const input = {
       applicationId: `0x${'11'.repeat(32)}`,
+      applicantWallet: applicant.address,
       companyName: 'Test Supplier',
       companyRegistrationNumber: 'TEST-001',
       encryptedProfileCid: 'urn:tracechain:application:test',
@@ -75,10 +79,11 @@ describe('blockchain gateway API', () => {
       profileHash: `0x${'22'.repeat(32)}`,
       requestedRole: 2,
     };
+    const applicantSignature = await applicant.signMessage(companyApplicationBindingMessage(input));
 
     const response = await request(app)
       .post('/api/blockchain/transactions/company-application')
-      .send(input)
+      .send({ ...input, applicantSignature })
       .expect(200);
 
     expect(prepareApplication).toHaveBeenCalledWith({

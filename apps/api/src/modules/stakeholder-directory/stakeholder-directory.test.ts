@@ -60,6 +60,7 @@ describe('verified stakeholder directory', () => {
     );
     await expect(directory.resolve(WALLETS[0])).resolves.toEqual({
       active: true,
+      applicationId: record(WALLETS[0], 'Swift Distribution Sdn. Bhd.').applicationId,
       companyName: 'Swift Distribution Sdn. Bhd.',
       role: CompanyRole.DISTRIBUTOR,
       walletAddress: WALLETS[0],

@@ -16,7 +16,9 @@ export async function readBusinessTraceability(
   gateway: OrdersGateway,
   state: ChainRecord,
   selection: { kind?: string; batchId?: string },
-  names: (wallets: string[]) => Promise<Map<string, string>>,
+  names: (
+    wallets: string[],
+  ) => Promise<Map<string, string | { companyName: string; logoPath?: string }>>,
 ) {
   const shipments: ChainRecord[] = [
     ...(state.logistics?.shipments ?? []),
@@ -182,15 +184,26 @@ export async function readBusinessTraceability(
       ]),
     ]),
   );
-  const company = (wallet: string) =>
-    identities.get(wallet?.toLowerCase()) ?? 'Company name unavailable';
+  const companyIdentity = (wallet: string) => {
+    const identity = identities.get(wallet?.toLowerCase());
+    return typeof identity === 'string'
+      ? { companyName: identity }
+      : (identity ?? { companyName: 'Company name unavailable' });
+  };
+  const company = (wallet: string) => companyIdentity(wallet).companyName;
+  const logo = (wallet: string) => companyIdentity(wallet).logoPath;
   const transfers = (records: ChainRecord[]) =>
     records.map((record) => ({
       reference: record.shipmentId ?? record.transferId,
       sender: company(record.sender),
+      senderLogoPath: logo(record.sender),
       recipient: company(record.recipient),
+      recipientLogoPath: logo(record.recipient),
       ...(record.carrier && !/^0x0+$/.test(record.carrier)
-        ? { distributor: company(record.carrier) }
+        ? {
+            distributor: company(record.carrier),
+            distributorLogoPath: logo(record.carrier),
+          }
         : {}),
       quantity: String(record.quantity),
       unit:
@@ -261,6 +274,7 @@ export async function readBusinessTraceability(
         name: summary?.name ?? 'Registered ingredient',
         reference: summary?.batchReference ?? 'Reference unavailable',
         supplier: company(source.batch.supplier),
+        supplierLogoPath: logo(source.batch.supplier),
         producedAt: Number(source.batch.producedAt),
         expiresAt: Number(source.batch.expiresAt),
         registryStatus: Number(source.batch.status),
@@ -290,6 +304,7 @@ export async function readBusinessTraceability(
             ? [
                 {
                   company: company(entry.product.manufacturer),
+                  companyLogoPath: logo(entry.product.manufacturer),
                   product: productSummary.name ?? 'Registered product',
                   reference: productSummary.batchReference ?? 'Reference unavailable',
                   producedAt: Number(entry.product.producedAt),

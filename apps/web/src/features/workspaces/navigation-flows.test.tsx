@@ -36,7 +36,7 @@ vi.mock('ethers', async (importOriginal) => ({
       return { chainId: 31337n };
     }
     async getSigner() {
-      return { getAddress: async () => wallet };
+      return { getAddress: async () => wallet, signMessage: async () => `0x${'11'.repeat(65)}` };
     }
   },
 }));

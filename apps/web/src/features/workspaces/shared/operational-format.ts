@@ -1,3 +1,5 @@
+import { decodeBytes32String, isHexString } from 'ethers';
+
 export const recordStatuses = ['Unknown', 'Active', 'Suspended', 'Recalled'] as const;
 export const transferStatuses = [
   'Unknown',
@@ -20,3 +22,50 @@ export const shortChainId = (value: string) =>
   value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
 export const chainDate = (seconds: number) =>
   seconds ? new Date(seconds * 1_000).toLocaleDateString() : '—';
+
+const knownUnits: Record<string, { quantity: string; price: string }> = {
+  each: { quantity: 'units', price: 'unit' },
+  g: { quantity: 'g', price: 'g' },
+  kg: { quantity: 'kg', price: 'kg' },
+  litre: { quantity: 'litres', price: 'litre' },
+  ml: { quantity: 'ml', price: 'ml' },
+};
+
+export interface OperationalUnit {
+  canonical?: string;
+  quantityLabel: string;
+  priceLabel?: string;
+  raw: string;
+}
+
+/** Decode only known contract units. Unknown values stay technical and are never guessed. */
+export function operationalUnit(value: unknown): OperationalUnit {
+  const raw = String(value ?? '');
+  let decoded = raw.trim().toLowerCase();
+  if (isHexString(raw, 32)) {
+    try {
+      decoded = decodeBytes32String(raw).trim().toLowerCase();
+    } catch {
+      return { quantityLabel: 'unit unavailable', raw };
+    }
+  }
+  const known = knownUnits[decoded];
+  return known
+    ? { canonical: decoded, quantityLabel: known.quantity, priceLabel: known.price, raw }
+    : { quantityLabel: 'unit unavailable', raw };
+}
+
+export function formatOperationalQuantity(quantity: unknown, unit: unknown) {
+  const formatted = operationalUnit(unit);
+  return `${String(quantity ?? '0')} ${formatted.quantityLabel}`;
+}
+
+export function formatOperationalPrice(currency: unknown, price: unknown, unit: unknown) {
+  const formatted = operationalUnit(unit);
+  if (price === undefined || price === null || price === '') return 'Unavailable';
+  const amount = Number(price);
+  const value = Number.isFinite(amount) ? amount.toFixed(2) : String(price);
+  return formatted.priceLabel
+    ? `${String(currency || 'MYR')} ${value} per ${formatted.priceLabel}`
+    : `${String(currency || 'MYR')} ${value} (unit unavailable)`;
+}

@@ -506,12 +506,44 @@
     @apply text-[length:12px];
   }
   .workspace-company {
-    @apply max-w-[220px];
+    @apply flex items-center gap-[8px] max-w-[240px];
     overflow: hidden;
     color: var(--c-navy);
     @apply text-[length:12px] font-semibold;
     text-overflow: ellipsis;
     @apply whitespace-nowrap;
+  }
+  .workspace-company > span:last-child {
+    @apply truncate;
+  }
+  .workspace-company-cell,
+  .workspace-company-review {
+    @apply flex items-center gap-[10px] min-w-0;
+  }
+  .workspace-company-review {
+    @apply mb-[16px] pb-[16px];
+    border-bottom: 1px solid var(--c-border);
+  }
+  .workspace-company-review > div {
+    @apply grid gap-[2px] min-w-0;
+  }
+  .workspace-company-review span {
+    color: var(--c-text2);
+    @apply text-[12px];
+  }
+  .workspace-shipment-parties {
+    @apply grid grid-cols-1 gap-[10px] mb-[16px] sm:grid-cols-2;
+  }
+  .workspace-shipment-parties > span {
+    @apply p-[12px] rounded-[9px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .workspace-shipment-parties .workspace-company-cell > span {
+    @apply grid min-w-0;
+  }
+  .workspace-shipment-parties small {
+    color: var(--c-text2);
   }
   .workspace-account-details {
     @apply m-[8px_0];
@@ -2243,6 +2275,86 @@
   }
 }
 @layer components {
+  .workspace-record-heading {
+    @apply flex items-center gap-[12px] mb-[20px] min-w-0;
+  }
+  .workspace-record-heading__identity {
+    @apply grid gap-[3px] flex-1 min-w-0;
+  }
+  .workspace-record-heading__identity h2,
+  .workspace-record-heading__identity p {
+    @apply m-0 break-words;
+  }
+  .workspace-record-heading__identity h2 {
+    color: var(--c-text);
+  }
+  .workspace-record-heading__identity p,
+  .workspace-record-heading__eyebrow {
+    @apply text-[12px];
+    color: var(--c-text2);
+  }
+  .workspace-record-heading__eyebrow {
+    @apply uppercase tracking-[0.08em] font-semibold;
+  }
+  .workspace-record-facts {
+    @apply grid grid-cols-2 gap-x-[24px] gap-y-[4px];
+  }
+  .workspace-record-facts > div {
+    @apply py-[10px] min-w-0;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .workspace-record-facts dt {
+    @apply text-[12px] mb-[4px];
+    color: var(--c-text2);
+  }
+  .workspace-record-facts dd {
+    @apply m-0 text-[14px] font-semibold break-words;
+    color: var(--c-text);
+  }
+  .workspace-authoritative-stock {
+    @apply mt-[18px] rounded-[10px] p-[14px];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .workspace-authoritative-stock h4,
+  .workspace-authoritative-stock p {
+    @apply m-0;
+  }
+  .workspace-authoritative-stock p {
+    @apply mt-[6px] text-[13px];
+  }
+  .workspace-inventory-filters {
+    @apply grid grid-cols-1 gap-[12px] md:grid-cols-[minmax(0,1fr)_minmax(200px,0.35fr)];
+  }
+  .workspace-inventory-grid {
+    @apply grid grid-cols-1 gap-[16px] md:grid-cols-2 xl:grid-cols-3;
+    align-items: start;
+  }
+  .workspace-inventory-card__heading {
+    @apply grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-[10px];
+  }
+  .workspace-inventory-card__heading h3,
+  .workspace-inventory-card__heading p {
+    @apply m-0 break-words;
+  }
+  .workspace-inventory-card__heading p {
+    @apply mt-[3px] text-[12px];
+    color: var(--c-text2);
+  }
+  .workspace-inventory-card__facts {
+    @apply grid grid-cols-2 gap-x-[14px] gap-y-[4px] my-[14px];
+  }
+  .workspace-inventory-card__facts > div {
+    @apply py-[7px] min-w-0;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .workspace-inventory-card__facts dt {
+    @apply text-[11px];
+    color: var(--c-text2);
+  }
+  .workspace-inventory-card__facts dd {
+    @apply m-0 mt-[3px] text-[13px] font-semibold break-words;
+  }
   .workspace-offer-form,
   .workspace-offer-facts {
     @apply grid grid-cols-2 gap-[16px] mb-[20px];
@@ -2264,29 +2376,64 @@
   .workspace-offer-facts dd {
     @apply m-0 text-[14px] font-medium;
   }
-  .custody-offer-progress {
-    @apply grid grid-cols-5 gap-[8px] list-none p-0 mb-[24px] mt-0;
+  .workspace-status-timeline {
+    @apply grid grid-cols-1 gap-[8px] list-none p-0 mb-[20px] mt-0;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   }
-  .custody-offer-progress li {
-    @apply grid gap-[8px] p-[12px] rounded-[8px] text-[12px];
+  .workspace-status-timeline li {
+    @apply flex gap-[10px] min-w-0 p-[12px] rounded-[9px];
     border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .workspace-status-timeline__icon {
+    @apply flex items-center justify-center w-[28px] h-[28px] shrink-0 rounded-full;
+    border: 1px solid var(--c-border2);
+    color: var(--c-text3);
+  }
+  .workspace-status-timeline__copy {
+    @apply grid content-start gap-[2px] min-w-0;
+  }
+  .workspace-status-timeline__copy strong,
+  .workspace-status-timeline__copy span,
+  .workspace-status-timeline__copy small {
+    @apply break-words;
+  }
+  .workspace-status-timeline__copy strong {
+    @apply text-[13px];
+  }
+  .workspace-status-timeline__copy span,
+  .workspace-status-timeline__copy small {
+    @apply text-[11px];
     color: var(--c-text2);
   }
-  .custody-offer-progress li > span {
-    @apply flex items-center justify-center w-[26px] h-[26px] rounded-full;
-    border: 1px solid var(--c-border2);
+  .workspace-status-timeline li.is-complete {
+    border-color: color-mix(in srgb, var(--c-green) 45%, var(--c-border));
   }
-  .custody-offer-progress li[aria-current='step'] {
+  .workspace-status-timeline li.is-complete .workspace-status-timeline__icon {
+    color: var(--c-green);
+    border-color: var(--c-green);
+  }
+  .workspace-status-timeline li.is-current {
     border-color: var(--c-teal);
-    color: var(--c-teal);
     background: var(--c-teal-light);
   }
-  @container workspace (max-width:760px) {
-    .custody-offer-progress {
-      @apply grid-cols-2;
-    }
+  .workspace-status-timeline li.is-current .workspace-status-timeline__icon {
+    color: var(--c-teal);
+    border-color: var(--c-teal);
   }
   @container workspace (max-width:560px) {
+    .workspace-record-heading {
+      @apply items-start flex-wrap;
+    }
+    .workspace-record-heading__identity {
+      flex-basis: calc(100% - 80px);
+    }
+    .workspace-record-heading > button:last-child {
+      @apply w-full;
+    }
+    .workspace-record-facts {
+      @apply grid-cols-1;
+    }
     .workspace-offer-form,
     .workspace-offer-facts {
       @apply grid-cols-1;
