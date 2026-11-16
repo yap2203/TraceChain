@@ -2,6 +2,7 @@ import {
   createTraceChainAgent,
   companyRoleCredentialSchema,
   serializeCompanyRoleCredential,
+  hashCompanyRoleCredential,
   issueCompanyRoleCredential,
   findStoredCompanyRoleCredential,
   verifyCompanyRoleCredential,
@@ -62,7 +63,6 @@ export class CompanyRoleSsiService {
   constructor(private readonly dependencies: CompanyRoleSsiServiceDependencies) {
     this.clock = dependencies.clock ?? (() => new Date());
   }
-
   async getMyCompanyIdentity(sessionId: string | undefined): Promise<CompanyIdentityResponse> {
     return this.resolveMyCompanyIdentity(sessionId, false);
   }
@@ -105,7 +105,7 @@ export class CompanyRoleSsiService {
       );
     }
 
-    const walletRecords = (await repository.list())
+    const walletRecords = (contentStore.retrieveAndDecrypt ? [] : await repository.list())
       .filter((record) => getAddress(record.applicantWallet) === getAddress(session.address))
       .sort((left, right) => Date.parse(right.issuedAt) - Date.parse(left.issuedAt));
     const issuance =
@@ -113,7 +113,7 @@ export class CompanyRoleSsiService {
         (record) =>
           record.credentialHash.toLowerCase() === stakeholder.credentialHash.toLowerCase(),
       ) ?? walletRecords[0];
-    if (!issuance) {
+    if (!issuance && !contentStore.retrieveAndDecrypt) {
       throw new SsiApiError(
         'CREDENTIAL_CONTENT_UNAVAILABLE',
         'The encrypted credential for this wallet is unavailable in this API instance.',
@@ -124,7 +124,11 @@ export class CompanyRoleSsiService {
     let credential;
     try {
       credential = companyRoleCredentialSchema.parse(
-        JSON.parse(await contentStore.decrypt(issuance.encryptedPayload)),
+        JSON.parse(
+          contentStore.retrieveAndDecrypt
+            ? await contentStore.retrieveAndDecrypt(stakeholder.credentialCid)
+            : await contentStore.decrypt(issuance!.encryptedPayload),
+        ),
       );
     } catch {
       throw new SsiApiError(
@@ -133,6 +137,23 @@ export class CompanyRoleSsiService {
         503,
       );
     }
+    if (getAddress(credential.credentialSubject.walletAddress) !== getAddress(session.address))
+      throw new SsiApiError(
+        'CREDENTIAL_CONTENT_UNAVAILABLE',
+        'This credential is not available to this wallet.',
+        404,
+      );
+    const storedIssuance = issuance;
+    const contentHash = `0x${hashCompanyRoleCredential(credential)}`;
+    if (
+      contentStore.retrieveAndDecrypt &&
+      contentHash.toLowerCase() !== stakeholder.credentialHash.toLowerCase()
+    )
+      throw new SsiApiError(
+        'CREDENTIAL_CONTENT_MISMATCH',
+        'The retrieved credential does not match the current registry hash.',
+        409,
+      );
 
     let credentialState;
     let chainCredential;
@@ -154,8 +175,10 @@ export class CompanyRoleSsiService {
     const now = this.clock();
     const replaced =
       !chainCredential ||
-      chainCredential.credentialHash.toLowerCase() !== issuance.credentialHash.toLowerCase() ||
-      chainCredential.encryptedCid !== issuance.encryptedCredentialCid;
+      chainCredential.credentialHash.toLowerCase() !==
+        (storedIssuance?.credentialHash ?? contentHash).toLowerCase() ||
+      chainCredential.encryptedCid !==
+        (storedIssuance?.encryptedCredentialCid ?? stakeholder.credentialCid);
     const lifecycleStatus = resolveLifecycleStatus(
       chainCredential?.status,
       credential.expirationDate,

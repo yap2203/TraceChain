@@ -100,7 +100,10 @@ describe('browser-held presentation signing key', () => {
       },
       { _sd: ['countryOfOrigin', 'internalQualityRemarks'] } as never,
     );
-    const originOnly = await createSelectiveIngredientPresentation(holder, credential, {
+    const backup=await exportRecoveryKit(holder,'separate-holder-kit-password');
+    const recoveredHolder=await importRecoveryKit(backup,'separate-holder-kit-password');
+    expect(recoveredHolder.did).toBe(holder.did);
+    const originOnly = await createSelectiveIngredientPresentation(recoveredHolder, credential, {
       audience: '0x3000000000000000000000000000000000000003',
       claims: ['countryOfOrigin'],
       nonce: 'request-challenge',
@@ -179,7 +182,7 @@ describe('browser-held presentation signing key', () => {
       }),
     ).rejects.toThrow();
     const wrongHolderPresentation = await createSelectiveIngredientPresentation(
-      issuer,
+      await createMessagingAgent(),
       credential,
       {
         audience: '0x3000000000000000000000000000000000000003',

@@ -303,7 +303,13 @@ export function createApp({
       return resolvedGateway.prepareRolePermission(input);
     },
   };
-  const companyApplicationMetadata = applicationMetadataRepository ?? new JsonApplicationMetadataRepository(fileURLToPath(new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url)));
+  const companyApplicationMetadata =
+    applicationMetadataRepository ??
+    new JsonApplicationMetadataRepository(
+      fileURLToPath(
+        new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url),
+      ),
+    );
   const blockchainController = new BlockchainController(
     lazyGateway,
     resolvedAuthService,
@@ -313,6 +319,10 @@ export function createApp({
     stakeholderDirectory,
   );
   const lazyCredentialContentStore: CredentialContentStore = {
+    retrieveAndDecrypt: async (cid) => {
+      credentialContentStore ??= createIssuanceDependencies().contentStore;
+      return credentialContentStore.retrieveAndDecrypt!(cid);
+    },
     decrypt: async (payload) => {
       credentialContentStore ??= createIssuanceDependencies().contentStore;
       return credentialContentStore.decrypt(payload);
@@ -908,6 +918,7 @@ function createIssuanceDependencies() {
       storage.encryptionKey,
       storage.pinningApiUrl,
       storage.pinningToken,
+      storage.gatewayUrl,
     ),
     repository: new JsonCompanyRoleIssuanceRepository(storage.workflowStorePath),
   };

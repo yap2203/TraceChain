@@ -2,6 +2,9 @@
 
 ## Repository and implementation
 
+- Stop readable Veramo VC/VP/claim/message cache persistence while preserving the Admin bootstrap/export lookup dependency (user-confirmed 2026-11-16). Store that cache in a separate AES-GCM file derived from the KMS secret; encrypt/read back legacy contents before removing them from public DID metadata. Keep business credentials encrypted on Pinata and retrieve the authenticated wallet's registry CID for identity display/verification.
+- Remove browser-based backend IPFS/KMS key backup and restore-check tools and their dedicated HTTP endpoint (user-confirmed 2026-11-16; supersedes the earlier Admin UI backup decision). Preserve existing keys, encrypted files, downloaded backups and server-only operator helpers. Holder-signing recovery, credential issuance/verification, IPFS retrieval and SIWE remain separate and unchanged.
+
 - Remove the two trace-direction controls for all roles (user-requested 2026-11-16). Present one clickable stage flow: Supplier-to-Retailer for Supplier, Manufacturer and Distributor; reverse order for Retailer source tracing. Keep batch/product-journey selection and authorized evidence actions. This supersedes the earlier Manufacturer/Distributor direction toggle.
 
 - Standardize page-loading spinners, readable error/success notifications and backdrop/Escape modal dismissal; return to Login after confirmed company registration and logout (user-requested 2026-11-16). Keep Sent proof management separate from general order navigation and route proof links to their actual Sent/Received direction. Supplier traceability is forward-only; Retailer traceability is backward-only. Manufacturer/Distributor retain both directions. This refines the earlier bidirectional UI decision without granting extra data access or changing verification/stock rules.

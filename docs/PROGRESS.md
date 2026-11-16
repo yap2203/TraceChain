@@ -1,5 +1,26 @@
 # Project Progress
 
+## 2026-11-16 ? Remove browser backend-key backup tools
+
+- Removed the Admin audit backup panel, dialogs and dedicated frontend API client. No separate backup page/navigation route was found. Retained audit JSON/CSV exports and printing.
+- Removed the dedicated POST /api/ssi/storage-key-backup route, controller, service methods and app secret-export/pin-check wiring after confirming no other workflow uses them. Retained server-only backup-format/pin-check helpers for operator use and existing backup compatibility.
+- Preserved environment secrets, encrypted local stores, downloaded backups, credential issuance/verification, IPFS retrieval, SIWE and holder recovery. Added retired-endpoint and Admin audit UI regression coverage.
+- Validation: all 334 API tests and 250 frontend tests passed; API/frontend type checks and production builds passed. Live local API returned 404 for both export and restore-check payloads on the retired endpoint. Existing Vite bundle-size/dependency-directive warnings remain. No secrets, encrypted stores or backup files were changed.
+
+## 2026-11-16 — Windows compiler launch fix
+
+- Confirmed Windows Application Control blocks the cached native Solidity 0.8.34 executable, causing Hardhat's compiler subprocess `spawn UNKNOWN` failure. Configured `preferWasm` for both build profiles on Windows, preserving the compiler version, viaIR and per-contract optimizer overrides. No node_modules edits or security-policy changes.
+- Validation: forced compilation passed for 15 Solidity files with solc 0.8.34; all 61 contract tests passed (3 Solidity and 58 Mocha); contract TypeScript checking passed. No deployment, environment, account or chain-data change.
+
+## 2026-11-16 — Encrypted SSI cache and separate storage/holder recovery
+
+- Audited plaintext VC-store dependencies: Admin bootstrap and export use IDataStore queries. Moved the Veramo data plugin to an AES-GCM encrypted cache while retaining public DID/key metadata and existing encrypted issuer keys. Migrated the current local public store after encrypted write/read-back; verified zero readable credential/claim/presentation/message collections remain.
+- Added authenticated registry-CID retrieval through the configured IPFS gateway for Company Identity, including fresh-session retrieval without a local VC journal/cache. Hash/wallet mismatches fail closed; an unavailable gateway does not silently use cached ciphertext. Existing manual cryptographic/lifecycle verification and SIWE login architecture remain separate.
+- Added Admin Audit-report controls to download a portable scrypt/AES-GCM backend-key backup and upload it for restore/pinned-credential checks. No terminal or plaintext key export; only currently authorized Admin can use it. The backup excludes Pinata tokens, MetaMask and holder keys. Verification does not change configuration. No user-password backup is claimed before Admin download.
+- Added migration/restart/preservation, encryption/wrong-key/tamper/gateway, same-wallet two-session SIWE retrieval, Admin backup-access and no-terminal UI tests. Extended holder recovery tests to sign a new bound selective presentation with the recovered key and reject an unrelated key. Automated Pinata tests use simulated HTTP with real encryption; live results are recorded separately.
+- Added `docs/STORAGE_AND_RECOVERY.md` and optional backend `IPFS_GATEWAY_URL` configuration. Contracts, issued credential contents/IDs, roles, wallet records and stock are preserved. Public-media publishing and moving historical vehicle fields off-chain remain outside this storage-recovery stage.
+- Validation: 25 SSI, 334 API and 251 frontend tests passed; root type checking and production build passed. Four backup-dialog mobile/desktop browser checks passed. Live read-only IPFS recovery matched 41 pinned credentials; 4 non-IPFS/unsupported references were skipped. Actual portable backup creation remains an explicit Admin UI download with the user's password, not a claimed automatic export.
+
 ## 2026-11-16 — Fresh product custody-offer inventory fix
 
 - Fixed Manufacturer custody offers for a newly created product batch whose custody inventory has

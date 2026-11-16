@@ -30,6 +30,7 @@ import {
   type TraceChainSsiConfig,
 } from '../config/ssi-config.js';
 import { createAtomicJsonStore } from '../storage/json-file-store.js';
+import { createPrivateDataStores } from '../storage/private-data-store.js';
 
 export const TRACECHAIN_ETHR_PROVIDER = 'did:ethr:sepolia';
 const LOCAL_KMS = 'local';
@@ -48,10 +49,11 @@ export type TraceChainAgent = TAgent<TraceChainAgentPlugins>;
 export async function createTraceChainAgent(config: TraceChainSsiConfig): Promise<TraceChainAgent> {
   validateTraceChainSsiConfig(config);
 
-  const [publicStore, privateKeyStore] = await Promise.all([
-    createAtomicJsonStore(config.publicStorePath),
+  const [stores, privateKeyStore] = await Promise.all([
+    createPrivateDataStores(config.publicStorePath, config.kmsSecretKey),
     createAtomicJsonStore(config.privateKeyStorePath),
   ]);
+  const publicStore = stores.metadata;
 
   const resolver =
     config.resolverOverrides ??
@@ -95,7 +97,7 @@ export async function createTraceChainAgent(config: TraceChainSsiConfig): Promis
       }),
       new DIDResolverPlugin(resolver),
       new CredentialPlugin([new CredentialProviderJWT()]),
-      new DataStoreJson(publicStore),
+      new DataStoreJson(stores.data),
     ],
   });
 }

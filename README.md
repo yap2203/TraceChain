@@ -1,5 +1,14 @@
 # TraceChain
 
+**Windows Solidity builds:** Hardhat uses its supported WASM compiler on Windows because Application
+Control may block the downloaded native compiler (`spawn UNKNOWN`). Solidity version and optimizer
+settings are preserved. See [contract setup](packages/contracts/README.md).
+
+**Storage recovery:** Veramo VC/VP caches now use an encrypted local file instead of readable
+copies in `public-data.json`. My company identity retrieves the current registry-referenced VC from
+encrypted IPFS. Backend encryption-key backup and restore checks are not exposed in the web app
+or HTTP API. Existing operator backups and the separate holder signing-key recovery flow are preserved. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
+
 **Workspace UI:** navigation is grouped by task for all five roles, with overview quick actions,
 separate stock/order/shipment destinations, clickable forward/backward traceability and responsive layouts.
 Distributor pickup scheduling applies to both custody offers and direct buyer deliveries. Locations

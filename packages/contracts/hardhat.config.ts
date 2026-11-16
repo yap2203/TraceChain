@@ -6,6 +6,8 @@ export default defineConfig({
   solidity: {
     profiles: {
       default: {
+        // Windows Application Control can block downloaded native solc executables.
+        preferWasm: process.platform === 'win32',
         compilers: [
           { version: '0.8.34', settings: { optimizer: { enabled: true, runs: 200 }, viaIR: true } },
         ],
@@ -17,6 +19,7 @@ export default defineConfig({
         },
       },
       production: {
+        preferWasm: process.platform === 'win32',
         compilers: [
           { version: '0.8.34', settings: { optimizer: { enabled: true, runs: 200 }, viaIR: true } },
         ],
