@@ -7,7 +7,9 @@ settings are preserved. See [contract setup](packages/contracts/README.md).
 **Storage recovery:** Veramo VC/VP caches now use an encrypted local file instead of readable
 copies in `public-data.json`. My company identity retrieves the current registry-referenced VC from
 encrypted IPFS. Backend encryption-key backup and restore checks are not exposed in the web app
-or HTTP API. Existing operator backups and the separate holder signing-key recovery flow are preserved. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
+or HTTP API. Existing operator backups and the separate holder signing-key recovery flow are preserved.
+See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
+
 **Stakeholder record views:** inventory now uses one shared searchable list/detail presentation for
 Manufacturer, Distributor and Supplier custody records, while shipment lists use the same scannable
 product, sender, destination, quantity, ETA and status columns across roles. Distributor product
@@ -407,6 +409,12 @@ cp .env.example .env
 
 The real root `.env` file is ignored. The example file must contain safe defaults or placeholders only. Never add private keys, seed phrases, API secrets, real credentials, or personal supporting documents to the repository.
 
+Local `.tracechain/` stores, deployment journals, build output, downloaded credential exports and
+TraceChain recovery/backup files are ignored. Keep recovery kits and operator backups outside the
+repository with a separate secure backup. Git ignore rules do not encrypt files, create backups or
+remove files already tracked by Git; review staged files before committing. Source code, tests and
+`.env.example` remain versioned.
+
 ## Development
 
 Run the frontend and API together:
@@ -427,7 +435,6 @@ npm run dev:api
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:3000`
 - Health check: `GET http://localhost:3000/api/health`
-- Blockchain status: `GET http://localhost:3000/api/blockchain/status`
 
 ### Local contract testing
 
@@ -483,22 +490,48 @@ INGREDIENT_REGISTRY_ADDRESS=0x...
 EVIDENCE_REGISTRY_ADDRESS=0x...
 PRODUCT_REGISTRY_ADDRESS=0x...
 CUSTODY_TRANSFER_ADDRESS=0x...
+SUPPLY_ORDERS_ADDRESS=0x...
 DEV_DISTRIBUTOR_WALLET=0x...
 AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
 SEPOLIA_RPC_URL=https://example.invalid
-VERAMO_KMS_SECRET_KEY=replace-with-a-strong-development-secret
+VERAMO_KMS_SECRET_KEY=replace-with-a-64-character-hexadecimal-key
 TRACECHAIN_AUTHORITY_DID_ALIAS=tracechain-authority
 BOOTSTRAP_ADMIN_WALLET=0x0000000000000000000000000000000000000000
 IPFS_PINNING_API_URL=https://example.invalid/pinning/pinFileToIPFS
 IPFS_PINNING_TOKEN=replace-with-a-scoped-pinning-token
 IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
+IPFS_GATEWAY_URL=https://gateway.pinata.cloud/ipfs
 
 VITE_API_BASE_URL=http://localhost:3000
 VITE_PUBLIC_APP_URL=http://localhost:5173
 ```
 
 The CORS origin, SIWE domain, and SIWE URI must match the address used to open the frontend.
+
+### IPFS upload and retrieval
+
+`IPFS_PINNING_API_URL` uploads AES-256-GCM encrypted content using the backend-only
+`IPFS_PINNING_TOKEN`. `IPFS_GATEWAY_URL` downloads that content by CID; it is not the upload URL.
+Set a full HTTPS gateway base ending in `/ipfs`, without a CID, for example:
+
+```env
+IPFS_GATEWAY_URL=https://your-gateway.mypinata.cloud/ipfs
+```
+
+My company identity reads the authenticated wallet's current credential CID from the registries,
+retrieves the encrypted envelope through the gateway, then decrypts and checks its hash/wallet
+binding on the backend. **Verify My Credential** performs the separate cryptographic and current
+authorization checks. Gateway retrieval does not require an npm Pinata SDK.
+
+The current retrieval client sends no gateway authentication headers. A restricted gateway may
+return HTTP 403 even when it is reachable; check its Pinata access configuration. The pinning token
+is not automatically sent to the gateway. Network failures and denied retrieval do not establish
+credential tampering. Restart the API after changing gateway configuration.
+
+Backend IPFS/KMS key backup controls and `POST /api/ssi/storage-key-backup` have been removed;
+the retired route returns 404. Existing encrypted stores and operator backup files remain intact.
+The holder presentation-signing recovery kit is separate and remains available.
 
 Contract addresses and ABIs are backend configuration. For writes, the API validates the requested operation and returns an unsigned transaction containing the chain ID, destination, calldata, and value. MetaMask signs and broadcasts that transaction so the authenticated stakeholder remains the contract `msg.sender`; private wallet keys never reach the API.
 
