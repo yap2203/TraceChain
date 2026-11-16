@@ -1,3 +1,4 @@
+import { ApplicationDocumentsPanel } from '../../../registration/ApplicationDocumentsPanel';
 import { reportError } from '../../../../components/ui/feedback';
 import { BrowserProvider, id } from 'ethers';
 import { useState } from 'react';
@@ -175,6 +176,7 @@ export function AppDetail({
           message="Plaintext company information and documents are not stored on Ethereum. The encrypted content reference must be resolved through the authorized content service."
         />
       </div>
+      <ApplicationDocumentsPanel applicationId={app.id} readOnly />
       {error && <div style={{ marginTop: 12, color: T.red, fontSize: 12 }}>{error}</div>}
       {(app.status === 'pending' || app.status === 'approved') && (
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>

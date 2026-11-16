@@ -516,3 +516,13 @@ stock. Valid source status/credentials, location, stock bounds and contract poli
 An old ProductRegistry returns `OPTIONAL_EVIDENCE_DEPLOYMENT_REQUIRED` before metadata preparation;
 update the full suite and configured addresses. Evidence verification/acceptance endpoints remain
 separate and never run automatically during production.
+
+### Registration document review
+
+- GET /api/blockchain/applications/documents/me lists the signed-in applicant's confirmed applications.
+- GET /api/blockchain/applications/:applicationId/documents lists private document metadata.
+- GET /api/blockchain/applications/:applicationId/documents/:index downloads an authorized file with no-store, nosniff and sandbox headers.
+- POST /api/blockchain/applications/:applicationId/documents accepts {documents} for applicant-only legacy reattachment. An existing set cannot be overwritten.
+- Company-application preparation accepts optional documents with kind, fileName, mimeType and base64 data; the document digest is included in the applicant's signed binding. Current registration UI requires three supporting files. The 58 MB JSON ceiling accommodates four 10 MB files encoded as base64 plus the optional logo; per-file type/signature and 10 MB limits are checked separately.
+
+Review requires SIWE ownership of the confirmed application or current authorized on-chain Admin; pending applicants can review their own files without operational role access. Storage uses encrypted IPFS and an encrypted local review cache. Download does not establish authenticity of applicant-provided claims. No contract changes are needed.

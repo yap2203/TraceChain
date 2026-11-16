@@ -1,3 +1,7 @@
+import {
+  ApplicationDocuments,
+  applicationDocumentsRouter,
+} from './modules/blockchain/application-documents.js';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
@@ -311,6 +315,12 @@ export function createApp({
       ),
     );
   let resolveOrders!: () => OrdersService;
+  const applicationDocuments = new ApplicationDocuments(
+    fileURLToPath(
+      new URL('../../../.tracechain/applications/documents.encrypted.json', import.meta.url),
+    ),
+    () => lazyCredentialContentStore,
+  );
   const blockchainController = new BlockchainController(
     lazyGateway,
     resolvedAuthService,
@@ -326,6 +336,7 @@ export function createApp({
       pendingCompanyLogo: (applicationId, applicantWallet) =>
         resolveOrders().pendingCompanyLogo(applicationId, applicantWallet),
     },
+    applicationDocuments,
   );
   const lazyCredentialContentStore: CredentialContentStore = {
     retrieveAndDecrypt: async (cid) => {
@@ -523,6 +534,16 @@ export function createApp({
     '/api/ingredient-batches',
     express.json({ limit: '32kb' }),
     createIngredientBatchRouter(ingredientBatchController),
+  );
+  app.use(
+    '/api/blockchain',
+    express.json({ limit: '58mb' }),
+    applicationDocumentsRouter(
+      applicationDocuments,
+      resolvedAuthService,
+      lazyGateway,
+      env.AUTH_COOKIE_NAME,
+    ),
   );
   app.use(
     '/api/blockchain',

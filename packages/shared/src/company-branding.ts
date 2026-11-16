@@ -5,6 +5,7 @@ export interface CompanyApplicationBinding {
   companyRegistrationNumber: string;
   encryptedProfileCid: string;
   initialLocationName?: string;
+  documentsDigest?: string;
   logoDigest?: string;
   logoFileName?: string;
   logoMimeType?: string;
@@ -29,6 +30,9 @@ export function companyApplicationBindingMessage(binding: CompanyApplicationBind
       previousApplicationId: binding.previousApplicationId.toLowerCase(),
       profileHash: binding.profileHash.toLowerCase(),
       requestedRole: binding.requestedRole,
+      ...(binding.documentsDigest
+        ? { documentsDigest: binding.documentsDigest.toLowerCase() }
+        : {}),
     }),
     'Purpose: prove ownership of the applicant wallet and bind every submitted field to this exact application.',
   ].join('\n');

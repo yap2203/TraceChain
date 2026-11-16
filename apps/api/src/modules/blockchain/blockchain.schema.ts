@@ -1,3 +1,4 @@
+import { applicationDocumentsSchema } from './application-documents.js';
 import { z } from 'zod';
 import { catalogueImageSchema } from '../orders/orders.schema.js';
 
@@ -24,6 +25,7 @@ export const applicationTransactionSchema = z
     profileHash: bytes32Schema,
     requestedRole: z.number().int().min(2).max(5),
     logo: catalogueImageSchema.optional(),
+    documents: applicationDocumentsSchema.optional(),
   })
   .strict();
 

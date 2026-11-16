@@ -285,6 +285,19 @@ export function RegisterCompanyPage() {
           logo: logo ? { name: logo.name, size: logo.size, type: logo.type } : undefined,
         }),
       );
+      const documentPayloads = await Promise.all(
+        Object.entries(documents).map(async ([kind, file]) => ({
+          kind,
+          fileName: file.name,
+          mimeType: file.type,
+          data: await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(',')[1]!);
+            reader.onerror = () => reject(new Error('The document could not be read.'));
+            reader.readAsDataURL(file);
+          }),
+        })),
+      );
       const logoPayload = logo ? await imageFilePayload(logo) : undefined;
       const localContentReference = `local://${profileHash}`;
       const applicationInput = {
@@ -297,11 +310,13 @@ export function RegisterCompanyPage() {
         previousApplicationId: ZeroHash,
         profileHash,
         requestedRole: roleValues[data.requestedRole],
+        documents: documentPayloads,
         ...(logoPayload ? { logo: logoPayload } : {}),
       };
       const applicantSignature = await signer.signMessage(
         companyApplicationBindingMessage({
           ...applicationInput,
+          documentsDigest: id(JSON.stringify(documentPayloads)),
           logoDigest: logoPayload ? id(`${logoPayload.mimeType}:${logoPayload.data}`) : undefined,
           logoFileName: logoPayload?.fileName,
           logoMimeType: logoPayload?.mimeType,

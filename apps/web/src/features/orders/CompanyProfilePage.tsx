@@ -1,3 +1,4 @@
+import { ApplicationDocumentsPanel } from '../registration/ApplicationDocumentsPanel';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -84,6 +85,7 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
             : 'Manage the locations your company uses for orders and deliveries.'
         }
       />
+      <ApplicationDocumentsPanel />
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
       {!data ? (
