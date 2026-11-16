@@ -1618,6 +1618,40 @@
   .ingredient-form-section > input[type='file'] {
     @apply w-full text-[12px];
   }
+  .ingredient-photo-review {
+    @apply flex flex-wrap items-start justify-between gap-[16px] mt-[18px] pt-[18px] min-w-0;
+    border-top: 1px solid var(--c-border);
+  }
+  .ingredient-photo-review > div {
+    @apply grid gap-[8px] min-w-0;
+  }
+  .ingredient-photo-review__label,
+  .ingredient-photo-review__filename,
+  .ingredient-photo-review__empty {
+    @apply block;
+  }
+  .ingredient-photo-review__label {
+    @apply text-[11px] font-semibold;
+    color: var(--c-text2);
+  }
+  .ingredient-photo-review img {
+    width: min(200px, 100%);
+    height: 150px;
+    object-fit: contain;
+    @apply rounded-[var(--radius-sm)];
+    border: 1px solid var(--c-border);
+    background: var(--c-surface2);
+  }
+  .ingredient-photo-review__filename {
+    max-width: 200px;
+    overflow-wrap: anywhere;
+    @apply text-[12px] font-semibold;
+    color: var(--c-text);
+  }
+  .ingredient-photo-review__empty {
+    @apply text-[13px];
+    color: var(--c-text2);
+  }
   .ingredient-detail__hero {
     @apply grid grid-cols-2 gap-[20px] items-start;
   }

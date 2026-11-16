@@ -1,5 +1,24 @@
 # Project Progress
 
+## 2026-11-16 — Ingredient photo review preview
+
+- Replaced the Supplier ingredient-registration review's filename-only optional-image row with a
+  local preview of the already selected file. The contained 200 × 150 px thumbnail shows the whole
+  image, keeps the filename below it and returns to ingredient information through Change photo
+  without clearing other form values.
+- Object URLs are revoked on replacement and unmount. No-photo registration remains supported, and
+  image validation, post-registration upload and blockchain registration behavior are unchanged.
+
+## 2026-11-16 — Registration document-selection feedback
+
+- Refined the shared registration document-upload card for all three required proofs and optional
+  certifications. Empty cards retain upload guidance; valid PDFs/images show a checkmark, explicit
+  **File selected** label, safe wrapping filename and Change file action; rejected files show a
+  slot-local validation error without a success state.
+- Added a live required-document counter that excludes optional certifications. Selection and
+  replacement state survives review-step navigation, remains keyboard accessible and uses icons and
+  labels in addition to color. Document storage and submission behavior are unchanged.
+
 ## 2026-11-16 — Company-logo review hardening
 
 - Required an applicant-wallet signature for every registration, including applications without a
