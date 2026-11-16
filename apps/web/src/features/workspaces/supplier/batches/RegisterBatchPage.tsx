@@ -1,5 +1,5 @@
 import { reportError } from '../../../../components/ui/feedback';
-import { useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { FileSearch, Keyboard, Upload } from 'lucide-react';
 
 import { Alert, Btn, Card, Input, SelectField, StepProgress, T } from '../../shared/ui';
@@ -53,6 +53,7 @@ export function RegisterBatch({
   const [allergen, setAllergen] = useState('');
   const [certifications, setCertifications] = useState('');
   const [imageFile, setImageFile] = useState<File>();
+  const [imagePreview, setImagePreview] = useState('');
   const [imageNotice, setImageNotice] = useState('');
   const [extraction, setExtraction] = useState<IngredientDocumentExtraction>();
   const [extracting, setExtracting] = useState(false);
@@ -64,6 +65,16 @@ export function RegisterBatch({
   const [credentialStep, setCredentialStep] = useState<WorkflowStep>('waiting');
   const [batchStep, setBatchStep] = useState<WorkflowStep>('waiting');
   const activeSubmission = useRef(false);
+
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview('');
+      return;
+    }
+    const preview = URL.createObjectURL(imageFile);
+    setImagePreview(preview);
+    return () => URL.revokeObjectURL(preview);
+  }, [imageFile]);
 
   const update = (setter: (value: string) => void) => (value: string) => {
     setter(value);
@@ -632,7 +643,6 @@ export function RegisterBatch({
                   ['Expiry date', expiresAt],
                   ['Quantity', `${quantity} ${unit}`],
                   ['Certifications', certifications || 'None'],
-                  ['Optional image', imageFile?.name || 'None selected'],
                 ].map(([label, value]) => (
                   <div
                     key={label}
@@ -642,6 +652,24 @@ export function RegisterBatch({
                     <div style={{ fontSize: 13, color: T.navy, fontWeight: 600 }}>{value}</div>
                   </div>
                 ))}
+              </div>
+              <div className="ingredient-photo-review">
+                <div>
+                  <span className="ingredient-photo-review__label">Ingredient photo</span>
+                  {imagePreview && imageFile ? (
+                    <>
+                      <img src={imagePreview} alt="Ingredient photo preview" />
+                      <span className="ingredient-photo-review__filename" title={imageFile.name}>
+                        {imageFile.name}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="ingredient-photo-review__empty">No photo selected</span>
+                  )}
+                </div>
+                <Btn onClick={() => setStep(0)} variant="outline" size="sm" disabled={busy}>
+                  {imageFile ? 'Change photo' : 'Add photo'}
+                </Btn>
               </div>
             </Card>
 

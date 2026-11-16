@@ -38,6 +38,50 @@ describe('Supplier ingredient batch workflow', () => {
     expect(extractDocument).not.toHaveBeenCalled();
   });
 
+  it('previews and replaces the selected ingredient photo without clearing form fields', async () => {
+    const createObjectUrl = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValueOnce('blob:first-photo')
+      .mockReturnValueOnce('blob:replacement-photo');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const view = render(<RegisterBatch onBack={vi.fn()} />);
+    completeForm();
+    const firstPhoto = new File(['first-photo'], 'whole-cocoa-beans.png', { type: 'image/png' });
+    fireEvent.change(screen.getByLabelText('Choose optional ingredient image'), {
+      target: { files: [firstPhoto] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to review' }));
+
+    const firstPreview = await screen.findByAltText('Ingredient photo preview');
+    expect(firstPreview.getAttribute('src')).toBe('blob:first-photo');
+    expect(screen.getByText('whole-cocoa-beans.png')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Change photo' }));
+    expect((screen.getByLabelText(/Ingredient name/) as HTMLInputElement).value).toBe(
+      'Cocoa Powder',
+    );
+    expect((screen.getByLabelText(/Batch reference/) as HTMLInputElement).value).toBe(
+      'COCOA-2026-001',
+    );
+
+    const replacement = new File(['replacement-photo'], 'replacement.webp', {
+      type: 'image/webp',
+    });
+    fireEvent.change(screen.getByLabelText('Choose optional ingredient image'), {
+      target: { files: [replacement] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to review' }));
+
+    const replacementPreview = await screen.findByAltText('Ingredient photo preview');
+    expect(replacementPreview.getAttribute('src')).toBe('blob:replacement-photo');
+    expect(screen.getByText('replacement.webp')).toBeTruthy();
+    expect(screen.queryByText('whole-cocoa-beans.png')).toBeNull();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:first-photo');
+    expect(createObjectUrl).toHaveBeenCalledTimes(2);
+
+    view.unmount();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:replacement-photo');
+  });
+
   it('shows extraction progress, prefills fields and requires supplier review confirmation', async () => {
     let finishExtraction!: (value: IngredientDocumentExtraction) => void;
     const extractDocument = vi.fn(
@@ -135,6 +179,7 @@ describe('Supplier ingredient batch workflow', () => {
     );
     completeForm();
     fireEvent.click(screen.getByRole('button', { name: 'Continue to review' }));
+    expect(screen.getByText('No photo selected')).toBeTruthy();
     const register = screen.getByRole('button', { name: 'Register with MetaMask' });
     fireEvent.click(register);
     fireEvent.click(register);

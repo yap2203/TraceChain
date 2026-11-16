@@ -725,6 +725,13 @@
   .document-grid {
     @apply grid grid-cols-[1fr_1fr] gap-[0.9rem];
   }
+  .document-progress {
+    @apply mt-[0] mb-[0.85rem] text-[length:0.72rem];
+    color: var(--color-text-muted);
+  }
+  .document-progress strong {
+    color: var(--color-text);
+  }
   .document-upload {
     @apply flex min-h-[112px] items-center gap-[1rem] p-[1rem];
     border: 1px dashed #29465e;
@@ -735,9 +742,24 @@
       border-color 160ms ease,
       background 160ms ease;
   }
+  .document-upload:focus-within {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 3px;
+  }
   .document-upload:hover {
     border-color: var(--color-primary);
     background: rgb(8 214 237 / 4%);
+  }
+  .document-upload--selected,
+  .document-upload--selected:hover {
+    border-style: solid;
+    border-color: var(--color-success);
+    background: rgb(0 231 154 / 7%);
+  }
+  .document-upload--invalid,
+  .document-upload--invalid:hover {
+    border-color: var(--color-error);
+    background: rgb(255 119 119 / 6%);
   }
   .document-upload input {
     @apply absolute w-[1px] h-[1px];
@@ -755,6 +777,18 @@
   .document-upload__icon svg {
     @apply w-[19px];
   }
+  .document-upload--selected .document-upload__icon {
+    color: var(--color-success);
+    background: rgb(0 231 154 / 13%);
+  }
+  .document-upload--invalid .document-upload__icon {
+    color: var(--color-error);
+    background: rgb(255 119 119 / 11%);
+  }
+  .document-upload__content {
+    min-width: 0;
+    @apply flex-1;
+  }
   .document-upload strong,
   .document-upload small {
     @apply block;
@@ -767,6 +801,26 @@
     @apply mt-[0.35rem];
     color: var(--color-text-muted);
     @apply text-[length:0.65rem];
+  }
+  .document-upload__status,
+  .document-upload__action {
+    @apply block mt-[0.35rem] text-[length:0.68rem] font-semibold;
+  }
+  .document-upload__status {
+    color: var(--color-success);
+  }
+  .document-upload__filename {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .document-upload__action {
+    color: var(--color-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .document-upload__error {
+    color: var(--color-error) !important;
+    @apply leading-[1.4];
   }
   .registration-security-note {
     @apply flex gap-[0.8rem] mt-[1rem] p-[1rem];

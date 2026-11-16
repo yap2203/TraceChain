@@ -6,6 +6,24 @@
 - Added owner/current-Admin review routes, sandboxed preview/download in Admin application details and company Profile, and pending-applicant review on Login. Added applicant-only legacy reattachment; saved sets cannot be overwritten and original application hashes are preserved.
 - Files are stored in encrypted IPFS and an ignored encrypted local cache. No keys, credentials, contracts or old documents were changed. Historical hashes cannot recover missing document bytes.
 - Validation: all 345 API tests and 262 frontend tests passed; shared/API/frontend type checks and root production build passed. Six new API security/storage tests and three document UI tests cover separate-company denial, current/pending-owner access, immutable legacy attachment, encrypted restart persistence, signature substitution, malformed/oversized files, storage failure and explicit preview. Tests use temporary encrypted stores and simulated IPFS; no real supporting documents were uploaded. Existing Vite chunk/directive warnings remain.
+## 2026-11-16 — Ingredient photo review preview
+
+- Replaced the Supplier ingredient-registration review's filename-only optional-image row with a
+  local preview of the already selected file. The contained 200 × 150 px thumbnail shows the whole
+  image, keeps the filename below it and returns to ingredient information through Change photo
+  without clearing other form values.
+- Object URLs are revoked on replacement and unmount. No-photo registration remains supported, and
+  image validation, post-registration upload and blockchain registration behavior are unchanged.
+
+## 2026-11-16 — Registration document-selection feedback
+
+- Refined the shared registration document-upload card for all three required proofs and optional
+  certifications. Empty cards retain upload guidance; valid PDFs/images show a checkmark, explicit
+  **File selected** label, safe wrapping filename and Change file action; rejected files show a
+  slot-local validation error without a success state.
+- Added a live required-document counter that excludes optional certifications. Selection and
+  replacement state survives review-step navigation, remains keyboard accessible and uses icons and
+  labels in addition to color. Document storage and submission behavior are unchanged.
 
 ## 2026-11-16 ? Remove browser backend-key backup tools
 

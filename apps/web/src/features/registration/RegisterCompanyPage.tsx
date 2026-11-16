@@ -4,6 +4,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CircleAlert,
   FileCheck2,
   ImageUp,
   Link2,
@@ -30,6 +31,7 @@ const roleOptions = [
 ] as const;
 const steps = ['Company information', 'Supporting documents', 'Review & submit'] as const;
 const acceptedFiles = '.pdf,.jpg,.jpeg,.png';
+const requiredDocumentNames = ['registrationProof', 'businessProof', 'authorisationProof'] as const;
 const roleValues: Record<string, number> = {
   SUPPLIER: 2,
   MANUFACTURER: 3,
@@ -67,34 +69,59 @@ const initialData: RegistrationData = {
 };
 
 function DocumentUpload({
+  error,
   label,
   name,
   onChange,
   required = false,
   value,
 }: {
+  error?: string;
   label: string;
   name: string;
   onChange: (event: ChangeEvent<HTMLInputElement>) => void;
   required?: boolean;
   value?: File;
 }) {
+  const helpId = `${name}-upload-help`;
+  const errorId = `${name}-upload-error`;
   return (
-    <label className="document-upload">
+    <label
+      className={`document-upload${value ? ' document-upload--selected' : ''}${error ? ' document-upload--invalid' : ''}`}
+    >
       <input
         accept={acceptedFiles}
+        aria-describedby={error ? `${helpId} ${errorId}` : value ? undefined : helpId}
+        aria-invalid={Boolean(error)}
         name={name}
         onChange={onChange}
         required={required}
         type="file"
       />
-      <span className="document-upload__icon">{value ? <FileCheck2 /> : <UploadCloud />}</span>
-      <span>
+      <span className="document-upload__icon" aria-hidden="true">
+        {error ? <CircleAlert /> : value ? <FileCheck2 /> : <UploadCloud />}
+      </span>
+      <span className="document-upload__content">
         <strong>
           {label}
           {required ? ' *' : ''}
         </strong>
-        <small>{value ? value.name : 'PDF, JPG or PNG · maximum 10 MB'}</small>
+        {value ? (
+          <>
+            <span className="document-upload__status">File selected</span>
+            <small className="document-upload__filename" title={value.name}>
+              {value.name}
+            </small>
+            <span className="document-upload__action">Change file</span>
+          </>
+        ) : (
+          <small id={helpId}>PDF, JPG or PNG · maximum 10 MB</small>
+        )}
+        {error && (
+          <small className="document-upload__error" id={errorId} role="alert">
+            {error}
+          </small>
+        )}
       </span>
     </label>
   );
@@ -105,12 +132,14 @@ export function RegisterCompanyPage() {
   const [step, setStep] = useState(0);
   const [data, setData] = useState(initialData);
   const [documents, setDocuments] = useState<Record<string, File>>({});
+  const [documentErrors, setDocumentErrors] = useState<Record<string, string>>({});
   const [logo, setLogo] = useState<File>();
   const [logoPreview, setLogoPreview] = useState('');
   const [error, setError] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [transaction, setTransaction] = useState<{ applicationId: string; hash: string }>();
+  const requiredDocumentCount = requiredDocumentNames.filter((name) => documents[name]).length;
   useEffect(() => {
     if (error) notify(error, 'error');
   }, [error]);
@@ -160,7 +189,7 @@ export function RegisterCompanyPage() {
     return '';
   };
   const documentError = () =>
-    !['registrationProof', 'businessProof', 'authorisationProof'].every((name) => documents[name])
+    !requiredDocumentNames.every((name) => documents[name])
       ? 'Upload all three required supporting documents.'
       : (Object.values(documents)
           .map((file) =>
@@ -214,10 +243,17 @@ export function RegisterCompanyPage() {
         delete updated[name];
         return updated;
       });
-      setError(invalid);
+      setDocumentErrors((current) => ({ ...current, [name]: invalid }));
+      setError('');
       return;
     }
-    setDocuments((current) => ({ ...current, [event.target.name]: file }));
+    const name = event.target.name;
+    setDocuments((current) => ({ ...current, [name]: file }));
+    setDocumentErrors((current) => {
+      const updated = { ...current };
+      delete updated[name];
+      return updated;
+    });
     setError('');
   };
 
@@ -533,8 +569,12 @@ export function RegisterCompanyPage() {
                     references belong on-chain.
                   </p>
                 </header>
+                <p className="document-progress" aria-live="polite">
+                  <strong>{requiredDocumentCount} of 3 required documents selected</strong>
+                </p>
                 <div className="document-grid">
                   <DocumentUpload
+                    error={documentErrors.registrationProof}
                     label="Company registration proof"
                     name="registrationProof"
                     onChange={selectFile}
@@ -542,6 +582,7 @@ export function RegisterCompanyPage() {
                     value={documents.registrationProof}
                   />
                   <DocumentUpload
+                    error={documentErrors.businessProof}
                     label="Business licence / role proof"
                     name="businessProof"
                     onChange={selectFile}
@@ -549,6 +590,7 @@ export function RegisterCompanyPage() {
                     value={documents.businessProof}
                   />
                   <DocumentUpload
+                    error={documentErrors.authorisationProof}
                     label="Representative authorisation"
                     name="authorisationProof"
                     onChange={selectFile}
@@ -556,6 +598,7 @@ export function RegisterCompanyPage() {
                     value={documents.authorisationProof}
                   />
                   <DocumentUpload
+                    error={documentErrors.certifications}
                     label="Optional certifications"
                     name="certifications"
                     onChange={selectFile}

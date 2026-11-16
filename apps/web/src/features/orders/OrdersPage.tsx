@@ -261,7 +261,9 @@ export function OrdersPage({
                 ? 'Review delivery offers, optionally verify the Supplier company proof, then scan the package label to confirm physical pickup.'
                 : 'Review requests, arrange delivery and track receipt.'
               : mode === 'browse'
-                ? 'Open an ingredient to see its registered details, request evidence or send a quantity request to its Supplier.'
+                ? role === 'manufacturer'
+                  ? 'Browse supplier ingredients, check stock, or request evidence.'
+                  : 'Open an item to see its registered details or send a request.'
                 : role === 'supplier'
                   ? evidenceOnly
                     ? 'Manage company evidence linked to this request. Verification does not approve the order automatically.'
@@ -325,6 +327,18 @@ export function OrdersPage({
           onOpenEvidence={() => navigate(workspacePath(role, 'sent-requests'))}
           locations={data.locations.filter((location) => same(location.company, data.actor))}
           onRegisterLocation={(label) => submit('location', { label })}
+          presentation={
+            role === 'manufacturer' && mode === 'browse'
+              ? {
+                  hideIntro: true,
+                  resultNoun: { singular: 'ingredient', plural: 'ingredients' },
+                  ingredientStockLabels: {
+                    supplier: 'At supplier',
+                    distributor: 'At distributor',
+                  },
+                }
+              : undefined
+          }
           onQuantityRequest={(selectedItem, input) =>
             submit('request', {
               itemId: selectedItem.itemId,
