@@ -59,6 +59,46 @@ describe('browse and request-only UI', () => {
       container.querySelector('.loading-indicator--page .loading-indicator__spinner'),
     ).toBeTruthy();
   });
+  it('uses the compact Supplier ingredients route heading and filter state', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      catalogue: [
+        {
+          itemId: 'registered',
+          name: 'Cocoa powder',
+          seller: 'supplier',
+          kind: 1,
+          unit: 'kg',
+          active: true,
+          batches: ['batch'],
+          batchDetails: [{ batchId: 'batch', supplierAvailable: '100' }],
+          custodyPositions: [],
+        },
+      ],
+    });
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="browse" />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Cocoa powder');
+    expect(screen.getByRole('heading', { name: 'Supplier ingredients' })).toBeTruthy();
+    expect(
+      screen.getByText('Browse supplier ingredients, check stock, or request evidence.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Registered ingredients & products' })).toBeNull();
+    expect(screen.getByText('1 ingredient')).toBeTruthy();
+    const clear = screen.getByRole('button', { name: 'Clear filters' }) as HTMLButtonElement;
+    expect(clear.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText('Search catalogue'), {
+      target: { value: 'cocoa' },
+    });
+    expect(clear.disabled).toBe(false);
+    fireEvent.click(clear);
+    expect((screen.getByLabelText('Search catalogue') as HTMLInputElement).value).toBe('');
+    expect(clear.disabled).toBe(true);
+  });
   it('shows registered items in a grid with price and a detail view without publishing', async () => {
     api.getOrders.mockResolvedValue({
       ...state,
@@ -92,11 +132,14 @@ describe('browse and request-only UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     expect(container.querySelectorAll('.workspace-dialog__body')).toHaveLength(1);
     expect(container.querySelector('.catalogue-dialog-content')).toBeTruthy();
-    expect(container.querySelector('.catalogue-dialog-summary')).toBeTruthy();
-    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(1);
+    expect(container.querySelector('.catalogue-dialog-hero')).toBeTruthy();
+    expect(container.querySelector('.catalogue-stock-section')).toBeTruthy();
+    expect(container.querySelector('.catalogue-batch-section')).toBeTruthy();
+    expect(container.querySelector('.catalogue-credential-section')).toBeTruthy();
+    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(0);
     expect(screen.getByText(/does not independently prove physical quality/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Request evidence or information' }));
-    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(2);
+    expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(1);
     expect(container.querySelector('.catalogue-request-form')).toBeTruthy();
     expect(screen.getByLabelText('expiryDate disclosure')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request quantity' })).toBeTruthy();
@@ -322,7 +365,7 @@ describe('browse and request-only UI', () => {
       within(longNameCard as HTMLElement).getByRole('button', { name: 'View details' }),
     );
     const dialog = screen.getByRole('dialog');
-    expect(dialog.querySelector('.catalogue-detail')).toBeTruthy();
+    expect(dialog.querySelector('.catalogue-dialog-hero')).toBeTruthy();
     expect(dialog.textContent).toContain(
       'Single Origin Fermented Cocoa Beans With A Deliberately Long Catalogue Name',
     );

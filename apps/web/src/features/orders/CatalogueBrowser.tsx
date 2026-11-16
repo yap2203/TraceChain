@@ -35,6 +35,13 @@ export interface EvidenceRequestInput {
   requiredClaims: string[];
 }
 
+export interface CataloguePresentation {
+  hideIntro?: boolean;
+  resultNoun?: { singular: string; plural: string };
+  ingredientStockLabels?: { supplier: string; distributor: string };
+  distributorStockRequired?: boolean;
+}
+
 export function CatalogueBrowser({
   actor,
   busy,
@@ -46,6 +53,7 @@ export function CatalogueBrowser({
   initialBatchId,
   locations = [],
   onRegisterLocation,
+  presentation,
 }: {
   actor: string;
   busy: boolean;
@@ -57,6 +65,7 @@ export function CatalogueBrowser({
   onEvidenceRequest: (item: OrderRecord, input: EvidenceRequestInput) => Promise<void>;
   onOpenEvidence: () => void;
   onQuantityRequest: (item: OrderRecord, input: QuantityRequestInput) => Promise<void>;
+  presentation?: CataloguePresentation;
 }) {
   const eligible = useMemo(
     () =>
@@ -92,6 +101,14 @@ export function CatalogueBrowser({
   const [availableOnly, setAvailableOnly] = useState(false);
   const [credential, setCredential] = useState('all');
   const [sort, setSort] = useState('name');
+  const filtersChanged =
+    Boolean(search.trim()) ||
+    kind !== 'all' ||
+    category !== 'all' ||
+    country !== 'all' ||
+    availableOnly ||
+    credential !== 'all' ||
+    sort !== 'name';
   const categories = unique(eligible.map((entry) => entry.category));
   const countries = unique(eligible.map((entry) => entry.countryOfOrigin));
   const kinds = unique(eligible.map((entry) => String(entry.kind)));
@@ -146,70 +163,87 @@ export function CatalogueBrowser({
     setSelected(item);
     setMode(nextMode);
   };
+  const resultNoun = presentation?.resultNoun ?? { singular: 'result', plural: 'results' };
+  const resultLabel = `${shown.length} ${shown.length === 1 ? resultNoun.singular : resultNoun.plural}`;
   return (
-    <section className="catalogue-browser" aria-labelledby="catalogue-title">
-      <div className="catalogue-heading">
-        <div>
-          <h3 id="catalogue-title">Registered ingredients & products</h3>
-          <p>
-            Browse verified company listings and send requests. Prices are indicative; requests are
-            not purchases and do not reserve stock.
-          </p>
+    <section
+      className="catalogue-browser"
+      aria-labelledby={presentation?.hideIntro ? undefined : 'catalogue-title'}
+      aria-label={presentation?.hideIntro ? 'Supplier ingredient catalogue' : undefined}
+    >
+      {!presentation?.hideIntro && (
+        <div className="catalogue-heading">
+          <div>
+            <h3 id="catalogue-title">Registered ingredients & products</h3>
+            <p>
+              Browse verified company listings and send requests. Prices are indicative; requests
+              are not purchases and do not reserve stock.
+            </p>
+          </div>
         </div>
-        <strong aria-live="polite">{shown.length} results</strong>
-      </div>
-      <div className="catalogue-toolbar" aria-label="Catalogue filters">
-        <Input
-          label="Search catalogue"
-          type="search"
-          icon={<Search size={17} />}
-          value={search}
-          onChange={setSearch}
-          placeholder="Ingredient, category or Supplier"
-        />
-        <SelectField
-          label="Category"
-          value={category}
-          onChange={setCategory}
-          options={[{ value: 'all', label: 'All categories' }, ...options(categories)]}
-        />
-        <SelectField
-          label="Country of origin"
-          value={country}
-          onChange={setCountry}
-          options={[{ value: 'all', label: 'All disclosed origins' }, ...options(countries)]}
-        />
-        <SelectField
-          label="Credential status"
-          value={credential}
-          onChange={setCredential}
-          options={[
-            { value: 'all', label: 'All credential states' },
-            { value: 'active', label: 'Active credential' },
-            { value: 'inactive', label: 'Unavailable credential' },
-          ]}
-        />
-        <SelectField
-          label="Sort"
-          value={sort}
-          onChange={setSort}
-          options={[
-            { value: 'name', label: 'Name A–Z' },
-            { value: 'newest', label: 'Newest registration' },
-            { value: 'price', label: 'Indicative price' },
-          ]}
-        />
-        <label className="catalogue-check">
-          <input
-            type="checkbox"
-            checked={availableOnly}
-            onChange={(event) => setAvailableOnly(event.target.checked)}
+      )}
+      <div className="catalogue-filter-panel">
+        <div className="catalogue-toolbar" aria-label="Catalogue filters">
+          <Input
+            label="Search catalogue"
+            type="search"
+            icon={<Search size={17} />}
+            value={search}
+            onChange={setSearch}
+            placeholder="Ingredient, category or Supplier"
           />
-          Active and available only
-        </label>
-        <Btn variant="ghost" size="sm" icon={<FilterX size={15} />} onClick={clear}>
-          Clear filters
-        </Btn>
+          <SelectField
+            label="Category"
+            value={category}
+            onChange={setCategory}
+            options={[{ value: 'all', label: 'All categories' }, ...options(categories)]}
+          />
+          <SelectField
+            label="Country of origin"
+            value={country}
+            onChange={setCountry}
+            options={[{ value: 'all', label: 'All disclosed origins' }, ...options(countries)]}
+          />
+          <SelectField
+            label="Credential status"
+            value={credential}
+            onChange={setCredential}
+            options={[
+              { value: 'all', label: 'All credential states' },
+              { value: 'active', label: 'Active credential' },
+              { value: 'inactive', label: 'Unavailable credential' },
+            ]}
+          />
+          <SelectField
+            label="Sort"
+            value={sort}
+            onChange={setSort}
+            options={[
+              { value: 'name', label: 'Name A–Z' },
+              { value: 'newest', label: 'Newest registration' },
+              { value: 'price', label: 'Indicative price' },
+            ]}
+          />
+        </div>
+        <div className="catalogue-filter-footer">
+          <label className="catalogue-check">
+            <input
+              type="checkbox"
+              checked={availableOnly}
+              onChange={(event) => setAvailableOnly(event.target.checked)}
+            />
+            Active and available only
+          </label>
+          <Btn
+            variant="ghost"
+            size="sm"
+            icon={<FilterX size={15} />}
+            onClick={clear}
+            disabled={!filtersChanged}
+          >
+            Clear filters
+          </Btn>
+        </div>
       </div>
       {kinds.length > 1 && (
         <div className="catalogue-type-tabs" role="group" aria-label="Item type">
@@ -229,6 +263,9 @@ export function CatalogueBrowser({
           ))}
         </div>
       )}
+      <div className="catalogue-results-heading">
+        <strong aria-live="polite">{resultLabel}</strong>
+      </div>
       {!eligible.length ? (
         <EmptyState
           icon={<PackageSearch size={44} />}
@@ -250,6 +287,7 @@ export function CatalogueBrowser({
               item={item}
               onDetails={() => open(item, 'details')}
               onRequest={() => open(item, 'quantity')}
+              presentation={presentation}
             />
           ))}
         </div>
@@ -267,6 +305,7 @@ export function CatalogueBrowser({
           role={role}
           locations={locations}
           onRegisterLocation={onRegisterLocation}
+          presentation={presentation}
         />
       )}
     </section>
@@ -277,14 +316,19 @@ function CatalogueCard({
   item,
   onDetails,
   onRequest,
+  presentation,
 }: {
   item: OrderRecord;
   onDetails: () => void;
   onRequest: () => void;
+  presentation?: CataloguePresentation;
 }) {
   const state = itemState(item);
   const batch = item.batchDetails?.[0];
   const company = item.sellerName ?? 'Verified company name unavailable';
+  const stock = ingredientStock(item, batch);
+  const distributorUnavailable =
+    presentation?.distributorStockRequired && stock.distributor === 'No stock';
   return (
     <article className="catalogue-card">
       <CatalogueImage
@@ -307,10 +351,23 @@ function CatalogueCard({
             <dt>Origin</dt>
             <dd>{item.countryOfOrigin || 'Not disclosed'}</dd>
           </div>
-          <div>
-            <dt>Available</dt>
-            <dd>{availability(item, batch)}</dd>
-          </div>
+          {Number(item.kind) === 1 && presentation?.ingredientStockLabels ? (
+            <>
+              <div>
+                <dt>{presentation.ingredientStockLabels.supplier}</dt>
+                <dd>{stock.supplier}</dd>
+              </div>
+              <div>
+                <dt>{presentation.ingredientStockLabels.distributor}</dt>
+                <dd>{stock.distributor}</dd>
+              </div>
+            </>
+          ) : (
+            <div>
+              <dt>Available</dt>
+              <dd>{availability(item, batch)}</dd>
+            </div>
+          )}
           <div>
             <dt>Indicative price</dt>
             <dd>{price(item)}</dd>
@@ -322,6 +379,9 @@ function CatalogueCard({
         </dl>
         {expiryWarning(batch?.expiresAt) && (
           <p className="catalogue-warning">{expiryWarning(batch.expiresAt)}</p>
+        )}
+        {distributorUnavailable && (
+          <p className="catalogue-card__request-status">Not yet available to request</p>
         )}
         <div className="catalogue-card__actions">
           <Btn variant="outline" size="sm" onClick={onDetails}>
@@ -348,6 +408,7 @@ function CatalogueDetail({
   locations,
   onRegisterLocation,
   role,
+  presentation,
 }: {
   role: WorkspaceRole;
   locations: OrderRecord[];
@@ -360,9 +421,11 @@ function CatalogueDetail({
   onEvidenceRequest: (item: OrderRecord, input: EvidenceRequestInput) => Promise<void>;
   onOpenEvidence: () => void;
   onQuantityRequest: (item: OrderRecord, input: QuantityRequestInput) => Promise<void>;
+  presentation?: CataloguePresentation;
 }) {
   const batch = item.batchDetails?.[0] ?? {};
   const company = item.sellerName ?? 'Verified company name unavailable';
+  const stock = ingredientStock(item, batch);
   const [quantity, setQuantity] = useState('');
   const [deadline, setDeadline] = useState('');
   const [note, setNote] = useState('');
@@ -395,92 +458,63 @@ function CatalogueDetail({
       onClose={onClose}
       width={760}
     >
-      <div className="catalogue-dialog-content">
-        <section className="catalogue-dialog-summary" aria-label="Item summary">
-          <div className="catalogue-detail">
-            <CatalogueImage
-              path={item.imagePath}
-              category={item.category}
-              alt={`Supplier-provided image of ${item.name}`}
-              large
-            />
-            <div className="catalogue-detail__summary">
-              <div className="catalogue-company catalogue-company--large">
-                <CompanyAvatar name={company} logoPath={item.sellerLogoPath} size="lg" />
-                <div>
-                  <strong>{company}</strong>
-                  <span>
-                    {item.sellerRole
-                      ? String(item.sellerRole).replaceAll('_', ' ')
-                      : 'Verified company'}
-                  </span>
-                </div>
+      <div
+        className={`catalogue-dialog-content ${mode === 'quantity' ? 'catalogue-dialog-content--quantity' : ''}`}
+      >
+        <section className="catalogue-dialog-hero" aria-label="Item summary">
+          <CatalogueImage
+            path={item.imagePath}
+            category={item.category}
+            alt={`Supplier-provided image of ${item.name}`}
+            large
+          />
+          <div className="catalogue-dialog-hero__content">
+            <div className="catalogue-dialog-title-row">
+              <div>
+                <span className="catalogue-dialog-eyebrow">
+                  {Number(item.kind) === 1 ? 'Ingredient' : 'Product'}
+                </span>
+                <h3>{item.name}</h3>
               </div>
               <Badge label={itemState(item).label} variant={itemState(item).variant} />
-              <dl className="catalogue-detail__facts">
-                <Fact
-                  label="Item type"
-                  value={Number(item.kind) === 1 ? 'Ingredient' : 'Product'}
-                />
-                <Fact label="Category" value={item.category || 'Not disclosed'} />
-                <Fact label="Country of origin" value={item.countryOfOrigin || 'Not disclosed'} />
-                <Fact label="Batch reference" value={item.batchReference || 'Not disclosed'} />
-                <Fact
-                  label="Registered quantity"
-                  value={
-                    batch.totalQuantity !== undefined
-                      ? `${batch.totalQuantity} ${item.unit}`
-                      : 'Unavailable'
-                  }
-                />
-                <Fact label="Safe available quantity" value={availability(item, batch)} />
-                <Fact
-                  label="Current storage"
-                  value={
-                    [
-                      ...(item.custodyPositions ?? [])
-                        .filter(
-                          (entry: OrderRecord) =>
-                            BigInt(entry.quantity ?? entry.available ?? '0') > 0n,
-                        )
-                        .map(
-                          (entry: OrderRecord) =>
-                            `${entry.warehouseName}: ${entry.quantity === undefined ? 'Public availability' : 'Physical stock'} ${entry.quantity ?? entry.available} ${item.unit} (${entry.available} unreserved)`,
-                        ),
-                      ...(item.storageLocations ?? []).map(
-                        (entry: OrderRecord) =>
-                          `${entry.warehouseName}: ${entry.available} ${item.unit}`,
-                      ),
-                    ].join('; ') || 'No received Distributor warehouse stock recorded'
-                  }
-                />
-                <Fact label="Production date" value={date(batch.producedAt)} />
-                <Fact label="Expiry date" value={date(batch.expiresAt)} />
-                <Fact label="Indicative price" value={`${price(item)} — Indicative only`} />
-                <Fact
-                  label="Credential lifecycle"
-                  value={item.evidenceAvailability || 'Status unavailable'}
-                />
-              </dl>
+            </div>
+            <div className="catalogue-company catalogue-company--large">
+              <CompanyAvatar name={company} logoPath={item.sellerLogoPath} size="lg" />
+              <div>
+                <strong>{company}</strong>
+                <span>
+                  {item.sellerRole
+                    ? String(item.sellerRole).replaceAll('_', ' ')
+                    : 'Verified Supplier'}
+                </span>
+              </div>
+            </div>
+            <div className="catalogue-dialog-price">
+              <span>Indicative price</span>
+              <strong>{price(item)}</strong>
+              <small>Supplier-provided indication; no payment is taken when requesting.</small>
             </div>
           </div>
         </section>
-        <div className="catalogue-dialog-alert catalogue-dialog-alert--warning">
-          <Alert
-            type="warning"
-            message="Ingredient details and images are supplied by the Supplier. Credential verification confirms the signed digital record and current blockchain status; it does not independently prove physical quality or laboratory certification."
-          />
-        </div>
-        {mode === 'details' && (
-          <div className="catalogue-detail__actions">
-            <Btn disabled={!item.active} onClick={() => onMode('quantity')}>
-              Request quantity
-            </Btn>
-            <Btn variant="outline" onClick={() => onMode('evidence')}>
-              Request evidence or information
-            </Btn>
+        <section className="catalogue-dialog-section catalogue-stock-section">
+          <div className="catalogue-dialog-section__heading">
+            <h3>Stock availability</h3>
+            <p>Balances are shown separately and are never combined.</p>
           </div>
-        )}
+          <dl className="catalogue-stock-grid">
+            {Number(item.kind) === 1 && presentation?.ingredientStockLabels ? (
+              <>
+                <Fact label={presentation.ingredientStockLabels.supplier} value={stock.supplier} />
+                <Fact
+                  label={presentation.ingredientStockLabels.distributor}
+                  value={stock.distributor}
+                />
+              </>
+            ) : (
+              <Fact label="Available" value={availability(item, batch)} />
+            )}
+          </dl>
+        </section>
         {mode === 'quantity' && (
           <form
             className="catalogue-request-form"
@@ -505,15 +539,21 @@ function CatalogueDetail({
                 });
             }}
           >
-            <div className="catalogue-dialog-alert catalogue-dialog-alert--info">
-              <Alert
-                type="info"
-                message={
-                  requiresLocation
-                    ? 'The seller approves or rejects your request, then chooses direct Distributor delivery or available custody stock. No goods move and no payment is taken at this step.'
-                    : `This sends a request for ${item.unit}. It does not reserve stock, create a purchase, take payment or dispatch goods.`
-                }
+            <div className="catalogue-request-primary">
+              <Input
+                label={`Requested quantity (${item.unit})`}
+                type="number"
+                min="1"
+                step="1"
+                value={quantity}
+                onChange={setQuantity}
+                required
               />
+              <p className="catalogue-section-note">
+                {source === 'seller'
+                  ? 'The Supplier reviews this request and then chooses delivery. No stock is reserved and no payment is taken now.'
+                  : 'This uses the selected Distributor custody stock under the existing reservation rules. No payment or goods movement happens now.'}
+              </p>
             </div>
             {requiresLocation && (
               <>
@@ -556,15 +596,6 @@ function CatalogueDetail({
               ]}
             />
             <Input
-              label={`Requested quantity (${item.unit})`}
-              type="number"
-              min="1"
-              step="1"
-              value={quantity}
-              onChange={setQuantity}
-              required
-            />
-            <Input
               label="Response deadline"
               type="datetime-local"
               value={deadline}
@@ -581,6 +612,57 @@ function CatalogueDetail({
               </Btn>
             </div>
           </form>
+        )}
+        <section className="catalogue-dialog-section catalogue-batch-section">
+          <div className="catalogue-dialog-section__heading">
+            <h3>Batch details</h3>
+          </div>
+          <dl className="catalogue-batch-grid">
+            <Fact
+              label="Batch reference"
+              value={item.batchReference || batch.batchReference || 'Not disclosed'}
+            />
+            <Fact label="Country of origin" value={item.countryOfOrigin || 'Not disclosed'} />
+            <Fact label="Category" value={item.category || 'Not disclosed'} />
+            <Fact
+              label="Registered quantity"
+              value={
+                batch.totalQuantity !== undefined
+                  ? `${batch.totalQuantity} ${item.unit}`
+                  : 'Unavailable'
+              }
+            />
+            <Fact label="Production date" value={date(batch.producedAt)} />
+            <Fact label="Expiry date" value={date(batch.expiresAt)} />
+          </dl>
+        </section>
+        <section className="catalogue-dialog-section catalogue-credential-section">
+          <div className="catalogue-dialog-section__heading">
+            <h3>Credential & evidence</h3>
+          </div>
+          <dl>
+            <Fact
+              label="Credential lifecycle"
+              value={
+                item.evidenceAvailability ||
+                (Number(item.credentialStatus) === 1 ? 'Active credential' : 'Status unavailable')
+              }
+            />
+          </dl>
+          <p className="catalogue-section-note">
+            Supplier-provided details are separate from credential verification. Verification does
+            not independently prove physical quality.
+          </p>
+        </section>
+        {mode === 'details' && (
+          <div className="catalogue-detail__actions">
+            <Btn disabled={!item.active} onClick={() => onMode('quantity')}>
+              Request quantity
+            </Btn>
+            <Btn variant="outline" onClick={() => onMode('evidence')}>
+              Request evidence or information
+            </Btn>
+          </div>
         )}
         {mode === 'evidence' && (
           <form
@@ -757,6 +839,28 @@ function same(left: string, right: string) {
 
 function short(value: string) {
   return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
+}
+
+function ingredientStock(item: OrderRecord, batch: OrderRecord | undefined) {
+  const supplier = stockValue(batch?.supplierAvailable, item.unit);
+  if (!Array.isArray(item.custodyPositions)) return { supplier, distributor: 'Stock unavailable' };
+  const orderable = item.custodyPositions.filter((entry: OrderRecord) => entry.orderable);
+  if (orderable.some((entry: OrderRecord) => !isStockQuantity(entry.available)))
+    return { supplier, distributor: 'Stock unavailable' };
+  const total = orderable.reduce(
+    (sum: bigint, entry: OrderRecord) => sum + BigInt(entry.available),
+    0n,
+  );
+  return { supplier, distributor: stockValue(total.toString(), item.unit) };
+}
+
+function isStockQuantity(value: unknown) {
+  return typeof value === 'string' && /^\d+$/.test(value);
+}
+
+function stockValue(value: unknown, unit: string) {
+  if (!isStockQuantity(value)) return 'Stock unavailable';
+  return BigInt(value as string) === 0n ? 'No stock' : `${value} ${unit}`;
 }
 
 function availability(item: OrderRecord, batch: OrderRecord | undefined) {

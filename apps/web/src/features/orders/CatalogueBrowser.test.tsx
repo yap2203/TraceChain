@@ -2,8 +2,199 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CatalogueBrowser } from './CatalogueBrowser';
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+const manufacturerPresentation = {
+  hideIntro: true,
+  resultNoun: { singular: 'ingredient', plural: 'ingredients' },
+  ingredientStockLabels: { supplier: 'At supplier', distributor: 'At distributor' },
+};
 describe('Manufacturer requests with Supplier-selected fulfilment', () => {
+  it('uses a compact, action-first request modal with a portrait image and long values', async () => {
+    Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true });
+    window.dispatchEvent(new Event('resize'));
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: vi.fn(() => 'blob:portrait-ingredient'),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(new Blob(['portrait'], { type: 'image/webp' }), { status: 200 }),
+        ),
+    );
+    const item = {
+      itemId: 'portrait-item',
+      batches: ['batch'],
+      name: 'Single Origin Fermented Cocoa Powder With A Long Ingredient Name',
+      kind: 1,
+      seller: 'supplier',
+      sellerName: 'Highland Sustainable Ingredients Cooperative With A Long Name',
+      sellerRole: 'SUPPLIER',
+      sellerLogoPath: undefined,
+      imagePath: '/catalogue/portrait-item/image',
+      active: true,
+      credentialStatus: 1,
+      evidenceAvailability:
+        'Active credential with Supplier-provided evidence available through the existing request workflow',
+      category: 'Cocoa and chocolate ingredients',
+      countryOfOrigin: 'Malaysia',
+      batchReference: 'COCOA-PORTRAIT-2026-LONG-REFERENCE',
+      price: '50.00',
+      currency: 'MYR',
+      unit: 'kg',
+      batchDetails: [
+        {
+          batchId: 'batch',
+          supplierAvailable: '100',
+          totalQuantity: '125',
+          producedAt: '2000000000',
+          expiresAt: '2100000000',
+        },
+      ],
+      custodyPositions: [],
+    };
+    render(
+      <CatalogueBrowser
+        actor="manufacturer"
+        role="manufacturer"
+        items={[item]}
+        busy={false}
+        onQuantityRequest={vi.fn()}
+        onEvidenceRequest={vi.fn()}
+        onOpenEvidence={vi.fn()}
+        locations={[{ location: 'factory', label: 'My factory' }]}
+        presentation={manufacturerPresentation}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
+    const dialog = screen.getByRole('dialog');
+    const photo = await within(dialog).findByAltText(`Supplier-provided image of ${item.name}`);
+    expect(photo.classList.contains('catalogue-image--large')).toBe(true);
+    expect(within(dialog).getByText(item.sellerName)).toBeTruthy();
+    expect(within(dialog).getByText('MYR 50.00 / kg')).toBeTruthy();
+    const stock = dialog.querySelector('.catalogue-stock-section') as HTMLElement;
+    expect(within(stock).getByText('At supplier').nextElementSibling?.textContent).toBe('100 kg');
+    expect(within(stock).getByText('At distributor').nextElementSibling?.textContent).toBe(
+      'No stock',
+    );
+    expect(within(stock).getAllByText('No stock')).toHaveLength(1);
+    const quantity = within(dialog).getByLabelText(/Requested quantity \(kg\)/);
+    const batchDetails = within(dialog).getByRole('heading', { name: 'Batch details' });
+    expect(
+      quantity.compareDocumentPosition(batchDetails) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(within(dialog).getByText(item.batchReference)).toBeTruthy();
+    expect(within(dialog).getByText(item.evidenceAvailability)).toBeTruthy();
+  });
+
+  it('keeps Supplier, Distributor and unavailable stock balances separate', () => {
+    const items = [
+      {
+        itemId: 'without-custody',
+        batches: ['batch-a'],
+        name: 'Cocoa powder',
+        kind: 1,
+        seller: 'supplier',
+        active: true,
+        unit: 'kg',
+        batchDetails: [{ batchId: 'batch-a', supplierAvailable: '100' }],
+        custodyPositions: [],
+      },
+      {
+        itemId: 'with-custody',
+        batches: ['batch-b'],
+        name: 'Rice flour',
+        kind: 1,
+        seller: 'supplier',
+        active: true,
+        unit: 'kg',
+        batchDetails: [{ batchId: 'batch-b', supplierAvailable: '75' }],
+        custodyPositions: [
+          { batchId: 'batch-b', available: '12', orderable: true },
+          { batchId: 'batch-b', available: '8', orderable: true },
+        ],
+      },
+      {
+        itemId: 'stock-unavailable',
+        batches: ['batch-c'],
+        name: 'Unknown stock ingredient',
+        kind: 1,
+        seller: 'supplier',
+        active: true,
+        unit: 'kg',
+        batchDetails: [{ batchId: 'batch-c' }],
+      },
+    ];
+    const { container } = render(
+      <CatalogueBrowser
+        actor="manufacturer"
+        role="manufacturer"
+        items={items}
+        busy={false}
+        onQuantityRequest={vi.fn()}
+        onEvidenceRequest={vi.fn()}
+        onOpenEvidence={vi.fn()}
+        presentation={manufacturerPresentation}
+      />,
+    );
+
+    expect(screen.getByText('3 ingredients')).toBeTruthy();
+    const noCustody = screen.getByText('Cocoa powder').closest('.catalogue-card') as HTMLElement;
+    expect(within(noCustody).getByText('At supplier').nextElementSibling?.textContent).toBe(
+      '100 kg',
+    );
+    expect(within(noCustody).getByText('At distributor').nextElementSibling?.textContent).toBe(
+      'No stock',
+    );
+    const positiveCustody = screen
+      .getByText('Rice flour')
+      .closest('.catalogue-card') as HTMLElement;
+    expect(
+      within(positiveCustody).getByText('At distributor').nextElementSibling?.textContent,
+    ).toBe('20 kg');
+    const unavailable = screen
+      .getByText('Unknown stock ingredient')
+      .closest('.catalogue-card') as HTMLElement;
+    expect(within(unavailable).getAllByText('Stock unavailable')).toHaveLength(2);
+    expect(container.textContent).not.toContain('Supplier:');
+  });
+
+  it('shows the conditional no-custody message without removing View details', () => {
+    render(
+      <CatalogueBrowser
+        actor="manufacturer"
+        role="manufacturer"
+        items={[
+          {
+            itemId: 'item',
+            batches: ['batch'],
+            name: 'Warehouse-only ingredient',
+            kind: 1,
+            seller: 'supplier',
+            active: true,
+            unit: 'kg',
+            batchDetails: [{ batchId: 'batch', supplierAvailable: '100' }],
+            custodyPositions: [],
+          },
+        ]}
+        busy={false}
+        onQuantityRequest={vi.fn()}
+        onEvidenceRequest={vi.fn()}
+        onOpenEvidence={vi.fn()}
+        presentation={{ ...manufacturerPresentation, distributorStockRequired: true }}
+      />,
+    );
+    expect(screen.getByText('Not yet available to request')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'View details' })).toBeTruthy();
+  });
+
   it('requires a receiving location without forcing the buyer to choose warehouse stock', () => {
     const request = vi.fn().mockResolvedValue(undefined);
     const item = {
@@ -42,6 +233,7 @@ describe('Manufacturer requests with Supplier-selected fulfilment', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
     const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('img', { name: 'Ingredient image placeholder' })).toBeTruthy();
     fireEvent.change(within(dialog).getByLabelText(/Requested quantity/), {
       target: { value: '21' },
     });
