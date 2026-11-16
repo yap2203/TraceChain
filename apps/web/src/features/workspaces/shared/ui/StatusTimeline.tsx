@@ -2,7 +2,7 @@ import { Check, Circle, Clock3 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export interface StatusTimelineStep {
-  actor?: string;
+  actor?: ReactNode;
   detail?: string;
   icon?: ReactNode;
   label: string;
@@ -16,7 +16,7 @@ export function StatusTimeline({
 }: {
   label?: string;
   steps: StatusTimelineStep[];
-  variant?: 'default' | 'custody' | 'arrival';
+  variant?: 'default' | 'custody' | 'arrival' | 'route';
 }) {
   return (
     <ol

@@ -1,14 +1,10 @@
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   Boxes,
   CalendarClock,
-  ChevronDown,
-  ChevronUp,
   FilterX,
-  LayoutGrid,
-  List as ListIcon,
   PackageCheck,
   Pencil,
   Plus,
@@ -36,6 +32,10 @@ import {
   Btn,
   EmptyState,
   Input,
+  InventoryExpandButton,
+  InventoryFact as Fact,
+  InventorySummaryCard,
+  InventoryViewToggle,
   Modal,
   SectionTitle,
   SelectField,
@@ -398,27 +398,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
               </strong>
               <span>Supplier images and descriptions are presentation information.</span>
             </div>
-            <div className="ingredient-view-selector" role="group" aria-label="Ingredient view">
-              <span>View</span>
-              <button
-                type="button"
-                aria-label="List view"
-                aria-pressed={view === 'list'}
-                onClick={() => changeView('list')}
-              >
-                <ListIcon size={15} aria-hidden="true" />
-                <span>List</span>
-              </button>
-              <button
-                type="button"
-                aria-label="Grid view"
-                aria-pressed={view === 'grid'}
-                onClick={() => changeView('grid')}
-              >
-                <LayoutGrid size={15} aria-hidden="true" />
-                <span>Grid</span>
-              </button>
-            </div>
+            <InventoryViewToggle value={view} onChange={changeView} label="Ingredient view" />
           </div>
         </>
       )}
@@ -627,20 +607,7 @@ function IngredientCard({
   const listingStatus = statusBadge(item.inventoryStatus);
 
   const toggleButton = (
-    <button
-      type="button"
-      className="ingredient-card__toggle"
-      aria-expanded={expanded}
-      aria-controls={detailsId}
-      onClick={onToggle}
-    >
-      <span>{expanded ? 'Show less' : 'Show more'}</span>
-      {expanded ? (
-        <ChevronUp size={16} aria-hidden="true" />
-      ) : (
-        <ChevronDown size={16} aria-hidden="true" />
-      )}
-    </button>
+    <InventoryExpandButton expanded={expanded} controls={detailsId} onClick={onToggle} />
   );
 
   const primaryActions = (
@@ -993,38 +960,6 @@ function IngredientDetailModal({
 
 function IngredientLoading() {
   return <LoadingIndicator page label="Loading ingredient batches" />;
-}
-
-function InventorySummaryCard({
-  label,
-  value,
-  note,
-  icon,
-}: {
-  label: string;
-  value: string | number;
-  note?: string;
-  icon: ReactNode;
-}) {
-  return (
-    <article className="ingredient-summary-card">
-      <div>
-        <span>{label}</span>
-        <strong>{value}</strong>
-        {note && <small>{note}</small>}
-      </div>
-      <span aria-hidden="true">{icon}</span>
-    </article>
-  );
-}
-
-function Fact({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <div>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </div>
-  );
 }
 
 function readIngredientView(): IngredientView {

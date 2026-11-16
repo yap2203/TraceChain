@@ -26,3 +26,11 @@ export { CompanyCard } from './CompanyCard';
 export { ClaimRow } from './ClaimRow';
 export { TechnicalDetails } from './TechnicalDetails';
 export { WorkflowHelp } from './WorkflowHelp';
+export {
+  InventoryExpandButton,
+  InventoryFact,
+  InventorySummaryCard,
+  InventoryViewToggle,
+  StatusTabs,
+} from './InventoryControls';
+export type { InventoryView, StatusTab } from './InventoryControls';

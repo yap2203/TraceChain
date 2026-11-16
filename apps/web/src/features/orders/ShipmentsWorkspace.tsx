@@ -46,6 +46,9 @@ import {
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { workspacePath } from '../workspaces/workspace-paths';
 import { ShipmentWorkflowDetail } from './ShipmentWorkflowDetail';
+import { DistributorIngredientDeliveries } from './DistributorIngredientDeliveries';
+import { DistributorIngredientDeliveryReview } from './DistributorIngredientDeliveryReview';
+import { DistributorIngredientDispatchForm } from './DistributorIngredientDispatchForm';
 
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const short = (value?: string) =>
@@ -120,6 +123,7 @@ export function ShipmentsWorkspace({
     [search, setSearch] = useState('');
   const [selected, setSelected] = useState(initialShipmentId),
     [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState(initialOrderId),
+    [reviewDeliveryOrderId, setReviewDeliveryOrderId] = useState(''),
     [orderId, setOrderId] = useState(initialOrderId),
     [batchId, setBatchId] = useState(initialBatchId);
   const [from, setFrom] = useState(''),
@@ -269,6 +273,15 @@ export function ShipmentsWorkspace({
       Number(entry.expiresAt) > Date.now() / 1000 &&
       BigInt(entry.requested) > BigInt(entry.custodyOrder.dispatched),
   );
+  const reviewDeliveryOrder = ready.find((entry) => same(entry.orderId, reviewDeliveryOrderId));
+  const directIngredientDeliveries = (data?.orders ?? []).filter(
+    (entry) =>
+      !entry.custodyOrder &&
+      entry.delivery &&
+      same(entry.delivery.distributor, data?.actor) &&
+      Number(entry.delivery.stage) >= 2 &&
+      Number(entry.delivery.stage) <= 5,
+  );
   const order = ready.find((entry) => entry.orderId === orderId);
   const trackedOrder = data?.orders.find(
     (entry) => same(entry.orderId, initialOrderId) && entry.custodyOrder,
@@ -291,6 +304,12 @@ export function ShipmentsWorkspace({
       `${entry.itemName ?? ''} ${entry.shipmentId} ${entry.senderName ?? ''} ${entry.recipientName ?? ''}`
         .toLowerCase()
         .includes(search.toLowerCase()),
+  );
+  const distributorIngredientShipments = shipments.filter(
+    (entry) =>
+      entry.kind === 'ingredient' &&
+      Number(entry.leg) !== 1 &&
+      (!trackedOrder || same(entry.orderId, trackedOrder.orderId)),
   );
   const stockItems = (data?.catalogue ?? [])
     .flatMap((entry) =>
@@ -347,6 +366,30 @@ export function ShipmentsWorkspace({
     expected > at &&
     confirmed &&
     (kind === 'ingredient' || !!recipient);
+  const recordDispatch = () =>
+    void run(async () => {
+      const result = await submit({
+        action:
+          kind === 'product'
+            ? 'product-dispatch'
+            : role === 'supplier'
+              ? 'stock-dispatch'
+              : 'order-dispatch',
+        ...(kind === 'product'
+          ? { batchId, recipient }
+          : role === 'supplier'
+            ? { batchId }
+            : { orderId }),
+        quantity,
+        fromLocation: source,
+        toLocation: destination,
+        vehicle: vehicle.trim(),
+        occurredAt: at,
+        expectedAt: expected,
+      });
+      setView('shipments');
+      setSelected(result.resultId);
+    });
   const compose = (type: 'ingredient' | 'product', record?: OrderRecord) => {
     setKind(type);
     setView('transfer');
@@ -381,6 +424,30 @@ export function ShipmentsWorkspace({
         message="Deploy the warehouse-first registry suite and update the configured addresses to use Shipments and Distributor custody ordering. Existing records are preserved."
       />
     );
+  const shipmentOrder = data.orders.find((entry) => same(entry.orderId, shipment?.orderId));
+  const distributorIngredientDelivery =
+    role === 'distributor' &&
+    section === 'deliveries' &&
+    shipment?.kind === 'ingredient' &&
+    Number(shipment.leg) !== 1;
+  const distributorIngredientDispatch =
+    view === 'transfer' && role === 'distributor' && kind === 'ingredient' && !!order;
+  const deliverySupplierName =
+    shipmentOrder?.sellerName ?? shipmentItem?.sellerName ?? 'Registered Supplier';
+  const deliveryManufacturerName =
+    shipmentOrder?.buyerName ?? shipment?.recipientName ?? short(shipment?.recipient);
+  const deliveryTrackingContent = shipment ? (
+    <Alert
+      type={Number(shipment.status) >= 3 ? 'success' : 'info'}
+      message={
+        Number(shipment.status) >= 3
+          ? `${deliveryManufacturerName} confirmed physical receipt of this ingredient delivery.`
+          : Number(shipment.status) === 2 || Number(shipment.expectedAt) <= Date.now() / 1000
+            ? `Awaiting physical receipt confirmation from ${deliveryManufacturerName}.`
+            : `This delivery is in transit to ${deliveryManufacturerName}. The Manufacturer confirms receipt separately.`
+      }
+    />
+  ) : null;
   const arrivalNeedsReview =
     !!shipment &&
     intake &&
@@ -659,27 +726,31 @@ export function ShipmentsWorkspace({
   );
   return (
     <div className="grid min-w-0 gap-[16px]">
-      {!workflowDetail && (
+      {!workflowDetail && !distributorIngredientDispatch && (
         <SectionTitle
           title={
             view === 'locations'
               ? 'Company profile & locations'
               : section === 'intake'
                 ? 'Custody intake'
-                : view === 'transfer'
-                  ? 'Create road transfer'
-                  : role === 'supplier'
-                    ? 'Stock sent & delivery tracking'
-                    : role === 'distributor'
-                      ? 'Custody intake & deliveries'
-                      : 'My shipments'
+                : role === 'distributor' && section === 'deliveries' && kind === 'ingredient'
+                  ? 'Ingredient deliveries'
+                  : view === 'transfer'
+                    ? 'Create road transfer'
+                    : role === 'supplier'
+                      ? 'Stock sent & delivery tracking'
+                      : role === 'distributor'
+                        ? 'Custody intake & deliveries'
+                        : 'My shipments'
           }
           sub={
             role === 'supplier'
               ? 'Track stock sent to custody and deliveries arranged from approved orders.'
-              : role === 'distributor'
-                ? 'Review custody offers, scan incoming stock and dispatch assigned deliveries.'
-                : 'Track incoming goods. Scan the shipment QR when they arrive.'
+              : role === 'distributor' && section === 'deliveries' && kind === 'ingredient'
+                ? 'Manage ingredient shipments to Manufacturers.'
+                : role === 'distributor'
+                  ? 'Review custody offers, scan incoming stock and dispatch assigned deliveries.'
+                  : 'Track incoming goods. Scan the shipment QR when they arrive.'
           }
           action={
             <Btn
@@ -854,7 +925,32 @@ export function ShipmentsWorkspace({
           />
         </div>
       )}
-      {view === 'shipments' && !selected && !productDeliveryOrder && (
+      {view === 'shipments' && !selected && !productDeliveryOrder && reviewDeliveryOrder && (
+        <DistributorIngredientDeliveryReview
+          data={data}
+          order={reviewDeliveryOrder}
+          item={item(reviewDeliveryOrder.custodyOrder.batchId)}
+          warehouseName={
+            reviewDeliveryOrder.custodyOrder.warehouseName ??
+            label(reviewDeliveryOrder.custodyOrder.location)
+          }
+          destinationName={label(reviewDeliveryOrder.custodyOrder.receivingLocation)}
+          busy={busy}
+          evidenceHref={
+            workspacePath(role, 'sent-requests') +
+            '?context=delivery&referenceId=' +
+            encodeURIComponent(reviewDeliveryOrder.orderId)
+          }
+          onBack={() => setReviewDeliveryOrderId('')}
+          onRefresh={() => void run(load)}
+          onRecordDispatch={() => {
+            setReviewDeliveryOrderId('');
+            compose('ingredient');
+            setOrderId(reviewDeliveryOrder.orderId);
+          }}
+        />
+      )}
+      {view === 'shipments' && !selected && !productDeliveryOrder && !reviewDeliveryOrder && (
         <>
           {section !== 'intake' &&
             kind === 'product' &&
@@ -941,26 +1037,17 @@ export function ShipmentsWorkspace({
               ))}
           {section !== 'intake' &&
             kind === 'ingredient' &&
-            (data.orders ?? [])
-              .filter(
-                (entry) =>
-                  !entry.custodyOrder &&
-                  entry.delivery &&
-                  same(entry.delivery.distributor, data.actor) &&
-                  Number(entry.delivery.stage) >= 2 &&
-                  Number(entry.delivery.stage) <= 5,
-              )
-              .map((entry) => (
-                <Card key={entry.orderId}>
-                  <h3>Direct delivery — collect from Supplier</h3>
-                  <IngredientDeliveryPanel
-                    data={data}
-                    order={entry}
-                    item={data.catalogue.find((item) => same(item.itemId, entry.itemId))}
-                    onChanged={load}
-                  />
-                </Card>
-              ))}
+            directIngredientDeliveries.map((entry) => (
+              <Card key={entry.orderId}>
+                <h3>Direct delivery — collect from Supplier</h3>
+                <IngredientDeliveryPanel
+                  data={data}
+                  order={entry}
+                  item={data.catalogue.find((item) => same(item.itemId, entry.itemId))}
+                  onChanged={load}
+                />
+              </Card>
+            ))}
           {!section && (
             <div className="flex flex-wrap gap-[8px]" role="tablist" aria-label="Shipment type">
               {role !== 'retailer' && (
@@ -983,159 +1070,214 @@ export function ShipmentsWorkspace({
               )}
             </div>
           )}
-          <Input
-            label="Search shipments or stock"
-            icon={<Search size={16} />}
-            type="search"
-            value={search}
-            onChange={setSearch}
-            placeholder="Search ingredient/product name, company or shipment reference"
-          />
-          <>
-            {section !== 'intake' &&
-              role === 'distributor' &&
-              kind === 'ingredient' &&
-              ready.length > 0 && (
-                <Card>
-                  <h3>Supplier-arranged ingredient deliveries</h3>
-                  <p>
-                    These quantities are already reserved in your warehouse. Open an order to
-                    arrange its road shipment.
-                  </p>
-                  {ready.map((entry) => (
-                    <div
-                      key={entry.orderId}
-                      className="flex flex-wrap items-center justify-between gap-[8px] border-b border-[var(--c-border)] py-[12px]"
-                    >
-                      <span>
-                        {item(entry.custodyOrder.batchId)?.name ?? 'Ingredient'} →{' '}
-                        {entry.buyerName ?? short(entry.buyer)} ·{' '}
-                        {BigInt(entry.requested) - BigInt(entry.custodyOrder.dispatched)}{' '}
-                        {entry.custodyOrder.unit}
-                      </span>
-                      <Btn
-                        onClick={() => {
-                          compose('ingredient');
-                          setOrderId(entry.orderId);
-                        }}
-                      >
-                        Record physical dispatch
-                      </Btn>
-                    </div>
-                  ))}
-                </Card>
-              )}
-            {visibleShipments.length > 0 && (
-              <div
-                className="workspace-table-scroll"
-                role="region"
-                aria-label="Shipment records"
-                tabIndex={0}
-              >
-                <table className="w-full text-left">
-                  <thead>
-                    <tr>
-                      {[
-                        'Shipment / item',
-                        'Batch',
-                        'Sender',
-                        'Destination',
-                        'Expected / received',
-                        'ETA / status',
-                        '',
-                      ].map((header) => (
-                        <th key={header} className="p-[12px]">
-                          {header}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleShipments.map((entry) => (
-                      <tr key={entry.shipmentId} className="border-b border-[var(--c-border)]">
-                        <td className="p-[12px]">
-                          SHP-{entry.shipmentId.slice(2, 10).toUpperCase()}
-                          <br />
-                          <strong>
-                            {entry.itemName ?? item(entry.batchId)?.name ?? 'Registered batch'}
-                          </strong>
-                        </td>
-                        <td className="p-[12px]">
-                          {item(entry.batchId)?.batchReference ?? short(entry.batchId)}
-                        </td>
-                        <td className="p-[12px]">
-                          <span className="workspace-company-cell">
-                            <CompanyAvatar
-                              name={entry.senderName ?? short(entry.sender)}
-                              logoPath={entry.senderLogoPath}
-                              size="sm"
-                            />
-                            {entry.senderName ?? short(entry.sender)}
-                          </span>
-                        </td>
-                        <td className="p-[12px]">
-                          {label(entry.toLocation)}
-                          <br />
-                          <small className="workspace-company-cell">
-                            <CompanyAvatar
-                              name={entry.recipientName ?? short(entry.recipient)}
-                              logoPath={entry.recipientLogoPath}
-                              size="sm"
-                            />
-                            {entry.recipientName ?? short(entry.recipient)}
-                          </small>
-                        </td>
-                        <td className="p-[12px]">
-                          {entry.quantity} {entry.unit}
-                          <br />
-                          <small>
-                            Received {entry.received ?? '0'} {entry.unit}
-                          </small>
-                        </td>
-                        <td className="p-[12px]">
-                          {when(entry.expectedAt)}
-                          <br />
-                          <Badge
-                            label={stateLabel(entry)}
-                            variant={Number(entry.status) >= 3 ? 'verified' : 'pending'}
-                          />
-                        </td>
-                        <td className="p-[12px]">
-                          <Btn
-                            variant="outline"
-                            onClick={() => {
-                              setSelected(entry.shipmentId);
-                              setView('shipments');
-                            }}
-                          >
-                            View shipment
-                          </Btn>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {!visibleShipments.length && (
-              <EmptyState
-                icon={<Package size={36} />}
-                title={
-                  shipments.some((entry) => entry.kind === kind)
-                    ? 'No matching shipments'
-                    : 'No shipments yet'
-                }
-                sub={
-                  shipments.some((entry) => entry.kind === kind)
-                    ? 'Change the search to see other shipments.'
-                    : 'Confirmed transfers for your company will appear here.'
-                }
+          {role === 'distributor' && section === 'deliveries' && kind === 'ingredient' ? (
+            <DistributorIngredientDeliveries
+              data={data}
+              readyOrders={ready}
+              shipments={distributorIngredientShipments}
+              hasDirectDeliveries={directIngredientDeliveries.length > 0}
+              locationName={label}
+              onReviewOrder={setReviewDeliveryOrderId}
+              onRecordOrder={(deliveryOrderId) => {
+                compose('ingredient');
+                setOrderId(deliveryOrderId);
+              }}
+              onReviewShipment={(shipmentId) => {
+                setSelected(shipmentId);
+                setView('shipments');
+              }}
+            />
+          ) : (
+            <>
+              <Input
+                label="Search shipments or stock"
+                icon={<Search size={16} />}
+                type="search"
+                value={search}
+                onChange={setSearch}
+                placeholder="Search ingredient/product name, company or shipment reference"
               />
-            )}
-          </>
+              {section !== 'intake' &&
+                role === 'distributor' &&
+                kind === 'ingredient' &&
+                ready.length > 0 && (
+                  <Card>
+                    <h3>Supplier-arranged ingredient deliveries</h3>
+                    <p>
+                      These quantities are already reserved in your warehouse. Open an order to
+                      arrange its road shipment.
+                    </p>
+                    {ready.map((entry) => (
+                      <div
+                        key={entry.orderId}
+                        className="flex flex-wrap items-center justify-between gap-[8px] border-b border-[var(--c-border)] py-[12px]"
+                      >
+                        <span>
+                          {item(entry.custodyOrder.batchId)?.name ?? 'Ingredient'} →{' '}
+                          {entry.buyerName ?? short(entry.buyer)} ·{' '}
+                          {BigInt(entry.requested) - BigInt(entry.custodyOrder.dispatched)}{' '}
+                          {entry.custodyOrder.unit}
+                        </span>
+                        <Btn
+                          onClick={() => {
+                            compose('ingredient');
+                            setOrderId(entry.orderId);
+                          }}
+                        >
+                          Record physical dispatch
+                        </Btn>
+                      </div>
+                    ))}
+                  </Card>
+                )}
+              {visibleShipments.length > 0 && (
+                <div
+                  className="workspace-table-scroll"
+                  role="region"
+                  aria-label="Shipment records"
+                  tabIndex={0}
+                >
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr>
+                        {[
+                          'Shipment / item',
+                          'Batch',
+                          'Sender',
+                          'Destination',
+                          'Expected / received',
+                          'ETA / status',
+                          '',
+                        ].map((header) => (
+                          <th key={header} className="p-[12px]">
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visibleShipments.map((entry) => (
+                        <tr key={entry.shipmentId} className="border-b border-[var(--c-border)]">
+                          <td className="p-[12px]">
+                            SHP-{entry.shipmentId.slice(2, 10).toUpperCase()}
+                            <br />
+                            <strong>
+                              {entry.itemName ?? item(entry.batchId)?.name ?? 'Registered batch'}
+                            </strong>
+                          </td>
+                          <td className="p-[12px]">
+                            {item(entry.batchId)?.batchReference ?? short(entry.batchId)}
+                          </td>
+                          <td className="p-[12px]">
+                            <span className="workspace-company-cell">
+                              <CompanyAvatar
+                                name={entry.senderName ?? short(entry.sender)}
+                                logoPath={entry.senderLogoPath}
+                                size="sm"
+                              />
+                              {entry.senderName ?? short(entry.sender)}
+                            </span>
+                          </td>
+                          <td className="p-[12px]">
+                            {label(entry.toLocation)}
+                            <br />
+                            <small className="workspace-company-cell">
+                              <CompanyAvatar
+                                name={entry.recipientName ?? short(entry.recipient)}
+                                logoPath={entry.recipientLogoPath}
+                                size="sm"
+                              />
+                              {entry.recipientName ?? short(entry.recipient)}
+                            </small>
+                          </td>
+                          <td className="p-[12px]">
+                            {entry.quantity} {entry.unit}
+                            <br />
+                            <small>
+                              Received {entry.received ?? '0'} {entry.unit}
+                            </small>
+                          </td>
+                          <td className="p-[12px]">
+                            {when(entry.expectedAt)}
+                            <br />
+                            <Badge
+                              label={stateLabel(entry)}
+                              variant={Number(entry.status) >= 3 ? 'verified' : 'pending'}
+                            />
+                          </td>
+                          <td className="p-[12px]">
+                            <Btn
+                              variant="outline"
+                              onClick={() => {
+                                setSelected(entry.shipmentId);
+                                setView('shipments');
+                              }}
+                            >
+                              View shipment
+                            </Btn>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {!visibleShipments.length && (
+                <EmptyState
+                  icon={<Package size={36} />}
+                  title={
+                    shipments.some((entry) => entry.kind === kind)
+                      ? 'No matching shipments'
+                      : 'No shipments yet'
+                  }
+                  sub={
+                    shipments.some((entry) => entry.kind === kind)
+                      ? 'Change the search to see other shipments.'
+                      : 'Confirmed transfers for your company will appear here.'
+                  }
+                />
+              )}
+            </>
+          )}
         </>
       )}
-      {view === 'transfer' && (
+      {distributorIngredientDispatch && order && (
+        <DistributorIngredientDispatchForm
+          data={data}
+          order={order}
+          item={item(order.custodyOrder.batchId)}
+          originName={label(source)}
+          destinationName={label(destination)}
+          available={available.toString()}
+          unit={unit ?? 'registered unit'}
+          quantity={quantity}
+          onQuantityChange={setQuantity}
+          vehicle={vehicle}
+          onVehicleChange={setVehicle}
+          actual={actual}
+          onActualChange={setActual}
+          expectedAt={eta}
+          onExpectedAtChange={setEta}
+          confirmed={confirmed}
+          onConfirmedChange={setConfirmed}
+          evidenceHref={
+            workspacePath(role, 'sent-requests') +
+            '?context=delivery&referenceId=' +
+            encodeURIComponent(order.orderId)
+          }
+          busy={busy}
+          valid={valid}
+          onBack={() => {
+            setView('shipments');
+            setOrderId('');
+          }}
+          onRefresh={() => void run(load)}
+          onManageLocations={() => setView('locations')}
+          missingLocation={!source || !destination}
+          onSubmit={recordDispatch}
+        />
+      )}
+      {view === 'transfer' && !distributorIngredientDispatch && (
         <Card>
           <h3>1. Select stock or an approved order</h3>
           {role === 'distributor' && kind === 'product' && (
@@ -1358,35 +1500,7 @@ export function ShipmentsWorkspace({
               Manage Supplier credential request in Information requests
             </a>
           )}
-          <Btn
-            icon={<Truck size={16} />}
-            disabled={busy || !valid}
-            onClick={() =>
-              void run(async () => {
-                const result = await submit({
-                  action:
-                    kind === 'product'
-                      ? 'product-dispatch'
-                      : role === 'supplier'
-                        ? 'stock-dispatch'
-                        : 'order-dispatch',
-                  ...(kind === 'product'
-                    ? { batchId, recipient }
-                    : role === 'supplier'
-                      ? { batchId }
-                      : { orderId }),
-                  quantity,
-                  fromLocation: source,
-                  toLocation: destination,
-                  vehicle: vehicle.trim(),
-                  occurredAt: at,
-                  expectedAt: expected,
-                });
-                setView('shipments');
-                setSelected(result.resultId);
-              })
-            }
-          >
+          <Btn icon={<Truck size={16} />} disabled={busy || !valid} onClick={recordDispatch}>
             Confirm dispatch with MetaMask
           </Btn>
         </Card>
@@ -1395,40 +1509,57 @@ export function ShipmentsWorkspace({
         <ShipmentWorkflowDetail
           shipment={shipment}
           catalogueItem={shipmentItem}
-          senderName={shipment.senderName ?? short(shipment.sender)}
-          recipientName={shipment.recipientName ?? short(shipment.recipient)}
+          senderName={
+            distributorIngredientDelivery
+              ? deliverySupplierName
+              : (shipment.senderName ?? short(shipment.sender))
+          }
+          recipientName={
+            distributorIngredientDelivery
+              ? deliveryManufacturerName
+              : (shipment.recipientName ?? short(shipment.recipient))
+          }
           sourceName={label(shipment.fromLocation)}
           destinationName={label(shipment.toLocation)}
           qrVerified={!!checked}
           busy={busy}
           title={
-            section === 'intake'
-              ? 'Custody Intake'
-              : role === 'retailer'
-                ? 'Product Receipt'
-                : role === 'distributor'
-                  ? 'Delivery Tracking'
-                  : 'Shipment Tracking'
+            distributorIngredientDelivery
+              ? 'Ingredient Delivery'
+              : section === 'intake'
+                ? 'Custody Intake'
+                : role === 'retailer'
+                  ? 'Product Receipt'
+                  : role === 'distributor'
+                    ? 'Delivery Tracking'
+                    : 'Shipment Tracking'
           }
           subtitle={
-            section === 'intake'
-              ? 'Review shipment details and confirm warehouse receipt.'
-              : same(shipment.recipient, data.actor)
-                ? 'Review shipment details and confirm the physical receipt.'
-                : 'Follow this shipment from dispatch to verified receipt.'
+            distributorIngredientDelivery
+              ? 'Track this warehouse-to-Manufacturer delivery and review the next required action.'
+              : section === 'intake'
+                ? 'Review shipment details and confirm warehouse receipt.'
+                : same(shipment.recipient, data.actor)
+                  ? 'Review shipment details and confirm the physical receipt.'
+                  : 'Follow this shipment from dispatch to verified receipt.'
           }
           actionTitle={
-            same(shipment.recipient, data.actor) || returning
-              ? 'Receipt Confirmation'
-              : 'Next Action'
+            distributorIngredientDelivery
+              ? 'Next Action'
+              : same(shipment.recipient, data.actor) || returning
+                ? 'Receipt Confirmation'
+                : 'Next Action'
           }
-          backLabel="Back to shipments"
+          backLabel={distributorIngredientDelivery ? 'Ingredient deliveries' : 'Back to shipments'}
           onBack={() => {
             setSelected('');
             setChecked('');
           }}
           onRefresh={() => void run(load)}
-          receiptContent={arrivalReceiptContent}
+          receiptContent={
+            distributorIngredientDelivery ? deliveryTrackingContent : arrivalReceiptContent
+          }
+          workflowVariant={distributorIngredientDelivery ? 'ingredient-delivery' : 'shipment'}
           additionalContent={
             <div className="workspace-arrival-detail__extras">
               {shipment.qrPayload && same(shipment.sender, data.actor) && (

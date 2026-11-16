@@ -122,6 +122,47 @@ const state: OrdersState = {
     ],
   },
 };
+const manufacturer = '0x4000000000000000000000000000000000000004';
+const manufacturerLocation = hash('7');
+
+function arrangedDeliveryState() {
+  const next = structuredClone(state);
+  next.catalogue[0].batchReference = 'FLOUR-2026-001';
+  next.locations.push({
+    company: manufacturer,
+    location: manufacturerLocation,
+    label: 'Manufacturer receiving dock',
+  });
+  next.orders = [
+    {
+      orderId: hash('a'),
+      itemId: hash('5'),
+      seller: supplier,
+      sellerName: 'Actual Supplier Company',
+      buyer: manufacturer,
+      buyerName: 'Actual Manufacturer Company',
+      requested: '10',
+      status: 1,
+      expiresAt: now + 86_400,
+      decision: { status: 1 },
+      custodyOrder: {
+        arranged: true,
+        arrangedAt: now - 300,
+        batchId,
+        dispatched: '0',
+        distributor: carrier,
+        expectedAt: now + 7_200,
+        location,
+        pickupAt: now - 60,
+        receivingLocation: manufacturerLocation,
+        unit: 'kg',
+        vehicle: 'WXY 7788',
+        warehouseName: 'Warehouse A',
+      },
+    },
+  ];
+  return next;
+}
 beforeEach(() => {
   vi.clearAllMocks();
   vi.stubEnv('VITE_PUBLIC_APP_URL', 'http://localhost:5173');
@@ -298,6 +339,205 @@ describe('unified warehouse shipments', () => {
     await screen.findByText('Custody intake & deliveries');
     expect(screen.queryByRole('button', { name: 'Record physical dispatch' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'New transfer' })).toBeNull();
+  });
+  it('renders an actionable ingredient delivery card and requires review before dispatch', async () => {
+    mocks.get.mockResolvedValue(arrangedDeliveryState());
+
+    render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
+
+    expect(await screen.findByRole('heading', { name: 'Ingredient deliveries' })).toBeTruthy();
+    expect(screen.getByText('Manage ingredient shipments to Manufacturers.')).toBeTruthy();
+    const awaitingSummary = screen.getByRole('button', { name: /Awaiting dispatch\s*1/ });
+    expect(awaitingSummary).toBeTruthy();
+    expect(screen.getByRole('tab', { name: /Needs action\s*1/ })).toBeTruthy();
+    expect(screen.getByText('Actual flour')).toBeTruthy();
+    expect(screen.getAllByText('Actual Supplier Company').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Actual Manufacturer Company').length).toBeGreaterThan(0);
+    expect(screen.getByText('FLOUR-2026-001')).toBeTruthy();
+    expect(screen.getByText('10 kg')).toBeTruthy();
+    expect(screen.getByText('Manufacturer receiving dock')).toBeTruthy();
+    expect(screen.getByText('WXY 7788')).toBeTruthy();
+    expect(
+      screen.getByText(/Review the reserved stock and route before recording physical dispatch/),
+    ).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Ingredient image placeholder' })).toBeTruthy();
+    const route = screen.getByRole('list', { name: 'Route for Actual flour' });
+    expect(within(route).getByText('Supplier')).toBeTruthy();
+    expect(within(route).getByText('Distributor warehouse')).toBeTruthy();
+    expect(within(route).getByText('Manufacturer')).toBeTruthy();
+    expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+    expect(screen.queryByText('No matching shipments')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Record physical dispatch' })).toBeNull();
+    fireEvent.click(awaitingSummary);
+    expect(awaitingSummary.getAttribute('aria-pressed')).toBe('true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review delivery' }));
+
+    expect(await screen.findByRole('heading', { name: 'Ingredient delivery review' })).toBeTruthy();
+    const progress = screen.getByRole('list', { name: 'Ingredient delivery progress' });
+    for (const label of [
+      'Delivery arranged',
+      'Distributor dispatches',
+      'In transit',
+      'Manufacturer receives',
+    ])
+      expect(within(progress).getByText(label)).toBeTruthy();
+    expect(
+      screen.getByText(/Actual Supplier Company.*Warehouse A.*Actual Manufacturer Company/),
+    ).toBeTruthy();
+    expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+    expect(screen.getByText(/requires confirmation in MetaMask/)).toBeTruthy();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.sign).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Record dispatch' }));
+    expect(await screen.findByRole('heading', { name: 'Record ingredient dispatch' })).toBeTruthy();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it('shows the authenticated ingredient image in a delivery card', async () => {
+    const next = arrangedDeliveryState();
+    next.catalogue[0].imagePath = '/catalogue/ingredients/actual/image';
+    mocks.get.mockResolvedValue(next);
+    mocks.media.mockResolvedValue(new Blob(['image'], { type: 'image/png' }));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:delivery-ingredient');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
+
+    const image = await screen.findByRole('img', { name: 'Actual flour presentation image' });
+    expect(image.getAttribute('src')).toBe('blob:delivery-ingredient');
+  });
+  it('filters ingredient delivery records with summaries and status tabs', async () => {
+    const next = arrangedDeliveryState();
+    next.orders[0].custodyOrder.dispatched = '10';
+    next.logistics!.shipments.push({
+      shipmentId: hash('b'),
+      orderId: hash('a'),
+      batchId,
+      sender: carrier,
+      recipient: manufacturer,
+      itemName: 'Actual flour',
+      kind: 'ingredient',
+      leg: 2,
+      status: 1,
+      quantity: '10',
+      received: '0',
+      unit: 'kg',
+      vehicle: 'WXY 7788',
+      fromLocation: location,
+      toLocation: manufacturerLocation,
+      dispatchedAt: now - 120,
+      recordedAt: now - 100,
+      expectedAt: now + 3_600,
+    });
+    mocks.get.mockResolvedValue(next);
+
+    render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
+
+    expect(await screen.findByRole('button', { name: /In transit\s*1/ })).toBeTruthy();
+    const tab = screen.getByRole('tab', { name: /In transit\s*1/ });
+    fireEvent.click(tab);
+    expect(screen.getByText('SHP-BBBBBBBB')).toBeTruthy();
+    expect(screen.getByText(/Track the shipment until it reaches the Manufacturer/)).toBeTruthy();
+
+    expect(screen.queryByLabelText('Status')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    expect(screen.getByLabelText('Status')).toBeTruthy();
+    expect(screen.getByLabelText('Warehouse')).toBeTruthy();
+    expect(screen.getByLabelText('Supplier')).toBeTruthy();
+    expect(screen.getByLabelText('Manufacturer')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Manufacturer'), {
+      target: { value: 'Actual Manufacturer Company' },
+    });
+    expect(screen.getByText('SHP-BBBBBBBB')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search deliveries'), {
+      target: { value: 'not-a-delivery' },
+    });
+    expect(await screen.findByText('No deliveries match your filters.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+    expect(await screen.findByText('SHP-BBBBBBBB')).toBeTruthy();
+  });
+  it('opens the existing dispatch form from the card without signing automatically', async () => {
+    mocks.get.mockResolvedValue(arrangedDeliveryState());
+    render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Record dispatch' }));
+
+    expect(await screen.findByRole('heading', { name: 'Record ingredient dispatch' })).toBeTruthy();
+    const progress = screen.getByRole('list', { name: 'Ingredient dispatch progress' });
+    for (const label of [
+      'Delivery arranged',
+      'Route confirmed',
+      'Record dispatch',
+      'Manufacturer receives',
+    ])
+      expect(within(progress).getByText(label)).toBeTruthy();
+    expect(screen.getByText('Dispatch summary')).toBeTruthy();
+    expect(screen.getByText('Road dispatch details')).toBeTruthy();
+    expect(screen.getByText('Actual quantity dispatched (kg)')).toBeTruthy();
+    const companyRoute = screen.getByRole('list', { name: 'Dispatch company route' });
+    expect(companyRoute.classList.contains('workspace-status-timeline--route')).toBe(true);
+    expect(companyRoute.querySelectorAll('li')).toHaveLength(3);
+    for (const participant of ['Supplier', 'Distributor', 'Manufacturer'])
+      expect(within(companyRoute).getByText(participant)).toBeTruthy();
+    const routePanel = screen.getByRole('heading', { name: 'Dispatch route' }).closest('section')!;
+    expect(within(routePanel).getByText('Warehouse A')).toBeTruthy();
+    expect(within(routePanel).getByText('Manufacturer receiving dock')).toBeTruthy();
+    expect(
+      within(routePanel).getByRole('link', { name: /Manage Supplier credential request/ }),
+    ).toBeTruthy();
+    expect(
+      within(routePanel).queryByRole('button', { name: 'Set up a missing location' }),
+    ).toBeNull();
+    expect(
+      (screen.getByRole('button', { name: 'Confirm dispatch with MetaMask' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it('offers location setup only when the delivery route is incomplete', async () => {
+    const next = arrangedDeliveryState();
+    next.orders[0].custodyOrder.receivingLocation = '';
+    mocks.get.mockResolvedValue(next);
+    render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Record dispatch' }));
+
+    const routePanel = (await screen.findByRole('heading', { name: 'Dispatch route' })).closest(
+      'section',
+    )!;
+    expect(
+      within(routePanel).getByRole('button', { name: 'Set up a missing location' }),
+    ).toBeTruthy();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.sign).not.toHaveBeenCalled();
+  });
+  it('uses safe timing and vehicle fallbacks on an unscheduled delivery', async () => {
+    const next = arrangedDeliveryState();
+    delete next.orders[0].custodyOrder.pickupAt;
+    delete next.orders[0].custodyOrder.expectedAt;
+    delete next.orders[0].custodyOrder.vehicle;
+    mocks.get.mockResolvedValue(next);
+
+    render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
+
+    expect(await screen.findByText('Not scheduled')).toBeTruthy();
+    expect(screen.getAllByText('Not recorded').length).toBeGreaterThanOrEqual(2);
+    expect(document.querySelector('.distributor-delivery-card__main')).toBeTruthy();
+    expect(document.querySelector('.workspace-status-timeline--route')).toBeTruthy();
+  });
+  it('shows the genuine ingredient-delivery empty state without a false shipment message', async () => {
+    render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
+
+    expect(await screen.findByText('No ingredient deliveries yet.')).toBeTruthy();
+    expect(
+      screen.getByText('Approved and arranged Supplier orders will appear here.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('No matching shipments')).toBeNull();
   });
   it('uses Supplier-specific tracking and no inbound acceptance controls', async () => {
     mocks.get.mockResolvedValue({ ...structuredClone(state), actor: supplier });

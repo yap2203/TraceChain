@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronLeft,
+  ClipboardCheck,
   MapPin,
   PackageCheck,
   RefreshCw,
@@ -36,6 +37,7 @@ export function ShipmentWorkflowDetail({
   receiptContent,
   additionalContent,
   technicalFields,
+  workflowVariant = 'shipment',
 }: {
   shipment: OrderRecord;
   catalogueItem?: OrderRecord;
@@ -54,6 +56,7 @@ export function ShipmentWorkflowDetail({
   receiptContent: ReactNode;
   additionalContent?: ReactNode;
   technicalFields: TechnicalField[];
+  workflowVariant?: 'shipment' | 'ingredient-delivery';
 }) {
   const status = Number(shipment.status);
   const complete = status >= 3;
@@ -62,52 +65,100 @@ export function ShipmentWorkflowDetail({
   const arrived = complete || partiallyReceived || qrVerified;
   const productName = shipment.itemName ?? catalogueItem?.name ?? 'Registered ingredient';
   const shipmentReference = `SHP-${shipment.shipmentId.slice(2, 10).toUpperCase()}`;
-  const progress = [
-    {
-      actor: when(shipment.dispatchedAt),
-      icon: <PackageCheck size={25} />,
-      label: 'Dispatched',
-      state: 'complete' as const,
-    },
-    {
-      actor: arrived ? 'Transit completed' : 'Shipment is on the way',
-      detail: !arrived && shipment.expectedAt ? `Expected ${when(shipment.expectedAt)}` : undefined,
-      icon: <Truck size={25} />,
-      label: 'In Transit',
-      state: arrived
-        ? ('complete' as const)
-        : expectedPassed
-          ? ('complete' as const)
-          : ('current' as const),
-    },
-    {
-      actor: arrived
-        ? 'Shipment label verified'
-        : expectedPassed
-          ? 'Awaiting QR verification'
-          : 'Not yet arrived',
-      icon: <MapPin size={25} />,
-      label: 'Arrived',
-      state: arrived
-        ? ('complete' as const)
-        : expectedPassed
-          ? ('current' as const)
-          : ('pending' as const),
-    },
-    {
-      actor: complete ? when(shipment.receivedAt) : 'Pending confirmation',
-      icon: <Warehouse size={25} />,
-      label: 'Received',
-      state: complete
-        ? ('complete' as const)
-        : arrived || partiallyReceived
-          ? ('current' as const)
-          : ('pending' as const),
-    },
-  ];
+  const progress =
+    workflowVariant === 'ingredient-delivery'
+      ? [
+          {
+            actor: `${senderName} → ${sourceName}`,
+            icon: <ClipboardCheck size={25} />,
+            label: 'Delivery arranged',
+            state: 'complete' as const,
+          },
+          {
+            actor: when(shipment.dispatchedAt),
+            icon: <PackageCheck size={25} />,
+            label: 'Distributor dispatches',
+            state: 'complete' as const,
+          },
+          {
+            actor: complete || expectedPassed ? 'Transit completed' : 'Shipment is on the way',
+            detail:
+              !complete && !expectedPassed && shipment.expectedAt
+                ? `Expected ${when(shipment.expectedAt)}`
+                : undefined,
+            icon: <Truck size={25} />,
+            label: 'In transit',
+            state:
+              complete || expectedPassed || partiallyReceived
+                ? ('complete' as const)
+                : ('current' as const),
+          },
+          {
+            actor: complete ? when(shipment.receivedAt) : recipientName,
+            detail: complete ? 'Physical receipt confirmed' : 'Awaiting physical receipt',
+            icon: <Warehouse size={25} />,
+            label: 'Manufacturer receives',
+            state: complete
+              ? ('complete' as const)
+              : expectedPassed || partiallyReceived
+                ? ('current' as const)
+                : ('pending' as const),
+          },
+        ]
+      : [
+          {
+            actor: when(shipment.dispatchedAt),
+            icon: <PackageCheck size={25} />,
+            label: 'Dispatched',
+            state: 'complete' as const,
+          },
+          {
+            actor: arrived ? 'Transit completed' : 'Shipment is on the way',
+            detail:
+              !arrived && shipment.expectedAt ? `Expected ${when(shipment.expectedAt)}` : undefined,
+            icon: <Truck size={25} />,
+            label: 'In Transit',
+            state: arrived
+              ? ('complete' as const)
+              : expectedPassed
+                ? ('complete' as const)
+                : ('current' as const),
+          },
+          {
+            actor: arrived
+              ? 'Shipment label verified'
+              : expectedPassed
+                ? 'Awaiting QR verification'
+                : 'Not yet arrived',
+            icon: <MapPin size={25} />,
+            label: 'Arrived',
+            state: arrived
+              ? ('complete' as const)
+              : expectedPassed
+                ? ('current' as const)
+                : ('pending' as const),
+          },
+          {
+            actor: complete ? when(shipment.receivedAt) : 'Pending confirmation',
+            icon: <Warehouse size={25} />,
+            label: 'Received',
+            state: complete
+              ? ('complete' as const)
+              : arrived || partiallyReceived
+                ? ('current' as const)
+                : ('pending' as const),
+          },
+        ];
 
   return (
-    <section className="workspace-arrival-detail" aria-label="Custody intake shipment detail">
+    <section
+      className="workspace-arrival-detail"
+      aria-label={
+        workflowVariant === 'ingredient-delivery'
+          ? 'Ingredient delivery detail'
+          : 'Custody intake shipment detail'
+      }
+    >
       {onBack && (
         <button type="button" className="workspace-process-back" onClick={onBack}>
           <ChevronLeft size={17} aria-hidden="true" />
@@ -217,7 +268,11 @@ export function ShipmentWorkflowDetail({
           </dl>
           <Alert
             type="info"
-            message="Verify the shipment QR and physical goods before confirming receipt. The final confirmation is recorded on the blockchain."
+            message={
+              workflowVariant === 'ingredient-delivery'
+                ? 'The Manufacturer verifies the physical goods and confirms receipt separately. This view does not submit a transaction.'
+                : 'Verify the shipment QR and physical goods before confirming receipt. The final confirmation is recorded on the blockchain.'
+            }
           />
         </section>
 

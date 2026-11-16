@@ -41,6 +41,7 @@ import { SupplierStockSummary } from './SupplierStockSummary';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
 import { ProductDeliveryPanel } from './ProductDeliveryPanel';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
+import { ManufacturerIngredientOrderDetail } from './ManufacturerIngredientOrderDetail';
 import {
   companyEvidenceStatus,
   nextAction,
@@ -192,6 +193,19 @@ export function OrdersPage({
   const item = data?.catalogue.find((entry) => entry.itemId === (order?.itemId ?? selected));
   const seller = !!order && !!data && same(order.seller, data.actor);
   const buyer = !!order && !!data && same(order.buyer, data.actor);
+  const orderShipment = data?.logistics?.shipments.find(
+    (entry) =>
+      same(entry.orderId, order?.orderId) &&
+      (same(entry.recipient, data.actor) || same(entry.sender, data.actor)),
+  );
+  const manufacturerIngredientDetail =
+    !!order &&
+    !!data &&
+    role === 'manufacturer' &&
+    mode === 'manage' &&
+    buyer &&
+    !evidenceOnly &&
+    Number(item?.kind ?? 1) === 1;
   const activeOrder =
     !!order &&
     Number(order.status) < 3 &&
@@ -232,61 +246,63 @@ export function OrdersPage({
     });
   return (
     <div className="orders-page" style={{ display: 'grid', gap: 16, width: '100%' }}>
-      <header className="orders-page-header">
-        <div>
-          <h2 style={{ color: T.navy }}>
-            {evidenceOnly
-              ? 'Company evidence request'
-              : mode === 'manage'
+      {!manufacturerIngredientDetail && (
+        <header className="orders-page-header">
+          <div>
+            <h2 style={{ color: T.navy }}>
+              {evidenceOnly
+                ? 'Company evidence request'
+                : mode === 'manage'
+                  ? role === 'distributor'
+                    ? 'Ingredient deliveries'
+                    : fixedDirection === 'received'
+                      ? 'Incoming product orders'
+                      : role === 'retailer'
+                        ? 'My product orders'
+                        : 'Ingredient orders'
+                  : mode === 'browse'
+                    ? role === 'retailer'
+                      ? 'Browse products'
+                      : 'Supplier ingredients'
+                    : role === 'supplier'
+                      ? evidenceOnly
+                        ? 'Company evidence request'
+                        : 'Incoming quantity requests'
+                      : 'Browse & requests'}
+            </h2>
+            <p>
+              {mode === 'manage'
                 ? role === 'distributor'
-                  ? 'Ingredient deliveries'
-                  : fixedDirection === 'received'
-                    ? 'Incoming product orders'
-                    : role === 'retailer'
-                      ? 'My product orders'
-                      : 'Ingredient orders'
+                  ? 'Review delivery offers, optionally verify the Supplier company proof, then scan the package label to confirm physical pickup.'
+                  : 'Review requests, arrange delivery and track receipt.'
                 : mode === 'browse'
-                  ? role === 'retailer'
-                    ? 'Browse products'
-                    : 'Supplier ingredients'
+                  ? role === 'manufacturer'
+                    ? 'Browse supplier ingredients, check stock, or request evidence.'
+                    : 'Open an item to see its registered details or send a request.'
                   : role === 'supplier'
                     ? evidenceOnly
-                      ? 'Company evidence request'
-                      : 'Incoming quantity requests'
-                    : 'Browse & requests'}
-          </h2>
-          <p>
-            {mode === 'manage'
-              ? role === 'distributor'
-                ? 'Review delivery offers, optionally verify the Supplier company proof, then scan the package label to confirm physical pickup.'
-                : 'Review requests, arrange delivery and track receipt.'
-              : mode === 'browse'
-                ? role === 'manufacturer'
-                  ? 'Browse supplier ingredients, check stock, or request evidence.'
-                  : 'Open an item to see its registered details or send a request.'
-                : role === 'supplier'
-                  ? evidenceOnly
-                    ? 'Manage company evidence linked to this request. Verification does not approve the order automatically.'
-                    : 'Review quantity requests and approve or reject them.'
-                  : 'Find products, request quantities and track delivery. No payments are processed.'}
-          </p>
-        </div>
-        <Btn
-          variant="outline"
-          icon={<RefreshCw size={16} />}
-          disabled={busy}
-          onClick={() =>
-            void run(async () => {
-              await load();
-              setNotice(
-                'Requests refreshed. Changes recorded by other stakeholders are now shown.',
-              );
-            })
-          }
-        >
-          {busy ? 'Working…' : 'Refresh data'}
-        </Btn>
-      </header>
+                      ? 'Manage company evidence linked to this request. Verification does not approve the order automatically.'
+                      : 'Review quantity requests and approve or reject them.'
+                    : 'Find products, request quantities and track delivery. No payments are processed.'}
+            </p>
+          </div>
+          <Btn
+            variant="outline"
+            icon={<RefreshCw size={16} />}
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await load();
+                setNotice(
+                  'Requests refreshed. Changes recorded by other stakeholders are now shown.',
+                );
+              })
+            }
+          >
+            {busy ? 'Working…' : 'Refresh data'}
+          </Btn>
+        </header>
+      )}
       {role !== 'supplier' && mode === 'combined' && !evidenceOnly && (
         <nav aria-label="Browse and requests" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <Btn
@@ -408,7 +424,7 @@ export function OrdersPage({
               <h3>My requests</h3>
             </>
           )}
-          {order && role !== 'supplier' && !evidenceOnly && (
+          {order && role !== 'supplier' && !evidenceOnly && !manufacturerIngredientDetail && (
             <div className="workspace-process-page-heading">
               <button
                 type="button"
@@ -438,81 +454,126 @@ export function OrdersPage({
           {order && (
             <OrderDetailSurface
               modal={role === 'supplier' && !evidenceOnly}
+              plain={manufacturerIngredientDetail}
               title={`Review request — ${item?.name ?? 'Requested item'}`}
               onClose={() => setSelected('')}
             >
-              <div className="request-detail-modal">
-                {!evidenceOnly && <OrderLifecycle order={order} actor={data.actor} role={role} />}
-                <section
-                  className="request-detail-summary"
-                  aria-label="Requested item and requester"
-                >
-                  <CatalogueImage
-                    path={item?.imagePath}
-                    alt={`${item?.name ?? 'Ingredient'} catalogue image`}
-                    category={item?.category}
-                    large
+              <div className={manufacturerIngredientDetail ? '' : 'request-detail-modal'}>
+                {manufacturerIngredientDetail && (
+                  <ManufacturerIngredientOrderDetail
+                    data={data}
+                    order={order}
+                    item={item}
+                    shipment={orderShipment}
+                    busy={busy}
+                    onBack={() => setSelected('')}
+                    onRefresh={() =>
+                      void run(async () => {
+                        await load();
+                        setNotice(
+                          'Order refreshed. Changes recorded by other stakeholders are now shown.',
+                        );
+                      })
+                    }
+                    onOpenShipment={() =>
+                      navigate(
+                        workspacePath(role, 'shipments') +
+                          '?' +
+                          new URLSearchParams({
+                            orderId: order.orderId,
+                            ...(orderShipment?.shipmentId
+                              ? { shipmentId: orderShipment.shipmentId }
+                              : {}),
+                          }),
+                      )
+                    }
+                    onRespondEvidence={() =>
+                      navigate(
+                        workspacePath(role, 'requests') +
+                          '?direction=received&orderId=' +
+                          encodeURIComponent(order.orderId),
+                      )
+                    }
                   />
-                  <div>
-                    <Badge
-                      label={requestStatus(order).label}
-                      variant={requestStatus(order).variant}
+                )}
+                {!evidenceOnly && !manufacturerIngredientDetail && (
+                  <OrderLifecycle order={order} actor={data.actor} role={role} />
+                )}
+                {!manufacturerIngredientDetail && (
+                  <section
+                    className="request-detail-summary"
+                    aria-label="Requested item and requester"
+                  >
+                    <CatalogueImage
+                      path={item?.imagePath}
+                      alt={`${item?.name ?? 'Ingredient'} catalogue image`}
+                      category={item?.category}
+                      large
                     />
-                    <h3>{item?.name ?? 'Requested item'}</h3>
-                    <p>Batch reference: {item?.batchReference || 'Not disclosed'}</p>
-                    <div className="request-detail-company">
-                      <CompanyAvatar
-                        name={
-                          same(order.seller, data.actor)
-                            ? (order.buyerName ?? 'Company name unavailable')
-                            : (order.sellerName ?? 'Company name unavailable')
-                        }
-                        logoPath={
-                          same(order.seller, data.actor)
-                            ? order.buyerLogoPath
-                            : order.sellerLogoPath
-                        }
-                        size="lg"
+                    <div>
+                      <Badge
+                        label={requestStatus(order).label}
+                        variant={requestStatus(order).variant}
                       />
-                      <div>
-                        <span>
-                          {same(order.seller, data.actor)
-                            ? 'Requesting company'
-                            : 'Supplying company'}
-                        </span>
-                        <strong>
-                          {same(order.seller, data.actor)
-                            ? (order.buyerName ?? 'Company name unavailable')
-                            : (order.sellerName ?? 'Company name unavailable')}
-                        </strong>
+                      <h3>{item?.name ?? 'Requested item'}</h3>
+                      <p>Batch reference: {item?.batchReference || 'Not disclosed'}</p>
+                      <div className="request-detail-company">
+                        <CompanyAvatar
+                          name={
+                            same(order.seller, data.actor)
+                              ? (order.buyerName ?? 'Company name unavailable')
+                              : (order.sellerName ?? 'Company name unavailable')
+                          }
+                          logoPath={
+                            same(order.seller, data.actor)
+                              ? order.buyerLogoPath
+                              : order.sellerLogoPath
+                          }
+                          size="lg"
+                        />
+                        <div>
+                          <span>
+                            {same(order.seller, data.actor)
+                              ? 'Requesting company'
+                              : 'Supplying company'}
+                          </span>
+                          <strong>
+                            {same(order.seller, data.actor)
+                              ? (order.buyerName ?? 'Company name unavailable')
+                              : (order.sellerName ?? 'Company name unavailable')}
+                          </strong>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </section>
-                <dl className="request-detail-facts">
-                  <div>
-                    <dt>Requested quantity</dt>
-                    <dd>
-                      {order.requested} {item?.unit ?? ''}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Submitted</dt>
-                    <dd>{timestamp(order.createdAt ?? order.requestedAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Response deadline</dt>
-                    <dd>{timestamp(order.expiresAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Company evidence</dt>
-                    <dd>{companyEvidenceStatus(order)}</dd>
-                  </div>
-                </dl>
+                  </section>
+                )}
+                {!manufacturerIngredientDetail && (
+                  <dl className="request-detail-facts">
+                    <div>
+                      <dt>Requested quantity</dt>
+                      <dd>
+                        {order.requested} {item?.unit ?? ''}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Submitted</dt>
+                      <dd>{timestamp(order.createdAt ?? order.requestedAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Response deadline</dt>
+                      <dd>{timestamp(order.expiresAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Company evidence</dt>
+                      <dd>{companyEvidenceStatus(order)}</dd>
+                    </div>
+                  </dl>
+                )}
                 {evidenceOnly && (
                   <Alert type="info" message={`Next action: ${nextAction(order, data.actor)}`} />
                 )}
-                {buyer &&
+                {!manufacturerIngredientDetail &&
+                  buyer &&
                   mode === 'manage' &&
                   !evidenceOnly &&
                   order.identityChallenge &&
@@ -530,7 +591,9 @@ export function OrdersPage({
                       Respond to company evidence request
                     </Btn>
                   )}
-                <p>Private note: {order.details?.note || 'No note recorded'}</p>
+                {!manufacturerIngredientDetail && (
+                  <p>Private note: {order.details?.note || 'No note recorded'}</p>
+                )}
                 {Number(item?.kind) === 2 && Number(order.decision?.status) === 1 && (
                   <ProductDeliveryPanel
                     key={order.orderId}
@@ -540,7 +603,7 @@ export function OrdersPage({
                     onChanged={load}
                   />
                 )}
-                {order.custodyOrder && (
+                {order.custodyOrder && !manufacturerIngredientDetail && (
                   <section className="grid gap-[12px] rounded-lg border border-[var(--c-border)] p-[16px]">
                     <h3>Distributor warehouse fulfilment</h3>
                     <p>
@@ -732,16 +795,20 @@ export function OrdersPage({
                       )}
                     </section>
                   )}
-                {order.decision?.reason && <p>Seller decision reason: {order.decision.reason}</p>}
-                <p>
-                  {order.custodyOrder
-                    ? 'Warehouse stock is reserved at request placement. Supplier approval permits Distributor dispatch; only Manufacturer physical receipt credits production stock.'
-                    : order.delivery
-                      ? 'Approval is separate from custody. Distributor pickup sets goods aside; only Manufacturer receipt credits usable production stock.'
-                      : order.isRequestOnly || order.details?.requestOnly
-                        ? 'This request does not reserve stock, dispatch goods or confirm delivery.'
-                        : 'Earlier physical-flow records are preserved. Removing fulfilment controls does not undo any existing reservations or shipments.'}
-                </p>
+                {!manufacturerIngredientDetail && order.decision?.reason && (
+                  <p>Seller decision reason: {order.decision.reason}</p>
+                )}
+                {!manufacturerIngredientDetail && (
+                  <p>
+                    {order.custodyOrder
+                      ? 'Warehouse stock is reserved at request placement. Supplier approval permits Distributor dispatch; only Manufacturer physical receipt credits production stock.'
+                      : order.delivery
+                        ? 'Approval is separate from custody. Distributor pickup sets goods aside; only Manufacturer receipt credits usable production stock.'
+                        : order.isRequestOnly || order.details?.requestOnly
+                          ? 'This request does not reserve stock, dispatch goods or confirm delivery.'
+                          : 'Earlier physical-flow records are preserved. Removing fulfilment controls does not undo any existing reservations or shipments.'}
+                  </p>
+                )}
                 {seller && (role === 'supplier' || mode === 'manage') && !evidenceOnly && (
                   <>
                     {role === 'supplier' &&
@@ -890,18 +957,20 @@ export function OrdersPage({
                     )}
                   </>
                 )}
-                <TechnicalDetails
-                  fields={[
-                    { label: 'Request ID', value: order.orderId },
-                    { label: 'Batch ID', value: item?.batches?.[0] ?? '' },
-                    { label: 'Requester wallet', value: order.buyer },
-                    { label: 'Recipient wallet', value: order.seller },
-                    {
-                      label: 'Transaction identifier',
-                      value: order.transactionHash ?? order.txHash ?? '',
-                    },
-                  ]}
-                />
+                {!manufacturerIngredientDetail && (
+                  <TechnicalDetails
+                    fields={[
+                      { label: 'Request ID', value: order.orderId },
+                      { label: 'Batch ID', value: item?.batches?.[0] ?? '' },
+                      { label: 'Requester wallet', value: order.buyer },
+                      { label: 'Recipient wallet', value: order.seller },
+                      {
+                        label: 'Transaction identifier',
+                        value: order.transactionHash ?? order.txHash ?? '',
+                      },
+                    ]}
+                  />
+                )}
                 {(seller || buyer) && activeOrder && evidenceOnly && (
                   <details className="orders-stage" open>
                     <summary>Company identity evidence</summary>
@@ -1164,11 +1233,13 @@ export function OrdersPage({
 
 function OrderDetailSurface({
   modal,
+  plain = false,
   title,
   onClose,
   children,
 }: {
   modal: boolean;
+  plain?: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
@@ -1177,6 +1248,8 @@ function OrderDetailSurface({
     <Modal title={title} width={860} onClose={onClose}>
       {children}
     </Modal>
+  ) : plain ? (
+    <>{children}</>
   ) : (
     <Card>{children}</Card>
   );

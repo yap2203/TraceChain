@@ -1,10 +1,60 @@
 # Project Progress
 
+## 2026-11-17 — Compact Manufacturer ingredient-order detail
+
+- Replaced the duplicated Manufacturer order-detail headings and generic stacked request card with
+  one ingredient-led header, the shared responsive four-stage workflow timeline and a compact
+  current-stage / next-action panel. Refreshing and viewing remain read-only.
+- Consolidated authenticated ingredient, Supplier, quantity, fulfilment, route, shipment, receipt
+  and company-evidence presentation into a compact summary and balanced detail panels. Shipment
+  receipt actions appear only for a real linked shipment, while orders awaiting dispatch show an
+  explicit waiting state. Wallets, location IDs, hashes and contract references remain inside
+  collapsed Technical details.
+- Reused the shared company avatar, catalogue image, badge, button, route timeline, alert and
+  technical-detail components, including responsive horizontal-to-vertical timeline behaviour.
+  Added focused shipment/no-shipment, evidence-separation, status-stage, image-fallback,
+  company-name, route, quantity and read-only coverage. All 302 frontend tests, frontend type
+  checking, changed-file formatting and the production build pass.
+
+## 2026-11-16 — Distributor ingredient-delivery workspace
+
+- Replaced the Distributor Ingredient deliveries route's plain arranged-order rows and generic
+  shipment table with navigation-style status summaries, connected counted tabs, compact search /
+  sort controls, expandable detailed filters and structured delivery cards using real ingredient,
+  company, warehouse, route, timing and vehicle data. Cards use the shared responsive route timeline
+  for Supplier → Distributor warehouse → Manufacturer without changing status calculations.
+- Added a read-only review step before physical dispatch, with the shared responsive four-stage
+  workflow timeline, company avatars, ingredient imagery, evidence state, explicit MetaMask notice
+  and collapsed Technical details. Record dispatch now continues into a matching workflow screen
+  with a compact Supplier-to-Distributor-to-Manufacturer route, separate pickup-to-receiving bar,
+  conditional missing-location action, structured logistics fields and the existing validated
+  MetaMask submission. Opening either step remains read-only and does not prepare or sign.
+- Added focused coverage for delivery cards, names, quantity, image fallback, summary/tab filtering,
+  expandable company/warehouse filters, status-dependent actions, safe timing fallbacks, responsive
+  structure, conditional route actions, true and filtered empty states and transaction safety. All
+  300 frontend tests, frontend type checking, focused formatting and the production build pass.
+
+## 2026-11-16 — Consistent custody inventory presentation
+
+- Aligned Distributor Ingredient custody with Supplier My ingredients using the existing compact
+  summary cards, combined filters, remembered List/Grid selector, stable three-column grid,
+  full-width list rows, authenticated catalogue images, company avatars, status badges and
+  independent Show more/Show less interaction.
+- Extended the already shared custody-inventory page for Distributor product, Supplier-owned and
+  Manufacturer-owned custody records with role-specific wording while preserving their original
+  API datasets, wallet scoping, quantity calculations, route parameters and read-only actions.
+  Expanded rows use already-loaded data and keep wallets, batch IDs, position IDs and location IDs
+  inside collapsed Technical details.
+- Extracted only the genuinely shared inventory summary, view-toggle, fact and expand controls for
+  Supplier and custody consumers. Added coverage for every shared consumer, view persistence,
+  filter preservation, independent expansion and private-stock isolation. All 293 frontend tests,
+  frontend type checking and the production build pass after rebuilding the shared workspace's
+  generated declarations.
+
 ## 2026-11-16 - Admin approval without credential download
 
 - Removed the automatic plaintext Company Role VC download and its helper from application approval. Renamed the approved-application action to Complete credential activation, preserving resumable registry writes. Successful issuance closes the dialog and tells Admin that the company accesses its credential through My Company Identity.
 - Preserved encrypted credential storage/retrieval, existing exports/backups and holder recovery. No API, contract or key changes. Five application UI tests passed, including new/resumed approvals without file downloads; frontend type checking passed.
-
 
 ## 2026-11-16 - Registration document storage and review
 
@@ -12,6 +62,7 @@
 - Added owner/current-Admin review routes, sandboxed preview/download in Admin application details and company Profile, and pending-applicant review on Login. Added applicant-only legacy reattachment; saved sets cannot be overwritten and original application hashes are preserved.
 - Files are stored in encrypted IPFS and an ignored encrypted local cache. No keys, credentials, contracts or old documents were changed. Historical hashes cannot recover missing document bytes.
 - Validation: all 345 API tests and 262 frontend tests passed; shared/API/frontend type checks and root production build passed. Six new API security/storage tests and three document UI tests cover separate-company denial, current/pending-owner access, immutable legacy attachment, encrypted restart persistence, signature substitution, malformed/oversized files, storage failure and explicit preview. Tests use temporary encrypted stores and simulated IPFS; no real supporting documents were uploaded. Existing Vite chunk/directive warnings remain.
+
 ## 2026-11-16 — Resilient shipment QR image decoding
 
 - Reproduced ZXing's message-less `NotFoundException` in `GridSampler.checkAndNudgePoints` for a

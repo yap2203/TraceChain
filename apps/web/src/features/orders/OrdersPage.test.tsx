@@ -47,6 +47,91 @@ describe('browse and request-only UI', () => {
     expiresAt: '2000000000',
     details: { requestOnly: true, note: 'Please review' },
   };
+  const distributor = '0x2000000000000000000000000000000000000002';
+  const shipmentId = `0x${'a'.repeat(64)}`;
+  function manufacturerIngredientOrderState({
+    withShipment = true,
+    withEvidenceRequest = false,
+  } = {}) {
+    const detailedOrder = {
+      ...order,
+      sellerName: 'Rimba Cocoa Ingredients',
+      buyerName: 'Melur Chocolate Works',
+      requested: '4',
+      requestedBatch: 'batch-cocoa',
+      createdAt: '1794800000',
+      decision: { status: 1, recordedAt: '1794800300' },
+      identityChallenge: withEvidenceRequest ? '0x1234' : undefined,
+      custodyOrder: {
+        arranged: true,
+        batchId: 'batch-cocoa',
+        dispatched: withShipment ? '4' : '0',
+        received: '0',
+        distributor,
+        location: 'warehouse-klang',
+        receivingLocation: 'factory-shah-alam',
+        warehouseName: 'Klang Food Warehouse',
+        unit: 'kg',
+        expectedAt: '1794900000',
+      },
+    };
+    return {
+      ...state,
+      catalogue: [
+        {
+          itemId: 'item',
+          name: 'Unsweetened Cocoa Powder',
+          batchReference: 'COCOA-2026-012',
+          category: 'Cocoa',
+          kind: 1,
+          unit: 'kg',
+          batches: ['batch-cocoa'],
+          batchDetails: [{ batchId: 'batch-cocoa', status: 1 }],
+        },
+      ],
+      companies: [
+        { wallet: 'supplier', companyName: 'Rimba Cocoa Ingredients', role: 'SUPPLIER' },
+        { wallet: distributor, companyName: 'Bayu Food Logistics', role: 'DISTRIBUTOR' },
+        { wallet: actor, companyName: 'Melur Chocolate Works', role: 'MANUFACTURER' },
+      ],
+      locations: [
+        { company: distributor, location: 'warehouse-klang', label: 'Klang Food Warehouse' },
+        { company: actor, location: 'factory-shah-alam', label: 'Shah Alam Chocolate Plant' },
+      ],
+      orders: [detailedOrder],
+      logistics: {
+        warehouses: [
+          {
+            distributor,
+            location: 'warehouse-klang',
+            name: 'Klang Food Warehouse',
+          },
+        ],
+        positions: [],
+        productStock: [],
+        shipments: withShipment
+          ? [
+              {
+                shipmentId,
+                orderId: 'request',
+                batchId: 'batch-cocoa',
+                sender: distributor,
+                recipient: actor,
+                fromLocation: 'warehouse-klang',
+                toLocation: 'factory-shah-alam',
+                quantity: '4',
+                received: '0',
+                unit: 'kg',
+                vehicle: 'WC 1233',
+                dispatchedAt: '1794800500',
+                expectedAt: '1794900000',
+                status: 1,
+              },
+            ]
+          : [],
+      },
+    };
+  }
   it('shows the shared centered spinner while authoritative data loads', () => {
     api.getOrders.mockImplementation(() => new Promise(() => undefined));
     const { container } = render(
@@ -499,6 +584,66 @@ describe('browse and request-only UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
     expect(screen.getByRole('searchbox', { name: 'Search catalogue' })).toBeTruthy();
     expect(screen.queryByText('Own finished product')).toBeNull();
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+  });
+  it('renders the compact Manufacturer ingredient order and shipment workflow without writes', async () => {
+    api.getOrders.mockResolvedValue(
+      manufacturerIngredientOrderState({ withShipment: true, withEvidenceRequest: true }),
+    );
+    const { container } = render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="manage" initialOrderId="request" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('heading', { name: 'Unsweetened Cocoa Powder' })).toBeTruthy();
+    expect(screen.getAllByRole('heading', { name: 'Unsweetened Cocoa Powder' })).toHaveLength(1);
+    expect(screen.queryByRole('heading', { name: 'Order request' })).toBeNull();
+    expect(screen.getByRole('button', { name: /Ingredient orders/ })).toBeTruthy();
+    expect(screen.getByText('Order and delivery details')).toBeTruthy();
+
+    const progress = screen.getByRole('list', { name: 'Order progress' });
+    for (const stage of ['Requested', 'Supplier review', 'Delivery', 'Received'])
+      expect(within(progress).getByText(stage)).toBeTruthy();
+    expect(within(progress).getByText('Delivery').closest('li')?.getAttribute('aria-current')).toBe(
+      'step',
+    );
+
+    expect(screen.getByLabelText('Cocoa image placeholder')).toBeTruthy();
+    expect(screen.getAllByText('Rimba Cocoa Ingredients').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Bayu Food Logistics').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('4 kg').length).toBeGreaterThan(0);
+    expect(screen.getByText('COCOA-2026-012')).toBeTruthy();
+    const route = screen.getByRole('list', {
+      name: 'Supplier to Manufacturer delivery route',
+    });
+    expect(route.classList.contains('workspace-status-timeline--route')).toBe(true);
+    expect(within(route).getByText('Klang Food Warehouse')).toBeTruthy();
+    expect(within(route).getByText('Shah Alam Chocolate Plant')).toBeTruthy();
+    expect(screen.getByText('Awaiting presentation')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Respond to evidence request' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Open shipment & scan receipt' })).toBeTruthy();
+    expect(screen.getByText('SHP-AAAAAAAA')).toBeTruthy();
+    expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+    expect(container.querySelector('.manufacturer-order-detail__columns')).toBeTruthy();
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+  });
+  it('shows a clear waiting state until the Distributor creates a shipment', async () => {
+    api.getOrders.mockResolvedValue(manufacturerIngredientOrderState({ withShipment: false }));
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="manage" initialOrderId="request" />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByText('Bayu Food Logistics will dispatch the reserved warehouse stock.'),
+    ).toBeTruthy();
+    expect(
+      screen.getByText('Waiting for the Distributor to dispatch the reserved stock.'),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Open shipment & scan receipt' })).toBeNull();
+    expect(screen.getByText('Not requested')).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
   });
   it('separates Manufacturer sent and received orders and exposes seller decisions', async () => {
