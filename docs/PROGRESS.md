@@ -1,5 +1,12 @@
 # Project Progress
 
+## 2026-11-17 - Correct empty-location centering on wide screens
+
+- Fixed the remaining unlayered fixed-column rule that kept the empty state centered over only three 360 px tracks. An explicit empty-grid modifier now creates one full-width track; populated location-card layout stays unchanged.
+- Corrected visual verification to compare the icon center with the full location form/content width, rather than with its own wrapper. Chrome at 2148/1440/768/375 px (with a 240 px sidebar offset on desktop) measured zero center difference and no horizontal overflow. The wide-screen screenshot was inspected. Three Profile tests and the frontend production build/type check passed.
+
+
+
 ## 2026-11-17 - Stacked location fields and end wallet-message trial
 
 - Profile location setup now uses one full-width column at every viewport: name, address, then the existing right-aligned register action. The empty-state wrapper spans all location-grid columns so its map icon and message are centered across the section.
