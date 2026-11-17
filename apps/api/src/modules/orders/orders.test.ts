@@ -859,6 +859,10 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
       if (method === 'getOrderEvidence') return [];
       if (method === 'getListing')
         return { metadataHash: `0x${'0'.repeat(64)}`, encryptedCid: '', archived: false };
+      if (method === 'getInventory')
+        return { available: '0', reserved: '0', damaged: '0', rejected: '0' };
+      if (method === 'locationTracked') return false;
+      if (method === 'productionLocation') return id('factory');
       if (method === 'requestDecision')
         return {
           status: '0',
@@ -869,6 +873,7 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
       if (method === 'requestOnly') return true;
       if (method === 'listingManagementPolicy' || method === 'supplierManagementPolicy') return 1;
       if (method === 'isUsable') return true;
+      if (method === 'isTransferable') return true;
       if (method === 'hasPermission') return true;
       if (method === 'isAuthorized' || method === 'isValidTraceabilitySource') return true;
       throw new Error(`Unexpected ${method}`);
@@ -917,6 +922,68 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
   return { app, gateway, service, store, repository };
 }
 describe('order API and private metadata', () => {
+  it('publishes real product availability, recorded origin and traceability status to Retailers', async () => {
+    const f = fixture(buyer, true, CompanyRole.RETAILER);
+    const metadata = JSON.stringify({
+      batchReference: 'CHOC-2026-01',
+      origin: 'Malaysia',
+      productName: 'Dark chocolate bar',
+    });
+    const metadataHash = `0x${createHash('sha256').update(metadata).digest('hex')}`;
+    await f.repository.savePrivate('products', {
+      cid: 'product-cid',
+      contentHash: metadataHash,
+      id: batchId,
+      owner: seller,
+      payload: { ciphertext: metadata },
+    });
+    const previousRead = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method) => {
+      if (method === 'getItem')
+        return {
+          seller,
+          kind: '2',
+          unit: encodeBytes32String('each'),
+          active: true,
+        };
+      if (method === 'getProduct')
+        return {
+          manufacturer: seller,
+          metadataHash,
+          publicCid: 'product-cid',
+          totalQuantity: '123',
+          unit: encodeBytes32String('each'),
+          status: '1',
+          expiresAt: '2000000000',
+          producedAt: '1900000000',
+        };
+      if (method === 'getInventory')
+        return { available: '40', reserved: '2', damaged: '0', rejected: '0' };
+      if (method === 'locationTracked') return true;
+      if (method === 'productionLocation') return id('factory');
+      if (method === 'productionRecordedAt') return '1900000010';
+      if (method === 'getIngredientLinks') return [];
+      if (method === 'isTransferable') return true;
+      return previousRead(contract, method);
+    });
+    const previousEvents = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, name) => {
+      if (name === 'ProductCreated') return [{ batchId, manufacturer: seller }];
+      if (name === 'InventoryInitialized') return [{ productBatchId: batchId }];
+      return previousEvents(contract, name);
+    });
+
+    const response = await request(f.app).get('/api/orders').expect(200);
+    expect(response.body.catalogue[0]).toMatchObject({
+      countryOfOrigin: 'Malaysia',
+      credentialLabel: 'Linked credentials active',
+      credentialStatus: 1,
+      name: 'Dark chocolate bar',
+      batchDetails: [expect.objectContaining({ manufacturerAvailable: '40' })],
+    });
+    expect(response.body.catalogue[0].batchDetails[0].manufacturerAvailable).not.toBe('123');
+  });
+
   function deliveryFixture(actor = seller, role = CompanyRole.SUPPLIER, stage = 1) {
     const f = fixture(actor, true, role),
       read = f.gateway.read.getMockImplementation()!;

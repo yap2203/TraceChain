@@ -92,7 +92,10 @@ export function InformationRequestsWorkspace({
     deliveryOrder?.delivery &&
     (same(data?.actor, deliveryOrder.seller) ||
       same(data?.actor, deliveryOrder.delivery.distributor));
-  const showEvidence = params.get('tab') === 'evidence' && children;
+  const showEvidence =
+    children &&
+    (params.get('tab') === 'evidence' ||
+      Boolean(params.get('batchId') || params.get('productBatchId')));
   const directionRows = useMemo(
     () => rows.filter((row) => row.direction === direction),
     [direction, rows],
@@ -131,14 +134,14 @@ export function InformationRequestsWorkspace({
           </Btn>
         }
       />
-      {!initialDirection && (
+      {children && (
         <nav className="flex flex-wrap gap-[8px]" aria-label="Information request category">
           <Btn
             aria-pressed={!showEvidence}
             variant={!showEvidence ? 'primary' : 'outline'}
             onClick={() => setParams({})}
           >
-            Company credential requests
+            Company evidence
           </Btn>
           {children && (
             <Btn
@@ -345,11 +348,6 @@ export function InformationRequestsWorkspace({
             </div>
           )}
         </>
-      )}
-      {initialDirection && children && !showEvidence && !reference && (
-        <section className="workspace-request-section" aria-label="Ingredient evidence requests">
-          {children}
-        </section>
       )}
     </div>
   );

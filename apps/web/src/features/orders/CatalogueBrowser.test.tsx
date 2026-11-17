@@ -6,6 +6,44 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+describe('Retailer product catalogue data', () => {
+  it('shows orderable inventory, recorded origin and current linked-credential status', () => {
+    render(
+      <CatalogueBrowser
+        actor="retailer"
+        role="retailer"
+        items={[
+          {
+            itemId: 'product-item',
+            batches: ['product-batch'],
+            name: 'Dark chocolate bar',
+            kind: 2,
+            seller: 'manufacturer',
+            sellerName: 'Actual Manufacturer',
+            active: true,
+            countryOfOrigin: 'Malaysia',
+            credentialStatus: 1,
+            credentialLabel: 'Linked credentials active',
+            unit: 'each',
+            batchDetails: [{ batchId: 'product-batch', manufacturerAvailable: '42' }],
+          },
+        ]}
+        busy={false}
+        onQuantityRequest={vi.fn()}
+        onEvidenceRequest={vi.fn()}
+        onOpenEvidence={vi.fn()}
+        locations={[]}
+      />,
+    );
+
+    const card = screen.getByText('Dark chocolate bar').closest('.catalogue-card') as HTMLElement;
+    expect(within(card).getByText('Malaysia')).toBeTruthy();
+    expect(within(card).getByText('42 each')).toBeTruthy();
+    expect(within(card).getByText('Linked credentials active')).toBeTruthy();
+    expect(card.textContent).not.toContain('Not published');
+  });
+});
 const manufacturerPresentation = {
   hideIntro: true,
   resultNoun: { singular: 'ingredient', plural: 'ingredients' },

@@ -1,7 +1,7 @@
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useMemo, useState } from 'react';
-import { PackageCheck, Search } from 'lucide-react';
+import { ArrowRight, PackageCheck, Search } from 'lucide-react';
 
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import {
@@ -10,6 +10,7 @@ import {
   type ProductTraceabilityResponse,
 } from '../../../product-traceability';
 import { CatalogueImage, CompanyAvatar } from '../../../orders/CatalogueMedia';
+import { getOrders, type OrderRecord } from '../../../orders/orders.api';
 import {
   Alert,
   Badge,
@@ -30,6 +31,7 @@ interface HistoryRecord {
 export function ProductHistory({ onView }: { onView: (batch: string) => void }) {
   const { data, error: operationalError, loading: operationalLoading } = useOperationalData();
   const [records, setRecords] = useState<HistoryRecord[]>([]);
+  const [catalogue, setCatalogue] = useState<OrderRecord[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -55,14 +57,20 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
       return;
     }
     setLoading(true);
-    void Promise.all(
-      batchIds.map(async (batchId) => ({
-        batchId,
-        trace: await resolveProductTraceability(createProductQrPayload(batchId)),
-      })),
-    )
-      .then((resolved) => {
-        if (active) setRecords(resolved);
+    void Promise.all([
+      getOrders(),
+      Promise.all(
+        batchIds.map(async (batchId) => ({
+          batchId,
+          trace: await resolveProductTraceability(createProductQrPayload(batchId)),
+        })),
+      ),
+    ])
+      .then(([orders, resolved]) => {
+        if (active) {
+          setCatalogue(orders.catalogue);
+          setRecords(resolved);
+        }
       })
       .catch((cause) => {
         if (active) setError(reportError(cause, 'Product history could not be loaded.'));
@@ -145,10 +153,15 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
             );
             const distributor =
               transfer?.distributorName ?? transfer?.senderName ?? 'Distributor name unavailable';
+            const retailer = transfer?.recipientName ?? trace.currentCustodianName;
+            const item = catalogue.find((entry) =>
+              entry.batches?.some((id: string) => id.toLowerCase() === batchId.toLowerCase()),
+            );
             return (
               <article className="received-product-card" key={batchId}>
                 <div className="received-product-card__image">
                   <CatalogueImage
+                    path={item?.imagePath}
                     alt={`${trace.product.name} image`}
                     category={trace.product.category}
                   />
@@ -163,6 +176,17 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
                       label={trace.product.status}
                       variant={trace.product.status === 'ACTIVE' ? 'active' : 'pending'}
                     />
+                  </div>
+                  <div className="received-product-card__route" aria-label="Product custody route">
+                    <RouteCompany
+                      role="Manufacturer"
+                      name={trace.product.manufacturerName}
+                      logoPath={item?.sellerLogoPath}
+                    />
+                    <ArrowRight aria-hidden="true" size={17} />
+                    <RouteCompany role="Distributor" name={distributor} />
+                    <ArrowRight aria-hidden="true" size={17} />
+                    <RouteCompany role="Retailer" name={retailer} />
                   </div>
                   <dl className="received-product-card__facts">
                     <div>
@@ -235,6 +259,18 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
         </div>
       )}
     </div>
+  );
+}
+
+function RouteCompany({ role, name, logoPath }: { role: string; name: string; logoPath?: string }) {
+  return (
+    <span className="received-product-card__company">
+      <CompanyAvatar name={name} logoPath={logoPath} size="sm" />
+      <span>
+        <small>{role}</small>
+        <strong>{name}</strong>
+      </span>
+    </span>
   );
 }
 

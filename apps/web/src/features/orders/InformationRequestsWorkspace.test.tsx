@@ -146,6 +146,20 @@ it('preserves the existing ingredient-evidence workflow under its own category',
   fireEvent.click(screen.getByRole('button', { name: 'Ingredient evidence' }));
   expect(screen.getByText('Existing ingredient request controls')).toBeTruthy();
 });
+it('keeps company and ingredient evidence as compact tabs on the sent-request route', async () => {
+  render(
+    <MemoryRouter>
+      <InformationRequestsWorkspace role="retailer" initialDirection="sent">
+        <p>Retailer ingredient evidence controls</p>
+      </InformationRequestsWorkspace>
+    </MemoryRouter>,
+  );
+  await screen.findByText('Manufacturer Company');
+  expect(screen.getByRole('button', { name: 'Company evidence' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Ingredient evidence' }));
+  expect(screen.getByText('Retailer ingredient evidence controls')).toBeTruthy();
+  expect(screen.queryByText('Manufacturer Company')).toBeNull();
+});
 it('verifies an ingredient-linked company proof only after explicit action and shows check results', async () => {
   api.proofStatus.mockResolvedValue({ status: 'PRESENTED', requestId: 'ingredient-proof' });
   api.verify.mockResolvedValue({

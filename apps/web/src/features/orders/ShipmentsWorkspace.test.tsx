@@ -605,11 +605,16 @@ describe('unified warehouse shipments', () => {
     next.catalogue[0].kind = 2;
     next.catalogue[0].batchReference = 'PRODUCT-001';
     next.catalogue[0].unit = 'each';
+    next.catalogue[0].imagePath = '/catalogue/products/product-batch/image';
     mocks.get.mockResolvedValue(next);
 
     render(<ShipmentsWorkspace role="distributor" initialKind="product" />);
 
     const review = await screen.findByRole('button', { name: 'View shipment' });
+    expect(screen.queryByText('No shipments yet')).toBeNull();
+    await waitFor(() =>
+      expect(mocks.media).toHaveBeenCalledWith('/catalogue/products/product-batch/image'),
+    );
     expect(screen.queryByRole('button', { name: 'Confirm product pickup & dispatch' })).toBeNull();
     fireEvent.click(review);
     expect(

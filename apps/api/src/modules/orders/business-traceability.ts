@@ -49,6 +49,8 @@ export async function readBusinessTraceability(
         ? [
             {
               batchId,
+              category: item.batchSummaries?.[batchId]?.category ?? item.category,
+              imagePath: item.batchSummaries?.[batchId]?.imagePath ?? item.imagePath,
               kind: Number(item.kind) === 1 ? 'ingredient' : 'product',
               name: item.batchSummaries?.[batchId]?.name ?? item.name ?? 'Registered batch',
               reference:

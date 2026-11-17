@@ -145,7 +145,11 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
               <Card>
                 <div className="traceability-item-summary">
                   <div className="traceability-item-summary__image">
-                    <CatalogueImage alt={`${data.root.name} image`} category={data.root.kind} />
+                    <CatalogueImage
+                      path={data.root.imagePath}
+                      alt={`${data.root.name} image`}
+                      category={data.root.category ?? data.root.kind}
+                    />
                   </div>
                   <div className="traceability-item-summary__content">
                     <div className="workspace-record-heading !mb-0">

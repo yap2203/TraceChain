@@ -394,15 +394,21 @@ export class ProductionFlowService {
         const links = await this.safeGateway(() =>
           this.dependencies.gateway.getProductLinks(productBatchId),
         );
+        const productPresentation = await this.productPresentation(productBatchId);
         return Promise.all(
           links.map(async (link) => {
             const ingredient = await this.safeGateway(() =>
               this.dependencies.gateway.getIngredient(link.batchId),
             );
+            const ingredientPresentation = await this.ingredientPresentation(link.batchId);
             return ingredient
               ? {
                   ingredientBatchId: link.batchId,
+                  ingredientName: ingredientPresentation?.ingredientName,
+                  ingredientBatchReference: ingredientPresentation?.batchReference,
                   productBatchId,
+                  productName: productPresentation?.productName,
+                  productBatchReference: productPresentation?.batchReference,
                   quantity: link.quantity,
                   supplier: ingredient.supplier,
                 }
@@ -1177,6 +1183,7 @@ export class ProductionFlowService {
     const metadata = canonical({
       batchReference: input.batchReference,
       ...(input.category ? { category: input.category } : {}),
+      ...(input.origin ? { origin: input.origin } : {}),
       ...(input.description ? { description: input.description } : {}),
       privateMetadata: input.privateMetadata,
       productName: input.productName,
@@ -1663,6 +1670,26 @@ export class ProductionFlowService {
         batchReference:
           typeof parsed.batchReference === 'string' ? parsed.batchReference : undefined,
         productName: typeof parsed.productName === 'string' ? parsed.productName : undefined,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private async ingredientPresentation(batchId: string) {
+    const workflow = await this.dependencies.ingredientRepository.find(batchId);
+    if (!workflow) return undefined;
+    try {
+      const parsed = JSON.parse(
+        await this.dependencies.contentStore.decrypt(workflow.encryptedPayload),
+      ) as { metadata?: Record<string, unknown> };
+      return {
+        batchReference:
+          typeof parsed.metadata?.batchId === 'string' ? parsed.metadata.batchId : undefined,
+        ingredientName:
+          typeof parsed.metadata?.ingredientName === 'string'
+            ? parsed.metadata.ingredientName
+            : undefined,
       };
     } catch {
       return undefined;

@@ -874,6 +874,7 @@ describe('production flow service', () => {
     await service.prepareProduct('session', {
       ...productInput(),
       category: 'Confectionery',
+      origin: 'Malaysia',
       description: 'Manufacturer-provided catalogue description.',
       price: '12.00',
       currency: 'MYR',
@@ -888,6 +889,7 @@ describe('production flow service', () => {
     expect(JSON.parse(encryptedWrites.at(-1)!)).toMatchObject({
       batchReference: 'PRODUCT-001',
       category: 'Confectionery',
+      origin: 'Malaysia',
       description: 'Manufacturer-provided catalogue description.',
       price: '12.00',
       currency: 'MYR',

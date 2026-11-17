@@ -16,7 +16,7 @@ import { submitProductionTransaction } from '../production-flow/production-flow.
 import { ProductQrDisplay } from '../product-traceability/ProductQrDisplay';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
 import { ProductDeliveryPanel } from './ProductDeliveryPanel';
-import { CompanyAvatar } from './CatalogueMedia';
+import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
 import {
   ZxingTransferQrReader,
   cameraErrorMessage,
@@ -292,6 +292,9 @@ export function ShipmentsWorkspace({
       (!trackedOrder ||
         same(entry.orderId, trackedOrder.orderId) ||
         (Number(entry.leg) === 1 && same(entry.batchId, trackedOrder.custodyOrder.batchId))),
+  );
+  const productDeliveryRows = (data?.orders ?? []).filter(
+    (entry) => entry.productDelivery && same(entry.productDelivery.distributor, data?.actor),
   );
   const distributorIngredientShipments = shipments.filter(
     (entry) =>
@@ -942,25 +945,24 @@ export function ShipmentsWorkspace({
         <>
           {section !== 'intake' &&
             kind === 'product' &&
-            (data.orders ?? [])
-              .filter(
-                (entry) =>
-                  entry.productDelivery && same(entry.productDelivery.distributor, data.actor),
-              )
-              .map((entry) => (
-                <Card key={entry.orderId}>
-                  <div className="workspace-record-card">
+            productDeliveryRows.map((entry) => {
+              const product = data.catalogue.find((item) => same(item.itemId, entry.itemId));
+              const stage = Number(entry.productDelivery.stage);
+              return (
+                <article className="shipment-card" key={entry.orderId}>
+                  <div className="shipment-card__media">
+                    <CatalogueImage
+                      path={product?.imagePath}
+                      category={product?.category ?? 'Product'}
+                      alt={`${product?.name ?? 'Product'} image`}
+                    />
+                  </div>
+                  <div className="shipment-card__content">
                     <div className="workspace-record-heading">
                       <div className="workspace-record-heading__identity">
                         <span className="workspace-record-heading__eyebrow">Product shipment</span>
-                        <h3>
-                          {data.catalogue.find((item) => same(item.itemId, entry.itemId))?.name ??
-                            'Registered product'}
-                        </h3>
-                        <p>
-                          {data.catalogue.find((item) => same(item.itemId, entry.itemId))
-                            ?.batchReference ?? short(entry.requestedBatch)}
-                        </p>
+                        <h3>{product?.name ?? 'Registered product'}</h3>
+                        <p>{product?.batchReference ?? short(entry.requestedBatch)}</p>
                       </div>
                       <Badge
                         label={
@@ -972,18 +974,16 @@ export function ShipmentsWorkspace({
                             'In transit',
                             'Received',
                             'Closed',
-                          ][Number(entry.productDelivery.stage)] ?? 'In progress'
+                          ][stage] ?? 'In progress'
                         }
-                        variant={Number(entry.productDelivery.stage) === 5 ? 'verified' : 'pending'}
+                        variant={stage === 5 ? 'verified' : 'pending'}
                       />
                     </div>
                     <dl className="workspace-record-facts">
                       <div>
                         <dt>Quantity</dt>
                         <dd>
-                          {entry.requested}{' '}
-                          {data.catalogue.find((item) => same(item.itemId, entry.itemId))?.unit ??
-                            ''}
+                          {entry.requested} {product?.unit ?? ''}
                         </dd>
                       </div>
                       <div>
@@ -1017,12 +1017,28 @@ export function ShipmentsWorkspace({
                         </dd>
                       </div>
                     </dl>
-                    <Btn variant="outline" onClick={() => setSelectedDeliveryOrder(entry.orderId)}>
-                      View shipment
-                    </Btn>
+                    <div className="shipment-card__next">
+                      <div>
+                        <span>Next action</span>
+                        <strong>
+                          {stage >= 5
+                            ? 'No action required'
+                            : stage === 3
+                              ? 'Review and record physical dispatch'
+                              : 'Open the shipment to review its current requirement'}
+                        </strong>
+                      </div>
+                      <Btn
+                        variant="outline"
+                        onClick={() => setSelectedDeliveryOrder(entry.orderId)}
+                      >
+                        View shipment
+                      </Btn>
+                    </div>
                   </div>
-                </Card>
-              ))}
+                </article>
+              );
+            })}
           {section !== 'intake' &&
             kind === 'ingredient' &&
             directIngredientDeliveries.map((entry) => (
@@ -1110,16 +1126,18 @@ export function ShipmentsWorkspace({
                     ))}
                   </Card>
                 )}
-              <ShipmentList
-                shipments={visibleShipments}
-                catalogue={data.catalogue}
-                locationName={label}
-                statusLabel={stateLabel}
-                onOpen={(shipmentId) => {
-                  setSelected(shipmentId);
-                  setView('shipments');
-                }}
-              />
+              {(visibleShipments.length > 0 || productDeliveryRows.length === 0) && (
+                <ShipmentList
+                  shipments={visibleShipments}
+                  catalogue={data.catalogue}
+                  locationName={label}
+                  statusLabel={stateLabel}
+                  onOpen={(shipmentId) => {
+                    setSelected(shipmentId);
+                    setView('shipments');
+                  }}
+                />
+              )}
             </>
           )}
         </>
@@ -1161,7 +1179,7 @@ export function ShipmentsWorkspace({
         />
       )}
       {view === 'transfer' && !distributorIngredientDispatch && (
-        <Card>
+        <Card className="dispatch-workflow-form">
           <h3>1. Select stock or an approved order</h3>
           {role === 'distributor' && kind === 'product' && (
             <SelectField
@@ -1205,6 +1223,22 @@ export function ShipmentsWorkspace({
           <p>
             Available allocation: {available.toString()} {unit ?? ''}
           </p>
+          {kind === 'product' && batchId && (
+            <div className="dispatch-stock-summary">
+              <CatalogueImage
+                path={item(batchId)?.imagePath}
+                category={item(batchId)?.category ?? 'Product'}
+                alt={`${item(batchId)?.name ?? 'Selected product'} image`}
+              />
+              <div>
+                <strong>{item(batchId)?.name ?? 'Selected product'}</strong>
+                <span>{item(batchId)?.batchReference ?? short(batchId)}</span>
+                <span>
+                  Available allocation: {available.toString()} {unit ?? ''}
+                </span>
+              </div>
+            </div>
+          )}
           <h3>2. Confirm the route</h3>
           {role === 'distributor' && kind === 'ingredient' ? (
             <p>
@@ -1316,9 +1350,11 @@ export function ShipmentsWorkspace({
                 )}
             </>
           )}
-          <Btn variant="ghost" onClick={() => setView('locations')}>
-            Set up a missing location
-          </Btn>
+          {(!source || !destination) && (
+            <Btn variant="outline" onClick={() => setView('locations')}>
+              Set up missing location
+            </Btn>
+          )}
           <h3>3. Record actual road dispatch</h3>
           <div className="grid grid-cols-1 gap-[12px] sm:grid-cols-2">
             <Input
@@ -1383,6 +1419,11 @@ export function ShipmentsWorkspace({
               Manage Supplier credential request in Information requests
             </a>
           )}
+          <h3>4. Review and submit</h3>
+          <p className="workspace-list-guidance">
+            Review the stock, route and dispatch details. Stock changes only after you approve the
+            transaction in MetaMask.
+          </p>
           <Btn icon={<Truck size={16} />} disabled={busy || !valid} onClick={recordDispatch}>
             Confirm dispatch with MetaMask
           </Btn>

@@ -93,6 +93,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
           />
         ) : role === 'retailer' && direction === 'sent' ? (
           <RetailerEvidenceRequests
+            embedded
             initialProductBatchId={params.get('productBatchId') ?? undefined}
             initialIngredientBatchId={params.get('batchId') ?? undefined}
           />

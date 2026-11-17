@@ -113,6 +113,8 @@ export interface TraceRoute {
 export interface BusinessTraceability {
   roots: Array<{
     batchId: string;
+    category?: string;
+    imagePath?: string;
     kind: 'ingredient' | 'product';
     name: string;
     reference: string;

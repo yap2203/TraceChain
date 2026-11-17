@@ -207,6 +207,7 @@ describe('multi-ingredient production', () => {
       ['Product name', 'Presented Chocolate'],
       ['Product batch reference', 'CHOC-PRESENTED'],
       ['Product category', 'Confectionery'],
+      ['Country of manufacture', 'Malaysia'],
       ['Product description', 'A finished cocoa product for the catalogue.'],
       ['Quantity produced', '20'],
       ['Indicative price', '12'],
@@ -236,6 +237,7 @@ describe('multi-ingredient production', () => {
       expect(mocks.prepare).toHaveBeenCalledWith(
         expect.objectContaining({
           category: 'Confectionery',
+          origin: 'Malaysia',
           description: 'A finished cocoa product for the catalogue.',
           price: '12',
           currency: 'MYR',

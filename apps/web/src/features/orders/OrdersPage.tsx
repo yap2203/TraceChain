@@ -1240,7 +1240,7 @@ function OrderDetailSurface({
   children: ReactNode;
 }) {
   return modal ? (
-    <Modal title={title} width={860} onClose={onClose}>
+    <Modal title={title} width={1080} onClose={onClose}>
       {children}
     </Modal>
   ) : plain ? (

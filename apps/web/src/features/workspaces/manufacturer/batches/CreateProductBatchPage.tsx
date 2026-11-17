@@ -63,6 +63,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [productName, setProductName] = useState('');
   const [batchReference, setBatchReference] = useState('');
   const [category, setCategory] = useState('');
+  const [origin, setOrigin] = useState('');
   const [description, setDescription] = useState('');
   const [quantity, setQuantity] = useState('');
   const [price, setPrice] = useState('');
@@ -84,6 +85,8 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     batchId: string;
     batchReference: string;
     ingredientBalances: IngredientBalance[];
+    locationName: string;
+    output: string;
     productName: string;
   }>();
 
@@ -214,6 +217,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       batchId: result.batchId,
       batchReference: submitted.batchReference,
       ingredientBalances: submitted.ingredientBalances,
+      locationName:
+        locations.find((entry) => entry.location === submitted.request.productionLocation)?.label ??
+        'Recorded production location',
+      output: `${submitted.request.quantity} ${submitted.request.unit}`,
       productName: submitted.productName,
     });
     setRefreshPending(undefined);
@@ -224,6 +231,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       textError(productName, 'Product name', 160) ||
       referenceError(batchReference) ||
       (category ? textError(category, 'Category', 100) : '') ||
+      (origin ? textError(origin, 'Country of manufacture', 120) : '') ||
       (description ? textError(description, 'Description', 1_000) : '') ||
       (price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(price)
         ? 'Enter a non-negative unit price with at most two decimal places.'
@@ -252,6 +260,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       ...(selectedLocation?.label ? { productionLocationName: selectedLocation.label } : {}),
       batchReference: submittedBatchReference,
       category: category.trim(),
+      origin: origin.trim(),
       description: description.trim(),
       ...(price ? { price, currency } : {}),
       expiresAt: new Date(`${expiresAt}T23:59:59`).toISOString(),
@@ -316,12 +325,37 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
 
   if (createdProduct) {
     return (
-      <div className="workspace-editor">
+      <div className="workspace-editor product-success">
         <Alert
           type="success"
           message="Product creation was verified on chain. Its permanent traceability QR is ready."
         />
         {presentationWarning && <Alert type="warning" message={presentationWarning} />}
+        <Card className="product-success__summary">
+          <div>
+            <span>Product created</span>
+            <h2>{createdProduct.productName}</h2>
+            <p>{createdProduct.batchReference}</p>
+          </div>
+          <dl className="workspace-record-facts">
+            <div>
+              <dt>Output quantity</dt>
+              <dd>{createdProduct.output}</dd>
+            </div>
+            <div>
+              <dt>Production location</dt>
+              <dd>{createdProduct.locationName}</dd>
+            </div>
+            <div>
+              <dt>Production date</dt>
+              <dd>{createdProduct.producedAt ?? 'Unavailable'}</dd>
+            </div>
+            <div>
+              <dt>Linked ingredients</dt>
+              <dd>{createdProduct.ingredientBalances.length}</dd>
+            </div>
+          </dl>
+        </Card>
         <p>
           Production occurred: {createdProduct.producedAt ?? 'Unavailable'} · Recorded on-chain:{' '}
           {createdProduct.production?.recordedAt
@@ -359,7 +393,36 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             productName={createdProduct.productName}
           />
         </Card>
-        <Btn onClick={onBack}>Done</Btn>
+        <div className="product-success__actions">
+          <Btn onClick={onBack}>View product</Btn>
+          <Btn
+            variant="outline"
+            onClick={() => {
+              setCreatedProduct(undefined);
+              setProductName('');
+              setBatchReference('');
+              setQuantity('');
+              setImageFile(undefined);
+              setSelected({});
+              setAmounts({});
+            }}
+          >
+            Create another batch
+          </Btn>
+          <Btn
+            variant="outline"
+            onClick={() => {
+              window.history.pushState(
+                {},
+                '',
+                `/manufacturer/transfers?batchId=${encodeURIComponent(createdProduct.batchId)}`,
+              );
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+          >
+            Transfer product
+          </Btn>
+        </div>
       </div>
     );
   }
@@ -501,6 +564,12 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             maxLength={100}
             value={category}
             onChange={setCategory}
+          />
+          <Input
+            label="Country of manufacture (optional)"
+            maxLength={120}
+            value={origin}
+            onChange={setOrigin}
           />
           <Input
             label={`Indicative price per ${unit || 'unit'} (optional)`}
@@ -734,6 +803,10 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           <div>
             <dt>Description</dt>
             <dd>{description || 'Not provided'}</dd>
+          </div>
+          <div>
+            <dt>Country of manufacture</dt>
+            <dd>{origin || 'Not provided'}</dd>
           </div>
           <div>
             <dt>Output</dt>

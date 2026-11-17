@@ -870,6 +870,13 @@
 
 ## Current frontend version
 
+- Corrected Retailer product catalogue presentation to use current orderable Manufacturer
+  inventory, recorded country of manufacture, and ProductRegistry linked-credential traceability
+  checks. Product images now flow through the authenticated catalogue-media component on received
+  product, delivery, traceability, and evidence views.
+- Unified Retailer sent company/ingredient evidence under compact tabs and status filters, removed
+  the false Product deliveries empty state, widened the request-review dialog with persistent action
+  controls, and compacted product dispatch and product-creation confirmation layouts.
 - Integrated all approved stakeholder screens into the canonical admin, supplier, manufacturer, distributor, and retailer routes.
 - Organized screens by role and workflow, with separate receipt, report, and shared UI folders.
 - Removed the former UI-preview route and role selector.

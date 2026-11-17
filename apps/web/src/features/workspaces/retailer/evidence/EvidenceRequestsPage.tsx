@@ -1,7 +1,7 @@
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { FileCheck2 } from 'lucide-react';
+import { FileCheck2, RefreshCw } from 'lucide-react';
 
 import {
   getEvidenceDetails,
@@ -17,6 +17,8 @@ import {
   type RetailerEvidenceOption,
 } from '../../../production-flow/production-flow.api';
 import { sendEvidenceRequestMessage } from '../../../production-flow/evidence-didcomm';
+import { CatalogueImage, CompanyAvatar } from '../../../orders/CatalogueMedia';
+import { getOrders, type OrderRecord } from '../../../orders/orders.api';
 import {
   completePreparedWorkflow,
   WorkflowRefreshPendingError,
@@ -29,10 +31,9 @@ import {
   EmptyState,
   Input,
   SectionTitle,
+  StatusTabs,
   T,
-  Table,
-  TD,
-  TR,
+  TechnicalDetails,
 } from '../../shared/ui';
 import { chainDate, shortChainId } from '../../shared/operational-format';
 import { textError, futureDateError } from '../../../validation/form-validation';
@@ -58,12 +59,21 @@ const statuses = [
 ];
 
 export function RetailerEvidenceRequests({
+  embedded = false,
   initialProductBatchId,
   initialIngredientBatchId,
-}: { initialProductBatchId?: string; initialIngredientBatchId?: string } = {}) {
+}: {
+  embedded?: boolean;
+  initialProductBatchId?: string;
+  initialIngredientBatchId?: string;
+} = {}) {
   const [options, setOptions] = useState<RetailerEvidenceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
+  const [catalogue, setCatalogue] = useState<OrderRecord[]>([]);
+  const [statusFilter, setStatusFilter] = useState<
+    'all' | 'pending' | 'presented' | 'verified' | 'unavailable'
+  >('all');
   const [selected, setSelected] = useState('');
   const [reason, setReason] = useState('Retail product ingredient traceability review');
   const [dueAt, setDueAt] = useState('');
@@ -78,9 +88,10 @@ export function RetailerEvidenceRequests({
   const [notice, setNotice] = useState('');
   const [refreshPending, setRefreshPending] = useState(false);
   const load = async () => {
-    const [available, current] = await Promise.all([
+    const [available, current, orders] = await Promise.all([
       listRetailerEvidenceOptions(),
       listEvidenceRequests(),
+      getOrders(),
     ]);
     setOptions(available.options);
     if (initialProductBatchId && initialIngredientBatchId) {
@@ -95,6 +106,7 @@ export function RetailerEvidenceRequests({
         );
     }
     setRequests(current.requests);
+    setCatalogue(orders.catalogue);
   };
   useEffect(() => {
     void load()
@@ -103,6 +115,9 @@ export function RetailerEvidenceRequests({
   }, []);
   const chosen = options.find(
     (item) => `${item.productBatchId}:${item.ingredientBatchId}` === selected,
+  );
+  const visibleRequests = requests.filter(
+    (request) => statusFilter === 'all' || evidenceGroup(request) === statusFilter,
   );
   const requestEvidence = async () => {
     if (!chosen) return;
@@ -210,10 +225,17 @@ export function RetailerEvidenceRequests({
   if (loading) return <LoadingIndicator page label="Loading ingredient evidence requests…" />;
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <SectionTitle
-        title="Evidence Requests"
-        sub="Request selective evidence from the original Supplier of an ingredient linked to a product received by this Retailer"
-      />
+      {!embedded && (
+        <SectionTitle
+          title="Ingredient evidence"
+          sub="Request selective evidence from the original Supplier of an ingredient linked to a received product."
+          action={
+            <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={() => void load()}>
+              Refresh
+            </Btn>
+          }
+        />
+      )}
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
       {refreshPending && (
@@ -235,7 +257,7 @@ export function RetailerEvidenceRequests({
           {busy === 'refresh' ? 'Refreshing…' : 'Refresh records'}
         </Btn>
       )}
-      <Card>
+      <Card className="evidence-request-composer">
         <div style={{ display: 'grid', gap: 12 }}>
           <label style={{ fontSize: 12, color: T.text2 }}>
             Product and linked ingredient
@@ -250,18 +272,33 @@ export function RetailerEvidenceRequests({
                   key={`${option.productBatchId}:${option.ingredientBatchId}`}
                   value={`${option.productBatchId}:${option.ingredientBatchId}`}
                 >
-                  Product {shortChainId(option.productBatchId)} · Ingredient{' '}
-                  {shortChainId(option.ingredientBatchId)} ·{' '}
-                  {option.supplierName ?? shortChainId(option.supplier)}
+                  {option.productName ?? `Product ${shortChainId(option.productBatchId)}`} ·{' '}
+                  {option.ingredientName ?? `Ingredient ${shortChainId(option.ingredientBatchId)}`}{' '}
+                  · {option.supplierName ?? shortChainId(option.supplier)}
                 </option>
               ))}
             </select>
           </label>
           {chosen && (
-            <Alert
-              type="info"
-              message={`Recipient: ${chosen.supplierName ?? shortChainId(chosen.supplier)}, the authoritative original Supplier. The Manufacturer is not redistributing this credential.`}
-            />
+            <div className="evidence-request-summary">
+              <CatalogueImage
+                path={catalogueProduct(catalogue, chosen.productBatchId)?.imagePath}
+                category={catalogueProduct(catalogue, chosen.productBatchId)?.category ?? 'Product'}
+                alt={`${chosen.productName ?? 'Product'} image`}
+              />
+              <div>
+                <strong>{chosen.productName ?? 'Registered product'}</strong>
+                <span>{chosen.productBatchReference ?? shortChainId(chosen.productBatchId)}</span>
+                <span>
+                  Linked ingredient:{' '}
+                  {chosen.ingredientName ?? shortChainId(chosen.ingredientBatchId)}
+                </span>
+                <span className="workspace-company-cell">
+                  <CompanyAvatar name={chosen.supplierName ?? 'Original Supplier'} size="sm" />
+                  {chosen.supplierName ?? 'Original Supplier'}
+                </span>
+              </div>
+            </div>
           )}
           <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
             <legend>Requested claims</legend>
@@ -303,47 +340,132 @@ export function RetailerEvidenceRequests({
           </Btn>
         </div>
       </Card>
+      <StatusTabs
+        label="Filter ingredient evidence requests"
+        value={statusFilter}
+        onChange={setStatusFilter}
+        variant="connected"
+        tabs={[
+          { value: 'all', label: 'All', count: requests.length },
+          {
+            value: 'pending',
+            label: 'Pending',
+            count: requests.filter((row) => evidenceGroup(row) === 'pending').length,
+          },
+          {
+            value: 'presented',
+            label: 'Presented',
+            count: requests.filter((row) => evidenceGroup(row) === 'presented').length,
+          },
+          {
+            value: 'verified',
+            label: 'Verified',
+            count: requests.filter((row) => evidenceGroup(row) === 'verified').length,
+          },
+          {
+            value: 'unavailable',
+            label: 'Rejected / unavailable',
+            count: requests.filter((row) => evidenceGroup(row) === 'unavailable').length,
+          },
+        ]}
+      />
       {requests.length === 0 ? (
         <EmptyState
-          icon={<FileCheck2 size={42} />}
+          icon={<FileCheck2 size={28} />}
           title="No Retailer evidence requests"
           sub="Requests for linked ingredients will appear here."
         />
+      ) : !visibleRequests.length ? (
+        <EmptyState
+          icon={<FileCheck2 size={28} />}
+          title="No requests match this status"
+          sub="Choose another status to see your other ingredient evidence requests."
+        />
       ) : (
-        <Card padding="0">
-          <Table headers={['Supplier', 'Ingredient', 'Due', 'Status', '']}>
-            {requests.map((request) => (
-              <TR key={request.requestId}>
-                <TD>{request.supplierName ?? shortChainId(request.supplier)}</TD>
-                <TD mono>{shortChainId(request.ingredientBatchId)}</TD>
-                <TD muted>{chainDate(request.dueAt)}</TD>
-                <TD>
-                  <Badge
-                    label={statuses[request.status] ?? 'Unknown'}
-                    variant={
-                      request.status === 3
-                        ? 'active'
-                        : request.status === 2
-                          ? 'verified'
-                          : 'pending'
-                    }
+        <div className="evidence-request-list">
+          {visibleRequests.map((request) => {
+            const context = options.find(
+              (option) =>
+                option.ingredientBatchId.toLowerCase() ===
+                  request.ingredientBatchId.toLowerCase() &&
+                (!request.productBatchId ||
+                  option.productBatchId.toLowerCase() === request.productBatchId.toLowerCase()),
+            );
+            const product = request.productBatchId
+              ? catalogueProduct(catalogue, request.productBatchId)
+              : undefined;
+            return (
+              <article className="evidence-request-card" key={request.requestId}>
+                <CatalogueImage
+                  path={product?.imagePath}
+                  category={product?.category ?? 'Product'}
+                  alt={`${context?.productName ?? product?.name ?? 'Product'} image`}
+                />
+                <div className="evidence-request-card__content">
+                  <div className="evidence-request-card__heading">
+                    <div>
+                      <h3>{context?.productName ?? product?.name ?? 'Registered product'}</h3>
+                      <p>
+                        {context?.productBatchReference ??
+                          product?.batchReference ??
+                          'Product reference unavailable'}
+                      </p>
+                    </div>
+                    <Badge
+                      label={statuses[request.status] ?? 'Unknown'}
+                      variant={
+                        request.status === 3
+                          ? 'active'
+                          : request.status === 2
+                            ? 'verified'
+                            : 'pending'
+                      }
+                    />
+                  </div>
+                  <dl className="workspace-record-facts">
+                    <div>
+                      <dt>Linked ingredient</dt>
+                      <dd>{context?.ingredientName ?? shortChainId(request.ingredientBatchId)}</dd>
+                    </div>
+                    <div>
+                      <dt>Original Supplier</dt>
+                      <dd>{request.supplierName ?? shortChainId(request.supplier)}</dd>
+                    </div>
+                    <div>
+                      <dt>Response deadline</dt>
+                      <dd>{chainDate(request.dueAt)}</dd>
+                    </div>
+                    <div>
+                      <dt>Next action</dt>
+                      <dd>{evidenceNextAction(request)}</dd>
+                    </div>
+                  </dl>
+                  <div className="evidence-request-card__actions">
+                    {request.status >= 2 && (
+                      <Btn
+                        size="xs"
+                        variant="outline"
+                        onClick={() => void openReview(request.requestId)}
+                      >
+                        View evidence
+                      </Btn>
+                    )}
+                  </div>
+                  <TechnicalDetails
+                    fields={[
+                      { label: 'Request ID', value: request.requestId },
+                      {
+                        label: 'Product batch ID',
+                        value: request.productBatchId ?? 'Not recorded',
+                      },
+                      { label: 'Ingredient batch ID', value: request.ingredientBatchId },
+                    ]}
                   />
-                </TD>
-                <TD>
-                  {request.status >= 2 && (
-                    <Btn
-                      size="xs"
-                      variant="outline"
-                      onClick={() => void openReview(request.requestId)}
-                    >
-                      View evidence
-                    </Btn>
-                  )}
-                </TD>
-              </TR>
-            ))}
-          </Table>
-        </Card>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       )}
       {review && (
         <Card>
@@ -392,4 +514,25 @@ export function RetailerEvidenceRequests({
 }
 function message(cause: unknown) {
   return reportError(cause, 'The evidence workflow failed.');
+}
+
+function catalogueProduct(catalogue: OrderRecord[], batchId: string) {
+  return catalogue.find((item) =>
+    item.batches?.some((id: string) => id.toLowerCase() === batchId.toLowerCase()),
+  );
+}
+
+function evidenceGroup(request: ProductionEvidenceRequest) {
+  if (request.status === 2 && request.verification?.state !== 'PASSED') return 'presented';
+  if (request.status === 3 || request.verification?.state === 'PASSED') return 'verified';
+  if ([4, 5, 6].includes(request.status)) return 'unavailable';
+  return 'pending';
+}
+
+function evidenceNextAction(request: ProductionEvidenceRequest) {
+  if (request.status === 2 && request.verification?.state !== 'PASSED')
+    return 'Verify the Supplier presentation, then record a separate decision.';
+  if (request.status === 3) return 'Evidence was accepted; no further action is required.';
+  if ([4, 5, 6].includes(request.status)) return 'This request is no longer actionable.';
+  return 'Waiting for the original Supplier to present the requested evidence.';
 }

@@ -128,6 +128,7 @@ export function CatalogueBrowser({
           (!availableOnly ||
             (entry.active &&
               (BigInt(batch?.supplierAvailable ?? '0') > 0n ||
+                BigInt(batch?.manufacturerAvailable ?? '0') > 0n ||
                 (entry.custodyPositions ?? []).some(
                   (position: OrderRecord) => position.orderable && BigInt(position.available) > 0n,
                 )))) &&
@@ -349,7 +350,7 @@ function CatalogueCard({
         <dl className="catalogue-card__facts">
           <div>
             <dt>Origin</dt>
-            <dd>{item.countryOfOrigin || 'Not disclosed'}</dd>
+            <dd>{item.countryOfOrigin || 'Not provided by Manufacturer'}</dd>
           </div>
           {Number(item.kind) === 1 && presentation?.ingredientStockLabels ? (
             <>
@@ -374,7 +375,10 @@ function CatalogueCard({
           </div>
           <div>
             <dt>Credential</dt>
-            <dd>{Number(item.credentialStatus) === 1 ? 'Active' : 'Status unavailable'}</dd>
+            <dd>
+              {item.credentialLabel ??
+                (Number(item.credentialStatus) === 1 ? 'Active' : 'Not currently valid')}
+            </dd>
           </div>
         </dl>
         {expiryWarning(batch?.expiresAt) && (
@@ -865,11 +869,11 @@ function stockValue(value: unknown, unit: string) {
 
 function availability(item: OrderRecord, batch: OrderRecord | undefined) {
   if (Number(item.kind) !== 1)
-    return batch?.supplierAvailable !== undefined
-      ? `${batch.supplierAvailable} ${item.unit}`
-      : 'Not published';
+    return isStockQuantity(batch?.manufacturerAvailable)
+      ? stockValue(batch?.manufacturerAvailable, item.unit)
+      : 'Availability not recorded';
   const custody = (item.custodyPositions ?? [])
     .filter((entry: OrderRecord) => entry.orderable)
     .reduce((sum: bigint, entry: OrderRecord) => sum + BigInt(entry.available), 0n);
-  return `Supplier: ${batch?.supplierAvailable ?? 'Unavailable'} ${item.unit} ? Distributor custody: ${custody} ${item.unit}`;
+  return `Supplier: ${batch?.supplierAvailable ?? 'Unavailable'} ${item.unit} · Distributor custody: ${custody} ${item.unit}`;
 }

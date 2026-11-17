@@ -41,6 +41,7 @@ export interface ProductionEvidenceRequest {
   accepted: boolean;
   dueAt: number;
   ingredientBatchId: string;
+  productBatchId?: string;
   presentationExpiresAt: number;
   requestId: string;
   requester: string;
@@ -81,8 +82,12 @@ export const listProductionIngredients = (location?: string, purpose?: 'producti
 export const listEvidenceRequests = () =>
   request<{ requests: ProductionEvidenceRequest[] }>('/evidence-requests');
 export interface RetailerEvidenceOption {
+  ingredientBatchReference?: string;
   ingredientBatchId: string;
+  ingredientName?: string;
+  productBatchReference?: string;
   productBatchId: string;
+  productName?: string;
   quantity: string;
   supplier: string;
   supplierName?: string;
@@ -249,6 +254,7 @@ export const prepareProduct = (input: {
   productionLocationName?: string;
   batchReference: string;
   category: string;
+  origin?: string;
   description: string;
   expiresAt: string;
   ingredientLinks: Array<{ batchId: string; quantity: string }>;

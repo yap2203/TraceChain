@@ -39,6 +39,7 @@ export const productRequestSchema = z
       .max(120)
       .regex(/^[A-Za-z0-9._:/-]+$/),
     category: z.string().trim().max(100).default(''),
+    origin: z.string().trim().max(120).default(''),
     description: z.string().trim().max(1_000).default(''),
     expiresAt: requestDateSchema,
     ingredientLinks: z

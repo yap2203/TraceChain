@@ -24,6 +24,7 @@ import type { OrderAction } from './orders.schema.js';
 import { supplierStock } from './supplier-stock.js';
 import { readLogistics } from './logistics-state.js';
 import { readBusinessTraceability } from './business-traceability.js';
+import { readProductInventorySnapshot } from './product-inventory.js';
 import { CustodyOffers, type CustodyOffer } from './custody-offers.js';
 import type { ApplicationMetadataRepository } from '../blockchain/application-metadata.repository.js';
 import type { LogisticsAction } from './logistics.schema.js';
@@ -1271,6 +1272,16 @@ export class OrdersService {
         } else summary.listingUnavailable = true;
       }
     } else {
+      const transferable = Boolean(
+        await this.gateway.read('products', 'isTransferable', [batchId]),
+      );
+      summary.credentialStatus = transferable ? 1 : 0;
+      summary.credentialLabel = transferable
+        ? 'Linked credentials active'
+        : 'Linked credential check failed';
+      summary.evidenceAvailability = transferable
+        ? 'All linked ingredient credentials and product traceability checks are active'
+        : 'One or more linked ingredient credentials or traceability checks are not active';
       const image = await this.repository.findPrivate('products', mediaKey('product', batchId));
       if (image && same(image.owner, batch.manufacturer))
         summary.imagePath = `/catalogue/products/${batchId}/image`;
@@ -1790,12 +1801,20 @@ export class OrdersService {
   }
   async state(sessionId?: string) {
     const session = await this.session(sessionId);
-    const [listings, orderEvents, locations, shipmentEvents, transferEvents] = await Promise.all([
+    const [
+      listings,
+      orderEvents,
+      locations,
+      shipmentEvents,
+      transferEvents,
+      inventoryInitializationEvents,
+    ] = await Promise.all([
       this.gateway.events('orders', 'ItemListed'),
       this.gateway.events('orders', 'OrderRequested'),
       this.gateway.events('orders', 'LocationRegistered'),
       this.gateway.events('orders', 'ShipmentDispatched'),
       this.gateway.events('custody', 'OrderTransferLinked'),
+      this.gateway.events('custody', 'InventoryInitialized'),
     ]);
     const catalogue = await Promise.all(
       [...new Set(listings.map((entry) => entry.itemId))].map(async (itemId) => {
@@ -1812,6 +1831,16 @@ export class OrdersService {
               Number(item.kind) === 1 ? 'getBatch' : 'getProduct',
               [batchId],
             );
+            const inventory =
+              Number(item.kind) === 2
+                ? await readProductInventorySnapshot(
+                    this.gateway,
+                    batchId,
+                    batch.manufacturer,
+                    batch,
+                    inventoryInitializationEvents,
+                  )
+                : undefined;
             return {
               batchId,
               expiresAt: batch.expiresAt,
@@ -1821,6 +1850,7 @@ export class OrdersService {
               ...(Number(item.kind) === 1
                 ? { supplierAvailable: batch.availableQuantity }
                 : {
+                    manufacturerAvailable: inventory?.available,
                     producedAt: batch.producedAt,
                     recordedAt: await this.gateway.read('products', 'productionRecordedAt', [
                       batchId,
@@ -1862,6 +1892,16 @@ export class OrdersService {
           existing.active = existing.active && !summary.archived;
           continue;
         }
+        const inventory =
+          kind === 2
+            ? await readProductInventorySnapshot(
+                this.gateway,
+                batchId,
+                batch.manufacturer,
+                batch,
+                inventoryInitializationEvents,
+              )
+            : undefined;
         catalogue.push({
           itemId: solidityPackedKeccak256(
             ['string', 'uint8', 'bytes32'],
@@ -1889,6 +1929,7 @@ export class OrdersService {
               ...(kind === 1
                 ? { supplierAvailable: batch.availableQuantity }
                 : {
+                    manufacturerAvailable: inventory?.available,
                     producedAt: batch.producedAt,
                     recordedAt: await this.gateway.read('products', 'productionRecordedAt', [
                       batchId,

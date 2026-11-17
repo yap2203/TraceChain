@@ -681,7 +681,8 @@ The Manufacturer production flow now uses real contract records. A Manufacturer 
 
 New product registrations bind the same stable Manufacturer location ID to ingredient consumption
 and the on-chain product record. The form can also capture optional product presentation data:
-PNG/JPEG/WebP image, category, description and an indicative currency/unit price. The textual
+PNG/JPEG/WebP image, category, country of manufacture, description and an indicative currency/unit
+price. The textual
 presentation is encrypted off-chain and integrity-bound to the product metadata hash; the image is
 stored through the authenticated encrypted catalogue-media path after the product transaction is
 confirmed. Authenticated catalogue and custody views receive only allowlisted presentation fields
@@ -689,6 +690,12 @@ and a safe media URL, while public traceability receives only the intended textu
 Storage CIDs, ciphertext and raw image data are not exposed. Existing products are not assigned
 invented presentation values. Presentation editing is not currently offered because the deployed
 product record has no versioned metadata-update operation.
+
+Retailer catalogue availability is read from current CustodyTransfer inventory, including the
+fresh-product initialization rule, rather than from the registered production total. Reserved or
+transferred units are therefore not presented as orderable Manufacturer stock. Product cards report
+the current ProductRegistry traceability result, which includes the lifecycle of every linked
+Ingredient Credential, instead of implying that products carry a separate Product Credential.
 
 Private evidence and receipt endpoints derive participants from the SIWE session and authoritative workflow or custody records; caller-supplied wallet values never grant access. Unrelated callers receive a not-found response so the API does not confirm that a private record exists. Workflow JSON is written atomically and corrupt files fail closed without being overwritten. If a MetaMask transaction is mined but the following authoritative refresh fails, the UI reports that confirmation succeeded and offers a refresh action instead of asking the user to submit the transaction again. Process-local SIWE sessions are still lost on API restart and require a new sign-in.
 
