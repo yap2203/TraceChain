@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { useState } from 'react';
 import {
@@ -45,10 +46,8 @@ export function ReviewEvidence({
   return (
     <div>
       {/* Header */}
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontWeight: 700, fontSize: 17, color: T.navy }}>{req.ingredient}</span>
@@ -257,7 +256,7 @@ export function ReviewEvidence({
             type="info"
             message="Acceptance records your review decision. It does not automatically create a product batch."
           />
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <div style={{ marginTop: 16 }} className="action-row">
             <Btn onClick={() => setShowAccept(false)} variant="ghost">
               Cancel
             </Btn>
@@ -266,7 +265,6 @@ export function ReviewEvidence({
                 onAccept(acceptNotes);
                 setShowAccept(false);
               }}
-              full
             >
               Confirm Acceptance
             </Btn>
@@ -326,13 +324,11 @@ export function ReviewEvidence({
               }}
             />
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <div style={{ marginTop: 16 }} className="action-row">
             <Btn onClick={() => setShowMissing(false)} variant="ghost">
               Cancel
             </Btn>
-            <Btn onClick={() => setShowMissing(false)} full>
-              Send Follow-up Request
-            </Btn>
+            <Btn onClick={() => setShowMissing(false)}>Send Follow-up Request</Btn>
           </div>
         </Modal>
       )}
@@ -361,7 +357,7 @@ export function ReviewEvidence({
             placeholder="Provide additional context…"
             rows={3}
           />
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <div style={{ marginTop: 16 }} className="action-row">
             <Btn onClick={() => setShowReject(false)} variant="ghost">
               Cancel
             </Btn>
@@ -373,7 +369,7 @@ export function ReviewEvidence({
                 }
               }}
               variant="danger"
-              full
+
               disabled={!rejectReason}
             >
               Reject Evidence

@@ -167,19 +167,7 @@ export function DeliveryIdentityPanel({
         </>
       )}
       {supplier && status?.status === 'REQUESTED' && (
-        <div className="flex flex-wrap gap-[8px]">
-          <Btn
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                const value = await deliveryIdentity(order.orderId, { action: 'material' });
-                setMaterial(value);
-                setSelected(value.requiredClaims ?? []);
-              })
-            }
-          >
-            Preview requested company evidence
-          </Btn>
+        <div className="flex flex-wrap gap-[8px] action-row">
           <Btn
             variant="outline"
             disabled={busy}
@@ -191,6 +179,18 @@ export function DeliveryIdentityPanel({
             }
           >
             Decline company evidence
+          </Btn>
+          <Btn
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                const value = await deliveryIdentity(order.orderId, { action: 'material' });
+                setMaterial(value);
+                setSelected(value.requiredClaims ?? []);
+              })
+            }
+          >
+            Preview requested company evidence
           </Btn>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { RequiredMarker } from '../../../../components/ui/RequiredLabel';
 import { T, UI, Btn, Alert, Modal, Input, Textarea } from '../../shared/ui';
 import { TRANSFERS } from '../fixtures';
 import { type ConfirmStep } from '../types';
@@ -108,13 +109,11 @@ export function ReceiptDialogs({
             This records your organisation's receipt and custody acceptance on the blockchain. A
             network fee may apply.
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div className="action-row">
             <Btn onClick={() => setStep('review')} variant="ghost">
               Cancel
             </Btn>
-            <Btn onClick={startSign} full>
-              Sign and Confirm Receipt
-            </Btn>
+            <Btn onClick={startSign}>Sign and Confirm Receipt</Btn>
           </div>
         </Modal>
       )}
@@ -124,7 +123,7 @@ export function ReceiptDialogs({
           <div style={{ display: 'grid', gap: 12 }}>
             <div>
               <div style={{ fontSize: 12, color: T.text2, fontWeight: 500, marginBottom: 6 }}>
-                Rejection Reason <span style={{ color: T.red }}>*</span>
+                Rejection Reason <RequiredMarker />
               </div>
               <select
                 value={rejectReason}
@@ -155,13 +154,13 @@ export function ReceiptDialogs({
               placeholder="Provide additional detail…"
               rows={3}
             />
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="action-row">
               <Btn onClick={() => setShowRej(false)} variant="ghost">
                 Cancel
               </Btn>
               <Btn
                 variant="danger"
-                full
+
                 disabled={!rejectReason}
                 onClick={() => {
                   setShowRej(false);
@@ -184,7 +183,7 @@ export function ReceiptDialogs({
           <div style={{ marginTop: 14, display: 'grid', gap: 12 }}>
             <div>
               <div style={{ fontSize: 12, color: T.text2, fontWeight: 500, marginBottom: 6 }}>
-                Discrepancy Type <span style={{ color: T.red }}>*</span>
+                Discrepancy Type <RequiredMarker />
               </div>
               <select
                 style={{
@@ -217,12 +216,11 @@ export function ReceiptDialogs({
               rows={3}
             />
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <div style={{ marginTop: 16 }} className="action-row">
             <Btn onClick={() => setShowDsc(false)} variant="ghost">
               Cancel
             </Btn>
             <Btn
-              full
               onClick={() => {
                 setShowDsc(false);
                 onBack();

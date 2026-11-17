@@ -337,6 +337,7 @@ export function createApp({
         resolveOrders().pendingCompanyLogo(applicationId, applicantWallet),
     },
     applicationDocuments,
+    () => lazyCredentialContentStore,
   );
   const lazyCredentialContentStore: CredentialContentStore = {
     retrieveAndDecrypt: async (cid) => {

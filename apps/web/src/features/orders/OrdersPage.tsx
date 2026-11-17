@@ -1,8 +1,10 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
+import { formatLocationLabel } from './location-format';
 import { reportError } from '../../components/ui/feedback';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { targetChainId } from '../../config/chain';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
@@ -421,13 +423,7 @@ export function OrdersPage({
             )}
           {order && role !== 'supplier' && !evidenceOnly && !manufacturerIngredientDetail && (
             <div className="workspace-process-page-heading">
-              <button
-                type="button"
-                className="workspace-process-back"
-                onClick={() => setSelected('')}
-              >
-                <ChevronLeft size={17} aria-hidden="true" /> Back to requests
-              </button>
+              <BackNavigation onClick={() => setSelected('')}>Back to requests</BackNavigation>
               <h3>Order request</h3>
               <p>Review the request, its current stage and the next required action.</p>
             </div>
@@ -719,7 +715,7 @@ export function OrdersPage({
                                   .filter((location) => same(location.company, data.actor))
                                   .map((location) => ({
                                     value: location.location,
-                                    label: location.label ?? short(location.location),
+                                    label: formatLocationLabel(location, short(location.location)),
                                   })),
                               ]}
                             />
@@ -831,20 +827,19 @@ export function OrdersPage({
                         message="Deploy the updated registry suite to enable order decisions. Existing records remain unchanged."
                       />
                     )}
-                    <div className="request-detail-actions">
+                    <div className="request-detail-actions action-row">
                       <Btn
-                        disabled={
-                          busy ||
-                          !activeOrder ||
-                          !order.isRequestOnly ||
-                          Number(order.decision?.status) !== 0
+                        variant="outline"
+                        disabled={!activeOrder}
+                        onClick={() =>
+                          navigate(
+                            workspacePath(role, 'sent-requests') +
+                              '?orderId=' +
+                              encodeURIComponent(order.orderId),
+                          )
                         }
-                        onClick={() => {
-                          setPendingDecision(1);
-                          setDecisionReason('Request approved');
-                        }}
                       >
-                        Approve
+                        Request company evidence
                       </Btn>
                       <Btn
                         variant="danger"
@@ -862,17 +857,18 @@ export function OrdersPage({
                         Reject
                       </Btn>
                       <Btn
-                        variant="outline"
-                        disabled={!activeOrder}
-                        onClick={() =>
-                          navigate(
-                            workspacePath(role, 'sent-requests') +
-                              '?orderId=' +
-                              encodeURIComponent(order.orderId),
-                          )
+                        disabled={
+                          busy ||
+                          !activeOrder ||
+                          !order.isRequestOnly ||
+                          Number(order.decision?.status) !== 0
                         }
+                        onClick={() => {
+                          setPendingDecision(1);
+                          setDecisionReason('Request approved');
+                        }}
                       >
-                        Request company evidence
+                        Approve
                       </Btn>
                     </div>
                     {pendingDecision && (
@@ -893,7 +889,14 @@ export function OrdersPage({
                           required
                           maxLength={1000}
                         />
-                        <div className="request-detail-actions">
+                        <div className="request-detail-actions action-row">
+                          <Btn
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => setPendingDecision(undefined)}
+                          >
+                            Cancel
+                          </Btn>
                           <Btn
                             variant={pendingDecision === 2 ? 'danger' : 'primary'}
                             disabled={busy || !decisionReason.trim()}
@@ -939,13 +942,6 @@ export function OrdersPage({
                             }
                           >
                             Confirm {pendingDecision === 1 ? 'approval' : 'rejection'}
-                          </Btn>
-                          <Btn
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() => setPendingDecision(undefined)}
-                          >
-                            Cancel
                           </Btn>
                         </div>
                       </Card>

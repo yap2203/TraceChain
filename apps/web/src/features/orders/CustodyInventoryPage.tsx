@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Boxes, FilterX, Layers, MapPin, RefreshCw, Search, Warehouse } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
@@ -514,9 +515,7 @@ function CustodyInventoryDetail({
 
   return (
     <Card>
-      <Btn variant="ghost" onClick={onBack}>
-        ← Custody inventory
-      </Btn>
+      <BackNavigation onClick={onBack}>Custody inventory</BackNavigation>
       <div className="custody-inventory-detail__hero">
         <CatalogueImage
           path={item.imagePath}

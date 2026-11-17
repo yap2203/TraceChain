@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -119,9 +120,9 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
     >
       {!exists ? (
         <section className="workspace-access-panel">
+          <BackNavigation to={workspacePath(role, 'overview')}>Return to overview</BackNavigation>
           <h2>Page not found</h2>
           <p>This page is not part of this workspace.</p>
-          <Link to={workspacePath(role, 'overview')}>Return to overview</Link>
         </section>
       ) : (
         <WorkspaceAccessGate state={state} role={role}>

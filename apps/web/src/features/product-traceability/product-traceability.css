@@ -122,14 +122,18 @@
   .product-qr-actions {
     @apply flex flex-wrap gap-[8px];
   }
-  .product-trace-page button,
+  .product-trace-page button:not(.page-back-navigation__control),
   .product-qr-label button {
-    @apply inline-flex items-center justify-center gap-[7px];
+    @apply inline-flex flex-nowrap items-center justify-center gap-[6px] leading-none;
     border: 1px solid #2d5068;
     @apply rounded-[8px] p-[9px_13px];
     background: #0e2639;
     color: #e9f7fa;
     @apply cursor-pointer;
+  }
+  .product-trace-page button > svg,
+  .product-qr-label button > svg {
+    @apply block shrink-0 m-0;
   }
   .product-trace-page button.primary {
     background: #11cbd6;

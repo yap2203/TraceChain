@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { FileSearch, Keyboard, Upload } from 'lucide-react';
@@ -254,10 +255,10 @@ export function RegisterBatch({
 
   return (
     <div>
+      <BackNavigation onClick={onBack} disabled={busy}>
+        Back
+      </BackNavigation>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm" disabled={busy}>
-          Back
-        </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
           Register Ingredient Batch
         </h2>
@@ -350,9 +351,11 @@ export function RegisterBatch({
               The document is used only to assist data entry. It is not registered, stored, sent to
               an external AI service or uploaded to IPFS.
             </p>
-            <Btn variant="outline" full onClick={startManualEntry} disabled={extracting}>
-              Enter information manually instead
-            </Btn>
+            <div className="action-row">
+              <Btn variant="outline" onClick={startManualEntry} disabled={extracting}>
+                Enter information manually instead
+              </Btn>
+            </div>
           </Card>
         )}
 
@@ -605,19 +608,21 @@ export function RegisterBatch({
                   </label>
                 </div>
               )}
-              <Btn
-                onClick={() => {
-                  if (!isFormComplete) setError(validationError || extractionReviewError);
-                  else {
-                    setError('');
-                    setStep(1);
-                  }
-                }}
-                full
-                disabled={busy}
-              >
-                Continue to review
-              </Btn>
+              <div className="action-row">
+                <Btn
+                  onClick={() => {
+                    if (!isFormComplete) setError(validationError || extractionReviewError);
+                    else {
+                      setError('');
+                      setStep(1);
+                    }
+                  }}
+
+                  disabled={busy}
+                >
+                  Continue to review
+                </Btn>
+              </div>
             </div>
           </Card>
         )}
@@ -693,12 +698,12 @@ export function RegisterBatch({
             )}
             {imageNotice && <Alert type="success" message={imageNotice} />}
 
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="action-row">
               {!complete && (
                 <Btn
                   onClick={() => setStep(0)}
                   variant="outline"
-                  style={{ flex: 1 }}
+
                   disabled={busy}
                 >
                   Edit details
@@ -706,7 +711,7 @@ export function RegisterBatch({
               )}
               <Btn
                 onClick={complete ? (onCompleted ?? onBack) : register}
-                style={{ flex: 2 }}
+
                 disabled={busy}
               >
                 {complete

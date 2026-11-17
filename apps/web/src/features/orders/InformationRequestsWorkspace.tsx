@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -159,15 +160,14 @@ export function InformationRequestsWorkspace({
         children
       ) : reference ? (
         <>
-          <Btn
-            variant="outline"
+          <BackNavigation
             onClick={() => {
               setParams({});
               void load();
             }}
           >
             Back to company requests
-          </Btn>
+          </BackNavigation>
           {loading && !data ? (
             <LoadingIndicator page label="Checking request participants…" />
           ) : selected?.status === 'UNAVAILABLE' ? (
@@ -312,7 +312,7 @@ export function InformationRequestsWorkspace({
                       <dd>{requestNextAction(row, direction)}</dd>
                     </div>
                   </dl>
-                  <div className="information-request-card__actions">
+                  <div className="information-request-card__actions action-row">
                     <Btn
                       variant="outline"
                       onClick={() =>

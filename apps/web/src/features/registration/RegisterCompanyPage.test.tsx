@@ -1,5 +1,11 @@
+import {
+  fillCompanyDetails,
+  fillContactDetails,
+  continueRegistration,
+  goToWalletStep,
+} from './registration.test-helpers';
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -19,6 +25,90 @@ vi.mock('ethers', async (importOriginal) => {
 import { RegisterCompanyPage } from './RegisterCompanyPage';
 
 describe('company registration logo', () => {
+  it('allows selecting progress steps while directing incomplete applications to the first missing section', async () => {
+    render(
+      <MemoryRouter>
+        <RegisterCompanyPage />
+      </MemoryRouter>,
+    );
+    const next = screen.getByRole('button', { name: 'Continue' });
+    expect(next.querySelector('.ui-button__label svg')).toBeNull();
+    expect(next.lastElementChild?.tagName.toLowerCase()).toBe('svg');
+    fireEvent.click(screen.getByRole('button', { name: 'Step 4: Supporting documents' }));
+    expect(screen.getByRole('heading', { name: 'Company details' })).toBeTruthy();
+    expect(screen.getByText('Registered company name is required.')).toBeTruthy();
+    fillCompanyDetails();
+    fireEvent.click(screen.getByRole('button', { name: 'Step 4: Supporting documents' }));
+    expect(screen.getByRole('heading', { name: 'Contact & representative' })).toBeTruthy();
+    fillContactDetails();
+    fireEvent.click(screen.getByRole('button', { name: 'Step 3: Wallet & identity' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Connect MetaMask' }));
+    await screen.findByText(wallet);
+    fireEvent.click(screen.getByRole('button', { name: 'Step 4: Supporting documents' }));
+    expect(screen.getByRole('heading', { name: 'Supporting documents' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Step 1: Company details' }));
+    expect(screen.getByDisplayValue('Cocoa Works')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Step 5: Review & submit' }));
+    expect(screen.getByRole('heading', { name: 'Supporting documents' })).toBeTruthy();
+    expect(screen.getByText('Upload all three required supporting documents.')).toBeTruthy();
+  });
+  it('validates the current step only and preserves values when navigating back', () => {
+    render(
+      <MemoryRouter>
+        <RegisterCompanyPage />
+      </MemoryRouter>,
+    );
+    fillCompanyDetails();
+    continueRegistration();
+    expect(screen.getByRole('heading', { name: 'Contact & representative' })).toBeTruthy();
+    fillContactDetails();
+    fireEvent.change(screen.getByLabelText('Company email *'), { target: { value: 'invalid' } });
+    continueRegistration();
+    expect(screen.getByRole('heading', { name: 'Contact & representative' })).toBeTruthy();
+    expect(screen.getByText('Enter a valid company email address.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Company email *'), {
+      target: { value: 'hello@example.com' },
+    });
+    continueRegistration();
+    expect(screen.getByRole('heading', { name: 'Wallet & identity' })).toBeTruthy();
+    expect(screen.queryByLabelText('Company email *')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    expect(screen.getByDisplayValue('hello@example.com')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }));
+    expect(screen.getByDisplayValue('Cocoa Works')).toBeTruthy();
+    expect(screen.getByDisplayValue('1 Supply Road')).toBeTruthy();
+    expect(screen.getByText('Step 1 of 5')).toBeTruthy();
+  });
+  it('groups the registration fields into recognizable company, contact, location, representative and wallet categories', () => {
+    render(
+      <MemoryRouter>
+        <RegisterCompanyPage />
+      </MemoryRouter>,
+    );
+    const company = screen.getByRole('group', { name: 'Company details' });
+    expect(within(company).getByLabelText('Registered company name *')).toBeTruthy();
+    expect(within(company).getByLabelText('Business address *')).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Contact details' })).toBeNull();
+    fillCompanyDetails();
+    continueRegistration();
+    const contact = screen.getByRole('group', { name: 'Contact details' });
+    expect(within(contact).getByLabelText('Company email *')).toBeTruthy();
+    expect(within(contact).getByLabelText('Contact number *')).toBeTruthy();
+    expect(
+      within(screen.getByRole('group', { name: 'Authorised representative' })).getByLabelText(
+        'Representative position *',
+      ),
+    ).toBeTruthy();
+    fillContactDetails();
+    continueRegistration();
+    expect(screen.queryByRole('group', { name: 'Dispatch & receiving location' })).toBeNull();
+    expect(screen.queryByLabelText('Dispatch / receiving address *')).toBeNull();
+    expect(
+      within(screen.getByRole('group', { name: 'Wallet & digital identity' })).getByRole('button', {
+        name: 'Connect MetaMask',
+      }),
+    ).toBeTruthy();
+  });
   beforeEach(() => {
     vi.stubGlobal('ethereum', {});
     vi.stubGlobal('URL', {
@@ -60,29 +150,16 @@ describe('company registration logo', () => {
         <RegisterCompanyPage />
       </MemoryRouter>,
     );
-    const values: Array<[string, string]> = [
-      ['Registered company name *', 'Cocoa Works'],
-      ['Registration number *', 'REG-1'],
-      ['Company email *', 'hello@example.com'],
-      ['Contact number *', '60123456789'],
-      ['Primary dispatch / receiving location name *', 'Main factory'],
-      ['Business address *', '1 Supply Road'],
-      ['Authorised representative *', 'A. Representative'],
-      ['Representative position *', 'Director'],
-    ];
-    for (const [label, value] of values)
-      fireEvent.change(screen.getByLabelText(label), { target: { value } });
-    fireEvent.change(screen.getByLabelText('Requested supply-chain role *'), {
-      target: { value: 'MANUFACTURER' },
+    fillCompanyDetails();
+    fireEvent.change(screen.getByLabelText('Choose company logo'), {
+      target: { files: [new File(['logo'], 'company.webp', { type: 'image/webp' })] },
     });
+    continueRegistration();
+    fillContactDetails();
+    continueRegistration();
     fireEvent.click(screen.getByRole('button', { name: /Connect/ }));
     await waitFor(() => expect(screen.getByText(wallet)).toBeTruthy());
-    fireEvent.change(screen.getByLabelText('Choose company logo'), {
-      target: {
-        files: [new File(['logo'], 'company.webp', { type: 'image/webp' })],
-      },
-    });
-    fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
+    continueRegistration();
     for (const label of [
       'Company registration proof',
       'Business licence / role proof',
@@ -97,10 +174,34 @@ describe('company registration logo', () => {
           ],
         },
       });
+    fireEvent.change(screen.getByLabelText(/Optional certifications/), {
+      target: { files: [new File(['png'], 'certificate.png', { type: 'image/png' })] },
+    });
     fireEvent.click(screen.getByRole('button', { name: /Continue/ }));
     expect(await screen.findByText('Review your application')).toBeTruthy();
     expect(screen.getByAltText('Company logo selected for submission')).toBeTruthy();
     expect(screen.getByText('company.webp')).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Submit application' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Preview Company-registration-proof.pdf' }));
+    expect(screen.getByRole('dialog', { name: 'Document preview' })).toBeTruthy();
+    expect(screen.getByTitle('Selected PDF document').getAttribute('sandbox')).toBe('');
+    expect(
+      screen.getByRole('link', { name: 'Download selected file' }).getAttribute('download'),
+    ).toBe('Company-registration-proof.pdf');
+    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:company-logo');
+    fireEvent.click(screen.getByRole('button', { name: 'Preview certificate.png' }));
+    expect(screen.getByAltText('Selected document: certificate.png')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Change documents' }));
+    expect(screen.getByText('3 of 3 required documents selected')).toBeTruthy();
+    continueRegistration();
+    expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false);
   });
 
   it('shows document progress, replacement, per-slot errors and preserved selected states', async () => {
@@ -173,18 +274,5 @@ describe('company registration logo', () => {
 });
 
 function fillCompanyInformation() {
-  for (const [label, value] of [
-    ['Registered company name *', 'Cocoa Works'],
-    ['Registration number *', 'REG-1'],
-    ['Company email *', 'hello@example.com'],
-    ['Contact number *', '60123456789'],
-    ['Primary dispatch / receiving location name *', 'Main factory'],
-    ['Business address *', '1 Supply Road'],
-    ['Authorised representative *', 'A. Representative'],
-    ['Representative position *', 'Director'],
-  ] as const)
-    fireEvent.change(screen.getByLabelText(label), { target: { value } });
-  fireEvent.change(screen.getByLabelText('Requested supply-chain role *'), {
-    target: { value: 'MANUFACTURER' },
-  });
+  goToWalletStep();
 }

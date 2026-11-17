@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import {
   ArrowRight,
   Building2,
@@ -156,9 +157,7 @@ export function DistributorIngredientDispatchForm({
 
   return (
     <section className="distributor-dispatch" aria-label="Record ingredient dispatch">
-      <button type="button" className="workspace-process-back" onClick={onBack}>
-        ← Ingredient deliveries
-      </button>
+      <BackNavigation onClick={onBack}>Ingredient deliveries</BackNavigation>
 
       <header className="workspace-arrival-detail__header">
         <span className="workspace-arrival-detail__header-icon" aria-hidden="true">
@@ -325,9 +324,11 @@ export function DistributorIngredientDispatchForm({
             type="warning"
             message="MetaMask confirmation is required. TraceChain prepares the transaction but never signs on your behalf."
           />
-          <Btn icon={<Truck size={17} />} disabled={busy || !valid} full onClick={onSubmit}>
-            {busy ? 'Recording dispatch…' : 'Confirm dispatch with MetaMask'}
-          </Btn>
+          <div className="action-row">
+            <Btn icon={<Truck size={17} />} disabled={busy || !valid} onClick={onSubmit}>
+              {busy ? 'Recording dispatch…' : 'Confirm dispatch with MetaMask'}
+            </Btn>
+          </div>
         </section>
       </div>
 

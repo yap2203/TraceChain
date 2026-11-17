@@ -34,21 +34,21 @@ const evidenceAbi = [
   'event EvidenceRequested(bytes32 indexed requestId,address indexed requester,address indexed supplier,bytes32 ingredientBatchId,bytes32 claimsHash,bytes32 challengeHash,string requestCid,uint64 dueAt)',
   'function getRequest(bytes32) view returns (tuple(address requester,address supplier,bytes32 ingredientBatchId,bytes32 claimsHash,bytes32 challengeHash,string requestCid,string presentationCid,bytes32 presentationHash,uint8 status,uint64 dueAt,uint64 presentationExpiresAt,uint64 updatedAt))',
   'function acceptedForManufacturer(bytes32,address) view returns (bool)',
-  'function requestEvidence(bytes32,address,bytes32,bytes32,bytes32,string,uint64)',
-  'function respond(bytes32,bytes32,string,uint64)',
-  'function accept(bytes32,bytes32)',
-  'function close(bytes32,uint8,bytes32)',
+  'function requestEvidence(bytes32 requestId, address supplier, bytes32 ingredientBatchId, bytes32 claimsHash, bytes32 challengeHash, string requestCid, uint64 dueAt)',
+  'function respond(bytes32 requestId, bytes32 presentationHash, string presentationCid, uint64 expiresAt)',
+  'function accept(bytes32 requestId, bytes32 ingredientCredentialId)',
+  'function close(bytes32 requestId, uint8 status, bytes32 reasonHash)',
 ] as const;
 const productAbi = [
   'function receivedProductionPolicy() view returns (uint8)',
   'function productionRecordedAt(bytes32) view returns (uint64)',
   'function productionLocation(bytes32) view returns (bytes32)',
-  'function createProductAt(bytes32,bytes32,string,uint256,bytes32,uint64,uint64,bytes32[],uint256[],bytes32)',
+  'function createProductAt(bytes32 batchId, bytes32 metadataHash, string publicCid, uint256 quantity, bytes32 unit, uint64 producedAt, uint64 expiresAt, bytes32[] ingredientIds, uint256[] quantities, bytes32 location)',
   'error InvalidInput()',
   'function getProduct(bytes32) view returns (tuple(address manufacturer,bytes32 metadataHash,string publicCid,uint256 totalQuantity,bytes32 unit,uint64 producedAt,uint64 expiresAt,uint8 status))',
   'function getIngredientLinks(bytes32) view returns (tuple(bytes32 batchId,uint256 quantity)[])',
   'function isTransferable(bytes32) view returns (bool)',
-  'function createProduct(bytes32,bytes32,string,uint256,bytes32,uint64,uint64,bytes32[],uint256[])',
+  'function createProduct(bytes32 batchId, bytes32 metadataHash, string publicCid, uint256 quantity, bytes32 unit, uint64 producedAt, uint64 expiresAt, bytes32[] ingredientIds, uint256[] quantities)',
 ] as const;
 const custodyAbi = [
   'error InvalidInput()',
@@ -56,7 +56,7 @@ const custodyAbi = [
   'event TransferCreated(bytes32 indexed transferId,bytes32 indexed productBatchId,address indexed sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid)',
   'function getTransfer(bytes32) view returns (tuple(bytes32 productBatchId,address sender,address recipient,uint256 quantity,bytes32 shipmentHash,string shipmentCid,uint64 dispatchedAt,uint64 expectedAt,uint8 status,uint256 usable,uint256 damaged,uint256 rejected))',
   'function getInventory(bytes32,address) view returns (tuple(uint256 available,uint256 reserved,uint256 damaged,uint256 rejected))',
-  'function createTransfer(bytes32,bytes32,address,uint256,uint64,bytes32,string)',
+  'function createTransfer(bytes32 transferId, bytes32 productBatchId, address recipient, uint256 quantity, uint64 expectedAt, bytes32 shipmentHash, string shipmentCid)',
 ] as const;
 
 const evidenceInterface = new Interface(evidenceAbi);

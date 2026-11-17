@@ -121,7 +121,17 @@ export class OrdersService {
       senderName: name(offer.sender),
       distributorName: name(offer.distributor),
       fromLocationName: await locationName(offer.fromLocation, offer.sender),
+      fromLocationAddress: await this.locationAddress(
+        offer.fromLocation,
+        offer.sender,
+        events.find((e) => same(e.location, offer.fromLocation))?.detailsHash,
+      ),
       toLocationName: await locationName(offer.toLocation, offer.distributor),
+      toLocationAddress: await this.locationAddress(
+        offer.toLocation,
+        offer.distributor,
+        events.find((e) => same(e.location, offer.toLocation))?.detailsHash,
+      ),
     };
   }
   async listCustodyOffers(sessionId?: string) {
@@ -1020,7 +1030,27 @@ export class OrdersService {
         'Location display metadata could not be checked.',
         503,
       );
-    return (JSON.parse(serialized) as { label: string }).label;
+    return (JSON.parse(serialized) as { label: string; address?: string }).label;
+  }
+  private async locationAddress(location: string, owner: string, detailsHash?: string) {
+    const alias = await this.repository.findPrivate('products', this.locationLabelKey(location));
+    const original = detailsHash
+      ? await this.repository.findPrivate('products', location)
+      : undefined;
+    for (const record of [alias, original]) {
+      if (
+        !record ||
+        !same(record.owner, owner) ||
+        (record === original && (!detailsHash || !same(record.contentHash, detailsHash)))
+      )
+        continue;
+      const text = await this.store.decrypt(record.payload);
+      if (!same(record.contentHash, '0x' + createHash('sha256').update(text).digest('hex')))
+        throw new OrdersError('PROFILE_UNAVAILABLE', 'Location details could not be checked.', 503);
+      const data = JSON.parse(text);
+      if (typeof data.address === 'string') return data.address;
+    }
+    return undefined;
   }
   async companyProfile(sessionId?: string) {
     const session = await this.session(sessionId);
@@ -1054,12 +1084,14 @@ export class OrdersService {
         return {
           location: event.location,
           registeredLabel,
+          address: await this.locationAddress(event.location, session.address, event.detailsHash),
           label: (await this.locationAlias(event.location, session.address)) ?? registeredLabel,
           warehouse: same(warehouse?.distributor, session.address),
         };
       }),
     );
     let initialLocationName: string | undefined;
+    let initialLocationAddress: string | undefined;
     if (this.applicationMetadata)
       for (const event of await this.gateway.events('stakeholders', 'ApplicationSubmitted')) {
         if (!same(event.applicant, session.address)) continue;
@@ -1072,12 +1104,37 @@ export class OrdersService {
           same(application.applicant, session.address) &&
           metadata &&
           same(metadata.profileHash, application.profileHash)
-        )
+        ) {
           initialLocationName = metadata.initialLocationName;
+          if (metadata.initialLocationDetails)
+            initialLocationAddress = JSON.parse(
+              await this.store.decrypt(metadata.initialLocationDetails.payload),
+            ).address;
+        }
       }
-    return { wallet: session.address, role: session.role, locations, initialLocationName };
+    return {
+      wallet: session.address,
+      role: session.role,
+      locations,
+      initialLocationName,
+      initialLocationAddress,
+    };
   }
-  async updateLocationLabel(sessionId: string | undefined, location: string, label: string) {
+  async updateLocationLabel(
+    sessionId: string | undefined,
+    location: string,
+    label: string,
+    address?: string,
+  ) {
+    if (address !== undefined) {
+      address = address.trim();
+      if (!address || address.length > 1000)
+        throw new OrdersError(
+          'INVALID_LOCATION_ADDRESS',
+          'Enter a location address up to 1000 characters.',
+          400,
+        );
+    }
     const session = await this.session(sessionId);
     if (session.role === CompanyRole.SYSTEM_ADMIN)
       throw new OrdersError(
@@ -1089,10 +1146,16 @@ export class OrdersService {
       await this.gateway.read('orders', 'locationOwner', [location]),
       session.address,
     );
+    const event = (await this.gateway.events('orders', 'LocationRegistered')).find(
+      (e) => same(e.location, location) && same(e.company, session.address),
+    );
+    const savedAddress =
+      address ?? (await this.locationAddress(location, session.address, event?.detailsHash));
     await this.replacePresentationRecord(this.locationLabelKey(location), session.address, {
       label,
+      ...(savedAddress ? { address: savedAddress } : {}),
     });
-    return { location, label, source: 'Company profile display name' };
+    return { location, label, address: savedAddress, source: 'Company profile location details' };
   }
   private pickupKey(referenceId: string, distributor: string) {
     return id(
@@ -2176,8 +2239,12 @@ export class OrdersService {
           !orders.some(
             (order) =>
               order.custodyOrder?.receivingLocation === location.location ||
-              order.deliveryReceivingLocation === location.location,
-          )
+              order.deliveryReceivingLocation === location.location ||
+              [order.delivery?.fromLocation, order.delivery?.toLocation].includes(
+                location.location,
+              ),
+          ) &&
+          !shipments.some((s) => [s.fromLocation, s.toLocation].includes(location.location))
         )
           return { location: location.location, company: location.company };
         const record = await this.repository.findPrivate('products', location.location);
@@ -2188,6 +2255,11 @@ export class OrdersService {
         return {
           location: location.location,
           company: location.company,
+          address: await this.locationAddress(
+            location.location,
+            location.company,
+            location.detailsHash,
+          ),
           label: (await this.locationAlias(location.location, location.company)) ?? label,
         };
       }),
@@ -2729,6 +2801,7 @@ export class OrdersService {
     } else if (input.action === 'location') {
       const stored = await this.privateRecord(operationKey, session.address, {
         label: input.label,
+        ...(input.address ? { address: input.address } : {}),
       });
       method = 'registerLocation';
       args = [operationKey, stored.contentHash];

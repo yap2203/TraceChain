@@ -203,19 +203,19 @@ export default function DiscrepancyManagementPage() {
                     rows={3}
                     value={reasons[item.transferId] ?? ''}
                   />
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <Btn
-                      disabled={isBusy || !(reasons[item.transferId] ?? '').trim()}
-                      onClick={() => void resolve(item, true)}
-                    >
-                      {isBusy ? 'Waiting for MetaMask…' : 'Accept actual quantity'}
-                    </Btn>
+                  <div className="action-row">
                     <Btn
                       disabled={isBusy || !(reasons[item.transferId] ?? '').trim()}
                       onClick={() => void resolve(item, false)}
                       variant="danger"
                     >
                       Cancel transfer
+                    </Btn>
+                    <Btn
+                      disabled={isBusy || !(reasons[item.transferId] ?? '').trim()}
+                      onClick={() => void resolve(item, true)}
+                    >
+                      {isBusy ? 'Waiting for MetaMask…' : 'Accept actual quantity'}
                     </Btn>
                   </div>
                 </div>

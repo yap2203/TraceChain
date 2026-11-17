@@ -1,4 +1,5 @@
-import { Box, ChevronLeft, MapPin, PackageCheck, Truck, Warehouse } from 'lucide-react';
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import { Box, MapPin, PackageCheck, Truck, Warehouse } from 'lucide-react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import {
@@ -37,9 +38,7 @@ export function ReceiveProduct({
   const received = transfer.status === 2;
   return (
     <section className="workspace-arrival-detail" aria-label="Retailer product receipt detail">
-      <button type="button" className="workspace-process-back" onClick={onBack}>
-        <ChevronLeft size={17} aria-hidden="true" /> Back to receipts
-      </button>
+      <BackNavigation onClick={onBack}>Back to receipts</BackNavigation>
       <header className="workspace-arrival-detail__header">
         <span className="workspace-arrival-detail__header-icon" aria-hidden="true">
           <Box size={31} />

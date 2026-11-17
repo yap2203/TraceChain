@@ -200,3 +200,52 @@ it('binds registration document bytes to the applicant signature and keeps them 
   expect(prepareApplication.mock.calls[0]![0]).not.toHaveProperty('documents');
   expect(await service.read(applicationId, owner.address)).toEqual(files);
 });
+
+it('binds the initial physical address to the applicant signature and persists only encrypted address details', async () => {
+  const metadata = new Map<string, any>();
+  const prepareApplication = vi.fn(() => ({ data: '0x', chainId: 31337 }));
+  const controller = new BlockchainController(
+    { ...gateway, prepareApplication } as any,
+    auth,
+    'session',
+    {
+      find: async (key: string) => metadata.get(key),
+      save: async (record: any) => {
+        metadata.set(record.applicationId, record);
+      },
+    } as any,
+    {} as any,
+    undefined,
+    undefined,
+    service,
+    () => store,
+  );
+  const registration = express().use(express.json()).use(createBlockchainRouter(controller));
+  const input = {
+    applicationId,
+    applicantWallet: owner.address,
+    companyName: 'Test',
+    companyRegistrationNumber: 'TEST-1',
+    encryptedProfileCid: 'local://test',
+    previousApplicationId: id('previous'),
+    profileHash: id('profile'),
+    requestedRole: 2,
+    initialLocationName: 'Dispatch depot',
+    initialLocationAddress: '10 Private Factory Road',
+  };
+  const signature = await owner.signMessage(companyApplicationBindingMessage(input));
+  await request(registration)
+    .post('/transactions/company-application')
+    .send({ ...input, initialLocationAddress: 'Other site', applicantSignature: signature })
+    .expect(403);
+  await request(registration)
+    .post('/transactions/company-application')
+    .send({ ...input, applicantSignature: signature })
+    .expect(200);
+  const saved = metadata.get(applicationId);
+  expect(JSON.stringify(saved)).not.toContain('10 Private Factory Road');
+  expect(JSON.parse(await store.decrypt(saved.initialLocationDetails.payload)).address).toBe(
+    input.initialLocationAddress,
+  );
+  expect(prepareApplication.mock.calls[0]![0]).not.toHaveProperty('initialLocationAddress');
+});

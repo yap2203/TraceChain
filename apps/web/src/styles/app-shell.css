@@ -1,5 +1,26 @@
 @reference './tailwind.css';
 @layer components {
+  .page-back-navigation {
+    @apply flex w-full min-w-0 justify-start mb-4;
+  }
+  .page-back-navigation__control {
+    @apply inline-flex min-h-10 max-w-full items-center gap-1 rounded-md border-0 bg-transparent px-1 py-2 text-sm font-semibold no-underline;
+    color: var(--c-text2, var(--color-text-muted));
+    cursor: pointer;
+  }
+  .page-back-navigation__control svg {
+    @apply shrink-0;
+  }
+  .page-back-navigation__control:hover,
+  .page-back-navigation__control:focus-visible {
+    color: var(--c-teal, var(--color-primary));
+  }
+  .page-back-navigation__control:focus-visible {
+    @apply outline-2 outline-offset-2;
+  }
+  .page-back-navigation__control:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
   .sr-only {
     @apply absolute w-[1px] h-[1px] p-[0];
     overflow: hidden;
@@ -242,7 +263,7 @@
     @apply text-[length:0.68rem];
   }
   .ui-button {
-    @apply inline-flex flex-row flex-nowrap items-center justify-center gap-[0.5rem] rounded-[var(--radius-small)] cursor-pointer font-extrabold;
+    @apply inline-flex flex-row flex-nowrap items-center justify-center gap-[6px] rounded-[var(--radius-small)] cursor-pointer font-extrabold leading-none;
     transition:
       color 160ms ease,
       border-color 160ms ease,
@@ -250,10 +271,12 @@
       transform 160ms ease;
   }
   .ui-button__label {
-    @apply inline-flex items-center justify-center gap-[0.5rem] min-w-[0];
+    @apply inline-flex items-center justify-center gap-[6px] min-w-0 m-0 p-0 leading-none;
+    font: inherit;
   }
   .ui-button svg {
-    @apply shrink-[0];
+    @apply shrink-0 m-0;
+    display: block;
   }
   .ui-button--medium {
     @apply min-h-[42px] p-[0.7rem_1rem] text-[length:0.74rem];
@@ -565,10 +588,37 @@
   .registration-card {
     box-shadow: var(--shadow-card);
   }
+  .registration-categories {
+    @apply grid gap-[1.5rem];
+  }
+  .registration-category {
+    @apply m-0 min-w-0 rounded-[12px] border border-solid border-ui-border px-[clamp(0.9rem,3vw,1.25rem)] pt-[1rem] pb-[1.25rem];
+  }
+  .registration-category legend {
+    @apply inline-flex items-center gap-[0.55rem] px-[0.5rem] text-[0.85rem] font-bold text-ui-text;
+  }
+  .registration-category legend svg {
+    color: var(--color-primary);
+    flex-shrink: 0;
+  }
   .registration-form {
     @apply grid grid-cols-[1fr_1fr] gap-[var(--space-5)];
+    align-items: start;
   }
-  .registration-form .field:first-child,
+  .registration-form .field {
+    align-content: start;
+  }
+  .registration-form .field__control:not(textarea) {
+    height: 44px;
+    box-sizing: border-box;
+  }
+  .registration-form .PhoneInput.field__control {
+    padding-block: 0;
+  }
+  .registration-form .PhoneInput input[type='tel'] {
+    height: 42px;
+    min-height: 0;
+  }
   .registration-form .ui-button {
     grid-column: 1 / -1;
   }
@@ -589,13 +639,28 @@
     @apply text-[length:0.86rem];
   }
   .registration-progress {
-    @apply grid grid-cols-[repeat(3,_1fr)] m-[2.6rem_0_1.25rem];
+    @apply grid grid-cols-[repeat(5,_1fr)] m-[2.6rem_0_1.25rem];
   }
-  .registration-progress > div {
+  .registration-progress > button {
     @apply relative flex items-center gap-[0.7rem];
+    padding: 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    min-width: 0;
     color: var(--color-text-muted);
   }
-  .registration-progress > div:not(:last-child)::after {
+  .registration-progress > button:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 6px;
+    border-radius: 8px;
+  }
+  .registration-progress > button:disabled {
+    cursor: wait;
+  }
+  .registration-progress > button:not(:last-child)::after {
     @apply absolute z-[0];
     top: 18px;
     right: 1rem;
@@ -604,7 +669,7 @@
     background: var(--color-border-strong);
     content: '';
   }
-  .registration-progress > div > span {
+  .registration-progress__number {
     @apply z-[1] grid w-[36px] h-[36px];
     flex: 0 0 auto;
     place-items: center;
@@ -616,7 +681,8 @@
   .registration-progress svg {
     @apply w-[15px];
   }
-  .registration-progress p {
+  .registration-progress__label {
+    min-width: 0;
     @apply z-[1] m-[0] pr-[0.8rem];
     background: var(--color-background);
   }
@@ -631,7 +697,7 @@
   .registration-progress small {
     @apply mt-[0.2rem] text-[length:0.62rem];
   }
-  .registration-progress .is-active > span {
+  .registration-progress .is-active .registration-progress__number {
     border-color: var(--color-primary);
     color: #02151a;
     background: var(--color-primary);
@@ -641,7 +707,7 @@
   .registration-progress .is-complete strong {
     color: var(--color-primary);
   }
-  .registration-progress .is-complete > span {
+  .registration-progress .is-complete .registration-progress__number {
     border-color: var(--color-primary);
     color: var(--color-primary);
   }
@@ -878,6 +944,39 @@
     color: #b8c8d7;
     @apply cursor-pointer text-[length:0.75rem] leading-[1.55];
   }
+  .registration-review-documents {
+    @apply mt-5 min-w-0;
+  }
+  .registration-review-documents > p {
+    @apply text-xs leading-relaxed text-ui-muted;
+  }
+  .registration-review-document {
+    @apply flex flex-wrap items-center gap-3 border-b border-ui-border py-3;
+  }
+  .registration-review-document > div {
+    @apply min-w-0 flex-1;
+    overflow-wrap: anywhere;
+  }
+  .registration-review-document > div > strong,
+  .registration-review-document > div > span {
+    @apply block text-xs;
+  }
+  .registration-review-document > div > span {
+    @apply mt-1 text-ui-muted;
+  }
+  .registration-preview-filename {
+    overflow-wrap: anywhere;
+  }
+  .document-preview-media {
+    @apply grid min-w-0 min-h-[180px] place-items-center;
+  }
+  .registration-document-image {
+    @apply block w-auto h-auto max-h-[60vh] max-w-full mx-auto;
+    object-fit: contain;
+  }
+  .registration-document-pdf {
+    @apply h-[55vh] w-full border-0;
+  }
   .registration-declaration input {
     @apply mt-[0.15rem];
     accent-color: var(--color-primary);
@@ -909,11 +1008,14 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
   .registration-actions {
-    @apply grid grid-cols-[auto_1fr_auto] gap-[0.75rem] mt-[1.5rem] pt-[1.25rem];
+    @apply flex flex-wrap justify-end gap-[0.75rem] mt-[1.5rem] pt-[1.25rem];
     border-top: 1px solid var(--color-border);
   }
   .registration-actions .ui-button {
     grid-column: auto;
+  }
+  .registration-actions > span:empty {
+    @apply hidden;
   }
   @keyframes loading-spin {
     to {
@@ -1040,7 +1142,6 @@
       @apply grid-cols-[1fr];
     }
 
-    .registration-form .field:first-child,
     .registration-form .ui-button {
       grid-column: auto;
     }
@@ -1051,14 +1152,14 @@
     .registration-progress strong {
       @apply hidden;
     }
-    .registration-progress > div {
+    .registration-progress > button {
       @apply justify-center;
     }
-    .registration-progress > div:not(:last-child)::after {
+    .registration-progress > button:not(:last-child)::after {
       right: -45%;
       left: 60%;
     }
-    .registration-progress p {
+    .registration-progress__label {
       @apply p-[0];
     }
     .document-grid,
@@ -1079,5 +1180,17 @@
     .skip-link {
       transition: none;
     }
+  }
+}
+
+/* Action rows override page-specific layouts, including mobile full-width button rules. */
+@layer utilities {
+  .action-row {
+    @apply flex flex-wrap items-center justify-end gap-2 w-full min-w-0;
+  }
+  .action-row > :is(button, a) {
+    @apply w-auto max-w-full;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 }

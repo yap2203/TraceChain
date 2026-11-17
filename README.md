@@ -550,6 +550,86 @@ Allow, Deny or Inherit for that exact company wallet. This uses the existing com
 requires an explicit MetaMask confirmation. The separate Individual permissions tab is removed from Permissions. Role defaults remain in Access Control; individual
 overrides cannot bypass credential expiry, suspension, revocation or protected Admin authority.
 
+Document previews center images at their original aspect ratio within the available dialog space.
+Download actions occupy a separate right-aligned row below the preview.
+
+### Readable wallet confirmations
+
+Company registration uses a readable wallet-ownership signature: company name, registration number,
+requested role and wallet appear before the exact application/profile/document references. The shared
+frontend/API formatter binds the same submitted fields; this signature does not submit a transaction
+or transfer ETH. Existing SIWE sign-in remains unchanged.
+
+Contract actions now open MetaMask's normal transaction confirmation directly. The extra preview
+message-signing trial has been removed, including its unused ABI metadata/formatter. Existing
+business confirmations, prepared calldata, network checks and duplicate-request protection remain.
+Company approval still has two real transactions (application approval and credential registration),
+so two transaction confirmations can be expected. SIWE login and company-registration ownership
+signatures are separate required flows and remain unchanged. No extra app review dialog is shown.
+
+Restart the API and refresh the browser together after this signing-format update. Earlier in-progress
+application signatures use a different format; retry the application from the refreshed page. Existing
+on-chain applications, credentials, SIWE sessions and contracts are not rewritten or redeployed.
+
+Registration's **Connect MetaMask** button explicitly requests account permissions before reading the
+selected address, so an existing connection is not silently reused. While waiting, the page asks the
+user to choose an account in MetaMask; success is announced and **Change account** reopens selection.
+Cancellation preserves the previous address, and a pending wallet request gets a readable message.
+See [MetaMask account permissions](https://docs.metamask.io/metamask-connect/evm/guides/manage-user-accounts/).
+
+Registration uses `react-phone-number-input` for the company contact number, with a country
+selector (Malaysia by default), international formatting and country-aware validation. The closed
+selector shows only the selected flag; its searchable dropdown shows flags beside country names
+and supports keyboard selection, Escape and outside-click dismissal. The form
+normalizes the number to E.164 before review/signing. Country flags are bundled locally. Registration
+is currently the only phone-entry form; changing the country supports international companies.
+The dependency is installed by the normal root `npm install` command.
+
+Required-field asterisks share a red marker across public registration, workspace forms and custom
+document/production/receipt labels. Optional fields have no required marker, and existing native
+required validation remains in place.
+
+Registration is split into five short steps: **Company details**, **Contact & representative**,
+**Wallet & identity**, **Supporting documents**, and **Review & submit**. Only the current step
+is shown and validated before Continue. Back preserves entered values, selected files and the
+connected wallet; step changes focus the new heading. Progress steps are clickable and keyboard-accessible:
+backward navigation preserves entries, while a forward jump opens the first incomplete prerequisite.
+Step navigation is disabled during wallet selection or final submission.
+
+Page-level Back navigation appears at the top left with a left-chevron icon and consistent styling.
+Form-step Back buttons remain next to their Continue/Submit controls. Page, card, form and modal
+action rows align to the right and wrap within narrow screens; page-level Back navigation stays left.
+Negative/secondary actions precede the positive action (Reject then Approve, Decline then Accept,
+Cancel then Save/Confirm). Buttons follow this order in the markup as well as visually for keyboard users. Shared action buttons use
+centered icons and labels with a consistent 6 px gap; file metadata styles do not affect button labels.
+
+### Dispatch and receiving addresses
+
+Profile location setup places the location name above the full-width address field at every screen
+size. Registration actions stay in a separate right-aligned row, and the empty-location icon/message
+are centered across the full section.
+
+Registration does not require a dispatch/receiving location. Set it up later in
+**Profile > Company profile & locations**: enter the **Location name** and **Dispatch / receiving address**
+when adding a location or warehouse, and use **Edit location** to correct its current name/address.
+A registered location is still selected for orders, dispatch, receipt and production; its stable
+on-chain ID links the stock and history. Location registration still needs MetaMask confirmation.
+
+Addresses are encrypted before IPFS upload and retained in the existing encrypted application or
+location metadata cache. Full addresses are returned only to the owner and authorized order,
+shipment or custody-offer participants, not general catalogue/public-traceability readers. Relevant
+selectors and route details show the name and authorized address. Existing registration location drafts remain available in Profile for older applications. Old records without an address show **Address not provided** until edited.
+
+Address edits update current profile details; they do not move inventory or rewrite historical
+on-chain IDs. Register a new location for a different physical site. These changes require no
+contract redeployment and preserve old name-only records/API clients.
+
+Before submission, **Review & submit** lists every selected document with its filename, size and
+local PDF/image preview. Previews use temporary object URLs that are revoked when closed; no file
+is uploaded by preview or Continue. Review requires a fresh declaration and an explicit final
+**Submit application** click. PDF preview has a download fallback when browser sandbox restrictions
+prevent inline viewing.
+
 ### Reviewing registration documents
 
 - Admin: open **Company applications ? application details ? Registration documents** to view or
@@ -609,7 +689,7 @@ The root route redirects to `/login`. Unknown routes also return to the login pa
 
 Each role root redirects to its overview. Internal page identifiers such as `/supplier/batches` are normalized to their canonical system paths while retaining search parameters used by detail screens.
 
-The `/register-company` route provides the complete three-step application interface: company and representative information, MetaMask wallet association, required supporting-document selection with 10 MB validation, review, and declaration. It can submit a real application transaction to the configured local registry. Actual PDF/PNG/JPEG document bytes are encrypted and pinned through the configured content store; storage failure prevents transaction preparation.
+The `/register-company` route provides the complete five-step application interface: company and representative information, MetaMask wallet association, required supporting-document selection with 10 MB validation, review, and declaration. It can submit a real application transaction to the configured local registry. Actual PDF/PNG/JPEG document bytes are encrypted and pinned through the configured content store; storage failure prevents transaction preparation.
 
 ### Local workspace access
 

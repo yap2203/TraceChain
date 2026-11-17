@@ -1,3 +1,6 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import { formatLocationLabel } from '../../../orders/location-format';
+import { RequiredMarker } from '../../../../components/ui/RequiredLabel';
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useRef, useState } from 'react';
@@ -58,7 +61,9 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   const [stockLoading, setStockLoading] = useState(true);
   const [stockError, setStockError] = useState('');
   const [confirmedStock, setConfirmedStock] = useState<ProductionIngredient[]>([]);
-  const [locations, setLocations] = useState<{ location: string; label: string }[]>([]);
+  const [locations, setLocations] = useState<
+    { location: string; label: string; address?: string }[]
+  >([]);
   const [productionLocation, setProductionLocation] = useState('');
   const [productName, setProductName] = useState('');
   const [batchReference, setBatchReference] = useState('');
@@ -116,6 +121,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             .map((location) => ({
               location: location.location,
               label: location.label ?? location.location,
+              address: location.address,
             })),
         );
       })
@@ -393,8 +399,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             productName={createdProduct.productName}
           />
         </Card>
-        <div className="product-success__actions">
-          <Btn onClick={onBack}>View product</Btn>
+        <div className="product-success__actions action-row">
           <Btn
             variant="outline"
             onClick={() => {
@@ -422,6 +427,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           >
             Transfer product
           </Btn>
+          <Btn onClick={onBack}>View product</Btn>
         </div>
       </div>
     );
@@ -430,6 +436,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   if (refreshPending) {
     return (
       <div className="workspace-editor">
+        <BackNavigation onClick={onBack}>Return to products</BackNavigation>
         <Alert
           type="success"
           message="The product transaction was confirmed. TraceChain is waiting to refresh the authoritative product record. Do not submit the transaction again."
@@ -443,23 +450,20 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           {refreshPending.batchId && (
             <p>Product batch ID: {shortChainId(refreshPending.batchId)}</p>
           )}
-          <Btn full disabled={busy} onClick={() => void refreshConfirmedProduct()}>
-            {busy ? 'Refreshing records…' : 'Refresh records'}
-          </Btn>
+          <div className="action-row">
+            <Btn disabled={busy} onClick={() => void refreshConfirmedProduct()}>
+              {busy ? 'Refreshing records…' : 'Refresh records'}
+            </Btn>
+          </div>
         </Card>
-        <Btn onClick={onBack} variant="ghost">
-          Return to products
-        </Btn>
       </div>
     );
   }
 
   return (
     <div className="workspace-editor">
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
         <h2 style={{ margin: 0, color: T.navy }}>Create Product Batch</h2>
       </div>
       <StepProgress
@@ -544,7 +548,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           on-chain product identity.
         </p>
         <label style={{ display: 'grid', gap: 6 }}>
-          Production location <span aria-hidden="true">*</span>
+          Production location <RequiredMarker />
           <select
             aria-label="Production stock location"
             value={productionLocation}
@@ -553,7 +557,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             <option value="">Select your registered receiving / production location</option>
             {locations.map((location) => (
               <option key={location.location} value={location.location}>
-                {location.label}
+                {formatLocationLabel(location, location.location)}
               </option>
             ))}
           </select>
@@ -847,27 +851,28 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             <dd>{expiresAt || 'Not entered'}</dd>
           </div>
         </dl>
-        <Btn
-          full
-          disabled={
-            busy ||
-            !detailsComplete ||
-            !!productNameError ||
-            !!batchReferenceError ||
-            !!outputQuantityError ||
-            !!priceError ||
-            !!datesError ||
-            !!imageError ||
-            !productionLocation ||
-            stockLoading ||
-            !!stockError ||
-            selections.some((entry) => !!entry.error) ||
-            links.length === 0
-          }
-          onClick={() => void submit()}
-        >
-          {busy ? 'Confirming product…' : 'Create product with MetaMask'}
-        </Btn>
+        <div className="action-row">
+          <Btn
+            disabled={
+              busy ||
+              !detailsComplete ||
+              !!productNameError ||
+              !!batchReferenceError ||
+              !!outputQuantityError ||
+              !!priceError ||
+              !!datesError ||
+              !!imageError ||
+              !productionLocation ||
+              stockLoading ||
+              !!stockError ||
+              selections.some((entry) => !!entry.error) ||
+              links.length === 0
+            }
+            onClick={() => void submit()}
+          >
+            {busy ? 'Confirming product…' : 'Create product with MetaMask'}
+          </Btn>
+        </div>
       </Card>
     </div>
   );

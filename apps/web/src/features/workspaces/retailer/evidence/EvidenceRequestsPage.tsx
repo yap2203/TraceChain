@@ -496,13 +496,15 @@ export function RetailerEvidenceRequests({
               Evidence satisfactory
             </Btn>
             <Input label="Rejection reason" value={rejectReason} onChange={setRejectReason} />
-            <Btn
-              variant="outline"
-              onClick={() => void decide(false)}
-              disabled={!rejectReason.trim() || Boolean(busy)}
-            >
-              Reject evidence
-            </Btn>
+            <div className="action-row">
+              <Btn
+                variant="outline"
+                onClick={() => void decide(false)}
+                disabled={!rejectReason.trim() || Boolean(busy)}
+              >
+                Reject evidence
+              </Btn>
+            </div>
             <Btn variant="ghost" onClick={() => setReview(undefined)}>
               Close
             </Btn>

@@ -130,7 +130,7 @@ export function AcceptedEvidenceTable({
                         </span>
                       </td>
                       <td style={{ padding: '11px 14px' }}>
-                        <div style={{ display: 'flex', gap: 6 }}>
+                        <div className="action-row">
                           <Btn size="xs" variant="outline">
                             View Evidence
                           </Btn>

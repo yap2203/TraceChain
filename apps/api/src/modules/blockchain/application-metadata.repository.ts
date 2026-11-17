@@ -1,3 +1,4 @@
+import type { StoredEncryptedCredential } from '../ssi/encrypted-credential.store.js';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
@@ -8,6 +9,7 @@ export interface ApplicationMetadata {
   companyRegistrationNumber: string;
   profileHash: string;
   initialLocationName?: string;
+  initialLocationDetails?: StoredEncryptedCredential;
   submissionDigest?: string;
 }
 

@@ -116,7 +116,7 @@ export default function AdminAuditReport() {
             : `Snapshot generated ${new Date().toLocaleString()}`
         }
         action={
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="action-row">
             <Btn
               size="sm"
               variant="outline"

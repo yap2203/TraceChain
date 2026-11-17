@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import {
   Building2,
   CalendarClock,
@@ -181,9 +182,7 @@ export function ManufacturerIngredientOrderDetail({
 
   return (
     <section className="manufacturer-order-detail" aria-label="Ingredient order detail">
-      <button type="button" className="workspace-process-back" onClick={onBack}>
-        ← Ingredient orders
-      </button>
+      <BackNavigation onClick={onBack}>Ingredient orders</BackNavigation>
 
       <header className="manufacturer-order-detail__header">
         <div className="manufacturer-order-detail__title">

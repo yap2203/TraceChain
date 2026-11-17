@@ -20,6 +20,7 @@ export const applicationTransactionSchema = z
     companyName: z.string().trim().min(1).max(200),
     companyRegistrationNumber: z.string().trim().min(1).max(120),
     initialLocationName: z.string().trim().min(1).max(160).optional(),
+    initialLocationAddress: z.string().trim().min(1).max(1000).optional(),
     encryptedProfileCid: z.string().min(1).max(512),
     previousApplicationId: bytes32Schema,
     profileHash: bytes32Schema,

@@ -98,14 +98,14 @@ export function ReceiptSuccess({
             type="success"
             message="Inventory, transfer status and custody timeline have been updated. Both organisations have been notified."
           />
-          <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-            <Btn onClick={onBack}>View Product History</Btn>
+          <div style={{ marginTop: 16 }} className="action-row">
             <Btn variant="secondary" onClick={onBack}>
               View Inventory
             </Btn>
             <Btn variant="outline" onClick={onBack}>
               Download Receipt
             </Btn>
+            <Btn onClick={onBack}>View Product History</Btn>
           </div>
         </Card>
       </div>

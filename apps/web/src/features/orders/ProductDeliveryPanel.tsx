@@ -1,3 +1,4 @@
+import { formatLocationLabel } from './location-format';
 import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Factory, Store, Truck } from 'lucide-react';
@@ -275,12 +276,18 @@ export function ProductDeliveryPanel({
             onChange={setFrom}
             options={[
               { value: '', label: 'Select dispatch location' },
-              ...locations.map((p) => ({ value: p.location, label: p.label ?? p.location })),
+              ...locations.map((p) => ({
+                value: p.location,
+                label: formatLocationLabel(p, p.location),
+              })),
             ]}
           />
           <p>
             Retailer destination:{' '}
-            {data.locations.find((p) => same(p.location, to))?.label ??
+            {formatLocationLabel(
+              data.locations.find((p) => same(p.location, to)),
+              '',
+            ) ||
               (to
                 ? 'Registered Retailer location'
                 : 'Unavailable — ask the Retailer to submit a request with its receiving location')}
@@ -298,29 +305,31 @@ export function ProductDeliveryPanel({
               : 'Available warehouse stock is reserved for this order.'}{' '}
             Arrange within 48 hours of approval and before request expiry.
           </p>
-          <Btn
-            disabled={
-              busy ||
-              !data.productDeliverySupported ||
-              !from ||
-              !to ||
-              !distributor ||
-              (mode === '2' && !received.some((p: OrderRecord) => same(p.location, from)))
-            }
-            onClick={() =>
-              void run({
-                action: 'product-order-select',
-                mode: Number(mode),
-                distributor,
-                fromLocation: from,
-                toLocation: to,
-              })
-            }
-          >
-            {mode === '1'
-              ? 'Request Distributor delivery'
-              : 'Confirm product delivery from custody'}
-          </Btn>
+          <div className="action-row">
+            <Btn
+              disabled={
+                busy ||
+                !data.productDeliverySupported ||
+                !from ||
+                !to ||
+                !distributor ||
+                (mode === '2' && !received.some((p: OrderRecord) => same(p.location, from)))
+              }
+              onClick={() =>
+                void run({
+                  action: 'product-order-select',
+                  mode: Number(mode),
+                  distributor,
+                  fromLocation: from,
+                  toLocation: to,
+                })
+              }
+            >
+              {mode === '1'
+                ? 'Request Distributor delivery'
+                : 'Confirm product delivery from custody'}
+            </Btn>
+          </div>
         </div>
       )}
       {manufacturer && r?.mode === 1 && stage >= 2 && stage <= 3 && order.productDeliveryQr && (
@@ -334,19 +343,19 @@ export function ProductDeliveryPanel({
         />
       )}
       {carrier && stage === 2 && (
-        <div className="flex flex-wrap gap-[8px]">
-          <Btn
-            disabled={busy}
-            onClick={() => void run({ action: 'product-order-respond', accept: true })}
-          >
-            Accept product delivery
-          </Btn>
+        <div className="flex flex-wrap gap-[8px] action-row">
           <Btn
             variant="danger"
             disabled={busy}
             onClick={() => void run({ action: 'product-order-respond', accept: false })}
           >
             Decline product delivery
+          </Btn>
+          <Btn
+            disabled={busy}
+            onClick={() => void run({ action: 'product-order-respond', accept: true })}
+          >
+            Accept product delivery
           </Btn>
         </div>
       )}
@@ -446,28 +455,30 @@ export function ProductDeliveryPanel({
             I confirm the full requested quantity is physically collected or dispatched on this
             route.
           </label>
-          <Btn
-            icon={<Truck size={16} />}
-            disabled={
-              busy ||
-              !confirmed ||
-              !validTransport ||
-              proofBlocked ||
-              (Number(r.mode) === 1 && !pickupReady) ||
-              (Number(r.mode) === 1 && !scanned)
-            }
-            onClick={() =>
-              void run({
-                action: 'product-order-dispatch',
-                vehicle: vehicle.trim().toUpperCase(),
-                occurredAt: actualAt,
-                expectedAt,
-                ...(Number(r.mode) === 1 ? { qrPayload: scanned } : {}),
-              })
-            }
-          >
-            Confirm product pickup & dispatch
-          </Btn>
+          <div className="action-row">
+            <Btn
+              icon={<Truck size={16} />}
+              disabled={
+                busy ||
+                !confirmed ||
+                !validTransport ||
+                proofBlocked ||
+                (Number(r.mode) === 1 && !pickupReady) ||
+                (Number(r.mode) === 1 && !scanned)
+              }
+              onClick={() =>
+                void run({
+                  action: 'product-order-dispatch',
+                  vehicle: vehicle.trim().toUpperCase(),
+                  occurredAt: actualAt,
+                  expectedAt,
+                  ...(Number(r.mode) === 1 ? { qrPayload: scanned } : {}),
+                })
+              }
+            >
+              Confirm product pickup & dispatch
+            </Btn>
+          </div>
         </div>
       )}
       {stage >= 4 && stage <= 5 && (

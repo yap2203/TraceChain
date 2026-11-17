@@ -78,9 +78,13 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
         session,
         hash.parse(request.params.location),
         z
-          .object({ label: z.string().trim().min(1).max(160) })
+          .object({
+            label: z.string().trim().min(1).max(160),
+            address: z.string().trim().min(1).max(1000).optional(),
+          })
           .strict()
           .parse(request.body).label,
+        request.body.address,
       ),
     ),
   );

@@ -131,7 +131,7 @@ export function TransferCreatedQR({
         message="The receipt QR is only for confirming this specific shipment. It is separate from the product traceability QR."
       />
 
-      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+      <div style={{ marginTop: 16 }} className="action-row">
         <Btn onClick={onViewDetails} variant="secondary">
           View Transfer Details
         </Btn>

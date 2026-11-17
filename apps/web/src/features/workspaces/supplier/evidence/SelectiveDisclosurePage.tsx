@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
@@ -126,10 +127,8 @@ export function SelectiveDisclosure({
   if (!details && !error) return <LoadingIndicator page label="Loading evidence request…" />;
   return (
     <div style={{ maxWidth: 720 }}>
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <Btn variant="ghost" size="sm" onClick={onBack}>
-          Back
-        </Btn>
         <h2 style={{ margin: 0, color: T.navy }}>Respond to Evidence Request</h2>
         <Badge label="Awaiting response" variant="pending" />
       </div>
@@ -255,13 +254,15 @@ export function SelectiveDisclosure({
             value={declineReason}
             onChange={(event) => setDeclineReason(event.target.value)}
           />
-          <Btn
-            variant="ghost"
-            disabled={busy || !declineReason.trim()}
-            onClick={() => void decline()}
-          >
-            Decline request
-          </Btn>
+          <div className="action-row">
+            <Btn
+              variant="ghost"
+              disabled={busy || !declineReason.trim()}
+              onClick={() => void decline()}
+            >
+              Decline request
+            </Btn>
+          </div>
           <TechnicalDetails
             fields={[
               { label: 'Request ID', value: request.requestId },

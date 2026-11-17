@@ -104,12 +104,12 @@ export function CompanyIdentityProofAction({
             <br />
             Expires: {new Date(material.expiresAt * 1000).toLocaleString()}
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Btn size="sm" disabled={busy} onClick={() => void present()}>
-              {busy ? 'Signing…' : 'Approve and present'}
-            </Btn>
+          <div className="action-row">
             <Btn size="sm" variant="outline" disabled={busy} onClick={() => void decline()}>
               Decline
+            </Btn>
+            <Btn size="sm" disabled={busy} onClick={() => void present()}>
+              {busy ? 'Signing…' : 'Approve and present'}
             </Btn>
           </div>
         </div>

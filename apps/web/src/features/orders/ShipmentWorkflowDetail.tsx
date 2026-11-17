@@ -1,9 +1,9 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import type { ReactNode } from 'react';
 import {
   Box,
   CalendarClock,
   CheckCircle2,
-  ChevronLeft,
   ClipboardCheck,
   MapPin,
   PackageCheck,
@@ -159,12 +159,7 @@ export function ShipmentWorkflowDetail({
           : 'Custody intake shipment detail'
       }
     >
-      {onBack && (
-        <button type="button" className="workspace-process-back" onClick={onBack}>
-          <ChevronLeft size={17} aria-hidden="true" />
-          {backLabel ?? 'Shipments'}
-        </button>
-      )}
+      {onBack && <BackNavigation onClick={onBack}>{backLabel ?? 'Shipments'}</BackNavigation>}
       <header className="workspace-arrival-detail__header">
         <span className="workspace-arrival-detail__header-icon" aria-hidden="true">
           <Box size={31} />

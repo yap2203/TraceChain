@@ -130,6 +130,38 @@ describe('participant pickup planning', () => {
   });
 });
 describe('company-owned location profile', () => {
+  it('stores the address in encrypted metadata, preserves it on label-only edits and keeps it out of another company profile', async () => {
+    const f = fixture();
+    await f.service.updateLocationLabel(
+      's',
+      location,
+      'Warehouse North',
+      '10 Warehouse Road\nKuala Lumpur',
+    );
+    expect(f.store.encryptAndStore).toHaveBeenCalledWith(
+      expect.stringContaining('10 Warehouse Road'),
+      expect.any(String),
+    );
+    expect((await f.service.companyProfile('s')).locations[0]).toMatchObject({
+      address: '10 Warehouse Road\nKuala Lumpur',
+      label: 'Warehouse North',
+    });
+    await f.service.updateLocationLabel('s', location, 'Warehouse East');
+    expect((await f.service.companyProfile('s')).locations[0]).toMatchObject({
+      address: '10 Warehouse Road\nKuala Lumpur',
+      label: 'Warehouse East',
+    });
+    f.auth.getSession.mockResolvedValue({
+      authenticated: true,
+      authorizationReady: true,
+      address: buyer,
+      role: CompanyRole.RETAILER,
+    });
+    expect((await f.service.companyProfile('s')).locations).toEqual([]);
+    await expect(
+      f.service.updateLocationLabel('s', location, 'Foreign', 'Private road'),
+    ).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' });
+  });
   it('edits the owner’s display label without changing the chain location or making a transaction', async () => {
     const f = fixture();
     await f.service.updateLocationLabel('s', location, 'Warehouse North');

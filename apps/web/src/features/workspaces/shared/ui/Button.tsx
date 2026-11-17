@@ -57,8 +57,8 @@ export function Btn({
       className={`workspace-button inline-flex flex-row flex-nowrap items-center justify-center gap-[6px] font-semibold font-ui min-w-0 max-w-full border border-solid transition-all duration-150 ease-[ease] ${variants[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer opacity-100'}`}
       style={sx}
     >
-      {icon && <span className="inline-flex items-center shrink-0">{icon}</span>}
-      <span className="inline-flex items-center justify-center gap-[6px] min-w-0">{children}</span>
+      {icon && <span className="workspace-button__icon">{icon}</span>}
+      <span className="workspace-button__label">{children}</span>
     </button>
   );
 }

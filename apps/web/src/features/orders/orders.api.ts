@@ -76,6 +76,7 @@ export const getOrders = () => {
 export interface CompanyLocation {
   location: string;
   registeredLabel: string;
+  address?: string;
   label: string;
   warehouse: boolean;
 }
@@ -83,11 +84,16 @@ export interface CompanyProfile {
   wallet: string;
   role: string;
   initialLocationName?: string;
+  initialLocationAddress?: string;
   locations: CompanyLocation[];
 }
 export const getCompanyProfile = () => request<CompanyProfile>('/profile');
-export const updateLocationLabel = (location: string, label: string) =>
-  request(`/profile/locations/${encodeURIComponent(location)}`, { label }, 'PATCH');
+export const updateLocationLabel = (location: string, label: string, address?: string) =>
+  request(
+    `/profile/locations/${encodeURIComponent(location)}`,
+    { label, ...(address !== undefined ? { address } : {}) },
+    'PATCH',
+  );
 export interface PickupPlan {
   pickupAt: number;
   arrangedAt: string;
@@ -140,7 +146,9 @@ export interface CustodyOffer {
   fromLocation: string;
   toLocation: string;
   fromLocationName?: string;
+  fromLocationAddress?: string;
   toLocationName?: string;
+  toLocationAddress?: string;
   expiresAt: number;
   status:
     'REQUESTED' | 'ACCEPTED' | 'SCHEDULED' | 'REJECTED' | 'DISPATCHED' | 'RECEIVED' | 'EXPIRED';
@@ -271,3 +279,4 @@ export async function imageFilePayload(file: File): Promise<CatalogueImageUpload
 }
 export const prepareLogistics = (input: Record<string, unknown>) =>
   request<{ resultId: string; transaction: PreparedTransaction }>('/logistics/prepare', input);
+

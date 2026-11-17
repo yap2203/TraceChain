@@ -499,14 +499,16 @@ export function IngredientEvidence({
             <Btn disabled={Boolean(busy)} onClick={() => void verify(review.requestId)}>
               Verify evidence
             </Btn>
-            <Btn
-              disabled={
-                review.status !== 2 || review.verification.state !== 'PASSED' || Boolean(busy)
-              }
-              onClick={() => void accept(review.requestId)}
-            >
-              Accept evidence
-            </Btn>
+            <div className="action-row">
+              <Btn
+                disabled={
+                  review.status !== 2 || review.verification.state !== 'PASSED' || Boolean(busy)
+                }
+                onClick={() => void accept(review.requestId)}
+              >
+                Accept evidence
+              </Btn>
+            </div>
             <Input
               label="Rejection reason"
               maxLength={500}
@@ -514,13 +516,15 @@ export function IngredientEvidence({
               onChange={setRejectReason}
               placeholder="Required to reject"
             />
-            <Btn
-              variant="outline"
-              disabled={review.status !== 2 || !rejectReason.trim() || Boolean(busy)}
-              onClick={() => void reject()}
-            >
-              Reject evidence
-            </Btn>
+            <div className="action-row">
+              <Btn
+                variant="outline"
+                disabled={review.status !== 2 || !rejectReason.trim() || Boolean(busy)}
+                onClick={() => void reject()}
+              >
+                Reject evidence
+              </Btn>
+            </div>
             <Btn variant="ghost" onClick={() => setReview(undefined)}>
               Close review
             </Btn>

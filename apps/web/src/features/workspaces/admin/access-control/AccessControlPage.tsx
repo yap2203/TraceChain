@@ -256,7 +256,7 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
                 I understand that stakeholder revocation is permanent.
               </label>
             )}
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="action-row">
               <Btn
                 variant="outline"
                 onClick={() => {

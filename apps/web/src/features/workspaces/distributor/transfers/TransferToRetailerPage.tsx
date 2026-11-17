@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -147,10 +148,8 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
 
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
           Transfer Product to Retailer
         </h2>
@@ -247,9 +246,11 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
                 placeholder="Optional handling instructions"
                 rows={3}
               />
-              <Btn full disabled={!canReview || loading} onClick={() => setStep('review')}>
-                Review transfer
-              </Btn>
+              <div className="action-row">
+                <Btn disabled={!canReview || loading} onClick={() => setStep('review')}>
+                  Review transfer
+                </Btn>
+              </div>
             </div>
           </Card>
 
@@ -324,11 +325,11 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
               { label: 'Retailer wallet', value: recipient },
             ]}
           />
-          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <div style={{ marginTop: 18 }} className="action-row">
             <Btn variant="ghost" onClick={() => setStep('form')} disabled={busy}>
               Back
             </Btn>
-            <Btn full onClick={() => void submit()} disabled={busy}>
+            <Btn onClick={() => void submit()} disabled={busy}>
               {busy ? 'Waiting for MetaMask…' : 'Confirm with MetaMask'}
             </Btn>
           </div>
@@ -351,7 +352,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
               { label: 'Retailer wallet', value: recipient },
             ]}
           />
-          <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+          <div style={{ marginTop: 18 }} className="action-row">
             <Btn variant="ghost" onClick={startAnother}>
               Create another transfer
             </Btn>

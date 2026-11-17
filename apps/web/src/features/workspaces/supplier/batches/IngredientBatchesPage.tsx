@@ -271,7 +271,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
         title="Ingredient batches"
         sub="Register and manage the ingredients supplied by your company."
         action={
-          <div className="ingredient-page-actions">
+          <div className="ingredient-page-actions action-row">
             <Btn
               variant="outline"
               icon={<RefreshCw size={16} />}
@@ -523,7 +523,10 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
                 maxLength={3}
               />
             </div>
-            <div className="ingredient-modal-actions">
+            <div className="ingredient-modal-actions action-row">
+              <Btn variant="outline" disabled={busy} onClick={() => setEditing(undefined)}>
+                Cancel
+              </Btn>
               <Btn
                 disabled={busy || !valid}
                 onClick={() =>
@@ -540,9 +543,6 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
               >
                 {busy ? 'Saving…' : 'Save listing'}
               </Btn>
-              <Btn variant="outline" disabled={busy} onClick={() => setEditing(undefined)}>
-                Cancel
-              </Btn>
             </div>
           </div>
         </Modal>
@@ -555,7 +555,10 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
               <strong>{archiving.name}</strong> will no longer accept new requests. Its credential,
               previous requests and traceability history remain, and the listing can be restored.
             </p>
-            <div className="ingredient-modal-actions">
+            <div className="ingredient-modal-actions action-row">
+              <Btn variant="outline" disabled={busy} onClick={() => setArchiving(undefined)}>
+                Cancel
+              </Btn>
               <Btn
                 variant="danger"
                 disabled={busy}
@@ -567,9 +570,6 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
                 }
               >
                 {busy ? 'Archiving…' : 'Confirm archive'}
-              </Btn>
-              <Btn variant="outline" disabled={busy} onClick={() => setArchiving(undefined)}>
-                Cancel
               </Btn>
             </div>
           </div>
@@ -718,7 +718,7 @@ function IngredientCard({
             <span>Description</span>
             <p>{item.description || 'No description provided.'}</p>
           </div>
-          <div className="ingredient-card__secondary-actions">
+          <div className="ingredient-card__secondary-actions action-row">
             <Btn
               icon={<Pencil size={14} />}
               variant="outline"

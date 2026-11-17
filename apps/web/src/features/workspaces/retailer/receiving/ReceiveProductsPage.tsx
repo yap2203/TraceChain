@@ -43,7 +43,7 @@ export function ReceiveProductList({
                   <Badge label={transferStatuses[t.status]} variant="transfer-pending" />
                 </TD>
                 <TD>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div className="action-row">
                     <Btn size="xs" variant="outline" onClick={() => onSelect(t.transferId)}>
                       View
                     </Btn>

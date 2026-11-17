@@ -223,6 +223,7 @@ export function prepareCompanyApplication(input: {
   companyName: string;
   companyRegistrationNumber: string;
   initialLocationName?: string;
+  initialLocationAddress?: string;
   documents?: { kind: string; fileName: string; mimeType: string; data: string }[];
   encryptedProfileCid: string;
   previousApplicationId: string;
@@ -246,14 +247,43 @@ export function prepareApplicationRejection(input: { applicationId: string; reas
     method: 'POST',
   });
 }
-import { JsonRpcProvider, type JsonRpcSigner } from 'ethers';
+import { JsonRpcProvider, type JsonRpcSigner, type TransactionResponse } from 'ethers';
 
 import { chainConfig } from '../../config/network';
+
+const pendingWalletActions = new Map<string, Promise<TransactionResponse>>();
 
 export async function sendPreparedTransaction(
   signer: JsonRpcSigner,
   prepared: PreparedTransaction,
 ) {
+  // Keep the prepared call unchanged while waiting for the wallet.
+  prepared = structuredClone(prepared);
+  const wallet = await signer.getAddress();
+  const key = JSON.stringify([
+    wallet.toLowerCase(),
+    prepared.chainId,
+    prepared.to.toLowerCase(),
+    prepared.value,
+    prepared.data,
+  ]);
+  const existing = pendingWalletActions.get(key);
+  if (existing) return existing;
+  const pending = sendWalletAction(signer, prepared);
+  pendingWalletActions.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (pendingWalletActions.get(key) === pending) pendingWalletActions.delete(key);
+  }
+}
+
+async function sendWalletAction(signer: JsonRpcSigner, prepared: PreparedTransaction) {
+  if ((await signer.provider.getNetwork()).chainId !== BigInt(prepared.chainId)) {
+    throw new Error(
+      'The wallet network does not match this transaction. Select the correct network and try again.',
+    );
+  }
   const transaction = { data: prepared.data, to: prepared.to, value: prepared.value };
   try {
     return await signer.sendTransaction(transaction);

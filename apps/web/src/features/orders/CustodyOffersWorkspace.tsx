@@ -1,9 +1,10 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
+import { formatLocationLabel } from './location-format';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  ArrowLeft,
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
@@ -229,9 +230,23 @@ function CustodyRequestDetail({
               )}
             </dl>
             <div className="workspace-custody-detail__route" aria-label="Custody route">
-              <span>{offer.fromLocationName ?? locationLabel(offer.fromLocation)}</span>
+              <span>
+                {offer.fromLocationName ?? locationLabel(offer.fromLocation)}
+                {offer.fromLocationAddress && (
+                  <small style={{ display: 'block', whiteSpace: 'pre-line' }}>
+                    {offer.fromLocationAddress}
+                  </small>
+                )}
+              </span>
               <span aria-hidden="true">→</span>
-              <span>{offer.toLocationName ?? locationLabel(offer.toLocation)}</span>
+              <span>
+                {offer.toLocationName ?? locationLabel(offer.toLocation)}
+                {offer.toLocationAddress && (
+                  <small style={{ display: 'block', whiteSpace: 'pre-line' }}>
+                    {offer.toLocationAddress}
+                  </small>
+                )}
+              </span>
             </div>
           </section>
           <section
@@ -260,18 +275,7 @@ function CustodyRequestDetail({
               </Link>
             )}
             {receiver && offer.status === 'REQUESTED' && (
-              <div className="workspace-location-actions">
-                <Btn
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await actCustodyOffer(offer.offerId, { action: 'accept' });
-                      setNotice('Offer accepted. Arrange the pickup time next.');
-                    })
-                  }
-                >
-                  Accept custody offer
-                </Btn>
+              <div className="workspace-location-actions action-row">
                 <Btn
                   variant="danger"
                   disabled={busy}
@@ -283,6 +287,17 @@ function CustodyRequestDetail({
                   }
                 >
                   Reject offer
+                </Btn>
+                <Btn
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      await actCustodyOffer(offer.offerId, { action: 'accept' });
+                      setNotice('Offer accepted. Arrange the pickup time next.');
+                    })
+                  }
+                >
+                  Accept custody offer
                 </Btn>
               </div>
             )}
@@ -301,25 +316,28 @@ function CustodyRequestDetail({
                   min={local()}
                   max={local(offer.expiresAt * 1000 - Date.now())}
                 />
-                <Btn
-                  disabled={
-                    busy ||
-                    !(
-                      Date.parse(pickup) > Date.now() && Date.parse(pickup) < offer.expiresAt * 1000
-                    )
-                  }
-                  onClick={() =>
-                    void run(async () => {
-                      await actCustodyOffer(offer.offerId, {
-                        action: 'schedule',
-                        pickupAt: Math.floor(Date.parse(pickup) / 1000),
-                      });
-                      setNotice('Pickup time shared with the sender.');
-                    })
-                  }
-                >
-                  {offer.pickupAt ? 'Update pickup time' : 'Confirm pickup time'}
-                </Btn>
+                <div className="action-row">
+                  <Btn
+                    disabled={
+                      busy ||
+                      !(
+                        Date.parse(pickup) > Date.now() &&
+                        Date.parse(pickup) < offer.expiresAt * 1000
+                      )
+                    }
+                    onClick={() =>
+                      void run(async () => {
+                        await actCustodyOffer(offer.offerId, {
+                          action: 'schedule',
+                          pickupAt: Math.floor(Date.parse(pickup) / 1000),
+                        });
+                        setNotice('Pickup time shared with the sender.');
+                      })
+                    }
+                  >
+                    {offer.pickupAt ? 'Update pickup time' : 'Confirm pickup time'}
+                  </Btn>
+                </div>
               </section>
             )}
             {!receiver && offer.status === 'SCHEDULED' && (
@@ -357,31 +375,33 @@ function CustodyRequestDetail({
                   />
                   The goods were physically handed to this Distributor.
                 </label>
-                <Btn
-                  icon={<Send size={16} />}
-                  disabled={
-                    busy ||
-                    !confirmed ||
-                    !/^(?=.*[A-Z0-9])[A-Z0-9 -]{2,32}$/.test(vehicle) ||
-                    !(Date.parse(actual) <= Date.now() && Date.parse(eta) > Date.now())
-                  }
-                  onClick={() =>
-                    void run(async () => {
-                      const prepared = await prepareCustodyOffer(offer.offerId, {
-                        vehicle,
-                        occurredAt: Math.floor(Date.parse(actual) / 1000),
-                        expectedAt: Math.floor(Date.parse(eta) / 1000),
-                      });
-                      await submitProductionTransaction(prepared.transaction, actor);
-                      setConfirmed(false);
-                      setNotice(
-                        'Physical handoff recorded. The Distributor scans receipt at its warehouse.',
-                      );
-                    })
-                  }
-                >
-                  Confirm handoff with MetaMask
-                </Btn>
+                <div className="action-row">
+                  <Btn
+                    icon={<Send size={16} />}
+                    disabled={
+                      busy ||
+                      !confirmed ||
+                      !/^(?=.*[A-Z0-9])[A-Z0-9 -]{2,32}$/.test(vehicle) ||
+                      !(Date.parse(actual) <= Date.now() && Date.parse(eta) > Date.now())
+                    }
+                    onClick={() =>
+                      void run(async () => {
+                        const prepared = await prepareCustodyOffer(offer.offerId, {
+                          vehicle,
+                          occurredAt: Math.floor(Date.parse(actual) / 1000),
+                          expectedAt: Math.floor(Date.parse(eta) / 1000),
+                        });
+                        await submitProductionTransaction(prepared.transaction, actor);
+                        setConfirmed(false);
+                        setNotice(
+                          'Physical handoff recorded. The Distributor scans receipt at its warehouse.',
+                        );
+                      })
+                    }
+                  >
+                    Confirm handoff with MetaMask
+                  </Btn>
+                </div>
               </section>
             )}
             {offer.shipmentId && ['DISPATCHED', 'RECEIVED'].includes(offer.status) && (
@@ -521,9 +541,11 @@ export function CustodyOffersWorkspace({
     (offer) => data && same(receiver ? offer.distributor : offer.sender, data.actor),
   );
   const label = (location: string) =>
-    data?.locations.find((site) => same(site.location, location))?.label ??
-    warehouses.find((site) => same(site.location, location))?.name ??
-    'Registered company location';
+    formatLocationLabel(
+      data?.locations.find((site) => same(site.location, location)),
+      warehouses.find((site) => same(site.location, location))?.name ??
+        'Registered company location',
+    );
   let qr: string | undefined;
   if (
     selected?.shipmentId &&
@@ -551,13 +573,9 @@ export function CustodyOffersWorkspace({
     >
       {params.get('offerId') ? (
         <header className="workspace-custody-detail-header">
-          <Link
-            className="workspace-custody-detail-header__back"
-            to={workspacePath(role, receiver ? 'intake' : 'transfers')}
-          >
-            <ArrowLeft size={17} aria-hidden="true" />
+          <BackNavigation to={workspacePath(role, receiver ? 'intake' : 'transfers')}>
             Custody requests
-          </Link>
+          </BackNavigation>
           <div className="workspace-custody-detail-header__title-row">
             <h2>Distributor custody request</h2>
             <Btn
@@ -643,7 +661,7 @@ export function CustodyOffersWorkspace({
                       { value: '', label: 'Select your registered location' },
                       ...sites.map((site) => ({
                         value: site.location,
-                        label: site.label ?? 'Registered location',
+                        label: formatLocationLabel(site, 'Registered location'),
                       })),
                     ]}
                   />
@@ -680,35 +698,37 @@ export function CustodyOffersWorkspace({
                   min={local()}
                 />
               </div>
-              <Btn
-                icon={<Send size={16} />}
-                disabled={
-                  busy ||
-                  !batch ||
-                  !from ||
-                  !chosenWarehouse ||
-                  !/^[1-9]\d*$/.test(quantity) ||
-                  !(Date.parse(deadline) > Date.now())
-                }
-                onClick={() =>
-                  void run(async () => {
-                    const result = await createCustodyOffer({
-                      operationId: crypto.randomUUID(),
-                      kind,
-                      batchId: batch,
-                      quantity,
-                      fromLocation: from,
-                      toLocation: warehouse,
-                      distributor: chosenWarehouse!.distributor,
-                      expiresAt: Math.floor(Date.parse(deadline) / 1000),
-                    });
-                    setParams({ offerId: result.offer.offerId });
-                    setNotice('Offer sent. No stock moves until physical handoff is confirmed.');
-                  })
-                }
-              >
-                Send custody offer
-              </Btn>
+              <div className="action-row">
+                <Btn
+                  icon={<Send size={16} />}
+                  disabled={
+                    busy ||
+                    !batch ||
+                    !from ||
+                    !chosenWarehouse ||
+                    !/^[1-9]\d*$/.test(quantity) ||
+                    !(Date.parse(deadline) > Date.now())
+                  }
+                  onClick={() =>
+                    void run(async () => {
+                      const result = await createCustodyOffer({
+                        operationId: crypto.randomUUID(),
+                        kind,
+                        batchId: batch,
+                        quantity,
+                        fromLocation: from,
+                        toLocation: warehouse,
+                        distributor: chosenWarehouse!.distributor,
+                        expiresAt: Math.floor(Date.parse(deadline) / 1000),
+                      });
+                      setParams({ offerId: result.offer.offerId });
+                      setNotice('Offer sent. No stock moves until physical handoff is confirmed.');
+                    })
+                  }
+                >
+                  Send custody offer
+                </Btn>
+              </div>
               {!sites.length && (
                 <Link to={workspacePath(role, 'profile')}>
                   Register a pickup location in Profile

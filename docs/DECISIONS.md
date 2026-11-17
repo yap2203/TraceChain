@@ -2,6 +2,25 @@
 
 ## Repository and implementation
 
+- End the per-transaction MetaMask preview-message trial (user-requested 2026-11-17): remove the extra signatures and unused metadata/formatters, preserve ordinary transaction confirmation, SIWE, application ownership signatures and duplicate-request guards. Profile location setup stays in one column at all sizes, with the empty-state icon/message centered across the section. This supersedes the earlier preview trial and two-column location presentation.
+
+
+- Keep trial wallet messages brief: action purpose, key business values and essential wallet/network/contract/value context, with one reference binding omitted technical details (user-requested 2026-11-17). Preserve distinct message and transaction prompts and all required on-chain steps; coalesce duplicate pending wallet requests and guard Admin issuance against repeated clicks.
+
+
+- Trial readable MetaMask message signatures before every contract transaction (user-requested 2026-11-17 follow-up). Show a clear two-prompt sequence: preview acknowledgement, then the real transaction. Derive displayed arguments from exact calldata, include wallet/site/chain/target/value context and a fresh preview identifier, verify locally and discard the preview signature. It is not a backend authorization token. Keep the app review dialog removed and preserve SIWE, business confirmations and contract checks.
+
+
+- Keep affirmative actions to the right of their negative/secondary alternative in right-aligned page and modal action rows (user-requested 2026-11-17). Reorder actual markup so keyboard focus follows the displayed order; keep contextual links before paired decisions and preserve handlers/authorization.
+
+
+- Make wallet signatures readable inside MetaMask, without a separate TraceChain transaction-review dialog (user clarification, 2026-11-17). Keep the shared readable company-application message and SIWE. Remove the added browser review and its unused API metadata; preserve actual calldata, transaction simulation, wallet network checks, authorization and existing business confirmations. MetaMask controls the normal transaction confirmation display.
+
+
+- Defer physical dispatch/receiving location setup from registration to Profile (user-confirmed 2026-11-17). Keep legal business address and wallet registration requirements, existing application location drafts and logistics location requirements. Standardize page-level Back navigation at the top left with a left chevron, retaining bottom form-step controls. This supersedes requiring a physical logistics location during registration.
+
+- Collect a separate physical location name and dispatch/receiving address during registration and location setup (user-requested 2026-11-17). Keep addresses encrypted off-chain and limit display to the owning company or actual logistics participants. Preserve stable location IDs; editing current profile details must not move stock or rewrite historical chain records. Existing name-only records remain readable until owners add addresses.
+
 - Consolidate individual company permissions under Admin Manage companies (user-confirmed 2026-11-16). Rename the Company credentials navigation/page, remove the standalone individual-permission sidebar/tab, preserve role defaults/matrix and redirect legacy individual-permission links to company management. Credential lifecycle and permission writes retain their existing authorization and MetaMask confirmation.
 
 - Stop readable Veramo VC/VP/claim/message cache persistence while preserving the Admin bootstrap/export lookup dependency (user-confirmed 2026-11-16). Store that cache in a separate AES-GCM file derived from the KMS secret; encrypt/read back legacy contents before removing them from public DID metadata. Keep business credentials encrypted on Pinata and retrieve the authenticated wallet's registry CID for identity display/verification.

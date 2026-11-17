@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 
@@ -69,10 +70,8 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
 
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
         <h2 style={{ margin: 0, color: T.navy }}>Transfer Product to Distributor</h2>
       </div>
       {(error || readError) && <Alert type="error" message={error || readError} />}
@@ -138,21 +137,22 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
               type="warning"
               message="The backend validates the current Manufacturer role, product transferability, recipient role, and inventory before returning unsigned createTransfer calldata. MetaMask remains the only signer."
             />
-            <Btn
-              full
-              disabled={
-                busy ||
-                !productBatchId ||
-                !recipient ||
-                !quantity ||
-                !expectedAt ||
-                !shipmentReference ||
-                Boolean(transferId)
-              }
-              onClick={() => void submit()}
-            >
-              {busy ? 'Confirming transfer…' : 'Create transfer with MetaMask'}
-            </Btn>
+            <div className="action-row">
+              <Btn
+                disabled={
+                  busy ||
+                  !productBatchId ||
+                  !recipient ||
+                  !quantity ||
+                  !expectedAt ||
+                  !shipmentReference ||
+                  Boolean(transferId)
+                }
+                onClick={() => void submit()}
+              >
+                {busy ? 'Confirming transfer…' : 'Create transfer with MetaMask'}
+              </Btn>
+            </div>
           </div>
         </Card>
         <Card>

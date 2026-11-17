@@ -1,22 +1,33 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
+import { RequiredLabel } from '../../components/ui/RequiredLabel';
+import { RegistrationCountrySelect } from './RegistrationCountrySelect';
+import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input/max';
+import flags from 'react-phone-number-input/flags';
+import 'react-phone-number-input/style.css';
 import { companyApplicationBindingMessage } from '@tracechain/shared';
 import { BrowserProvider, ZeroHash, hexlify, id, isAddress, randomBytes } from 'ethers';
 import {
+  Building2,
+  Mail,
+  UserRound,
+  Wallet,
   Check,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   FileCheck2,
   ImageUp,
+  Eye,
   Link2,
   Trash2,
   UploadCloud,
 } from 'lucide-react';
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notify, readableError } from '../../components/ui/feedback';
 
 import { Brand } from '../../components/brand/Brand';
-import { Button, Card, Input, Select, StatusBadge } from '../../components/ui';
+import { Button, Card, Input, Modal, Select, StatusBadge } from '../../components/ui';
 import { chainConfig, targetChainId } from '../../config/chain';
 import { prepareCompanyApplication, sendPreparedTransaction } from '../blockchain/blockchain.api';
 import { imageFilePayload } from '../orders/orders.api';
@@ -29,8 +40,25 @@ const roleOptions = [
   { label: 'Distributor', value: 'DISTRIBUTOR' },
   { label: 'Retailer', value: 'RETAILER' },
 ] as const;
-const steps = ['Company information', 'Supporting documents', 'Review & submit'] as const;
+const steps = [
+  'Company details',
+  'Contact & representative',
+  'Wallet & identity',
+  'Supporting documents',
+  'Review & submit',
+] as const;
+const stepDescriptions = [
+  'Enter your legal company details and requested role.',
+  'Add company contact details and your authorised representative.',
+  'Connect the wallet that will represent your company.',
+] as const;
 const acceptedFiles = '.pdf,.jpg,.jpeg,.png';
+const documentLabels: Record<string, string> = {
+  registrationProof: 'Company registration proof',
+  businessProof: 'Business licence / role proof',
+  authorisationProof: 'Representative authorisation',
+  certifications: 'Optional certifications',
+};
 const requiredDocumentNames = ['registrationProof', 'businessProof', 'authorisationProof'] as const;
 const roleValues: Record<string, number> = {
   SUPPLIER: 2,
@@ -41,7 +69,6 @@ const roleValues: Record<string, number> = {
 
 interface RegistrationData {
   address: string;
-  initialLocationName: string;
   companyDid: string;
   companyEmail: string;
   companyName: string;
@@ -55,7 +82,6 @@ interface RegistrationData {
 }
 const initialData: RegistrationData = {
   address: '',
-  initialLocationName: '',
   companyDid: '',
   companyEmail: '',
   companyName: '',
@@ -103,8 +129,7 @@ function DocumentUpload({
       </span>
       <span className="document-upload__content">
         <strong>
-          {label}
-          {required ? ' *' : ''}
+          <RequiredLabel label={label} required={required} />
         </strong>
         {value ? (
           <>
@@ -130,13 +155,38 @@ function DocumentUpload({
 export function RegisterCompanyPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
+  const stepHeading = useRef<HTMLHeadingElement>(null);
+  const previousStep = useRef(0);
+  useEffect(() => {
+    if (previousStep.current === step) return;
+    previousStep.current = step;
+    stepHeading.current?.focus({ preventScroll: true });
+    stepHeading.current?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+  }, [step]);
   const [data, setData] = useState(initialData);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const phoneError = phoneTouched
+    ? !data.contactNumber
+      ? 'Contact number is required.'
+      : !isValidPhoneNumber(data.contactNumber)
+        ? 'Enter a valid phone number for the selected country.'
+        : ''
+    : '';
   const [documents, setDocuments] = useState<Record<string, File>>({});
   const [documentErrors, setDocumentErrors] = useState<Record<string, string>>({});
   const [logo, setLogo] = useState<File>();
   const [logoPreview, setLogoPreview] = useState('');
+  const [previewDocument, setPreviewDocument] = useState<{ file: File; url: string }>();
+  useEffect(
+    () => () => {
+      if (previewDocument) URL.revokeObjectURL(previewDocument.url);
+    },
+    [previewDocument],
+  );
   const [error, setError] = useState('');
   const [connecting, setConnecting] = useState(false);
+  const connectionPending = useRef(false);
+  const [walletFeedback, setWalletFeedback] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [transaction, setTransaction] = useState<{ applicationId: string; hash: string }>();
   const requiredDocumentCount = requiredDocumentNames.filter((name) => documents[name]).length;
@@ -156,31 +206,41 @@ export function RegisterCompanyPage() {
     setData((current) => ({ ...current, [field]: value }));
     setError('');
   };
-  const informationError = () => {
+  const informationError = (currentStep?: number) => {
+    const fieldsByStep = [
+      ['companyName', 'registrationNumber', 'address'],
+      ['companyEmail', 'contactNumber', 'representativeName', 'representativePosition'],
+      [],
+    ];
     for (const [field, label, maximum] of [
       ['companyName', 'Registered company name', 200],
       ['registrationNumber', 'Registration number', 120],
       ['companyEmail', 'Company email', 254],
       ['contactNumber', 'Contact number', 40],
       ['address', 'Business address', 1000],
-      ['initialLocationName', 'Primary location name', 160],
       ['representativeName', 'Authorised representative', 160],
       ['representativePosition', 'Representative position', 120],
     ] as const) {
+      if (currentStep !== undefined && !fieldsByStep[currentStep]?.includes(field)) continue;
       const error = textError(data[field], label, maximum);
       if (error) return error;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.companyEmail.trim()))
-      return 'Enter a valid company email address.';
     if (
-      !/^[+()\d\s.-]+$/.test(data.contactNumber) ||
-      !/^\d{7,15}$/.test(data.contactNumber.replace(/\D/g, ''))
+      (currentStep === undefined || currentStep === 1) &&
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.companyEmail.trim())
     )
-      return 'Enter a valid contact number with 7 to 15 digits.';
-    if (!Object.hasOwn(roleValues, data.requestedRole))
-      return 'Select a supported supply-chain role.';
-    if (!isAddress(data.wallet)) return 'Connect a valid company wallet.';
+      return 'Enter a valid company email address.';
+    if ((currentStep === undefined || currentStep === 1) && !isValidPhoneNumber(data.contactNumber))
+      return 'Enter a valid contact number for the selected country.';
     if (
+      (currentStep === undefined || currentStep === 0) &&
+      !Object.hasOwn(roleValues, data.requestedRole)
+    )
+      return 'Select a supported supply-chain role.';
+    if ((currentStep === undefined || currentStep === 2) && !isAddress(data.wallet))
+      return 'Connect a valid company wallet.';
+    if (
+      (currentStep === undefined || currentStep === 2) &&
       data.companyDid &&
       (data.companyDid.length > 512 ||
         !/^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/.test(data.companyDid.trim()))
@@ -202,30 +262,58 @@ export function RegisterCompanyPage() {
           .find(Boolean) ?? '');
 
   const connectWallet = async () => {
+    if (connectionPending.current || submitting || transaction) return;
     if (!window.ethereum) {
       setError('MetaMask was not detected. Install or enable it before continuing.');
       return;
     }
+    connectionPending.current = true;
     setConnecting(true);
+    setError('');
+    setWalletFeedback('Open MetaMask and choose the account for this company.');
     try {
-      const accounts = await new BrowserProvider(window.ethereum).send('eth_requestAccounts', []);
-      update('wallet', String(accounts[0] ?? ''));
-    } catch {
-      setError('Wallet connection was cancelled or could not be completed.');
+      const provider = new BrowserProvider(window.ethereum);
+      await provider.send('wallet_requestPermissions', [{ eth_accounts: {} }]);
+      const accounts = await provider.send('eth_accounts', []);
+      const account = Array.isArray(accounts) ? accounts[0] : undefined;
+      if (typeof account !== 'string' || !isAddress(account))
+        throw new Error('No account was selected. Open MetaMask and select a company account.');
+      update('wallet', account);
+      setWalletFeedback('Wallet connected. Check the address before continuing.');
+      notify('Company wallet connected successfully.', 'success');
+    } catch (cause) {
+      const error = cause as { code?: number | string; info?: { error?: { code?: number } } };
+      const code = error?.info?.error?.code ?? error?.code;
+      setWalletFeedback('');
+      setError(
+        code === 4001 || code === 'ACTION_REJECTED'
+          ? 'Account selection was cancelled. Your connected wallet has not changed.'
+          : code === -32002
+            ? 'MetaMask already has a pending request. Open MetaMask to finish or cancel it, then retry.'
+            : readableError(cause, 'The wallet could not connect. Open MetaMask and try again.'),
+      );
     } finally {
+      connectionPending.current = false;
       setConnecting(false);
     }
   };
 
-  const next = () => {
-    const invalid = step === 0 ? informationError() : documentError();
-    if (invalid) {
-      setError(invalid);
-      return;
+  const goToStep = (target: number) => {
+    if (connecting || submitting || transaction) return;
+    for (let index = 0; index < target; index++) {
+      const invalid = index < 3 ? informationError(index) : documentError();
+      if (target > step && invalid) {
+        setStep(index);
+        setError(invalid);
+        return;
+      }
     }
     setError('');
-    setStep((current) => Math.min(current + 1, 2));
+    if (target === steps.length - 1 && target !== step)
+      setData((current) => ({ ...current, declaration: false }));
+    setStep(target);
   };
+  const next = () => goToStep(Math.min(step + 1, steps.length - 1));
 
   const selectFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -249,6 +337,7 @@ export function RegisterCompanyPage() {
     }
     const name = event.target.name;
     setDocuments((current) => ({ ...current, [name]: file }));
+    setData((current) => ({ ...current, declaration: false }));
     setDocumentErrors((current) => {
       const updated = { ...current };
       delete updated[name];
@@ -278,10 +367,12 @@ export function RegisterCompanyPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || transaction) return;
-    if (step !== 2) {
+    if (step !== steps.length - 1) {
       next();
       return;
     }
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    if (submitter?.getAttribute('data-registration-submit') !== 'true') return;
     const invalid = informationError() || documentError();
     if (invalid) {
       setError(invalid);
@@ -341,7 +432,6 @@ export function RegisterCompanyPage() {
         applicantWallet: data.wallet,
         companyName: data.companyName.trim(),
         companyRegistrationNumber: data.registrationNumber.trim(),
-        initialLocationName: data.initialLocationName.trim(),
         encryptedProfileCid: localContentReference,
         previousApplicationId: ZeroHash,
         profileHash,
@@ -387,11 +477,9 @@ export function RegisterCompanyPage() {
         <Link to="/login">
           <Brand />
         </Link>
-        <Link className="public-form-header__link" to="/login">
-          Return to sign in
-        </Link>
       </header>
       <main className="registration-content">
+        <BackNavigation to="/login">Return to sign in</BackNavigation>
         <section className="registration-heading">
           <StatusBadge tone="info">Company onboarding</StatusBadge>
           <h1>Register your company</h1>
@@ -401,169 +489,270 @@ export function RegisterCompanyPage() {
         </section>
         <nav aria-label="Registration progress" className="registration-progress">
           {steps.map((label, index) => (
-            <div
+            <button
+              type="button"
+              aria-label={`Step ${index + 1}: ${label}`}
+              onClick={() => goToStep(index)}
+              disabled={connecting || submitting || Boolean(transaction)}
               className={index === step ? 'is-active' : index < step ? 'is-complete' : ''}
+              aria-current={index === step ? 'step' : undefined}
               key={label}
             >
-              <span>{index < step ? <Check /> : index + 1}</span>
-              <p>
+              <span className="registration-progress__number" aria-hidden="true">
+                {index < step ? <Check /> : index + 1}
+              </span>
+              <span className="registration-progress__label">
                 <strong>{label}</strong>
-                <small>Step {index + 1} of 3</small>
-              </p>
-            </div>
+              </span>
+            </button>
           ))}
         </nav>
+        <p className="registration-step-count" role="status">
+          Step {step + 1} of {steps.length}
+        </p>
         <form onSubmit={submit}>
           <Card className="registration-card">
-            {step === 0 && (
+            {step < 3 && (
               <section className="registration-step">
                 <header>
-                  <h2>Company information</h2>
-                  <p>Enter the legal organisation and authorised representative details.</p>
+                  <h2 ref={stepHeading} tabIndex={-1}>
+                    {steps[step]}
+                  </h2>
+                  <p>{stepDescriptions[step as 0 | 1 | 2]}</p>
                 </header>
-                <div className="registration-form">
-                  <Input
-                    label="Registered company name *"
-                    required
-                    maxLength={200}
-                    onChange={(e) => update('companyName', e.target.value)}
-                    value={data.companyName}
-                  />
-                  <Input
-                    label="Registration number *"
-                    required
-                    maxLength={120}
-                    onChange={(e) => update('registrationNumber', e.target.value)}
-                    value={data.registrationNumber}
-                  />
-                  <Select
-                    label="Requested supply-chain role *"
-                    required
-                    onChange={(e) => update('requestedRole', e.target.value)}
-                    options={roleOptions}
-                    value={data.requestedRole}
-                  />
-                  <Input
-                    label="Company email *"
-                    required
-                    maxLength={254}
-                    onChange={(e) => update('companyEmail', e.target.value)}
-                    type="email"
-                    value={data.companyEmail}
-                  />
-                  <Input
-                    label="Contact number *"
-                    required
-                    maxLength={40}
-                    onChange={(e) => update('contactNumber', e.target.value)}
-                    type="tel"
-                    value={data.contactNumber}
-                  />
-                  <Input
-                    label={
-                      data.requestedRole === 'DISTRIBUTOR'
-                        ? 'Primary warehouse name *'
-                        : 'Primary dispatch / receiving location name *'
-                    }
-                    required
-                    maxLength={160}
-                    value={data.initialLocationName}
-                    onChange={(event) => update('initialLocationName', event.target.value)}
-                    placeholder="Name this location for orders and deliveries"
-                  />
-                  <label className="field registration-field--wide">
-                    <span className="field__label">Business address *</span>
-                    <textarea
-                      className="field__control"
-                      required
-                      maxLength={1000}
-                      onChange={(e) => update('address', e.target.value)}
-                      rows={3}
-                      value={data.address}
-                    />
-                  </label>
-                  <Input
-                    label="Authorised representative *"
-                    required
-                    maxLength={160}
-                    onChange={(e) => update('representativeName', e.target.value)}
-                    value={data.representativeName}
-                  />
-                  <Input
-                    label="Representative position *"
-                    required
-                    maxLength={120}
-                    onChange={(e) => update('representativePosition', e.target.value)}
-                    value={data.representativePosition}
-                  />
-                  <Input
-                    hint="Optional — add this if your organisation already has a DID."
-                    label="Company DID"
-                    maxLength={512}
-                    onChange={(e) => update('companyDid', e.target.value)}
-                    value={data.companyDid}
-                  />
-                  <div className="wallet-field">
-                    <span className="field__label">Connected wallet *</span>
-                    <div>
-                      <code>{data.wallet || 'No wallet connected'}</code>
-                      <Button
-                        loading={connecting}
-                        onClick={connectWallet}
-                        size="small"
-                        type="button"
-                        variant="secondary"
-                      >
-                        <Link2 size={15} /> Connect
-                      </Button>
-                    </div>
-                    <small>The wallet will own and sign this company application.</small>
-                  </div>
-                  <div className="registration-logo-field">
-                    <span className="field__label">Company logo (optional)</span>
-                    <div className="registration-logo-field__content">
-                      <div className="registration-logo-preview" aria-label="Company logo preview">
-                        {logoPreview ? (
-                          <img src={logoPreview} alt="Selected company logo preview" />
-                        ) : (
-                          <span>{companyInitials(data.companyName)}</span>
-                        )}
-                      </div>
-                      <div>
-                        <p>PNG, JPEG or WebP · maximum 2 MB</p>
-                        <div className="registration-logo-field__actions">
-                          <label className="ui-button ui-button--secondary ui-button--small">
-                            <ImageUp size={15} /> {logo ? 'Replace logo' : 'Choose logo'}
-                            <input
-                              aria-label="Choose company logo"
-                              type="file"
-                              accept="image/png,image/jpeg,image/webp"
-                              onChange={selectLogo}
+                <div className="registration-categories">
+                  {step === 0 && (
+                    <>
+                      <fieldset className="registration-category">
+                        <legend>
+                          <Building2 size={18} aria-hidden="true" /> Company details
+                        </legend>
+                        <div className="registration-form">
+                          <Input
+                            className="registration-field--wide"
+                            label="Registered company name *"
+                            required
+                            maxLength={200}
+                            onChange={(e) => update('companyName', e.target.value)}
+                            value={data.companyName}
+                          />
+                          <Input
+                            label="Registration number *"
+                            required
+                            maxLength={120}
+                            onChange={(e) => update('registrationNumber', e.target.value)}
+                            value={data.registrationNumber}
+                          />
+                          <Select
+                            label="Requested supply-chain role *"
+                            required
+                            onChange={(e) => update('requestedRole', e.target.value)}
+                            options={roleOptions}
+                            value={data.requestedRole}
+                          />
+                          <label className="field registration-field--wide">
+                            <span className="field__label">
+                              <RequiredLabel label="Business address" required />
+                            </span>
+                            <textarea
+                              className="field__control"
+                              required
+                              maxLength={1000}
+                              onChange={(e) => update('address', e.target.value)}
+                              rows={3}
+                              value={data.address}
                             />
                           </label>
-                          {logo && (
-                            <button
-                              className="ui-button ui-button--ghost ui-button--small"
-                              type="button"
-                              onClick={() => setLogo(undefined)}
-                            >
-                              <Trash2 size={15} /> Remove
-                            </button>
-                          )}
+                          <div className="registration-logo-field">
+                            <span className="field__label">Company logo (optional)</span>
+                            <div className="registration-logo-field__content">
+                              <div
+                                className="registration-logo-preview"
+                                aria-label="Company logo preview"
+                              >
+                                {logoPreview ? (
+                                  <img src={logoPreview} alt="Selected company logo preview" />
+                                ) : (
+                                  <span>{companyInitials(data.companyName)}</span>
+                                )}
+                              </div>
+                              <div>
+                                <p>PNG, JPEG or WebP · maximum 2 MB</p>
+                                <div className="registration-logo-field__actions">
+                                  <label className="ui-button ui-button--secondary ui-button--small">
+                                    <ImageUp size={15} /> {logo ? 'Replace logo' : 'Choose logo'}
+                                    <input
+                                      aria-label="Choose company logo"
+                                      type="file"
+                                      accept="image/png,image/jpeg,image/webp"
+                                      onChange={selectLogo}
+                                    />
+                                  </label>
+                                  {logo && (
+                                    <button
+                                      className="ui-button ui-button--ghost ui-button--small"
+                                      type="button"
+                                      onClick={() => setLogo(undefined)}
+                                    >
+                                      <Trash2 size={15} /> Remove
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <small>
+                              Presentation only. It remains private until this application is
+                              approved.
+                            </small>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                    <small>
-                      Presentation only. It remains private until this application is approved.
-                    </small>
-                  </div>
+                      </fieldset>
+                    </>
+                  )}
+                  {step === 1 && (
+                    <>
+                      <fieldset className="registration-category">
+                        <legend>
+                          <Mail size={18} aria-hidden="true" /> Contact details
+                        </legend>
+                        <div className="registration-form">
+                          <Input
+                            label="Company email *"
+                            required
+                            maxLength={254}
+                            onChange={(e) => update('companyEmail', e.target.value)}
+                            type="email"
+                            value={data.companyEmail}
+                          />
+                          <div className="field">
+                            <label className="field__label" htmlFor="registration-contact-number">
+                              <RequiredLabel label="Contact number" required />
+                            </label>
+                            <PhoneInput
+                              id="registration-contact-number"
+                              defaultCountry="MY"
+                              countrySelectComponent={RegistrationCountrySelect}
+                              international
+                              countryCallingCodeEditable={false}
+                              focusInputOnCountrySelection={false}
+                              flags={flags}
+                              value={data.contactNumber || undefined}
+                              onChange={(value) => update('contactNumber', value ?? '')}
+                              onBlur={(event) => {
+                                if (
+                                  event.target instanceof HTMLInputElement &&
+                                  event.target.type === 'tel'
+                                )
+                                  setPhoneTouched(true);
+                              }}
+                              required
+                              autoComplete="tel"
+                              placeholder="Enter contact number"
+                              className="field__control gap-3 focus-within:border-ui-primary focus-within:ring-2 focus-within:ring-ui-primary/10"
+                              numberInputProps={{
+                                className:
+                                  'min-w-0 flex-1 border-0 bg-transparent p-0 text-inherit shadow-none outline-none',
+                                maxLength: 40,
+                                'aria-invalid': Boolean(phoneError),
+                                'aria-describedby': 'registration-phone-help',
+                              }}
+                              countrySelectProps={{ 'aria-label': 'Contact number country' }}
+                            />
+                            <span
+                              id="registration-phone-help"
+                              className={
+                                phoneError
+                                  ? 'field__message field__message--error'
+                                  : 'field__message'
+                              }
+                              role={phoneError ? 'alert' : undefined}
+                            >
+                              {phoneError ||
+                                'Select your country and enter the company contact number.'}
+                            </span>
+                          </div>
+                        </div>
+                      </fieldset>
+                      <fieldset className="registration-category">
+                        <legend>
+                          <UserRound size={18} aria-hidden="true" /> Authorised representative
+                        </legend>
+                        <div className="registration-form">
+                          <Input
+                            label="Authorised representative *"
+                            required
+                            maxLength={160}
+                            onChange={(e) => update('representativeName', e.target.value)}
+                            value={data.representativeName}
+                          />
+                          <Input
+                            label="Representative position *"
+                            required
+                            maxLength={120}
+                            onChange={(e) => update('representativePosition', e.target.value)}
+                            value={data.representativePosition}
+                          />
+                        </div>
+                      </fieldset>
+                    </>
+                  )}
+                  {step === 2 && (
+                    <>
+                      <fieldset className="registration-category">
+                        <legend>
+                          <Wallet size={18} aria-hidden="true" /> Wallet & digital identity
+                        </legend>
+                        <div className="registration-form">
+                          <div className="wallet-field">
+                            <span className="field__label">
+                              <RequiredLabel label="Connected wallet" required />
+                            </span>
+                            <div>
+                              <code>{data.wallet || 'No wallet connected'}</code>
+                              <Button
+                                loading={connecting}
+                                leadingIcon={<Link2 size={15} aria-hidden="true" />}
+                                disabled={connecting || submitting || Boolean(transaction)}
+                                onClick={connectWallet}
+                                size="small"
+                                type="button"
+                                variant="secondary"
+                              >
+                                {connecting
+                                  ? 'Choose in MetaMask?'
+                                  : data.wallet
+                                    ? 'Change account'
+                                    : 'Connect MetaMask'}
+                              </Button>
+                            </div>
+                            <small>The wallet will own and sign this company application.</small>
+                            {walletFeedback && (
+                              <small role="status" aria-live="polite">
+                                {walletFeedback}
+                              </small>
+                            )}
+                          </div>
+                          <Input
+                            className="registration-field--wide"
+                            hint="Optional — add this if your organisation already has a DID."
+                            label="Company DID"
+                            maxLength={512}
+                            onChange={(e) => update('companyDid', e.target.value)}
+                            value={data.companyDid}
+                          />
+                        </div>
+                      </fieldset>
+                    </>
+                  )}
                 </div>
               </section>
             )}
-            {step === 1 && (
+            {step === 3 && (
               <section className="registration-step">
                 <header>
-                  <h2>Supporting documents</h2>
+                  <h2 ref={stepHeading} tabIndex={-1}>
+                    Supporting documents
+                  </h2>
                   <p>
                     Documents are prepared for encrypted off-chain storage; only integrity
                     references belong on-chain.
@@ -617,10 +806,12 @@ export function RegisterCompanyPage() {
                 </aside>
               </section>
             )}
-            {step === 2 && (
+            {step === 4 && (
               <section className="registration-step">
                 <header>
-                  <h2>Review your application</h2>
+                  <h2 ref={stepHeading} tabIndex={-1}>
+                    Review your application
+                  </h2>
                   <p>
                     Confirm that the organisation, requested role, wallet, and documents are
                     correct.
@@ -669,6 +860,45 @@ export function RegisterCompanyPage() {
                     </dd>
                   </div>
                 </dl>
+                <section
+                  className="registration-review-documents"
+                  aria-label="Supporting document review"
+                >
+                  <h3>Supporting documents</h3>
+                  <p>
+                    Preview your selected files before submitting. Nothing is uploaded until you
+                    select Submit application.
+                  </p>
+                  {Object.entries(documents).map(([kind, file]) => (
+                    <div key={kind} className="registration-review-document">
+                      <FileCheck2 size={20} aria-hidden="true" />
+                      <div>
+                        <strong>{documentLabels[kind]}</strong>
+                        <span>
+                          {file.name} - {(file.size / 1024).toFixed(1)} KB
+                        </span>
+                      </div>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        leadingIcon={<Eye size={16} aria-hidden="true" />}
+                        aria-label={'Preview ' + file.name}
+                        onClick={() => {
+                          try {
+                            setPreviewDocument({ file, url: URL.createObjectURL(file) });
+                          } catch {
+                            setError('This document could not be opened for preview.');
+                          }
+                        }}
+                      >
+                        Preview
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="ghost" size="small" onClick={() => goToStep(3)}>
+                    Change documents
+                  </Button>
+                </section>
                 <label className="registration-declaration">
                   <input
                     checked={data.declaration}
@@ -697,29 +927,84 @@ export function RegisterCompanyPage() {
             <footer className="registration-actions">
               {step > 0 && !transaction && (
                 <Button
-                  onClick={() => {
-                    setError('');
-                    setStep((current) => current - 1);
-                  }}
+                  onClick={() => goToStep(step - 1)}
+                  disabled={connecting || submitting}
+                  leadingIcon={<ChevronLeft size={16} aria-hidden="true" />}
                   type="button"
                   variant="secondary"
                 >
-                  <ChevronLeft size={16} /> Back
+                  Back
                 </Button>
               )}
               <span />
-              {step < 2 ? (
-                <Button onClick={next} type="button">
-                  Continue <ChevronRight size={16} />
+              {step < steps.length - 1 ? (
+                <Button
+                  key="continue-registration"
+                  onClick={next}
+                  type="button"
+                  disabled={connecting || submitting}
+                  trailingIcon={<ChevronRight size={16} aria-hidden="true" />}
+                >
+                  Continue
                 </Button>
               ) : (
-                <Button disabled={Boolean(transaction)} loading={submitting} type="submit">
+                <Button
+                  key="submit-registration"
+                  data-registration-submit="true"
+                  disabled={!data.declaration || Boolean(transaction)}
+                  loading={submitting}
+                  type="submit"
+                >
                   {transaction ? 'Application submitted' : 'Submit application'}
                 </Button>
               )}
             </footer>
           </Card>
         </form>
+        <Modal
+          isOpen={Boolean(previewDocument)}
+          onClose={() => setPreviewDocument(undefined)}
+          title="Document preview"
+          footer={
+            previewDocument ? (
+              <a
+                href={previewDocument.url}
+                download={previewDocument.file.name}
+                className="ui-button ui-button--secondary ui-button--small"
+              >
+                Download selected file
+              </a>
+            ) : undefined
+          }
+        >
+          {previewDocument && (
+            <>
+              <p className="registration-preview-filename">{previewDocument.file.name}</p>
+              {previewDocument.file.type.startsWith('image/') ? (
+                <div className="document-preview-media">
+                  <img
+                    className="registration-document-image"
+                    src={previewDocument.url}
+                    alt={'Selected document: ' + previewDocument.file.name}
+                  />
+                </div>
+              ) : (
+                <>
+                  <iframe
+                    className="registration-document-pdf"
+                    sandbox=""
+                    src={previewDocument.url}
+                    title="Selected PDF document"
+                  />
+                  <p>
+                    If PDF preview is blocked by your browser, download the selected file to review
+                    it.
+                  </p>
+                </>
+              )}
+            </>
+          )}
+        </Modal>
       </main>
     </div>
   );

@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import {
   CalendarClock,
   ClipboardCheck,
@@ -77,9 +78,7 @@ export function DistributorIngredientDeliveryReview({
 
   return (
     <section className="distributor-delivery-review" aria-label="Ingredient delivery review">
-      <button type="button" className="workspace-process-back" onClick={onBack}>
-        ← Ingredient deliveries
-      </button>
+      <BackNavigation onClick={onBack}>Ingredient deliveries</BackNavigation>
       <header className="workspace-arrival-detail__header">
         <span className="workspace-arrival-detail__header-icon" aria-hidden="true">
           <Truck size={30} />

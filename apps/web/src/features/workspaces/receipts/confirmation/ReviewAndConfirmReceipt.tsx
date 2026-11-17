@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { useState } from 'react';
 import { CheckCircle2, Package } from 'lucide-react';
 import {
@@ -89,11 +90,9 @@ export function ReviewAndConfirmReceipt({
 
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       {showProgress && <StepProgress steps={RECEIPT_STEPS} current={confirmStep} />}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
           Review Shipment and Confirm Receipt
         </h2>
@@ -252,14 +251,7 @@ export function ReviewAndConfirmReceipt({
                 rows={2}
               />
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                <Btn
-                  onClick={() => setStep('confirm')}
-                  full
-                  disabled={!qtyValid || received === 0 || (mismatch && !discrepExpl.trim())}
-                >
-                  Confirm Receipt
-                </Btn>
+              <div className="action-row">
                 {mismatch && (
                   <Btn onClick={() => setShowDsc(true)} variant="secondary">
                     Report Discrepancy
@@ -267,6 +259,13 @@ export function ReviewAndConfirmReceipt({
                 )}
                 <Btn onClick={() => setShowRej(true)} variant="danger">
                   Reject Shipment
+                </Btn>
+                <Btn
+                  onClick={() => setStep('confirm')}
+
+                  disabled={!qtyValid || received === 0 || (mismatch && !discrepExpl.trim())}
+                >
+                  Confirm Receipt
                 </Btn>
               </div>
             </div>

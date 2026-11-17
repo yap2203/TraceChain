@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useId, type ReactNode } from 'react';
 
 import { AppIcon } from '../icons/AppIcon';
 
@@ -11,6 +11,7 @@ interface ModalProps {
 }
 
 export function Modal({ children, footer, isOpen, onClose, title }: ModalProps) {
+  const titleId = useId();
   useEffect(() => {
     if (!isOpen) return;
 
@@ -27,14 +28,14 @@ export function Modal({ children, footer, isOpen, onClose, title }: ModalProps) 
   return (
     <div className="modal-backdrop" onMouseDown={onClose} role="presentation">
       <section
-        aria-labelledby="modal-title"
+        aria-labelledby={titleId}
         aria-modal="true"
         className="modal"
         onMouseDown={(event) => event.stopPropagation()}
         role="dialog"
       >
         <header className="modal__header">
-          <h2 id="modal-title">{title}</h2>
+          <h2 id={titleId}>{title}</h2>
           <button
             aria-label="Close dialog"
             className="modal__close"
@@ -45,7 +46,7 @@ export function Modal({ children, footer, isOpen, onClose, title }: ModalProps) 
           </button>
         </header>
         <div className="modal__body">{children}</div>
-        {footer && <footer className="modal__footer">{footer}</footer>}
+        {footer && <footer className="modal__footer action-row">{footer}</footer>}
       </section>
     </div>
   );

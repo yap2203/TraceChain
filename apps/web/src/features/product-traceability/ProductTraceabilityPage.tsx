@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import { reportError } from '../../components/ui/feedback';
 import { Camera, FileImage, RotateCcw, Search, ShieldCheck } from 'lucide-react';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
@@ -109,6 +110,7 @@ export function ProductTraceabilityPage({
   return (
     <main className="product-trace-page">
       <div className="product-trace-shell">
+        {onBack && <BackNavigation onClick={onBack}>Back to workspace</BackNavigation>}
         <header className="product-trace-header">
           <div className="product-trace-brand">
             <img alt="" src="/tracechain-mark.svg" />
@@ -117,7 +119,6 @@ export function ProductTraceabilityPage({
               <div className="product-trace-muted">Product traceability</div>
             </div>
           </div>
-          {onBack && <button onClick={onBack}>Back to workspace</button>}
         </header>
 
         {state === 'loading' && (

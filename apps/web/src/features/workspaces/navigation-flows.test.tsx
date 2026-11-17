@@ -1,3 +1,8 @@
+import {
+  fillCompanyDetails,
+  fillContactDetails,
+  continueRegistration,
+} from '../registration/registration.test-helpers';
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
@@ -73,22 +78,11 @@ it('returns directly to Login after signing out of a workspace', async () => {
 });
 it('returns to Login only after company application confirmation and announces success', async () => {
   show('/register-company');
-  for (const [label, value] of [
-    [/Registered company name/, 'Test Supplier'],
-    [/Registration number/, 'TEST-123'],
-    [/Company email/, 'test@example.invalid'],
-    [/Contact number/, '123456789'],
-    [/Primary dispatch/, 'Test site'],
-    [/Business address/, 'Test address'],
-    [/Authorised representative/, 'Test representative'],
-    [/Representative position/, 'Operator'],
-  ] as const) {
-    fireEvent.change(screen.getByLabelText(label), { target: { value } });
-  }
-  fireEvent.change(screen.getByLabelText(/Requested supply-chain role/), {
-    target: { value: 'SUPPLIER' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+  fillCompanyDetails('SUPPLIER');
+  continueRegistration();
+  fillContactDetails();
+  continueRegistration();
+  fireEvent.click(screen.getByRole('button', { name: 'Connect MetaMask' }));
   await screen.findByText(wallet);
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   for (const input of document.querySelectorAll('input[type="file"][required]'))
@@ -97,16 +91,30 @@ it('returns to Login only after company application confirmation and announces s
         files: [new File(['synthetic-test-only'], 'test.pdf', { type: 'application/pdf' })],
       },
     });
-  fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+  const documentContinue = screen.getByRole('button', { name: 'Continue' });
+  fireEvent.click(documentContinue);
+  await screen.findByRole('heading', { name: 'Review your application' });
+  const finalSubmit = screen.getByRole('button', {
+    name: 'Submit application',
+  }) as HTMLButtonElement;
+  expect(finalSubmit).not.toBe(documentContinue);
+  expect(finalSubmit.disabled).toBe(true);
+  expect(screen.queryByText('Confirm the declaration before submitting.')).toBeNull();
+  expect(mocks.prepare).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('checkbox'));
+  fireEvent.submit(document.querySelector('form')!);
+  expect(mocks.prepare).not.toHaveBeenCalled();
   let confirm: ((receipt: unknown) => void) | undefined;
   mocks.wait.mockReturnValueOnce(
     new Promise((resolve) => {
       confirm = resolve;
     }),
   );
-  fireEvent.submit(document.querySelector('form')!);
+  fireEvent.click(screen.getByRole('button', { name: 'Submit application' }));
   await waitFor(() => expect(mocks.wait).toHaveBeenCalledOnce());
+  const application = mocks.prepare.mock.calls[0]![0];
+  expect(application).not.toHaveProperty('initialLocationName');
+  expect(application).not.toHaveProperty('initialLocationAddress');
   expect(screen.queryByRole('heading', { name: 'Wallet login destination' })).toBeNull();
   confirm?.({ status: 1, hash: '0x-public-test-reference' });
   await screen.findByRole('heading', { name: 'Wallet login destination' });

@@ -52,9 +52,13 @@
   .transfer-qr-secondary,
   .transfer-scanner-close,
   .transfer-scanner-tabs button {
-    @apply inline-flex items-center justify-center gap-[7px] rounded-[8px];
+    @apply inline-flex flex-nowrap items-center justify-center gap-[6px] rounded-[8px];
     font: inherit;
+    line-height: 1;
     @apply cursor-pointer;
+  }
+  :is(.transfer-qr-button, .transfer-qr-secondary, .transfer-scanner-close, .transfer-scanner-tabs button) > svg {
+    @apply block shrink-0 m-0;
   }
   .transfer-qr-button,
   .transfer-qr-secondary {

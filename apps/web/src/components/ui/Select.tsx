@@ -1,3 +1,4 @@
+import { RequiredLabel } from './RequiredLabel';
 import { useId, type SelectHTMLAttributes } from 'react';
 
 interface SelectOption {
@@ -18,7 +19,9 @@ export function Select({ className = '', hint, id, label, options, ...props }: S
 
   return (
     <label className={`field ${className}`.trim()} htmlFor={selectId}>
-      <span className="field__label">{label}</span>
+      <span className="field__label">
+        <RequiredLabel label={label} required={props.required} />
+      </span>
       <select aria-describedby={hintId} className="field__control" id={selectId} {...props}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>

@@ -172,30 +172,36 @@ export function VerificationPanel({
 
       {phase === 'done' && (outcome === 'passed' || outcome === 'missing') && (
         <div style={{ display: 'grid', gap: 8 }}>
-          <Btn onClick={onAccept} full disabled={!canAccept}>
-            Accept Ingredient Evidence
-          </Btn>
+          <div className="action-row">
+            <Btn onClick={onAccept} disabled={!canAccept}>
+              Accept Ingredient Evidence
+            </Btn>
+          </div>
           {!canAccept && (
             <div style={{ fontSize: 11, color: T.amber, textAlign: 'center' }}>
               Required information is missing — acceptance is not available.
             </div>
           )}
-          <Btn onClick={onMissing} variant="secondary" full>
-            Request Missing Information
-          </Btn>
-          <Btn onClick={onReject} variant="danger" full>
-            Reject Evidence
-          </Btn>
+          <div className="action-row">
+            <Btn onClick={onMissing} variant="secondary">
+              Request Missing Information
+            </Btn>
+          </div>
+          <div className="action-row">
+            <Btn onClick={onReject} variant="danger">
+              Reject Evidence
+            </Btn>
+          </div>
         </div>
       )}
 
       {phase === 'done' && (outcome === 'invalid' || outcome === 'unavailable') && (
-        <div style={{ display: 'grid', gap: 8 }}>
-          <Btn onClick={run} variant="secondary" full>
-            Try Verification Again
-          </Btn>
-          <Btn onClick={onReject} variant="danger" full>
+        <div className="action-row">
+          <Btn onClick={onReject} variant="danger">
             Reject Evidence
+          </Btn>
+          <Btn onClick={run} variant="secondary">
+            Try Verification Again
           </Btn>
         </div>
       )}

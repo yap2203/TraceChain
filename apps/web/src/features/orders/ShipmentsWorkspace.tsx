@@ -1,3 +1,5 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
+import { formatLocationLabel } from './location-format';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -127,6 +129,7 @@ export function ShipmentsWorkspace({
     [eta, setEta] = useState(localTime(4 * 3600000)),
     [confirmed, setConfirmed] = useState(false);
   const [siteName, setSiteName] = useState(''),
+    [siteAddress, setSiteAddress] = useState(''),
     [existingSite, setExistingSite] = useState(''),
     [checked, setChecked] = useState(''),
     [qrFileName, setQrFileName] = useState(''),
@@ -180,9 +183,10 @@ export function ShipmentsWorkspace({
       Number(shipment.delivery.identityValidUntil) <= Date.now() / 1000);
   const ownLocations = data?.locations.filter((entry) => same(entry.company, data.actor)) ?? [];
   const label = (id?: string) =>
-    warehouse?.warehouses.find((entry) => same(entry.location, id))?.name ??
-    data?.locations.find((entry) => same(entry.location, id))?.label ??
-    short(id);
+    formatLocationLabel(
+      data?.locations.find((entry) => same(entry.location, id)),
+      warehouse?.warehouses.find((entry) => same(entry.location, id))?.name ?? short(id),
+    );
   const item = (id?: string) =>
     data?.catalogue.find((entry) => entry.batches?.some((batch: string) => same(batch, id)));
   const shipmentItem = item(shipment?.batchId);
@@ -491,21 +495,7 @@ export function ShipmentsWorkspace({
       >
         Manage Supplier credential request
       </a>
-      <div className="workspace-location-actions">
-        <Btn
-          disabled={busy || !data.shipmentReviewSupported || proofPending}
-          onClick={() =>
-            void run(async () => {
-              await submit({
-                action: 'warehouse-decision',
-                shipmentId: shipment.shipmentId,
-                decision: 1,
-              });
-            })
-          }
-        >
-          Accept custody delivery
-        </Btn>
+      <div className="workspace-location-actions action-row">
         <Btn
           variant="outline"
           disabled={busy || !data.shipmentReviewSupported}
@@ -520,6 +510,20 @@ export function ShipmentsWorkspace({
           }
         >
           Reject custody delivery
+        </Btn>
+        <Btn
+          disabled={busy || !data.shipmentReviewSupported || proofPending}
+          onClick={() =>
+            void run(async () => {
+              await submit({
+                action: 'warehouse-decision',
+                shipmentId: shipment.shipmentId,
+                decision: 1,
+              });
+            })
+          }
+        >
+          Accept custody delivery
         </Btn>
       </div>
     </div>
@@ -601,17 +605,19 @@ export function ShipmentsWorkspace({
       </div>
       <div className="workspace-arrival-camera" hidden={!cameraActive}>
         <video ref={video} playsInline muted />
-        <Btn
-          variant="outline"
-          full
-          onClick={() => {
-            cameraAttempt.current++;
-            stop.current?.();
-            setCameraActive(false);
-          }}
-        >
-          Stop camera
-        </Btn>
+        <div className="action-row">
+          <Btn
+            variant="outline"
+
+            onClick={() => {
+              cameraAttempt.current++;
+              stop.current?.();
+              setCameraActive(false);
+            }}
+          >
+            Stop camera
+          </Btn>
+        </div>
       </div>
       {checked && (
         <div className="workspace-arrival-receipt__verified" role="status">
@@ -660,41 +666,42 @@ export function ShipmentsWorkspace({
           </label>
         </div>
       )}
-      <Btn
-        full
-        aria-label={
-          returning ? 'Confirm physical return with MetaMask' : 'Confirm receipt with MetaMask'
-        }
-        disabled={arrivalReceiptDisabled}
-        onClick={() =>
-          void run(async () => {
-            if (
-              !returning &&
-              intake &&
-              linkedCustodyOffer &&
-              Number(shipment.custodyDecision ?? 0) === 0
-            )
+      <div className="action-row">
+        <Btn
+          aria-label={
+            returning ? 'Confirm physical return with MetaMask' : 'Confirm receipt with MetaMask'
+          }
+          disabled={arrivalReceiptDisabled}
+          onClick={() =>
+            void run(async () => {
+              if (
+                !returning &&
+                intake &&
+                linkedCustodyOffer &&
+                Number(shipment.custodyDecision ?? 0) === 0
+              )
+                await submit({
+                  action: 'warehouse-decision',
+                  shipmentId: shipment.shipmentId,
+                  decision: 1,
+                });
               await submit({
-                action: 'warehouse-decision',
+                action: returning ? 'shipment-return' : 'shipment-receive',
                 shipmentId: shipment.shipmentId,
-                decision: 1,
+                ...(!returning ? { kind: shipment.kind, quantity } : {}),
+                occurredAt: at,
+                qrPayload: checked,
+                ...(!returning && receiveVehicle.trim() ? { vehicle: receiveVehicle.trim() } : {}),
               });
-            await submit({
-              action: returning ? 'shipment-return' : 'shipment-receive',
-              shipmentId: shipment.shipmentId,
-              ...(!returning ? { kind: shipment.kind, quantity } : {}),
-              occurredAt: at,
-              qrPayload: checked,
-              ...(!returning && receiveVehicle.trim() ? { vehicle: receiveVehicle.trim() } : {}),
-            });
-            setReceiveVehicle('');
-            setConfirmed(false);
-            setQuantity('');
-          })
-        }
-      >
-        {returning ? 'Confirm Return' : 'Confirm Receipt'}
-      </Btn>
+              setReceiveVehicle('');
+              setConfirmed(false);
+              setQuantity('');
+            })
+          }
+        >
+          {returning ? 'Confirm Return' : 'Confirm Receipt'}
+        </Btn>
+      </div>
       <p className="workspace-arrival-receipt__metamask-note">
         MetaMask confirmation is required. Receipt is submitted only after you approve the
         transaction.
@@ -849,6 +856,15 @@ export function ShipmentsWorkspace({
             required
             maxLength={160}
           />
+          {!existingSite && (
+            <Input
+              label="Dispatch / receiving address"
+              value={siteAddress}
+              onChange={setSiteAddress}
+              required
+              maxLength={1000}
+            />
+          )}
           {role === 'distributor' && (
             <SelectField
               label="Use an existing registered location (optional)"
@@ -862,7 +878,7 @@ export function ShipmentsWorkspace({
                   )
                   .map((entry) => ({
                     value: entry.location,
-                    label: entry.label ?? short(entry.location),
+                    label: formatLocationLabel(entry, short(entry.location)),
                   })),
               ]}
             />
@@ -872,41 +888,44 @@ export function ShipmentsWorkspace({
               ? 'A new warehouse uses two explicit MetaMask confirmations: register its location, then publish its warehouse name. If interrupted, select the existing location to finish.'
               : 'This location belongs to your connected company wallet.'}
           </p>
-          <Btn
-            disabled={busy || !siteName.trim()}
-            onClick={() =>
-              void run(async () => {
-                let location = existingSite;
-                if (!location) {
-                  const prepared = await prepareOrder({
-                    action: 'location',
-                    operationId: crypto.randomUUID(),
-                    label: siteName.trim(),
-                  });
-                  await sign(prepared);
-                  location = prepared.resultId;
-                  setExistingSite(location);
-                }
-                if (role === 'distributor')
-                  await submit({ action: 'warehouse', location, name: siteName.trim() });
-                setNotice('Location registered successfully.');
-              })
-            }
-          >
-            Register location
-          </Btn>
+          <div className="action-row">
+            <Btn
+              disabled={busy || !siteName.trim() || (!existingSite && !siteAddress.trim())}
+              onClick={() =>
+                void run(async () => {
+                  let location = existingSite;
+                  if (!location) {
+                    const prepared = await prepareOrder({
+                      action: 'location',
+                      operationId: crypto.randomUUID(),
+                      label: siteName.trim(),
+                      address: siteAddress.trim(),
+                    });
+                    await sign(prepared);
+                    location = prepared.resultId;
+                    setExistingSite(location);
+                  }
+                  if (role === 'distributor')
+                    await submit({ action: 'warehouse', location, name: siteName.trim() });
+                  setNotice('Location registered successfully.');
+                })
+              }
+            >
+              Register location
+            </Btn>
+          </div>
           <ul>
             {ownLocations.map((entry) => (
-              <li key={entry.location}>{entry.label ?? short(entry.location)}</li>
+              <li key={entry.location}>{formatLocationLabel(entry, short(entry.location))}</li>
             ))}
           </ul>
         </Card>
       )}
       {view === 'shipments' && !selected && productDeliveryOrder && (
         <div className="grid min-w-0 gap-[12px]">
-          <Btn variant="outline" onClick={() => setSelectedDeliveryOrder('')}>
+          <BackNavigation onClick={() => setSelectedDeliveryOrder('')}>
             Back to shipments
-          </Btn>
+          </BackNavigation>
           <ProductDeliveryPanel
             data={data}
             order={productDeliveryOrder}
@@ -1266,7 +1285,7 @@ export function ShipmentsWorkspace({
                     )
                     .map((entry) => ({
                       value: entry.location,
-                      label: entry.label ?? short(entry.location),
+                      label: formatLocationLabel(entry, short(entry.location)),
                     })),
                 ]}
               />
@@ -1424,9 +1443,11 @@ export function ShipmentsWorkspace({
             Review the stock, route and dispatch details. Stock changes only after you approve the
             transaction in MetaMask.
           </p>
-          <Btn icon={<Truck size={16} />} disabled={busy || !valid} onClick={recordDispatch}>
-            Confirm dispatch with MetaMask
-          </Btn>
+          <div className="action-row">
+            <Btn icon={<Truck size={16} />} disabled={busy || !valid} onClick={recordDispatch}>
+              Confirm dispatch with MetaMask
+            </Btn>
+          </div>
         </Card>
       )}
       {shipment && view === 'shipments' && workflowDetail && (
@@ -1530,22 +1551,24 @@ export function ShipmentsWorkspace({
                         placeholder={shipment.vehicle || 'e.g. VAB 1234'}
                         maxLength={32}
                       />
-                      <Btn
-                        disabled={busy || !/^[A-Z0-9 -]{2,32}$/.test(recordVehicle.trim())}
-                        onClick={() =>
-                          void run(async () => {
-                            await submit({
-                              action: 'shipment-vehicle',
-                              shipmentId: shipment.shipmentId,
-                              vehicle: recordVehicle.trim(),
-                            });
-                            setRecordVehicle('');
-                            setNotice('Vehicle registration updated successfully.');
-                          })
-                        }
-                      >
-                        Save vehicle
-                      </Btn>
+                      <div className="action-row">
+                        <Btn
+                          disabled={busy || !/^[A-Z0-9 -]{2,32}$/.test(recordVehicle.trim())}
+                          onClick={() =>
+                            void run(async () => {
+                              await submit({
+                                action: 'shipment-vehicle',
+                                shipmentId: shipment.shipmentId,
+                                vehicle: recordVehicle.trim(),
+                              });
+                              setRecordVehicle('');
+                              setNotice('Vehicle registration updated successfully.');
+                            })
+                          }
+                        >
+                          Save vehicle
+                        </Btn>
+                      </div>
                     </div>
                   </section>
                 )}

@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import { Link } from 'react-router-dom';
 
 import { Brand } from '../../components/brand/Brand';
@@ -11,6 +12,7 @@ export function CredentialGatePage({ roleLabel }: CredentialGatePageProps) {
   return (
     <main className="credential-gate">
       <section>
+        <BackNavigation to="/login#sign-in">Return to wallet sign-in</BackNavigation>
         <Brand />
         <StatusBadge tone="warning">Access unavailable</StatusBadge>
         <p>{roleLabel} workspace</p>
@@ -20,9 +22,6 @@ export function CredentialGatePage({ roleLabel }: CredentialGatePageProps) {
           until blockchain role and credential-status verification is implemented.
         </span>
         <div>
-          <Link className="primary-link" to="/login#sign-in">
-            Return to wallet sign-in
-          </Link>
           <Link className="secondary-link" to="/register-company">
             Register a company
           </Link>

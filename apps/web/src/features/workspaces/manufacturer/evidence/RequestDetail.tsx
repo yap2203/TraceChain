@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { useState } from 'react';
 import { T, Btn, Card, Badge, Alert, Modal, Textarea } from '../../shared/ui';
 import { type EvidenceRequest } from './types';
@@ -23,10 +24,8 @@ export function RequestDetail({
 
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back to Requests</BackNavigation>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back to Requests
-        </Btn>
         <div style={{ flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontWeight: 700, fontSize: 17, color: T.navy }}>{req.id}</span>
@@ -165,7 +164,7 @@ export function RequestDetail({
             rows={3}
             required
           />
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <div style={{ marginTop: 16 }} className="action-row">
             <Btn onClick={() => setShowCancel(false)} variant="ghost">
               Keep Request
             </Btn>
@@ -175,7 +174,7 @@ export function RequestDetail({
                 setShowCancel(false);
               }}
               variant="danger"
-              full
+
               disabled={!cancelReason.trim()}
             >
               Confirm Cancellation

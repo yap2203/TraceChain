@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { PersonalPermissions } from '../access-control/PersonalPermissions';
 import { reportError } from '../../../../components/ui/feedback';
 import { BrowserProvider, id } from 'ethers';
@@ -70,10 +71,8 @@ export function CredDetail({
   ];
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
-        <Btn variant="ghost" size="sm" onClick={onBack}>
-          Back
-        </Btn>
         <h2 style={{ margin: 0, color: T.navy }}>{cred.companyName}</h2>
         <Badge
           label={cred.status}
@@ -110,7 +109,13 @@ export function CredDetail({
         </Card>
         <Card>
           <div style={{ fontWeight: 700, marginBottom: 12 }}>Lifecycle actions</div>
-          <div style={{ display: 'grid', gap: 8 }}>
+          <div className="action-row">
+            <Btn variant="outline" onClick={() => navigator.clipboard.writeText(cred.credentialId)}>
+              Copy credential ID
+            </Btn>
+            <Btn variant="outline" onClick={() => downloadSummary(cred)}>
+              Download safe summary
+            </Btn>
             {cred.status === 'active' && (
               <Btn
                 variant="outline"
@@ -120,20 +125,14 @@ export function CredDetail({
                 Suspend credential
               </Btn>
             )}
-            {cred.status === 'suspended' && (
-              <Btn onClick={() => setAction('reactivate')}>Reactivate credential</Btn>
-            )}
             {!['revoked', 'expired'].includes(cred.status) && (
               <Btn variant="danger" onClick={() => setAction('revoke')}>
                 Permanently revoke
               </Btn>
             )}
-            <Btn variant="outline" onClick={() => navigator.clipboard.writeText(cred.credentialId)}>
-              Copy credential ID
-            </Btn>
-            <Btn variant="outline" onClick={() => downloadSummary(cred)}>
-              Download safe summary
-            </Btn>
+            {cred.status === 'suspended' && (
+              <Btn onClick={() => setAction('reactivate')}>Reactivate credential</Btn>
+            )}
           </div>
           <p style={{ color: T.text3, fontSize: 11, marginTop: 14 }}>
             Every lifecycle change requires the authorized Admin wallet and a MetaMask transaction.
@@ -183,7 +182,7 @@ export function CredDetail({
                 I understand that revocation is permanent.
               </label>
             )}
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="action-row">
               <Btn variant="outline" onClick={() => setAction(null)}>
                 Cancel
               </Btn>

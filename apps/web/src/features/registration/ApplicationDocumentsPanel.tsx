@@ -1,3 +1,4 @@
+import { RequiredLabel } from '../../components/ui/RequiredLabel';
 import { useEffect, useRef, useState } from 'react';
 import { Download, Eye, FileText } from 'lucide-react';
 import { Alert, Btn, Card, Modal, SectionTitle } from '../workspaces/shared/ui';
@@ -225,8 +226,10 @@ export function ApplicationDocumentsPanel({
                   </p>
                   {Object.entries(labels).map(([kind, label]) => (
                     <label key={kind} style={{ display: 'block', margin: '12px 0' }}>
-                      {label}
-                      {kind !== 'certifications' ? ' *' : ' (optional)'}
+                      <RequiredLabel
+                        label={kind === 'certifications' ? `${label} (optional)` : label}
+                        required={kind !== 'certifications'}
+                      />
                       <input
                         style={{ display: 'block', maxWidth: '100%' }}
                         type="file"
@@ -278,11 +281,13 @@ export function ApplicationDocumentsPanel({
       {preview && (
         <Modal title={preview.file.fileName} onClose={() => setPreview(undefined)} width={900}>
           {preview.file.mimeType.startsWith('image/') ? (
-            <img
-              src={preview.url}
-              alt={labels[preview.file.kind]}
-              style={{ maxWidth: '100%', maxHeight: '65vh', objectFit: 'contain' }}
-            />
+            <div className="document-preview-media">
+              <img
+                className="registration-document-image"
+                src={preview.url}
+                alt={labels[preview.file.kind] ?? preview.file.fileName}
+              />
+            </div>
           ) : (
             <>
               <iframe
@@ -294,9 +299,15 @@ export function ApplicationDocumentsPanel({
               <p>If your browser blocks PDF preview, use Download to review the file.</p>
             </>
           )}
-          <Btn disabled={busy} onClick={() => void open(preview.file, true)}>
-            Download document
-          </Btn>
+          <div className="action-row mt-4">
+            <Btn
+              icon={<Download size={16} />}
+              disabled={busy}
+              onClick={() => void open(preview.file, true)}
+            >
+              Download document
+            </Btn>
+          </div>
         </Modal>
       )}
     </Card>

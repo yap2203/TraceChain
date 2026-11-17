@@ -272,6 +272,20 @@
   .workspace-button {
     min-height: 32px;
   }
+  .workspace-ui .workspace-button {
+    @apply leading-none;
+  }
+  .workspace-button__icon,
+  .workspace-button__label {
+    @apply inline-flex flex-nowrap items-center justify-center gap-[6px] min-w-0 m-0 p-0 leading-none;
+    font: inherit;
+  }
+  .workspace-button__icon {
+    @apply shrink-0;
+  }
+  .workspace-button svg {
+    @apply block shrink-0 m-0;
+  }
   .workspace-editor {
     @apply w-full max-w-[1100px] mx-auto;
   }
@@ -2627,6 +2641,10 @@
   justify-content: start;
   align-items: start;
 }
+.workspace-profile-locations.workspace-profile-locations--empty {
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
+}
 
 .workspace-location-card {
   display: grid;
@@ -3478,6 +3496,16 @@
   }
   .workspace-profile-form > button {
     justify-self: start;
+  }
+  .workspace-profile-form--location {
+    @apply grid min-w-0 gap-[16px] items-start;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace-profile-empty {
+    grid-column: 1 / -1;
+  }
+  .workspace-profile-form--location > .action-row {
+    grid-column: 1 / -1;
   }
   .workspace-location-heading {
     @apply flex items-center gap-[10px] mb-[16px];

@@ -1,3 +1,4 @@
+import { RequiredLabel } from '../../../../components/ui/RequiredLabel';
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 
 const inputClasses =
@@ -22,8 +23,7 @@ export function FormField({
     <div className="workspace-form-field flex flex-col gap-[5px] min-w-0">
       <label className="grid gap-[5px] text-[12px] font-semibold text-ws-text2 min-w-0">
         <span>
-          {label}
-          {required && <span className="text-ws-red ml-[2px]"> *</span>}
+          <RequiredLabel label={label} required={required} />
         </span>
         {children}
       </label>

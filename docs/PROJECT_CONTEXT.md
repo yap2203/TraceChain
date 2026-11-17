@@ -38,6 +38,8 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
 
 ## Current implementation
 
+- Registration collects legal business details, contact details, wallet identity and supporting documents without requiring a physical dispatch/receiving location. Companies add named physical locations in Profile when needed for orders, shipments or production. Existing signed application location drafts remain supported; registered addresses and edits use encrypted location presentation records. Stable on-chain IDs, stock/history and authorized-only address visibility remain unchanged.
+
 - Registration now sends actual supporting document bytes, bound into the applicant signature and encrypted before IPFS upload. An encrypted local cache supports Admin application review and owner-only Profile/pending-login review. Legacy filename-only applications allow applicant-only supplemental attachment, without rewriting the original on-chain hash. No document bytes or decryption keys are exposed on-chain; no contract change is required.
 
 - SSI data storage now separates public DID/key metadata from an AES-GCM encrypted VC/VP/claim/message cache. Legacy public-store contents migrate after encrypted write/read-back, preserving bootstrap/export compatibility. The company identity feature retrieves its authenticated wallet's current registry CID from encrypted IPFS. Backend encryption-key backup and restore checks are not exposed through the web app or HTTP API. Existing operator backups and holder presentation-signing recovery remain separate and preserved. See `docs/STORAGE_AND_RECOVERY.md`.

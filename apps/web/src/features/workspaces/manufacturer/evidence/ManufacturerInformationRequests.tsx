@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
 import { Inbox, RefreshCw, Search, Send } from 'lucide-react';
@@ -136,8 +137,7 @@ export function ManufacturerInformationRequests({
   if (selected)
     return (
       <div className="grid gap-[16px] min-w-0">
-        <Btn
-          variant="outline"
+        <BackNavigation
           onClick={() => {
             setSelected(undefined);
             onClearSelection?.(selected.direction);
@@ -145,7 +145,7 @@ export function ManufacturerInformationRequests({
           }}
         >
           Back to Information requests
-        </Btn>
+        </BackNavigation>
         {error && <Alert type="warning" message={error} />}
         {selected.kind === 'order' ? (
           <OrdersPage

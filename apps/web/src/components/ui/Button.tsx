@@ -5,6 +5,7 @@ import { LoadingIndicator } from './LoadingIndicator';
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children: ReactNode;
   leadingIcon?: ReactNode;
+  trailingIcon?: ReactNode;
   loading?: boolean;
   size?: 'small' | 'medium';
   variant?: 'primary' | 'secondary' | 'ghost';
@@ -15,6 +16,7 @@ export function Button({
   className = '',
   disabled,
   leadingIcon,
+  trailingIcon,
   loading = false,
   size = 'medium',
   type = 'button',
@@ -30,6 +32,7 @@ export function Button({
     >
       {loading ? <LoadingIndicator label="Working" size="small" /> : leadingIcon}
       <span className="ui-button__label">{children}</span>
+      {!loading && trailingIcon}
     </button>
   );
 }

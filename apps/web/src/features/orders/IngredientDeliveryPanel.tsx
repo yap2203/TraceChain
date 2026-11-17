@@ -283,23 +283,25 @@ export function IngredientDeliveryPanel({
           {!data.fulfilmentSupported && (
             <p>Custody selection after approval requires the updated two-mode contract suite.</p>
           )}
-          <Btn
-            disabled={
-              busy ||
-              !data.fulfilmentSupported ||
-              !receivingLocation ||
-              !custodyOptions.some((entry) => entry.positionId === custodyPosition)
-            }
-            onClick={() =>
-              void run({
-                action: 'arrange-from-custody',
-                positionId: custodyPosition,
-                receivingLocation,
-              })
-            }
-          >
-            Confirm delivery from custody
-          </Btn>
+          <div className="action-row">
+            <Btn
+              disabled={
+                busy ||
+                !data.fulfilmentSupported ||
+                !receivingLocation ||
+                !custodyOptions.some((entry) => entry.positionId === custodyPosition)
+              }
+              onClick={() =>
+                void run({
+                  action: 'arrange-from-custody',
+                  positionId: custodyPosition,
+                  receivingLocation,
+                })
+              }
+            >
+              Confirm delivery from custody
+            </Btn>
+          </div>
         </section>
       )}
       {supplier && stage === 1 && (
@@ -352,19 +354,19 @@ export function IngredientDeliveryPanel({
         />
       )}
       {distributor && stage === 2 && (
-        <div className="flex flex-wrap gap-[8px]">
-          <Btn
-            disabled={busy}
-            onClick={() => void run({ action: 'delivery-respond', accept: true })}
-          >
-            Accept delivery
-          </Btn>
+        <div className="flex flex-wrap gap-[8px] action-row">
           <Btn
             variant="danger"
             disabled={busy}
             onClick={() => void run({ action: 'delivery-respond', accept: false })}
           >
             Decline delivery
+          </Btn>
+          <Btn
+            disabled={busy}
+            onClick={() => void run({ action: 'delivery-respond', accept: true })}
+          >
+            Accept delivery
           </Btn>
         </div>
       )}
@@ -422,7 +424,16 @@ export function IngredientDeliveryPanel({
             className="max-h-[240px] w-full rounded-lg"
             aria-label="Delivery QR camera"
           />
-          <div className="flex flex-wrap gap-[8px]">
+          <div className="flex flex-wrap gap-[8px] action-row">
+            <Btn
+              variant="outline"
+              onClick={() => {
+                cameraAttempt.current++;
+                stop.current?.();
+              }}
+            >
+              Stop camera
+            </Btn>
             <Btn
               icon={<ScanQrCode size={16} />}
               onClick={() => {
@@ -442,15 +453,6 @@ export function IngredientDeliveryPanel({
               }}
             >
               Scan with camera
-            </Btn>
-            <Btn
-              variant="outline"
-              onClick={() => {
-                cameraAttempt.current++;
-                stop.current?.();
-              }}
-            >
-              Stop camera
             </Btn>
           </div>
           <label>
@@ -529,33 +531,37 @@ export function IngredientDeliveryPanel({
               ? 'I physically collected these ingredients from the Supplier.'
               : 'These ingredients physically arrived at my receiving location.'}
           </label>
-          <Btn
-            disabled={
-              busy ||
-              proofBlocksPickup ||
-              (distributor && !pickupReady) ||
-              !scanned ||
-              !confirmed ||
-              !validTime ||
-              (manufacturer &&
-                (!location || !/^[1-9]\d*$/.test(quantity) || BigInt(quantity || '0') > remaining))
-            }
-            onClick={() =>
-              void run(
-                distributor
-                  ? { action: 'delivery-pickup', qrPayload: scanned, occurredAt: time }
-                  : {
-                      action: 'approved-receipt',
-                      qrPayload: scanned,
-                      location,
-                      quantity,
-                      occurredAt: time,
-                    },
-              )
-            }
-          >
-            {distributor ? 'Confirm pickup with MetaMask' : 'Confirm receipt with MetaMask'}
-          </Btn>
+          <div className="action-row">
+            <Btn
+              disabled={
+                busy ||
+                proofBlocksPickup ||
+                (distributor && !pickupReady) ||
+                !scanned ||
+                !confirmed ||
+                !validTime ||
+                (manufacturer &&
+                  (!location ||
+                    !/^[1-9]\d*$/.test(quantity) ||
+                    BigInt(quantity || '0') > remaining))
+              }
+              onClick={() =>
+                void run(
+                  distributor
+                    ? { action: 'delivery-pickup', qrPayload: scanned, occurredAt: time }
+                    : {
+                        action: 'approved-receipt',
+                        qrPayload: scanned,
+                        location,
+                        quantity,
+                        occurredAt: time,
+                      },
+                )
+              }
+            >
+              {distributor ? 'Confirm pickup with MetaMask' : 'Confirm receipt with MetaMask'}
+            </Btn>
+          </div>
         </section>
       )}
       {stage >= 4 && stage !== 6 && (

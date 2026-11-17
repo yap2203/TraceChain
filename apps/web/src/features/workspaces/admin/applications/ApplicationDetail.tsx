@@ -1,7 +1,8 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { ApplicationDocumentsPanel } from '../../../registration/ApplicationDocumentsPanel';
 import { notify, reportError } from '../../../../components/ui/feedback';
 import { BrowserProvider, id } from 'ethers';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { targetChainId } from '../../../../config/chain';
 import { issueCompanyRoleCredential } from '../../../auth/auth.api';
@@ -35,14 +36,17 @@ export function AppDetail({
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const workflowPending = useRef(false);
 
   const reject = async () => {
+    if (workflowPending.current) return;
     const invalid = textError(reason, 'Rejection reason', 4000);
     if (invalid) {
       setError(invalid);
       return;
     }
     if (!window.ethereum || !reason.trim()) return;
+    workflowPending.current = true;
     setBusy(true);
     setError('');
     try {
@@ -60,11 +64,13 @@ export function AppDetail({
     } catch (cause) {
       setError(reportError(cause, 'Transaction failed.'));
     } finally {
+      workflowPending.current = false;
       setBusy(false);
     }
   };
 
   const approve = async () => {
+    if (workflowPending.current) return;
     const validationError =
       textError(companyId, 'Company registration number', 120) ||
       textError(companyName, 'Verified company name', 200) ||
@@ -74,6 +80,7 @@ export function AppDetail({
       return;
     }
     if (!window.ethereum || !companyId.trim() || !companyName.trim() || !expirationDate) return;
+    workflowPending.current = true;
     setBusy(true);
     setError('');
     try {
@@ -107,6 +114,7 @@ export function AppDetail({
     } catch (cause) {
       setError(reportError(cause, 'Credential issuance failed.'));
     } finally {
+      workflowPending.current = false;
       setBusy(false);
     }
   };
@@ -125,10 +133,8 @@ export function AppDetail({
 
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
           On-chain application
         </h2>
@@ -181,17 +187,17 @@ export function AppDetail({
       <ApplicationDocumentsPanel applicationId={app.id} readOnly />
       {error && <div style={{ marginTop: 12, color: T.red, fontSize: 12 }}>{error}</div>}
       {(app.status === 'pending' || app.status === 'approved') && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-          <Btn onClick={() => setApproving(true)}>
-            {app.status === 'pending'
-              ? 'Issue credential & approve'
-              : 'Complete credential activation'}
-          </Btn>
+        <div style={{ marginTop: 16 }} className="action-row">
           {app.status === 'pending' && (
             <Btn onClick={() => setRejecting(true)} variant="danger">
               Reject on-chain
             </Btn>
           )}
+          <Btn onClick={() => setApproving(true)}>
+            {app.status === 'pending'
+              ? 'Issue credential & approve'
+              : 'Complete credential activation'}
+          </Btn>
         </div>
       )}
       {approving && (
@@ -237,7 +243,7 @@ export function AppDetail({
               type="date"
               required
             />
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            <div style={{ marginTop: 4 }} className="action-row">
               <Btn onClick={() => setApproving(false)} variant="outline">
                 Cancel
               </Btn>
@@ -264,7 +270,7 @@ export function AppDetail({
             placeholder="Reason is hashed before it is written on-chain."
             rows={3}
           />
-          <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <div style={{ marginTop: 14 }} className="action-row">
             <Btn onClick={() => setRejecting(false)} variant="outline">
               Cancel
             </Btn>

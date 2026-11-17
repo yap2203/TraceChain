@@ -79,7 +79,12 @@ export const orderActionSchema = z.discriminatedUnion('action', [
     })
     .strict(),
   z
-    .object({ ...base, action: z.literal('location'), label: z.string().trim().min(1).max(160) })
+    .object({
+      ...base,
+      action: z.literal('location'),
+      label: z.string().trim().min(1).max(160),
+      address: z.string().trim().min(1).max(1000).optional(),
+    })
     .strict(),
   z
     .object({

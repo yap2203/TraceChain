@@ -1,3 +1,4 @@
+import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { ApplicationDocuments } from './application-documents.js';
 import { CompanyRole, companyApplicationBindingMessage } from '@tracechain/shared';
 import type { NextFunction, Request, Response } from 'express';
@@ -118,6 +119,7 @@ export class BlockchainController {
       ): Promise<{ bytes: Buffer; mimeType: string; fileName: string }>;
     },
     private readonly applicationDocuments?: ApplicationDocuments,
+    private readonly applicationContent?: () => CredentialContentStore,
   ) {}
 
   listApplications = async (request: Request, response: Response, next: NextFunction) => {
@@ -420,6 +422,7 @@ export class BlockchainController {
         companyRegistrationNumber: input.companyRegistrationNumber,
         encryptedProfileCid: input.encryptedProfileCid,
         initialLocationName: input.initialLocationName,
+        initialLocationAddress: input.initialLocationAddress,
         documentsDigest: input.documents ? id(JSON.stringify(input.documents)) : undefined,
         logoDigest: preparedLogo?.logoDigest,
         logoFileName: input.logo?.fileName,
@@ -444,12 +447,31 @@ export class BlockchainController {
           'The company application must be signed by the applicant wallet.',
           403,
         );
+      let initialLocationDetails;
+      if (input.initialLocationAddress) {
+        if (!this.applicationContent)
+          throw new BlockchainApiError(
+            'LOCATION_STORAGE_UNAVAILABLE',
+            'Private location storage is unavailable.',
+            503,
+          );
+        const existing = await this.applicationMetadata.find(input.applicationId);
+        initialLocationDetails =
+          existing?.submissionDigest === id(bindingMessage)
+            ? existing.initialLocationDetails
+            : undefined;
+        initialLocationDetails ??= await this.applicationContent().encryptAndStore(
+          JSON.stringify({ address: input.initialLocationAddress }),
+          input.applicationId + '-location',
+        );
+      }
       await this.applicationMetadata.save({
         applicationId: input.applicationId,
         applicantWallet: input.applicantWallet,
         companyName: input.companyName,
         companyRegistrationNumber: input.companyRegistrationNumber,
         initialLocationName: input.initialLocationName,
+        initialLocationDetails,
         profileHash: input.profileHash,
         submissionDigest: id(bindingMessage),
       });
@@ -479,6 +501,7 @@ export class BlockchainController {
         companyName: _companyName,
         companyRegistrationNumber: _registrationNumber,
         initialLocationName: _initialLocation,
+        initialLocationAddress: _initialAddress,
         documents: _documents,
         logo: _logo,
         ...transactionInput

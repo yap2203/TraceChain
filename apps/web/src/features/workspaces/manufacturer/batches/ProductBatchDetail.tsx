@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useState } from 'react';
 import { getOrders, type OrderRecord } from '../../../orders/orders.api';
@@ -118,10 +119,8 @@ export function ProductBatchDetail({
   const authoritativeStorage = storage.filter((entry) => entry.available !== undefined);
   return (
     <div className="workspace-flow-page">
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div className="workspace-record-heading">
-        <Btn variant="ghost" size="sm" onClick={onBack}>
-          Back
-        </Btn>
         <div className="workspace-record-heading__identity">
           <span className="workspace-record-heading__eyebrow">Finished product</span>
           <h2>{productName}</h2>

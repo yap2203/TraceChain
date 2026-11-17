@@ -22,6 +22,7 @@ import {
   Modal,
   SectionTitle,
   TechnicalDetails,
+  Textarea,
 } from '../workspaces/shared/ui';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 
@@ -29,6 +30,8 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
   const [data, setData] = useState<CompanyProfile>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
+  const [address, setAddress] = useState(''),
+    [editAddress, setEditAddress] = useState('');
   const [name, setName] = useState(''),
     [busy, setBusy] = useState(false),
     [editing, setEditing] = useState<string>(),
@@ -39,6 +42,10 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
     try {
       const result = await getCompanyProfile();
       setData(result);
+      setAddress(
+        (current) =>
+          current || (!result.locations.length ? (result.initialLocationAddress ?? '') : ''),
+      );
       setName(
         (current) =>
           current || (!result.locations.length ? (result.initialLocationName ?? '') : ''),
@@ -124,7 +131,7 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
           </div>
           <Card>
             <SectionTitle title={role === 'distributor' ? 'Add a warehouse' : 'Add a location'} />
-            <div className="workspace-profile-form">
+            <div className="workspace-profile-form workspace-profile-form--location">
               <Input
                 label={role === 'distributor' ? 'Warehouse name' : 'Location name'}
                 value={name}
@@ -133,38 +140,50 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
                 required
                 placeholder="A name your company can recognize"
               />
-              <Btn
-                icon={<Plus size={16} />}
-                disabled={busy || !name.trim()}
-                onClick={() =>
-                  void run(async () => {
-                    const prepared = await prepareOrder({
-                      action: 'location',
-                      operationId: crypto.randomUUID(),
-                      label: name.trim(),
-                    });
-                    await submitProductionTransaction(prepared.transaction, data.wallet);
-                    if (role === 'distributor') {
-                      try {
-                        await publishWarehouse(prepared.resultId, name.trim());
-                      } catch {
-                        setNotice(
-                          'Location registered. Complete warehouse registration using the button on its card.',
-                        );
-                        return;
+              <Textarea
+                label="Dispatch / receiving address"
+                value={address}
+                onChange={setAddress}
+                required
+                maxLength={1000}
+                placeholder="Street address, building or unit, city, postcode and country"
+              />
+              <div className="action-row">
+                <Btn
+                  icon={<Plus size={16} />}
+                  disabled={busy || !name.trim() || !address.trim()}
+                  onClick={() =>
+                    void run(async () => {
+                      const prepared = await prepareOrder({
+                        action: 'location',
+                        operationId: crypto.randomUUID(),
+                        label: name.trim(),
+                        address: address.trim(),
+                      });
+                      await submitProductionTransaction(prepared.transaction, data.wallet);
+                      if (role === 'distributor') {
+                        try {
+                          await publishWarehouse(prepared.resultId, name.trim());
+                        } catch {
+                          setNotice(
+                            'Location registered. Complete warehouse registration using the button on its card.',
+                          );
+                          return;
+                        }
                       }
-                    }
-                    setName('');
-                    setNotice('Location registered successfully.');
-                  })
-                }
-              >
-                {busy
-                  ? 'Waiting for confirmation…'
-                  : role === 'distributor'
-                    ? 'Register warehouse'
-                    : 'Register location'}
-              </Btn>
+                      setName('');
+                      setAddress('');
+                      setNotice('Location registered successfully.');
+                    })
+                  }
+                >
+                  {busy
+                    ? 'Waiting for confirmation…'
+                    : role === 'distributor'
+                      ? 'Register warehouse'
+                      : 'Register location'}
+                </Btn>
+              </div>
             </div>
             {role === 'distributor' && (
               <p className="workspace-list-guidance">
@@ -173,13 +192,18 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
               </p>
             )}
           </Card>
-          <section className="workspace-profile-locations" aria-label="Your registered locations">
+          <section
+            className={`workspace-profile-locations${data.locations.length ? '' : ' workspace-profile-locations--empty'}`}
+            aria-label="Your registered locations"
+          >
             {!data.locations.length && (
-              <EmptyState
-                icon={<MapPin size={38} />}
-                title="No registered locations"
-                sub="Register your first location to use it on orders and deliveries."
-              />
+              <div className="workspace-profile-empty">
+                <EmptyState
+                  icon={<MapPin size={38} />}
+                  title="No registered locations"
+                  sub="Register your first location to use it on orders and deliveries."
+                />
+              </div>
             )}
             {data.locations.map((location) => (
               <Card key={location.location} className="workspace-location-card">
@@ -188,6 +212,9 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
                   <div>
                     <span>{location.warehouse ? 'Warehouse' : 'Company location'}</span>
                     <h3>{location.label}</h3>
+                    <p style={{ whiteSpace: 'pre-line' }}>
+                      {location.address || 'Address not provided'}
+                    </p>
                   </div>
                   <Badge
                     label={
@@ -212,7 +239,7 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
                     </dd>
                   </div>
                 </dl>
-                <div className="workspace-location-actions">
+                <div className="workspace-location-actions action-row">
                   <Btn
                     variant="outline"
                     size="sm"
@@ -221,9 +248,10 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
                     onClick={() => {
                       setEditing(location.location);
                       setEditName(location.label);
+                      setEditAddress(location.address ?? '');
                     }}
                   >
-                    Edit display name
+                    Edit location
                   </Btn>
                   {role === 'distributor' && !location.warehouse && (
                     <Btn
@@ -253,7 +281,7 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
       )}
       {editing && (
         <Modal
-          title="Edit location display name"
+          title="Edit location details"
           onClose={() => {
             if (!busy) setEditing(undefined);
           }}
@@ -266,22 +294,31 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
               required
               maxLength={160}
             />
+            <Textarea
+              label="Dispatch / receiving address"
+              value={editAddress}
+              onChange={setEditAddress}
+              required
+              maxLength={1000}
+            />
             <p className="workspace-list-guidance">
-              This changes the displayed name. Existing on-chain identifiers and historical records
-              stay fixed.
+              Use a new location for a different physical site. Editing current profile details does
+              not move stock or rewrite historical location identifiers.
             </p>
-            <Btn
-              disabled={busy || !editName.trim()}
-              onClick={() =>
-                void run(async () => {
-                  await updateLocationLabel(editing, editName.trim());
-                  setEditing(undefined);
-                  setNotice('Location display name updated.');
-                })
-              }
-            >
-              Save name
-            </Btn>
+            <div className="action-row">
+              <Btn
+                disabled={busy || !editName.trim() || !editAddress.trim()}
+                onClick={() =>
+                  void run(async () => {
+                    await updateLocationLabel(editing, editName.trim(), editAddress.trim());
+                    setEditing(undefined);
+                    setNotice('Location details updated.');
+                  })
+                }
+              >
+                Save location
+              </Btn>
+            </div>
           </div>
         </Modal>
       )}

@@ -11,7 +11,7 @@ const credentialAbi = [
   'function credentialIdByHash(bytes32) view returns (bytes32)',
   'function effectiveStatus(bytes32) view returns (uint8)',
   'function getCredential(bytes32) view returns (tuple(bytes32 credentialHash,string encryptedCid,address issuer,address subject,uint8 credentialType,uint8 status,uint64 issuedAt,uint64 expiresAt,uint64 updatedAt))',
-  'function registerCredential(bytes32,bytes32,string,address,uint8,uint64)',
+  'function registerCredential(bytes32 credentialId, bytes32 credentialHash, string encryptedCid, address subject, uint8 credentialType, uint64 expiresAt)',
 ] as const;
 const ingredientAbi = [
   'error InvalidInput()',
@@ -19,7 +19,7 @@ const ingredientAbi = [
   'function stakeholders() view returns (address)',
   'function credentials() view returns (address)',
   'function getBatch(bytes32) view returns (tuple(address supplier,bytes32 metadataHash,string encryptedCid,bytes32 credentialId,uint256 totalQuantity,uint256 availableQuantity,bytes32 unit,uint64 producedAt,uint64 expiresAt,uint8 status))',
-  'function registerBatch(bytes32,bytes32,string,bytes32,uint256,bytes32,uint64,uint64)',
+  'function registerBatch(bytes32 batchId, bytes32 metadataHash, string encryptedCid, bytes32 credentialId, uint256 quantity, bytes32 unit, uint64 producedAt, uint64 expiresAt)',
 ] as const;
 
 const credentialInterface = new Interface(credentialAbi);

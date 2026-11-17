@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 
@@ -78,6 +79,7 @@ export function IngredientBatchDetail({
 
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back to Batches</BackNavigation>
       <div
         style={{
           display: 'flex',
@@ -87,9 +89,6 @@ export function IngredientBatchDetail({
           flexWrap: 'wrap',
         }}
       >
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back to Batches
-        </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
           {listing?.name ?? batch.ingredientName} · {batch.batchReference}
         </h2>

@@ -103,10 +103,7 @@ export function StakeholderCredentialPage({
         title="My Company Identity"
         sub="Your company identity, credential status and verification results."
         action={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-            <Btn size="xs" disabled={verifying} onClick={() => void verify()}>
-              {verifying ? 'Verifying...' : 'Verify My Credential'}
-            </Btn>
+          <div className="action-row">
             <Btn size="xs" variant="outline" onClick={download}>
               <Download size={14} /> Download Identity Summary
             </Btn>
@@ -119,6 +116,9 @@ export function StakeholderCredentialPage({
             </Btn>
             <Btn size="xs" variant="outline" onClick={() => void load()}>
               Refresh
+            </Btn>
+            <Btn size="xs" disabled={verifying} onClick={() => void verify()}>
+              {verifying ? 'Verifying...' : 'Verify My Credential'}
             </Btn>
           </div>
         }

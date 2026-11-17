@@ -186,7 +186,7 @@ export function PersonalPermissions({ company }: { company: ChainCredential }) {
           <p>
             This changes only this wallet. MetaMask will ask you to sign an on-chain transaction.
           </p>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div className="action-row">
             <Btn disabled={busy} onClick={() => setPending(null)}>
               Cancel
             </Btn>

@@ -473,11 +473,11 @@ function DeliveryCard({
             />
           </div>
         </div>
-        <div className="distributor-delivery-card__actions">
-          <Btn onClick={onReview}>Review delivery</Btn>
+        <div className="distributor-delivery-card__actions action-row">
           <Btn variant="outline" disabled={secondaryDisabled} onClick={onSecondary}>
             {secondaryLabel}
           </Btn>
+          <Btn onClick={onReview}>Review delivery</Btn>
         </div>
       </div>
 

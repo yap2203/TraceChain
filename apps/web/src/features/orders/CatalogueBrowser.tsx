@@ -1,3 +1,4 @@
+import { formatLocationLabel } from './location-format';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { FilterX, PackageSearch, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -387,7 +388,7 @@ function CatalogueCard({
         {distributorUnavailable && (
           <p className="catalogue-card__request-status">Not yet available to request</p>
         )}
-        <div className="catalogue-card__actions">
+        <div className="catalogue-card__actions action-row">
           <Btn variant="outline" size="sm" onClick={onDetails}>
             View details
           </Btn>
@@ -570,7 +571,7 @@ function CatalogueDetail({
                     { value: '', label: 'Select your receiving location' },
                     ...locations.map((entry) => ({
                       value: entry.location,
-                      label: entry.label ?? entry.location,
+                      label: formatLocationLabel(entry, entry.location),
                     })),
                   ]}
                 />
@@ -607,12 +608,12 @@ function CatalogueDetail({
               required
             />
             <Input label="Private note" value={note} onChange={setNote} maxLength={500} />
-            <div className="catalogue-detail__actions">
-              <Btn type="submit" disabled={busy || !validQuantity}>
-                {busy ? 'Submitting…' : 'Submit request'}
-              </Btn>
+            <div className="catalogue-detail__actions action-row">
               <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
                 Back
+              </Btn>
+              <Btn type="submit" disabled={busy || !validQuantity}>
+                {busy ? 'Submitting…' : 'Submit request'}
               </Btn>
             </div>
           </form>
@@ -659,12 +660,12 @@ function CatalogueDetail({
           </p>
         </section>
         {mode === 'details' && (
-          <div className="catalogue-detail__actions">
-            <Btn disabled={!item.active} onClick={() => onMode('quantity')}>
-              Request quantity
-            </Btn>
+          <div className="catalogue-detail__actions action-row">
             <Btn variant="outline" onClick={() => onMode('evidence')}>
               Request evidence or information
+            </Btn>
+            <Btn disabled={!item.active} onClick={() => onMode('quantity')}>
+              Request quantity
             </Btn>
           </div>
         )}
@@ -749,7 +750,13 @@ function CatalogueDetail({
                 />
               ))}
             </div>
-            <div className="catalogue-detail__actions">
+            <div className="catalogue-detail__actions action-row">
+              <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
+                Back
+              </Btn>
+              <Btn type="button" variant="outline" onClick={onOpenEvidence}>
+                Open evidence responses
+              </Btn>
               <Btn
                 disabled={
                   busy ||
@@ -761,12 +768,6 @@ function CatalogueDetail({
                 type="submit"
               >
                 {busy ? 'Submitting…' : 'Send information request'}
-              </Btn>
-              <Btn type="button" variant="outline" onClick={onOpenEvidence}>
-                Open evidence responses
-              </Btn>
-              <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
-                Back
               </Btn>
             </div>
           </form>

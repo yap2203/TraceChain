@@ -531,3 +531,21 @@ separate and never run automatically during production.
 - Company-application preparation accepts optional documents with kind, fileName, mimeType and base64 data; the document digest is included in the applicant's signed binding. Current registration UI requires three supporting files. The 58 MB JSON ceiling accommodates four 10 MB files encoded as base64 plus the optional logo; per-file type/signature and 10 MB limits are checked separately.
 
 Review requires SIWE ownership of the confirmed application or current authorized on-chain Admin; pending applicants can review their own files without operational role access. Storage uses encrypted IPFS and an encrypted local review cache. Download does not establish authenticity of applicant-provided claims. No contract changes are needed.
+
+### Physical location details
+
+Company application preparation accepts optional initialLocationAddress (1-1000 trimmed characters),
+bound into the applicant signature. The new registration form requires it. The API encrypts/pins
+the address and persists initialLocationDetails ciphertext/CID rather than readable address bytes.
+GET /api/orders/profile returns the authenticated company's initial name/address draft and registered
+locations with optional address. Location preparation accepts address beside label; PATCH
+/api/orders/profile/locations/:location accepts {label, address}. Owner checks precede persistence;
+a legacy label-only patch preserves any saved address. Addresses are encrypted in existing location
+metadata and returned only inside authorized participant views. No contract ABI changes.
+
+### Wallet confirmation
+
+Prepared transactions contain chain ID, target, value and encoded call data. The optional
+`walletAction` metadata and preview-message helpers were removed when the trial ended.
+The browser requests normal MetaMask transaction confirmation without an extra preview signature.
+Company-registration ownership signatures, SIWE, authorization and transaction simulation remain.

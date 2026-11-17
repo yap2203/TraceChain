@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
@@ -147,8 +148,7 @@ export function InformationRequests({
   if (selectedOrder)
     return (
       <div style={{ display: 'grid', gap: 16 }}>
-        <Btn
-          variant="outline"
+        <BackNavigation
           onClick={() => {
             setSelectedOrder(undefined);
             onClearSelection?.();
@@ -156,7 +156,7 @@ export function InformationRequests({
           }}
         >
           Back to Information requests
-        </Btn>
+        </BackNavigation>
         <OrdersPage
           key={selectedOrder}
           role="supplier"

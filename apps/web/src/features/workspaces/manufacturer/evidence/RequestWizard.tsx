@@ -1,3 +1,5 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import { RequiredMarker } from '../../../../components/ui/RequiredLabel';
 import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { T, UI, MONO, Btn, Card, Badge, Alert, StepProgress } from '../../shared/ui';
@@ -72,10 +74,8 @@ export function RequestWizard({
 
   return (
     <div>
+      <BackNavigation onClick={onBack}>Back</BackNavigation>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <Btn onClick={onBack} variant="ghost" size="sm">
-          Back
-        </Btn>
         <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
           Request Ingredient Evidence
         </h2>
@@ -160,8 +160,8 @@ export function RequestWizard({
                 ))}
               </div>
             )}
-            <div style={{ marginTop: 20 }}>
-              <Btn onClick={() => setStep(1)} full disabled={!suppId || !batchId}>
+            <div style={{ marginTop: 20 }} className="action-row">
+              <Btn onClick={() => setStep(1)} disabled={!suppId || !batchId}>
                 Continue
               </Btn>
             </div>
@@ -221,11 +221,11 @@ export function RequestWizard({
                 );
               })}
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="action-row">
               <Btn onClick={() => setStep(0)} variant="ghost">
                 Back
               </Btn>
-              <Btn onClick={() => setStep(2)} full disabled={chosenClaims.length === 0}>
+              <Btn onClick={() => setStep(2)} disabled={chosenClaims.length === 0}>
                 Continue
               </Btn>
             </div>
@@ -318,7 +318,7 @@ export function RequestWizard({
             >
               <div>
                 <div style={{ fontSize: 12, color: T.text2, fontWeight: 500, marginBottom: 6 }}>
-                  Reason for Request <span style={{ color: T.red }}>*</span>
+                  Reason for Request <RequiredMarker />
                 </div>
                 <textarea
                   value={reason}
@@ -340,7 +340,7 @@ export function RequestWizard({
               </div>
               <div>
                 <div style={{ fontSize: 12, color: T.text2, fontWeight: 500, marginBottom: 6 }}>
-                  Response Due Date <span style={{ color: T.red }}>*</span>
+                  Response Due Date <RequiredMarker />
                 </div>
                 <input
                   type="date"
@@ -367,11 +367,11 @@ export function RequestWizard({
               </div>
             )}
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <div style={{ marginTop: 14 }} className="action-row">
               <Btn onClick={() => setStep(1)} variant="ghost" disabled={sending}>
                 Back
               </Btn>
-              <Btn onClick={send} full disabled={!canSend || sending || sent}>
+              <Btn onClick={send} disabled={!canSend || sending || sent}>
                 Send Evidence Request
               </Btn>
             </div>

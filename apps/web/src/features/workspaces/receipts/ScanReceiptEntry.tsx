@@ -87,7 +87,7 @@ export function ScanReceiptEntry({
               <div style={{ fontSize: 12, color: T.text2, marginBottom: 14 }}>
                 Tap to activate camera
               </div>
-              <div onClick={(e) => e.stopPropagation()}>
+              <div onClick={(e) => e.stopPropagation()} className="action-row">
                 <Btn size="sm" variant="secondary" onClick={() => setCameraMode(true)}>
                   Enable Camera
                 </Btn>
@@ -115,10 +115,7 @@ export function ScanReceiptEntry({
               <div style={{ fontSize: 12, color: T.text2, marginBottom: 14 }}>
                 Point at the Receipt Confirmation QR code
               </div>
-              <div
-                style={{ display: 'flex', gap: 8, justifyContent: 'center' }}
-                onClick={(e) => e.stopPropagation()}
-              >
+              <div onClick={(e) => e.stopPropagation()} className="action-row">
                 <Btn size="sm" variant="outline" onClick={() => setCameraMode(false)}>
                   Cancel
                 </Btn>
@@ -211,7 +208,7 @@ export function ScanReceiptEntry({
               type="warning"
               message="This is a product information QR. Use the shipment's Receipt Confirmation QR to confirm receipt."
             />
-            <div style={{ marginTop: 8 }}>
+            <div style={{ marginTop: 8 }} className="action-row">
               <Btn variant="outline" size="sm">
                 View Product Traceability
               </Btn>

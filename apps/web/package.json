@@ -31,6 +31,7 @@
     "qrcode-generator": "^1.5.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-phone-number-input": "^3.4.18",
     "react-router-dom": "^7.18.4",
     "siwe": "^3.0.0"
   },

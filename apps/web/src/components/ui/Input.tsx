@@ -1,3 +1,4 @@
+import { RequiredLabel } from './RequiredLabel';
 import { useId, useState, type InputHTMLAttributes } from 'react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -25,7 +26,9 @@ export function Input({
 
   return (
     <label className={`field ${className}`.trim()} htmlFor={inputId}>
-      <span className="field__label">{label}</span>
+      <span className="field__label">
+        <RequiredLabel label={label} required={props.required} />
+      </span>
       <input
         aria-describedby={descriptionId}
         aria-invalid={Boolean(error)}

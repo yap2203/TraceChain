@@ -195,7 +195,7 @@ function OwnedProducts({
         title="Products"
         sub="Manage products made by your company."
         action={
-          <div className="ingredient-page-actions">
+          <div className="ingredient-page-actions action-row">
             <Btn
               variant="outline"
               icon={<RefreshCw size={16} />}

@@ -429,7 +429,7 @@ function SupplierRequestCard({
           <strong className={deadlineClass(entry.expiresAt)}>
             {deadlineText(entry.expiresAt)}
           </strong>
-          <div className="supplier-request-action">
+          <div className="supplier-request-action action-row">
             <Btn variant="outline" onClick={() => onView(entry.orderId)}>
               Review request
             </Btn>

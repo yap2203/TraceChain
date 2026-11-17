@@ -83,7 +83,7 @@ export default function AuditReport() {
             : `Current authorized-wallet snapshot generated ${generatedAt.toLocaleString()}`
         }
         action={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div className="action-row">
             <Btn
               size="sm"
               variant="outline"
