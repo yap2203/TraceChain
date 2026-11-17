@@ -20,7 +20,7 @@ import {
 import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { recordStatuses, shortChainId } from '../workspaces/shared/operational-format';
-import { CompanyAvatar } from '../orders/CatalogueMedia';
+import { CatalogueImage, CompanyAvatar } from '../orders/CatalogueMedia';
 
 const fields: Record<string, string> = {
   name: 'Ingredient',
@@ -87,6 +87,8 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
   const route = data?.routes.find((entry) => entry.id === routeId) ?? data?.routes[0];
   const stages = route ? (backward ? [...route.stages].reverse() : route.stages) : [];
   const stage = stages.find((entry) => entry.id === activeStage) ?? stages[0];
+  const recordedFacts = stages.flatMap((entry) => entry.records);
+  const latestFact = recordedFacts[recordedFacts.length - 1];
   const evidence = (ingredient: OrderRecord) =>
     navigate(
       workspacePath(role, 'sent-requests') +
@@ -141,14 +143,61 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
             </div>
             {data.root && (
               <Card>
-                <div className="workspace-record-heading !mb-0">
-                  <Route size={24} aria-hidden="true" />
-                  <div className="workspace-record-heading__identity">
-                    <span className="workspace-record-heading__eyebrow">
-                      {data.root.kind === 'product' ? 'Product journey' : 'Ingredient journey'}
-                    </span>
-                    <h2>{data.root.name}</h2>
-                    <p>{data.root.reference}</p>
+                <div className="traceability-item-summary">
+                  <div className="traceability-item-summary__image">
+                    <CatalogueImage alt={`${data.root.name} image`} category={data.root.kind} />
+                  </div>
+                  <div className="traceability-item-summary__content">
+                    <div className="workspace-record-heading !mb-0">
+                      <Route size={24} aria-hidden="true" />
+                      <div className="workspace-record-heading__identity">
+                        <span className="workspace-record-heading__eyebrow">
+                          {data.root.kind === 'product' ? 'Product journey' : 'Ingredient journey'}
+                        </span>
+                        <h2>{data.root.name}</h2>
+                        <p>{data.root.reference}</p>
+                      </div>
+                      <Badge
+                        label={
+                          route?.stages.some((entry) => entry.state === 'in-progress')
+                            ? 'In progress'
+                            : 'Recorded'
+                        }
+                        variant={
+                          route?.stages.some((entry) => entry.state === 'in-progress')
+                            ? 'pending'
+                            : 'active'
+                        }
+                      />
+                    </div>
+                    <dl className="traceability-item-summary__facts">
+                      <div>
+                        <dt>Current holder</dt>
+                        <dd>
+                          {latestFact?.recipient ??
+                            latestFact?.company ??
+                            latestFact?.distributor ??
+                            'Not recorded'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Current location</dt>
+                        <dd>
+                          {latestFact?.location ??
+                            latestFact?.destination ??
+                            latestFact?.productionLocationName ??
+                            'Not recorded'}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Evidence status</dt>
+                        <dd>
+                          {route?.ingredients.length
+                            ? `${route.ingredients.length} linked ingredient record${route.ingredients.length === 1 ? '' : 's'}`
+                            : 'No linked evidence stage recorded'}
+                        </dd>
+                      </div>
+                    </dl>
                   </div>
                 </div>
               </Card>

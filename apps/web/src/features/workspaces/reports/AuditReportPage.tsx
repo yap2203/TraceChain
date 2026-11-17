@@ -1,6 +1,6 @@
 import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
-import { FileSearch, RefreshCw } from 'lucide-react';
-import { useMemo } from 'react';
+import { FileSearch, RefreshCw, Search } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 
 import { type OperationalData } from '../../blockchain/blockchain.api';
@@ -12,11 +12,15 @@ import {
   Card,
   EmptyState,
   HashChip,
+  Input,
   SectionTitle,
+  SelectField,
+  StatusTabs,
   T,
   Table,
   TD,
   TR,
+  TechnicalDetails,
   WorkflowHelp,
 } from '../shared/ui';
 
@@ -32,6 +36,22 @@ interface AuditRow {
 export default function AuditReport() {
   const { data, error, loading, reload } = useOperationalData();
   const rows = useMemo(() => auditRows(data), [data]);
+  const [category, setCategory] = useState<'All' | AuditRow['category']>('All');
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
+  const filteredRows = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    return rows.filter(
+      (row) =>
+        (category === 'All' || row.category === category) &&
+        (status === 'all' || row.status === status) &&
+        (!query ||
+          [row.category, row.party, row.status, row.quantity]
+            .join(' ')
+            .toLocaleLowerCase()
+            .includes(query)),
+    );
+  }, [category, rows, search, status]);
   const generatedAt = useMemo(() => new Date(), [data]);
   const exportCsv = () =>
     download(
@@ -111,11 +131,105 @@ export default function AuditReport() {
       ) : (
         <div style={{ display: 'grid', gap: 16 }}>
           <Summary data={data} loading={loading} />
-          <Products data={data} />
-          <Ingredients data={data} />
-          <Transfers data={data} />
-          <Evidence data={data} />
-          <References rows={rows} />
+          <StatusTabs
+            label="Filter audit records by type"
+            value={category}
+            onChange={setCategory}
+            variant="connected"
+            tabs={[
+              { value: 'All', label: 'All records', count: rows.length },
+              {
+                value: 'Ingredient',
+                label: 'Ingredients',
+                count: rows.filter((row) => row.category === 'Ingredient').length,
+              },
+              {
+                value: 'Product',
+                label: 'Products',
+                count: rows.filter((row) => row.category === 'Product').length,
+              },
+              {
+                value: 'Transfer',
+                label: 'Transfers',
+                count: rows.filter((row) => row.category === 'Transfer').length,
+              },
+              {
+                value: 'Evidence',
+                label: 'Evidence',
+                count: rows.filter((row) => row.category === 'Evidence').length,
+              },
+            ]}
+          />
+          <div className="audit-filter-toolbar">
+            <Input
+              label="Search audit records"
+              type="search"
+              icon={<Search size={16} />}
+              value={search}
+              onChange={setSearch}
+              placeholder="Record type, company, status or quantity"
+            />
+            <SelectField
+              label="Status"
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: 'all', label: 'All statuses' },
+                ...Array.from(new Set(rows.map((row) => row.status))).map((value) => ({
+                  value,
+                  label: value,
+                })),
+              ]}
+            />
+          </div>
+          {!filteredRows.length ? (
+            <EmptyState
+              icon={<Search size={36} />}
+              title="No audit records match these filters"
+              sub="Change the record type, status or search text."
+              action={
+                <Btn
+                  onClick={() => {
+                    setCategory('All');
+                    setSearch('');
+                    setStatus('all');
+                  }}
+                >
+                  Clear filters
+                </Btn>
+              }
+            />
+          ) : (
+            <div className="audit-record-list">
+              {filteredRows.map((row) => (
+                <article className="audit-record-card" key={`${row.category}-${row.id}`}>
+                  <div className="audit-record-card__heading">
+                    <div>
+                      <span>{row.category}</span>
+                      <h3>{row.party}</h3>
+                    </div>
+                    <Status value={row.status} />
+                  </div>
+                  <dl>
+                    <div>
+                      <dt>Quantity</dt>
+                      <dd>{row.quantity || 'Not applicable'}</dd>
+                    </div>
+                    <div>
+                      <dt>Current state</dt>
+                      <dd>{row.status}</dd>
+                    </div>
+                  </dl>
+                  <TechnicalDetails
+                    fields={[
+                      { label: 'Record ID', value: row.id },
+                      { label: 'Integrity reference', value: row.reference },
+                    ]}
+                  />
+                </article>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

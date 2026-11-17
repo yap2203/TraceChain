@@ -1,5 +1,20 @@
 # Project Progress
 
+## 2026-11-17 — Cross-role workspace UI consistency
+
+- Added one shared stakeholder-overview presentation for Supplier, Manufacturer, Distributor and
+  Retailer dashboards, with compact role-specific metrics, readable attention and activity records,
+  company/item media fallbacks, explicit review actions and technical identifiers kept secondary.
+- Consolidated shipment list presentation across stakeholder routes with four status summaries,
+  counted tabs, search, expandable filters, sorting, readable quantities, company routes, logistics
+  facts and read-only Review shipment actions. Information requests now share compact request cards,
+  party context, next-action wording, filtering and collapsed identifiers; Retailer received products,
+  company locations and authenticated traceability received matching responsive presentations.
+- Improved stakeholder and Administrator audit readability with record tabs, search, business-first
+  cards, summary metrics and collapsed identifiers. Receipt discrepancy management now uses the
+  shared page header and summary cards. Existing transaction preparation, MetaMask actions, API
+  calls, authorization, QR validation, contracts and deployment state were not changed.
+
 ## 2026-11-17 — Manufacturer product presentation and production location
 
 - Added a Product presentation step to real Manufacturer product creation. The stable production

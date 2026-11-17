@@ -1,6 +1,6 @@
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { FileSearch } from 'lucide-react';
+import { FileCheck2, FileClock, FileSearch, Search, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
@@ -9,11 +9,22 @@ import {
   type ChainCredential,
 } from '../../../blockchain/blockchain.api';
 import type { ChainApplication } from '../applications/types';
-import { Badge, Btn, Card, EmptyState, SectionTitle, T, Table, TD, TR } from '../../shared/ui';
+import {
+  Badge,
+  Btn,
+  EmptyState,
+  Input,
+  InventorySummaryCard,
+  SectionTitle,
+  StatusTabs,
+  T,
+  TechnicalDetails,
+} from '../../shared/ui';
 
 interface AuditRow {
   category: string;
   id: string;
+  name: string;
   subject: string;
   status: string;
   timestamp: number;
@@ -25,6 +36,8 @@ export default function AdminAuditReport() {
   const [credentials, setCredentials] = useState<ChainCredential[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [category, setCategory] = useState('all');
+  const [search, setSearch] = useState('');
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -50,6 +63,7 @@ export default function AdminAuditReport() {
         ...applications.map((item) => ({
           category: 'Application',
           id: item.id,
+          name: item.companyName ?? 'Company application',
           subject: item.applicant,
           status: item.status,
           timestamp: item.updatedAt,
@@ -58,6 +72,7 @@ export default function AdminAuditReport() {
         ...credentials.map((item) => ({
           category: 'Credential',
           id: item.credentialId,
+          name: item.companyName,
           subject: item.subject,
           status: item.status,
           timestamp: item.updatedAt,
@@ -66,6 +81,7 @@ export default function AdminAuditReport() {
         ...credentials.map((item) => ({
           category: 'Stakeholder access',
           id: item.applicationId,
+          name: item.companyName,
           subject: item.subject,
           status: item.stakeholderStatus,
           timestamp: item.stakeholderUpdatedAt,
@@ -74,6 +90,15 @@ export default function AdminAuditReport() {
       ].sort((a, b) => b.timestamp - a.timestamp),
     [applications, credentials],
   );
+  const visibleRows = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase();
+    return rows.filter(
+      (row) =>
+        (category === 'all' || row.category === category) &&
+        (!query ||
+          [row.name, row.category, row.status].join(' ').toLocaleLowerCase().includes(query)),
+    );
+  }, [category, rows, search]);
   const snapshot = {
     chainScope: 'Configured TraceChain network',
     generatedAt: new Date().toISOString(),
@@ -141,59 +166,115 @@ export default function AdminAuditReport() {
           </Btn>
         </div>
       )}
-      <Card padding="0">
+      <div className="admin-audit-summary" aria-label="Registry audit summary">
+        <InventorySummaryCard
+          icon={<FileClock size={20} />}
+          label="Applications"
+          value={applications.length}
+        />
+        <InventorySummaryCard
+          icon={<FileCheck2 size={20} />}
+          label="Credentials"
+          value={credentials.length}
+        />
+        <InventorySummaryCard
+          icon={<ShieldCheck size={20} />}
+          label="Active stakeholders"
+          value={credentials.filter((item) => item.stakeholderStatus === 'active').length}
+        />
+      </div>
+      <StatusTabs
+        label="Filter registry audit records by type"
+        value={category}
+        onChange={setCategory}
+        variant="connected"
+        tabs={[
+          { value: 'all', label: 'All records', count: rows.length },
+          {
+            value: 'Application',
+            label: 'Applications',
+            count: rows.filter((row) => row.category === 'Application').length,
+          },
+          {
+            value: 'Credential',
+            label: 'Credentials',
+            count: rows.filter((row) => row.category === 'Credential').length,
+          },
+          {
+            value: 'Stakeholder access',
+            label: 'Stakeholder access',
+            count: rows.filter((row) => row.category === 'Stakeholder access').length,
+          },
+        ]}
+      />
+      <div className="admin-audit-toolbar">
+        <Input
+          label="Search registry records"
+          type="search"
+          icon={<Search size={16} />}
+          value={search}
+          onChange={setSearch}
+          placeholder="Company, record type or status"
+        />
+      </div>
+      <div className="admin-audit-records">
         {!loading && rows.length === 0 ? (
           <EmptyState
             icon={<FileSearch size={44} />}
             title="No auditable registry records"
             sub="Applications and issued credentials will appear here."
           />
+        ) : !visibleRows.length ? (
+          <EmptyState
+            icon={<Search size={40} />}
+            title="No registry records match these filters"
+            sub="Change the record type or search text."
+            action={
+              <Btn
+                onClick={() => {
+                  setCategory('all');
+                  setSearch('');
+                }}
+              >
+                Clear filters
+              </Btn>
+            }
+          />
         ) : (
-          <Table
-            headers={[
-              'Category',
-              'Record ID',
-              'Wallet / subject',
-              'Status',
-              'Last update',
-              'Integrity reference',
-            ]}
-          >
-            {rows.map((row, index) => (
-              <TR key={`${row.category}-${row.id}-${index}`}>
-                <TD bold>{row.category}</TD>
-                <TD mono muted>
-                  {short(row.id)}
-                </TD>
-                <TD mono>{short(row.subject)}</TD>
-                <TD>
-                  <Badge
-                    label={row.status}
-                    variant={
-                      row.status === 'active' || row.status === 'approved'
-                        ? 'verified'
-                        : row.status === 'suspended' || row.status === 'pending'
-                          ? 'pending'
-                          : 'rejected'
-                    }
-                  />
-                </TD>
-                <TD muted>{new Date(row.timestamp * 1_000).toLocaleString()}</TD>
-                <TD mono muted>
-                  {short(row.reference)}
-                </TD>
-              </TR>
-            ))}
-          </Table>
+          visibleRows.map((row, index) => (
+            <article className="admin-audit-record" key={`${row.category}-${row.id}-${index}`}>
+              <div className="admin-audit-record__heading">
+                <div>
+                  <span>{row.category}</span>
+                  <h3>{row.name}</h3>
+                </div>
+                <Badge
+                  label={row.status}
+                  variant={
+                    row.status === 'active' || row.status === 'approved'
+                      ? 'verified'
+                      : row.status === 'suspended' || row.status === 'pending'
+                        ? 'pending'
+                        : 'rejected'
+                  }
+                />
+              </div>
+              <p>Last updated {new Date(row.timestamp * 1_000).toLocaleString()}</p>
+              <TechnicalDetails
+                fields={[
+                  { label: 'Record ID', value: row.id },
+                  { label: 'Wallet / subject', value: row.subject },
+                  { label: 'Integrity reference', value: row.reference },
+                ]}
+              />
+            </article>
+          ))
         )}
-      </Card>
+      </div>
     </div>
   );
 }
 
-function short(value: string) {
-  return value.length > 22 ? `${value.slice(0, 10)}...${value.slice(-7)}` : value;
-}
 function csv(rows: AuditRow[]) {
   const quote = (value: unknown) => `"${String(value).replaceAll('"', '""')}"`;
   return [

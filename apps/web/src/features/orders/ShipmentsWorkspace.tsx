@@ -1,16 +1,7 @@
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  Camera,
-  CheckCircle2,
-  Package,
-  Plus,
-  RefreshCw,
-  Search,
-  Truck,
-  Upload,
-} from 'lucide-react';
+import { Camera, CheckCircle2, Package, Plus, RefreshCw, Truck, Upload } from 'lucide-react';
 import { decodeShipmentQr } from '@tracechain/shared';
 import {
   getOrders,
@@ -49,6 +40,7 @@ import { ShipmentWorkflowDetail } from './ShipmentWorkflowDetail';
 import { DistributorIngredientDeliveries } from './DistributorIngredientDeliveries';
 import { DistributorIngredientDeliveryReview } from './DistributorIngredientDeliveryReview';
 import { DistributorIngredientDispatchForm } from './DistributorIngredientDispatchForm';
+import { ShipmentList } from './ShipmentList';
 
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const short = (value?: string) =>
@@ -119,8 +111,7 @@ export function ShipmentsWorkspace({
             (role === 'manufacturer' || (role === 'distributor' && initialView === 'transfer')
               ? 'product'
               : 'ingredient')),
-    ),
-    [search, setSearch] = useState('');
+    );
   const [selected, setSelected] = useState(initialShipmentId),
     [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState(initialOrderId),
     [reviewDeliveryOrderId, setReviewDeliveryOrderId] = useState(''),
@@ -300,10 +291,7 @@ export function ShipmentsWorkspace({
           : !same(entry.recipient, data?.actor))) &&
       (!trackedOrder ||
         same(entry.orderId, trackedOrder.orderId) ||
-        (Number(entry.leg) === 1 && same(entry.batchId, trackedOrder.custodyOrder.batchId))) &&
-      `${entry.itemName ?? ''} ${entry.shipmentId} ${entry.senderName ?? ''} ${entry.recipientName ?? ''}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+        (Number(entry.leg) === 1 && same(entry.batchId, trackedOrder.custodyOrder.batchId))),
   );
   const distributorIngredientShipments = shipments.filter(
     (entry) =>
@@ -1089,14 +1077,6 @@ export function ShipmentsWorkspace({
             />
           ) : (
             <>
-              <Input
-                label="Search shipments or stock"
-                icon={<Search size={16} />}
-                type="search"
-                value={search}
-                onChange={setSearch}
-                placeholder="Search ingredient/product name, company or shipment reference"
-              />
               {section !== 'intake' &&
                 role === 'distributor' &&
                 kind === 'ingredient' &&
@@ -1130,113 +1110,16 @@ export function ShipmentsWorkspace({
                     ))}
                   </Card>
                 )}
-              {visibleShipments.length > 0 && (
-                <div
-                  className="workspace-table-scroll"
-                  role="region"
-                  aria-label="Shipment records"
-                  tabIndex={0}
-                >
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr>
-                        {[
-                          'Shipment / item',
-                          'Batch',
-                          'Sender',
-                          'Destination',
-                          'Expected / received',
-                          'ETA / status',
-                          '',
-                        ].map((header) => (
-                          <th key={header} className="p-[12px]">
-                            {header}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleShipments.map((entry) => (
-                        <tr key={entry.shipmentId} className="border-b border-[var(--c-border)]">
-                          <td className="p-[12px]">
-                            SHP-{entry.shipmentId.slice(2, 10).toUpperCase()}
-                            <br />
-                            <strong>
-                              {entry.itemName ?? item(entry.batchId)?.name ?? 'Registered batch'}
-                            </strong>
-                          </td>
-                          <td className="p-[12px]">
-                            {item(entry.batchId)?.batchReference ?? short(entry.batchId)}
-                          </td>
-                          <td className="p-[12px]">
-                            <span className="workspace-company-cell">
-                              <CompanyAvatar
-                                name={entry.senderName ?? short(entry.sender)}
-                                logoPath={entry.senderLogoPath}
-                                size="sm"
-                              />
-                              {entry.senderName ?? short(entry.sender)}
-                            </span>
-                          </td>
-                          <td className="p-[12px]">
-                            {label(entry.toLocation)}
-                            <br />
-                            <small className="workspace-company-cell">
-                              <CompanyAvatar
-                                name={entry.recipientName ?? short(entry.recipient)}
-                                logoPath={entry.recipientLogoPath}
-                                size="sm"
-                              />
-                              {entry.recipientName ?? short(entry.recipient)}
-                            </small>
-                          </td>
-                          <td className="p-[12px]">
-                            {entry.quantity} {entry.unit}
-                            <br />
-                            <small>
-                              Received {entry.received ?? '0'} {entry.unit}
-                            </small>
-                          </td>
-                          <td className="p-[12px]">
-                            {when(entry.expectedAt)}
-                            <br />
-                            <Badge
-                              label={stateLabel(entry)}
-                              variant={Number(entry.status) >= 3 ? 'verified' : 'pending'}
-                            />
-                          </td>
-                          <td className="p-[12px]">
-                            <Btn
-                              variant="outline"
-                              onClick={() => {
-                                setSelected(entry.shipmentId);
-                                setView('shipments');
-                              }}
-                            >
-                              View shipment
-                            </Btn>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {!visibleShipments.length && (
-                <EmptyState
-                  icon={<Package size={36} />}
-                  title={
-                    shipments.some((entry) => entry.kind === kind)
-                      ? 'No matching shipments'
-                      : 'No shipments yet'
-                  }
-                  sub={
-                    shipments.some((entry) => entry.kind === kind)
-                      ? 'Change the search to see other shipments.'
-                      : 'Confirmed transfers for your company will appear here.'
-                  }
-                />
-              )}
+              <ShipmentList
+                shipments={visibleShipments}
+                catalogue={data.catalogue}
+                locationName={label}
+                statusLabel={stateLabel}
+                onOpen={(shipmentId) => {
+                  setSelected(shipmentId);
+                  setView('shipments');
+                }}
+              />
             </>
           )}
         </>

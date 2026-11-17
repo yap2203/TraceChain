@@ -1,86 +1,106 @@
 import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { ArrowUpRight, CheckCircle, Layers, PackageCheck } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
 import { useOperationalData } from '../../blockchain/useOperationalData';
-import { Alert, Badge, Btn, Card, EmptyState, StatCard, T } from '../shared/ui';
-import { shortChainId, transferStatuses } from '../shared/operational-format';
+import { getOrders, type OrdersState } from '../../orders/orders.api';
+import { Alert } from '../shared/ui';
+import { formatOperationalQuantity } from '../shared/operational-format';
+import {
+  StakeholderOverviewLayout,
+  type OverviewRecord,
+} from '../shared/StakeholderOverviewLayout';
+
 export function DistributorOverview({ onNav }: { onNav: (tab: string) => void }) {
   const { data, error, loading } = useOperationalData();
-  const incoming = data.transfers.filter((t) => t.direction === 'incoming' && t.status === 1);
+  const [orders, setOrders] = useState<OrdersState>();
+  useEffect(() => {
+    void getOrders()
+      .then(setOrders)
+      .catch(() => undefined);
+  }, []);
+  if (loading) return <LoadingIndicator page label="Loading Distributor overview" />;
+
+  const incoming = data.transfers.filter(
+    (transfer) => transfer.direction === 'incoming' && transfer.status === 1,
+  );
   const inventory = data.transfers.filter(
     (transfer, index, all) =>
       all.findIndex((candidate) => candidate.productBatchId === transfer.productBatchId) ===
         index && BigInt(transfer.inventory.available) > 0n,
   );
-  if (loading) return <LoadingIndicator page label="Loading records…" />;
-  return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      {error && <Alert type="error" message={error} />}
-      <div className="workspace-metrics">
-        <StatCard
-          label="Incoming Shipments"
-          value={loading ? '…' : String(incoming.length)}
-          color={T.amber}
-          icon={<PackageCheck size={22} />}
-        />
-        <StatCard
-          label="Inventory Batches"
-          value={String(inventory.length)}
-          color={T.navy}
-          icon={<Layers size={22} />}
-        />
-        <StatCard
-          label="Pending Transfers"
-          value={String(
-            data.transfers.filter((t) => t.direction === 'outgoing' && t.status === 1).length,
-          )}
-          color={T.grey}
-          icon={<ArrowUpRight size={22} />}
-        />
-        <StatCard
-          label="Completed Transfers"
-          value={String(data.transfers.filter((t) => t.status === 2).length)}
-          color={T.green}
-          icon={<CheckCircle size={22} />}
-        />
-      </div>
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-          <b>On-chain custody transfers</b>
-          <Btn size="sm" variant="outline" onClick={() => onNav('incoming')}>
-            View incoming
-          </Btn>
-        </div>
-        {!loading && data.transfers.length === 0 ? (
-          <EmptyState
-            icon={<PackageCheck size={40} />}
-            title="No transfers on chain"
-            sub="Transfers involving this wallet will appear here."
-          />
-        ) : (
-          data.transfers.slice(0, 5).map((t) => (
-            <div
-              key={t.transferId}
-              style={{
-                padding: '10px 0',
-                borderBottom: `1px solid ${T.border}`,
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <b>{shortChainId(t.productBatchId)}</b>
-                <div style={{ fontSize: 12, color: T.text2 }}>
-                  {t.quantity} units · {shortChainId(t.transferId)}
-                </div>
-              </div>
-              <Badge
-                label={transferStatuses[t.status] ?? 'Unknown'}
-                variant={t.status === 2 ? 'active' : 'transfer-pending'}
-              />
-            </div>
-          ))
-        )}
-      </Card>
-    </div>
+  const attention: OverviewRecord[] = incoming.map((transfer) =>
+    transferRecord(transfer, orders, () => onNav('arrivals'), 'Review arrival'),
   );
+  const recent: OverviewRecord[] = data.transfers
+    .slice()
+    .sort((left, right) => right.dispatchedAt - left.dispatchedAt)
+    .slice(0, 5)
+    .map((transfer) =>
+      transferRecord(transfer, orders, () => onNav('product-shipments'), 'View deliveries'),
+    );
+
+  return (
+    <>
+      {error && <Alert type="error" message={error} />}
+      <StakeholderOverviewLayout
+        title="Distributor overview"
+        description="Monitor warehouse arrivals, custody inventory and outbound deliveries."
+        metrics={[
+          { label: 'Incoming shipments', value: incoming.length, icon: <PackageCheck size={21} /> },
+          { label: 'Inventory batches', value: inventory.length, icon: <Layers size={21} /> },
+          {
+            label: 'Pending transfers',
+            value: data.transfers.filter(
+              (item) => item.direction === 'outgoing' && item.status === 1,
+            ).length,
+            icon: <ArrowUpRight size={21} />,
+          },
+          {
+            label: 'Completed transfers',
+            value: data.transfers.filter((item) => item.status === 2).length,
+            icon: <CheckCircle size={21} />,
+          },
+        ]}
+        attention={attention}
+        recent={recent}
+        emptyAttention="No warehouse arrivals need attention"
+        emptyRecent="No custody transfers recorded"
+      />
+    </>
+  );
+}
+
+function transferRecord(
+  transfer: ReturnType<typeof useOperationalData>['data']['transfers'][number],
+  orders: OrdersState | undefined,
+  onAction: () => void,
+  actionLabel: string,
+): OverviewRecord {
+  const item = orders?.catalogue.find((entry) =>
+    entry.batches?.some(
+      (batch: string) => batch.toLowerCase() === transfer.productBatchId.toLowerCase(),
+    ),
+  );
+  return {
+    name: item?.name ?? 'Custody shipment',
+    reference: item?.batchReference ?? 'Registered product batch',
+    imagePath: item?.imagePath,
+    itemCategory: item?.category,
+    companyName:
+      transfer.direction === 'incoming'
+        ? (transfer.senderName ?? transfer.manufacturerName)
+        : (transfer.recipientName ?? transfer.retailerName),
+    description: `${formatOperationalQuantity(transfer.quantity, item?.unit)}; expected ${new Date(transfer.expectedAt * 1_000).toLocaleString()}.`,
+    badge: {
+      label: transfer.status === 2 ? 'Received' : 'Awaiting receipt',
+      variant: transfer.status === 2 ? 'verified' : 'pending',
+    },
+    actionLabel,
+    onAction,
+    technical: [
+      { label: 'Transfer ID', value: transfer.transferId },
+      { label: 'Product batch ID', value: transfer.productBatchId },
+    ],
+  };
 }

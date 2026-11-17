@@ -2,7 +2,7 @@ import { ApplicationDocumentsPanel } from '../registration/ApplicationDocumentsP
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MapPin, Pencil, Plus, Warehouse } from 'lucide-react';
+import { AlertTriangle, MapPin, Pencil, Plus, Warehouse } from 'lucide-react';
 import {
   getCompanyProfile,
   prepareOrder,
@@ -13,10 +13,12 @@ import {
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import {
   Alert,
+  Badge,
   Btn,
   Card,
   EmptyState,
   Input,
+  InventorySummaryCard,
   Modal,
   SectionTitle,
   TechnicalDetails,
@@ -94,6 +96,32 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
         </Btn>
       ) : (
         <>
+          <div className="profile-summary-grid" aria-label="Location summary">
+            <InventorySummaryCard
+              label="Total locations"
+              value={data.locations.length}
+              icon={<MapPin size={20} />}
+            />
+            <InventorySummaryCard
+              label="Active warehouses"
+              value={data.locations.filter((location) => location.warehouse).length}
+              icon={<Warehouse size={20} />}
+            />
+            <InventorySummaryCard
+              label="Setup incomplete"
+              value={
+                role === 'distributor'
+                  ? data.locations.filter((location) => !location.warehouse).length
+                  : 0
+              }
+              note={
+                role === 'distributor'
+                  ? 'Location registered, warehouse pending'
+                  : 'No additional setup'
+              }
+              icon={<AlertTriangle size={20} />}
+            />
+          </div>
           <Card>
             <SectionTitle title={role === 'distributor' ? 'Add a warehouse' : 'Add a location'} />
             <div className="workspace-profile-form">
@@ -154,11 +182,36 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
               />
             )}
             {data.locations.map((location) => (
-              <Card key={location.location}>
+              <Card key={location.location} className="workspace-location-card">
                 <div className="workspace-location-heading">
                   {location.warehouse ? <Warehouse size={20} /> : <MapPin size={20} />}
-                  <h3>{location.label}</h3>
+                  <div>
+                    <span>{location.warehouse ? 'Warehouse' : 'Company location'}</span>
+                    <h3>{location.label}</h3>
+                  </div>
+                  <Badge
+                    label={
+                      role === 'distributor' && !location.warehouse
+                        ? 'Setup incomplete'
+                        : 'Registered'
+                    }
+                    variant={role === 'distributor' && !location.warehouse ? 'pending' : 'active'}
+                  />
                 </div>
+                <dl className="workspace-location-usage">
+                  <div>
+                    <dt>Used by</dt>
+                    <dd>{locationWorkflows(role, location.warehouse)}</dd>
+                  </div>
+                  <div>
+                    <dt>Registration</dt>
+                    <dd>
+                      {role === 'distributor' && !location.warehouse
+                        ? 'Location complete; warehouse registration required'
+                        : 'Ready for authorized workflows'}
+                    </dd>
+                  </div>
+                </dl>
                 <div className="workspace-location-actions">
                   <Btn
                     variant="outline"
@@ -234,4 +287,14 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
       )}
     </div>
   );
+}
+
+function locationWorkflows(role: WorkspaceRole, warehouse: boolean) {
+  if (role === 'distributor')
+    return warehouse
+      ? 'Custody intake, inventory, dispatch and receipt'
+      : 'Profile only until warehouse setup is completed';
+  if (role === 'manufacturer') return 'Ingredient receipt, production and product dispatch';
+  if (role === 'supplier') return 'Ingredient stock pickup and custody dispatch';
+  return 'Product receipt and retail custody';
 }

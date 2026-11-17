@@ -8,6 +8,7 @@ import {
   EmptyState,
   Input,
   SelectField,
+  StatusTabs,
   Table,
   TD,
   TR,
@@ -64,9 +65,8 @@ export function RequestsOverview({
       .filter((entry) => {
         const item = catalogue.find((candidate) => candidate.itemId === entry.itemId);
         const state = requestStatus(entry);
-        const matchesStatus = supplierView
-          ? status === 'all' || status === state.group
-          : status === 'all' || status === state.key;
+        const matchesStatus =
+          status === 'all' || status === state.group || (!supplierView && status === state.key);
         return (
           matchesStatus &&
           (!query ||
@@ -196,6 +196,19 @@ export function RequestsOverview({
         </div>
         <strong>{records.length} results</strong>
       </div>
+      <StatusTabs
+        label="Filter requests by status"
+        value={status as RequestFilter}
+        onChange={setStatus}
+        variant="connected"
+        tabs={[
+          { value: 'all', label: 'All', count: orders.length },
+          { value: 'attention', label: 'Needs action', count: summaries.attention },
+          { value: 'evidence', label: 'Evidence', count: summaries.evidence },
+          { value: 'approved', label: 'Approved', count: summaries.approved },
+          { value: 'closed', label: 'Closed', count: summaries.closed },
+        ]}
+      />
       <div className="requests-toolbar">
         <Input
           label="Search requests"
@@ -206,16 +219,14 @@ export function RequestsOverview({
           placeholder="Ingredient or Supplier"
         />
         <SelectField
-          label="Status"
-          value={status}
-          onChange={setStatus}
+          label="Sort"
+          value={sort}
+          onChange={(value) => setSort(value as RequestSort)}
           options={[
-            { value: 'all', label: 'All statuses' },
-            { value: 'submitted', label: 'Awaiting Supplier response' },
-            { value: 'approved', label: 'Approved' },
-            { value: 'rejected', label: 'Rejected' },
-            { value: 'completed', label: 'Completed' },
-            { value: 'expired', label: 'Expired' },
+            { value: 'newest', label: 'Newest request' },
+            { value: 'oldest', label: 'Oldest request' },
+            { value: 'deadline', label: 'Deadline soonest' },
+            { value: 'updated', label: 'Recently updated' },
           ]}
         />
       </div>
@@ -293,6 +304,13 @@ export function RequestsOverview({
               const state = requestStatus(entry);
               return (
                 <Card key={entry.orderId}>
+                  <div className="requests-mobile__image">
+                    <CatalogueImage
+                      path={item?.imagePath}
+                      category={item?.category}
+                      alt={`${item?.name ?? 'Requested item'} image`}
+                    />
+                  </div>
                   <div className="requests-mobile__title">
                     <h4>{item?.name ?? 'Item name unavailable'}</h4>
                     <Badge label={state.label} variant={state.variant} />

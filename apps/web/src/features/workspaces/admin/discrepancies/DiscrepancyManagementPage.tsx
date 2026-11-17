@@ -1,6 +1,6 @@
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { FileDown, RefreshCw, Scale } from 'lucide-react';
+import { CircleCheck, CircleX, FileDown, RefreshCw, Scale } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
@@ -15,6 +15,8 @@ import {
   Btn,
   Card,
   EmptyState,
+  InventorySummaryCard,
+  SectionTitle,
   T,
   TechnicalDetails,
   Textarea,
@@ -69,29 +71,32 @@ export default function DiscrepancyManagementPage() {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <div
-        style={{
-          display: 'flex',
-          gap: 16,
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div>
-          <div style={{ color: T.teal, fontSize: 11, fontWeight: 700, letterSpacing: '0.08em' }}>
-            CUSTODY OPERATIONS
-          </div>
-          <h2 style={{ margin: '5px 0 4px', color: T.navy, fontSize: 22 }}>
-            Receipt discrepancies
-          </h2>
-          <p style={{ margin: 0, color: T.text2, fontSize: 13 }}>
-            Review recipient-reported shortages and excess quantities before deciding the on-chain
-            outcome.
-          </p>
-        </div>
-        <Btn icon={<RefreshCw size={14} />} onClick={() => void load()} variant="outline">
-          Refresh
-        </Btn>
+      <SectionTitle
+        title="Receipt discrepancies"
+        sub="Review recipient-reported shortages and excess quantities before deciding the on-chain outcome."
+        action={
+          <Btn icon={<RefreshCw size={14} />} onClick={() => void load()} variant="outline">
+            Refresh
+          </Btn>
+        }
+      />
+
+      <div className="admin-discrepancy-summary" aria-label="Receipt discrepancy summary">
+        <InventorySummaryCard
+          icon={<Scale size={20} />}
+          label="Needs review"
+          value={items.filter((item) => !item.resolved).length}
+        />
+        <InventorySummaryCard
+          icon={<CircleCheck size={20} />}
+          label="Actual quantity accepted"
+          value={items.filter((item) => item.resolved && item.status === 1).length}
+        />
+        <InventorySummaryCard
+          icon={<CircleX size={20} />}
+          label="Transfers cancelled"
+          value={items.filter((item) => item.resolved && item.status !== 1).length}
+        />
       </div>
 
       <Alert

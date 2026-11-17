@@ -20,8 +20,9 @@ Authenticated catalogue images are lazy-loaded, concurrent duplicate image/state
 deduplicated, and missing, denied and failed media have distinct fallbacks without weakening media
 authorization.
 
-**Workspace UI:** navigation is grouped by task for all five roles, with overview quick actions,
-separate stock/order/shipment destinations, clickable forward/backward traceability and responsive layouts.
+**Workspace UI:** navigation is grouped by task for all five roles, with shared compact overview
+summaries, attention/activity cards, searchable shipment and request lists, separate
+stock/order/shipment destinations, clickable forward/backward traceability and responsive layouts.
 Distributor pickup scheduling applies to both custody offers and direct buyer deliveries. Locations
 are registered and edited in Profile. See the [role workflow test guide](docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md)
 and [UI review](docs/UI_REFINEMENT.md).
@@ -83,7 +84,7 @@ their own batches held by custodians. Shipments no longer contains inventory tab
 ordering uses a minimal public availability summary. On-chain balances remain publicly readable.
 
 **Information requests** is available to every stakeholder at `/{role}/information-requests`.
-Received/Sent company-proof tables cover custody/delivery, quantity-order and ingredient-information
+Received/Sent company-proof cards cover custody/delivery, quantity-order and ingredient-information
 contexts, using existing proof signing, verification and DIDComm services. Ingredient evidence remains
 available as a separate category. Admin visibility follows existing participant permissions; this page
 does not grant new proof/credential powers. Old Supplier/Retailer evidence-request links still resolve.

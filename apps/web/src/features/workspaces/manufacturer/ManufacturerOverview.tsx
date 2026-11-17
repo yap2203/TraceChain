@@ -1,79 +1,100 @@
 import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { ArrowUpRight, CheckCircle, Package, TrendingUp } from 'lucide-react';
+import { useEffect, useState } from 'react';
+
 import { useOperationalData } from '../../blockchain/useOperationalData';
-import { Alert, Badge, Btn, Card, EmptyState, StatCard, T } from '../shared/ui';
-import { recordStatuses, shortChainId } from '../shared/operational-format';
+import { getOrders, type OrdersState } from '../../orders/orders.api';
+import { Alert } from '../shared/ui';
+import { formatOperationalQuantity } from '../shared/operational-format';
+import {
+  StakeholderOverviewLayout,
+  type OverviewRecord,
+} from '../shared/StakeholderOverviewLayout';
+
 export function ManufacturerOverview({ onNav }: { onNav: (tab: string) => void }) {
   const { data, error, loading } = useOperationalData();
-  const pending = data.transfers.filter((t) => t.status === 1);
-  if (loading) return <LoadingIndicator page label="Loading records…" />;
+  const [orders, setOrders] = useState<OrdersState>();
+  useEffect(() => {
+    void getOrders()
+      .then(setOrders)
+      .catch(() => undefined);
+  }, []);
+  if (loading) return <LoadingIndicator page label="Loading Manufacturer overview" />;
+
+  const pending = data.transfers.filter((transfer) => transfer.status === 1);
+  const attention: OverviewRecord[] = pending.map((transfer) => {
+    const item = catalogueItem(orders, transfer.productBatchId);
+    return {
+      name: item?.name ?? 'Product custody transfer',
+      reference: item?.batchReference ?? 'Registered product batch',
+      imagePath: item?.imagePath,
+      itemCategory: item?.category,
+      companyName: transfer.recipientName ?? transfer.distributorName ?? 'Receiving Distributor',
+      description: `${formatOperationalQuantity(transfer.quantity, item?.unit)} awaiting receipt.`,
+      badge: { label: 'Awaiting receipt', variant: 'pending' },
+      actionLabel: 'Review shipment',
+      onAction: () => onNav('product-shipments'),
+      technical: [
+        { label: 'Transfer ID', value: transfer.transferId },
+        { label: 'Product batch ID', value: transfer.productBatchId },
+      ],
+    };
+  });
+  const recent: OverviewRecord[] = data.productBatches.slice(0, 5).map((product) => {
+    const item = catalogueItem(orders, product.batchId);
+    return {
+      name: item?.name ?? 'Registered product batch',
+      reference: item?.batchReference ?? 'Batch reference unavailable',
+      imagePath: item?.imagePath,
+      itemCategory: item?.category,
+      companyName: product.manufacturerName,
+      companyLogoPath: item?.sellerLogoPath,
+      description: `${formatOperationalQuantity(product.totalQuantity, product.unit)}; ${product.ingredients.length} linked ingredient batches.`,
+      badge: {
+        label: product.status === 1 ? 'Active' : 'Unavailable',
+        variant: product.status === 1 ? 'active' : 'pending',
+      },
+      actionLabel: 'View products',
+      onAction: () => onNav('products'),
+      technical: [{ label: 'Product batch ID', value: product.batchId }],
+    };
+  });
+
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
+    <>
       {error && <Alert type="error" message={error} />}
-      <div className="workspace-metrics">
-        <StatCard
-          label="Product Batches"
-          value={loading ? '…' : String(data.productBatches.length)}
-          color={T.navy}
-          icon={<Package size={22} />}
-        />
-        <StatCard
-          label="Active Products"
-          value={String(data.productBatches.filter((p) => p.status === 1).length)}
-          color={T.teal}
-          icon={<TrendingUp size={22} />}
-        />
-        <StatCard
-          label="Accepted Evidence"
-          value={String(data.evidenceRequests.filter((r) => r.status === 3).length)}
-          color={T.green}
-          icon={<CheckCircle size={22} />}
-        />
-        <StatCard
-          label="Pending Transfers"
-          value={String(pending.length)}
-          color={T.grey}
-          icon={<ArrowUpRight size={22} />}
-        />
-      </div>
-      <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 14 }}>
-          <b>On-chain product batches</b>
-          <Btn size="sm" variant="outline" onClick={() => onNav('products')}>
-            View all
-          </Btn>
-        </div>
-        {!loading && data.productBatches.length === 0 ? (
-          <EmptyState
-            icon={<Package size={40} />}
-            title="No product batches on chain"
-            sub="Create a product after confirming ingredient receipt. Ingredient evidence is optional."
-          />
-        ) : (
-          data.productBatches.slice(0, 4).map((p) => (
-            <div
-              key={p.batchId}
-              style={{
-                padding: '10px 0',
-                borderBottom: `1px solid ${T.border}`,
-                display: 'flex',
-                justifyContent: 'space-between',
-              }}
-            >
-              <div>
-                <b>{shortChainId(p.batchId)}</b>
-                <div style={{ fontSize: 12, color: T.text2 }}>
-                  {p.totalQuantity} units · {p.ingredients.length} linked ingredients
-                </div>
-              </div>
-              <Badge
-                label={recordStatuses[p.status] ?? 'Unknown'}
-                variant={p.status === 1 ? 'active' : 'pending'}
-              />
-            </div>
-          ))
-        )}
-      </Card>
-    </div>
+      <StakeholderOverviewLayout
+        title="Manufacturer overview"
+        description="Review product production, accepted evidence and custody handoffs."
+        metrics={[
+          {
+            label: 'Product batches',
+            value: data.productBatches.length,
+            icon: <Package size={21} />,
+          },
+          {
+            label: 'Active products',
+            value: data.productBatches.filter((item) => item.status === 1).length,
+            icon: <TrendingUp size={21} />,
+          },
+          {
+            label: 'Accepted evidence',
+            value: data.evidenceRequests.filter((item) => item.status === 3).length,
+            icon: <CheckCircle size={21} />,
+          },
+          { label: 'Pending transfers', value: pending.length, icon: <ArrowUpRight size={21} /> },
+        ]}
+        attention={attention}
+        recent={recent}
+        emptyAttention="No product transfers need attention"
+        emptyRecent="No product batches recorded"
+      />
+    </>
+  );
+}
+
+function catalogueItem(data: OrdersState | undefined, batchId: string) {
+  return data?.catalogue.find((entry) =>
+    entry.batches?.some((batch: string) => batch.toLowerCase() === batchId.toLowerCase()),
   );
 }

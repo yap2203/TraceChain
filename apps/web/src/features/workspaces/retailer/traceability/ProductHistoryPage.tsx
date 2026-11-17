@@ -1,7 +1,7 @@
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { useEffect, useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { PackageCheck, Search } from 'lucide-react';
 
 import { useOperationalData } from '../../../blockchain/useOperationalData';
 import {
@@ -9,7 +9,18 @@ import {
   resolveProductTraceability,
   type ProductTraceabilityResponse,
 } from '../../../product-traceability';
-import { Alert, Badge, Btn, Card, EmptyState, T, Table, TD, TR } from '../../shared/ui';
+import { CatalogueImage, CompanyAvatar } from '../../../orders/CatalogueMedia';
+import {
+  Alert,
+  Badge,
+  Btn,
+  EmptyState,
+  Input,
+  SectionTitle,
+  SelectField,
+  TechnicalDetails,
+} from '../../shared/ui';
+import { formatOperationalQuantity } from '../../shared/operational-format';
 
 interface HistoryRecord {
   batchId: string;
@@ -22,6 +33,7 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<'newest' | 'name' | 'manufacturer'>('newest');
 
   useEffect(() => {
     let active = true;
@@ -61,80 +73,176 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
     return () => {
       active = false;
     };
-  }, [data.productBatches, operationalLoading]);
+  }, [data.actorWallet, data.transfers, operationalLoading]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return records.filter(
-      ({ trace }) =>
-        !query ||
-        trace.product.name.toLowerCase().includes(query) ||
-        trace.product.reference.toLowerCase().includes(query) ||
-        trace.product.manufacturerName.toLowerCase().includes(query),
-    );
-  }, [records, search]);
+    return records
+      .filter(
+        ({ trace }) =>
+          !query ||
+          trace.product.name.toLowerCase().includes(query) ||
+          trace.product.reference.toLowerCase().includes(query) ||
+          trace.product.manufacturerName.toLowerCase().includes(query),
+      )
+      .sort((left, right) => {
+        if (sort === 'name') return left.trace.product.name.localeCompare(right.trace.product.name);
+        if (sort === 'manufacturer')
+          return left.trace.product.manufacturerName.localeCompare(
+            right.trace.product.manufacturerName,
+          );
+        return receiptTime(right.trace) - receiptTime(left.trace);
+      });
+  }, [records, search, sort]);
 
   return (
-    <div style={{ display: 'grid', gap: 20 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', gap: 14 }}>
-        <div>
-          <h1 style={{ fontSize: 20, color: T.navy, margin: '0 0 4px' }}>Product History</h1>
-          <p style={{ fontSize: 13, color: T.text2, margin: 0 }}>
-            Blockchain traceability records for products linked to this Retailer.
-          </p>
-        </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Search size={15} />
-          <input
-            aria-label="Search product history"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search product, reference, company…"
-            style={{ padding: 9, minWidth: 260 }}
-          />
-        </label>
+    <div className="received-product-page">
+      <SectionTitle
+        title="Received products"
+        sub="Products physically received by this Retailer with recorded blockchain traceability."
+      />
+      <div className="received-product-toolbar">
+        <Input
+          label="Search received products"
+          type="search"
+          icon={<Search size={16} />}
+          value={search}
+          onChange={setSearch}
+          placeholder="Product, batch reference or company"
+        />
+        <SelectField
+          label="Sort"
+          value={sort}
+          onChange={(value) => setSort(value as typeof sort)}
+          options={[
+            { value: 'newest', label: 'Newest receipt' },
+            { value: 'name', label: 'Product name' },
+            { value: 'manufacturer', label: 'Manufacturer' },
+          ]}
+        />
       </div>
       {(error || operationalError) && <Alert type="error" message={error || operationalError} />}
       {loading ? (
-        <LoadingIndicator page label="Resolving blockchain custody history…" />
+        <LoadingIndicator page label="Resolving blockchain custody history" />
       ) : !filtered.length ? (
         <EmptyState
           icon={<Search size={22} />}
-          title="No traceable products found"
-          sub="Received product records will appear after their on-chain transfer is available."
+          title={
+            records.length
+              ? 'No received products match this search'
+              : 'No traceable products found'
+          }
+          sub="Received product records appear after their on-chain transfer is available."
+          action={
+            records.length ? <Btn onClick={() => setSearch('')}>Clear search</Btn> : undefined
+          }
         />
       ) : (
-        <Card padding="0">
-          <Table
-            headers={['Product', 'Manufacturer', 'Current custody', 'Ingredients', 'Status', '']}
-          >
-            {filtered.map(({ batchId, trace }) => (
-              <TR key={batchId} onClick={() => onView(batchId)}>
-                <TD>
-                  <b>{trace.product.name}</b>
-                  <div style={{ color: T.text2, fontSize: 11 }}>{trace.product.reference}</div>
-                </TD>
-                <TD muted>{trace.product.manufacturerName}</TD>
-                <TD muted>{trace.currentCustodianName}</TD>
-                <TD>
-                  {trace.credentialSummary.active}/{trace.credentialSummary.total} active
-                </TD>
-                <TD>
-                  <Badge
-                    label={trace.product.status}
-                    variant={trace.product.status === 'ACTIVE' ? 'active' : 'pending'}
+        <div className="received-product-list">
+          {filtered.map(({ batchId, trace }) => {
+            const transfer = data.transfers.find(
+              (entry) => entry.productBatchId === batchId && Number(entry.status) === 2,
+            );
+            const distributor =
+              transfer?.distributorName ?? transfer?.senderName ?? 'Distributor name unavailable';
+            return (
+              <article className="received-product-card" key={batchId}>
+                <div className="received-product-card__image">
+                  <CatalogueImage
+                    alt={`${trace.product.name} image`}
+                    category={trace.product.category}
                   />
-                </TD>
-                <TD>
-                  <Btn size="xs" variant="outline" onClick={() => onView(batchId)}>
-                    View history
-                  </Btn>
-                </TD>
-              </TR>
-            ))}
-          </Table>
-        </Card>
+                </div>
+                <div className="received-product-card__body">
+                  <div className="received-product-card__heading">
+                    <div>
+                      <h3>{trace.product.name}</h3>
+                      <p>{trace.product.reference}</p>
+                    </div>
+                    <Badge
+                      label={trace.product.status}
+                      variant={trace.product.status === 'ACTIVE' ? 'active' : 'pending'}
+                    />
+                  </div>
+                  <dl className="received-product-card__facts">
+                    <div>
+                      <dt>Quantity received</dt>
+                      <dd>
+                        {transfer
+                          ? formatOperationalQuantity(transfer.quantity, trace.product.unit)
+                          : 'Unavailable'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Manufacturer</dt>
+                      <dd className="workspace-company-cell">
+                        <CompanyAvatar name={trace.product.manufacturerName} size="sm" />
+                        {trace.product.manufacturerName}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Distributor</dt>
+                      <dd className="workspace-company-cell">
+                        <CompanyAvatar name={distributor} size="sm" />
+                        {distributor}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Receiving location</dt>
+                      <dd>{trace.currentCustodianName}</dd>
+                    </div>
+                    <div>
+                      <dt>Receipt date</dt>
+                      <dd>
+                        {receiptTime(trace)
+                          ? new Date(receiptTime(trace) * 1_000).toLocaleString()
+                          : 'Not recorded'}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Receipt status</dt>
+                      <dd>
+                        <Badge label="Received" variant="verified" />
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="received-product-card__actions">
+                    <span>
+                      <PackageCheck size={16} /> {trace.credentialSummary.active}/
+                      {trace.credentialSummary.total} active ingredient credentials
+                    </span>
+                    <Btn variant="outline" onClick={() => onView(batchId)}>
+                      View traceability
+                    </Btn>
+                  </div>
+                  <TechnicalDetails
+                    fields={[
+                      { label: 'Product batch ID', value: batchId },
+                      {
+                        label: 'Current custodian wallet',
+                        value: trace.technical?.currentCustodianWallet ?? 'Unavailable',
+                      },
+                      {
+                        label: 'Product registry',
+                        value: trace.technical?.productRegistryAddress ?? 'Unavailable',
+                      },
+                    ]}
+                  />
+                </div>
+              </article>
+            );
+          })}
+        </div>
       )}
     </div>
+  );
+}
+
+function receiptTime(trace: ProductTraceabilityResponse) {
+  return Math.max(
+    0,
+    ...trace.timeline
+      .filter((entry) => /received|receipt/i.test(`${entry.type} ${entry.action} ${entry.status}`))
+      .map((entry) => Number(entry.timestamp) || 0),
   );
 }
