@@ -228,7 +228,6 @@ describe('Supplier ingredient-batch API', () => {
         originDetails: {
           countryCode: 'GH',
           countryName: 'Ghana',
-          processingLocation: 'Different processing facility',
         },
         allergen: { kind: 'declaresNone' },
         certificationEntries: entries,
@@ -239,9 +238,10 @@ describe('Supplier ingredient-batch API', () => {
         await dependencies.contentStore.decrypt(record!.encryptedPayload),
       ).credential;
       expect(credential.credentialSubject.certificationEntries).toHaveLength(count);
-      expect(credential.credentialSubject.originDetails.processingLocation).toBe(
-        'Different processing facility',
-      );
+      expect(credential.credentialSubject.originDetails.processingLocation).toBeUndefined();
+      expect(credential.credentialSubject.qualityTests).toBeUndefined();
+      expect(credential.credentialSubject.internalQualityRemarks).toBeUndefined();
+      expect(credential.credentialSubject.productionDateMeaning).toBeUndefined();
       expect(credential.credentialSubject.certificationEntries[0]?.issueDate).toBeUndefined();
     },
   );
@@ -273,6 +273,103 @@ describe('Supplier ingredient-batch API', () => {
           ...patch,
         }).success,
       ).toBe(false);
+  });
+  it('rejects removed processing and quality fields from new registrations', () => {
+    const modern = {
+      ...BODY,
+      operationId: randomUUID(),
+      originDetails: { countryCode: 'GH', countryName: 'Ghana' },
+      allergen: { kind: 'unknown' },
+    };
+    for (const removed of [
+      { productionDateMeaning: 'processing' },
+      { internalQualityRemarks: 'Legacy internal note' },
+      { qualityTests: [] },
+      {
+        originDetails: {
+          countryCode: 'GH',
+          countryName: 'Ghana',
+          processingLocation: 'Legacy processing site',
+        },
+      },
+    ])
+      expect(ingredientBatchRequestSchema.safeParse({ ...modern, ...removed }).success).toBe(false);
+  });
+  it('loads legacy metadata while omitting retired fields from the ingredient response', async () => {
+    const batchId = `0x${'71'.repeat(32)}`;
+    const credentialId = `0x${'72'.repeat(32)}`;
+    const metadataHash = `0x${'73'.repeat(32)}`;
+    const encryptedCid = 'bafy-legacy-ingredient';
+    serialized = JSON.stringify({
+      metadata: {
+        allergenInformation: 'None declared',
+        batchId: 'LEGACY-001',
+        category: 'cocoa',
+        certifications: ['Organic'],
+        expiryDate: '2030-01-01T00:00:00.000Z',
+        ingredientName: 'Legacy Cocoa',
+        internalQualityRemarks: 'Do not expose this old note',
+        origin: 'Ghana',
+        originDetails: {
+          countryCode: 'GH',
+          countryName: 'Ghana',
+          region: 'Ashanti',
+          processingCountry: 'MY',
+          processingLocation: 'Old processing site',
+        },
+        productionDate: '2026-10-01T00:00:00.000Z',
+        productionDateMeaning: 'processing',
+        qualityTests: [{ id: randomUUID(), results: 'Old laboratory result' }],
+        quantity: '500',
+        supplierWallet: SUPPLIER,
+        unit: 'kg',
+      },
+    });
+    await dependencies.repository.save({
+      batchId,
+      credentialHash: `0x${'74'.repeat(32)}`,
+      credentialId,
+      encryptedCid,
+      encryptedPayload: {
+        algorithm: 'aes-256-gcm',
+        authTag: 'test-tag',
+        ciphertext: 'test-ciphertext',
+        iv: 'test-iv',
+        version: 1,
+      },
+      expiresAt: 1_893_456_000,
+      issuerDid: 'did:ethr:sepolia:0x02',
+      metadataHash,
+      producedAt: 1_759_276_800,
+      quantity: '500',
+      supplierWallet: SUPPLIER,
+      unit: 'kg',
+    });
+    batch = {
+      availableQuantity: '500',
+      credentialId,
+      encryptedCid,
+      expiresAt: 1_893_456_000,
+      metadataHash,
+      producedAt: 1_759_276_800,
+      status: 1,
+      supplier: SUPPLIER,
+      totalQuantity: '500',
+      unit: 'kg',
+    };
+    vi.mocked(gateway.listBatchIds).mockResolvedValue([batchId]);
+
+    const result = await service.list('session');
+    expect(result.batches).toHaveLength(1);
+    expect(result.batches[0]).toMatchObject({
+      ingredientName: 'Legacy Cocoa',
+      originDetails: { countryCode: 'GH', countryName: 'Ghana', region: 'Ashanti' },
+    });
+    expect(result.batches[0]).not.toHaveProperty('qualityTests');
+    expect(result.batches[0]).not.toHaveProperty('internalQualityRemarks');
+    expect(result.batches[0]).not.toHaveProperty('productionDateMeaning');
+    expect(result.batches[0]?.originDetails).not.toHaveProperty('processingCountry');
+    expect(result.batches[0]?.originDetails).not.toHaveProperty('processingLocation');
   });
   it('stores multiple certification files encrypted, binds references and discloses only one complete entry', async () => {
     const browser = await import(
@@ -327,8 +424,6 @@ describe('Supplier ingredient-batch API', () => {
     const first = await upload(randomUUID()),
       second = await upload(randomUUID());
     const otherDocument = await upload(randomUUID(), otherId);
-    const qualityId = randomUUID();
-    const laboratoryDocument = await upload(randomUUID(), qualityId);
     const before = store.encryptAndStore.mock.calls.length;
     await upload(first.id);
     expect(store.encryptAndStore).toHaveBeenCalledTimes(before);
@@ -352,18 +447,6 @@ describe('Supplier ingredient-batch API', () => {
         privateAddress: 'Private source farm address',
       },
       allergen: { kind: 'unknown' },
-      qualityTests: [
-        {
-          id: qualityId,
-          laboratoryName: 'Supplier-stated laboratory',
-          reportNumber: 'LAB-1',
-          testDate: '2026-10-01',
-          sampleReference: 'SAMPLE-1',
-          testedBatchReference: BODY.batchReference,
-          results: 'Stated result',
-          documents: [laboratoryDocument],
-        },
-      ],
       certificationEntries: [
         certification,
         { ...certification, id: otherId, reference: 'OTHER', documents: [otherDocument] },
@@ -372,12 +455,7 @@ describe('Supplier ingredient-batch API', () => {
     const result = await issuing.prepare('session', input);
     const record = [...records.values()][0]!;
     const envelope = JSON.parse(await store.decrypt(record.encryptedPayload));
-    expect(record.certificationDocumentIds).toEqual([
-      first.id,
-      second.id,
-      otherDocument.id,
-      laboratoryDocument.id,
-    ]);
+    expect(record.certificationDocumentIds).toEqual([first.id, second.id, otherDocument.id]);
     expect((await issuing.certificationDocument('session', result.batchId, first.id)).data).toBe(
       data,
     );
@@ -394,21 +472,18 @@ describe('Supplier ingredient-batch API', () => {
     const now = Math.floor(Date.now() / 1000);
     const context = {
       requestId: 'exact-request',
-      purpose: 'Quality verification',
+      purpose: 'Origin verification',
       batchId: record.batchId,
       expiresAt: now + 240,
     };
-    const laboratoryPresentation = await browser.createSelectiveIngredientPresentation(
+    const contextPresentation = await browser.createSelectiveIngredientPresentation(
       holder,
       envelope.sdJwt,
       {
         audience,
         nonce,
         context,
-        claims: [
-          'qualityTest_' + qualityId.replaceAll('-', ''),
-          'qualityDocuments_' + laboratoryDocument.id.replaceAll('-', ''),
-        ],
+        claims: ['countryOfOrigin'],
       },
     );
     const expected = {
@@ -416,27 +491,25 @@ describe('Supplier ingredient-batch API', () => {
       nonce,
       now,
       context,
-      requiredClaims: ['qualityTests', 'qualityDocuments'],
+      requiredClaims: ['countryOfOrigin'],
       supplierWallet: SUPPLIER,
       batchId: record.batchId,
     };
-    const laboratoryVerified = await verifyIngredientSdJwtPresentation(
+    const contextVerified = await verifyIngredientSdJwtPresentation(
       agent,
-      laboratoryPresentation,
+      contextPresentation,
       expected,
     );
-    expect(laboratoryVerified.payload).toHaveProperty(
-      'qualityTest_' + qualityId.replaceAll('-', ''),
-    );
-    expect(laboratoryVerified.payload).not.toHaveProperty(certificationClaim(entryId));
-    expect(laboratoryVerified.payload).not.toHaveProperty('privateOriginAddress');
+    expect(contextVerified.payload).toHaveProperty('countryOfOrigin', 'Ghana');
+    expect(contextVerified.payload).not.toHaveProperty(certificationClaim(entryId));
+    expect(contextVerified.payload).not.toHaveProperty('privateOriginAddress');
     for (const change of [
       { requestId: 'wrong-request' },
       { purpose: 'wrong-purpose' },
       { expiresAt: now - 1 },
     ])
       await expect(
-        verifyIngredientSdJwtPresentation(agent, laboratoryPresentation, {
+        verifyIngredientSdJwtPresentation(agent, contextPresentation, {
           ...expected,
           context: { ...context, ...change },
         }),

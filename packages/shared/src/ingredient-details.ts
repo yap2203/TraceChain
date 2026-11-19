@@ -107,26 +107,19 @@ export function ingredientClaimLabel(key: string) {
   const labels: Record<string, string> = {
     certifications: 'Matching certification entries',
     certificationDocuments: 'Explicitly selected certification documents',
-    qualityTests: 'Laboratory results for this batch',
-    qualityDocuments: 'Explicitly selected laboratory documents',
     ingredientName: 'Ingredient name',
     batchId: 'TraceChain ingredient batch ID',
     batchReference: 'Supplier batch reference',
     supplierWallet: 'Supplier wallet',
     supplierDid: 'Supplier subject DID',
-    productionDate: 'Supplier-reported production / processing date',
-    productionDateMeaning: 'This date represents',
+    productionDate: 'Supplier-reported production date',
     expiryDate: 'Ingredient expiry date',
-    processingCountry: 'Processing country',
-    qualityTestSummary: 'Legacy quality-test summary',
-    internalQualityRemarks: 'Internal quality remarks',
     countryOfOrigin: 'Country of origin',
     originCountryCode: 'Origin country code',
     originRegion: 'Origin region',
     originCity: 'Origin city/district',
     exactSourceFacility: 'Source facility/farm',
     privateOriginAddress: 'Private source address',
-    processingLocation: 'Processing location',
     allergenDeclaration: 'Allergen declaration',
     certificationDetails: 'Legacy certification details',
   };
@@ -136,11 +129,7 @@ export function ingredientClaimLabel(key: string) {
       ? 'Certification supporting documents'
       : key.startsWith('certification_')
         ? 'Supplier-provided certification'
-        : key.startsWith('qualityTest_')
-          ? 'Supplier-provided laboratory test'
-          : key.startsWith('qualityDocuments_')
-            ? 'Laboratory supporting documents'
-            : key)
+        : key)
   );
 }
 

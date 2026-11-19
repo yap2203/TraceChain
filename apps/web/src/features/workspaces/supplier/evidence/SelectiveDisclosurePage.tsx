@@ -3,6 +3,8 @@ import {
   expandIngredientRequestedClaims,
   toggleIngredientDisclosure,
   ingredientDisclosureErrors,
+  isRetiredIngredientClaim,
+  visibleIngredientClaims,
 } from '@tracechain/shared';
 import { ingredientClaimLabel } from '@tracechain/shared';
 import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
@@ -52,6 +54,13 @@ export function SelectiveDisclosure({
   const [previewExpiresAt, setPreviewExpiresAt] = useState<number>();
   const [identityProof, setIdentityProof] = useState<CompanyIdentityProofStatus>();
   const [holderDid, setHolderDid] = useState('');
+  const visibleRequestedClaims = (details?.claims ?? []).filter(
+    (claim) => !isRetiredIngredientClaim(claim),
+  );
+  const visibleRequiredClaims = (details?.requiredClaims ?? []).filter(
+    (claim) => !isRetiredIngredientClaim(claim),
+  );
+  const hasRetiredRequiredClaim = (details?.requiredClaims ?? []).some(isRetiredIngredientClaim);
   useEffect(() => {
     setPreview(undefined);
     setPreviewCredential('');
@@ -94,7 +103,9 @@ export function SelectiveDisclosure({
         throw new Error(
           'The active presentation key is not bound to this credential. Restore the correct signing-key backup.',
         );
-      const required = signing.holderSigning.requiredClaims;
+      const required = signing.holderSigning.requiredClaims.filter(
+        (claim) => !isRetiredIngredientClaim(claim),
+      );
       const selected = [
         ...new Set([
           ...required.filter(
@@ -109,8 +120,6 @@ export function SelectiveDisclosure({
           ...optionalClaims,
         ]),
       ];
-      if (selected.includes('productionDate') && preview?.productionDateMeaning)
-        selected.push('productionDateMeaning');
       if (
         required.includes('certifications') &&
         !selected.some((key) => key.startsWith('certification_'))
@@ -172,7 +181,7 @@ export function SelectiveDisclosure({
     setError('');
     try {
       if (details?.credentialFormat === 'JWT_VC') {
-        setPreview(details.legacyClaims ?? {});
+        setPreview(visibleIngredientClaims(details.legacyClaims ?? {}));
         return;
       }
       const signing = await prepareEvidenceResponse(request.requestId);
@@ -181,7 +190,11 @@ export function SelectiveDisclosure({
       setHolderDid(signing.holderSigning.holderDid);
       setPreviewCredential(signing.holderSigning.credential);
       setPreviewExpiresAt(signing.holderSigning.context?.expiresAt);
-      setPreview(await readSelectiveIngredientClaims(signing.holderSigning.credential));
+      setPreview(
+        visibleIngredientClaims(
+          await readSelectiveIngredientClaims(signing.holderSigning.credential),
+        ),
+      );
     } catch (cause) {
       setError(reportError(cause, 'Could not preview the credential claims.'));
     } finally {
@@ -235,7 +248,11 @@ export function SelectiveDisclosure({
             <b>Purpose</b> · {details?.reason ?? 'Loading…'}
           </div>
           <div>
-            <b>Requested information</b> · {details?.claims.join(', ') || 'Loading…'}
+            <b>Requested information</b> ·{' '}
+            {details
+              ? visibleRequestedClaims.map(ingredientClaimLabel).join(', ') ||
+                'No current ingredient fields requested'
+              : 'Loading…'}
           </div>
           <Alert
             type="warning"
@@ -245,13 +262,19 @@ export function SelectiveDisclosure({
                 : 'Only the always-disclosed identity claims, required claims and optional claims you select below will be included. Other SD-JWT claims remain hidden.'
             }
           />
-          {details?.requiredClaims.length ? (
+          {visibleRequiredClaims.length ? (
             <p>
               <strong>Required by this request:</strong>{' '}
-              {details.requiredClaims.map(ingredientClaimLabel).join(', ')}. Missing requirements
+              {visibleRequiredClaims.map(ingredientClaimLabel).join(', ')}. Missing requirements
               block verification and acceptance; you may decline.
             </p>
           ) : null}
+          {hasRetiredRequiredClaim && (
+            <Alert
+              type="warning"
+              message="This older request includes information that TraceChain no longer shares. Decline it and ask the requester to create a current evidence request."
+            />
+          )}
           <Alert
             type="info"
             message={
@@ -331,8 +354,8 @@ export function SelectiveDisclosure({
             </section>
           )}
           {details?.credentialFormat !== 'JWT_VC' &&
-            expandIngredientRequestedClaims(details?.claims ?? [], preview ?? {})
-              .filter((claim) => claim !== 'productionDateMeaning')
+            expandIngredientRequestedClaims(visibleRequestedClaims, preview ?? {})
+              .filter((claim) => !isRetiredIngredientClaim(claim))
               .map((claim) => {
                 const required = details?.requiredClaims.includes(claim) ?? false;
                 return (
@@ -376,12 +399,6 @@ export function SelectiveDisclosure({
                         }
                       />
                     )}
-                    {claim === 'productionDate' && Boolean(preview?.productionDateMeaning) && (
-                      <p>
-                        Date meaning shared with this date: {String(preview?.productionDateMeaning)}
-                        .
-                      </p>
-                    )}
                   </div>
                 );
               })}
@@ -412,12 +429,8 @@ export function SelectiveDisclosure({
                         ...INGREDIENT_ALWAYS_CLAIMS,
                       ].includes(key) &&
                       !optionalClaims.includes(key) &&
-                      !(
-                        key === 'productionDateMeaning' &&
-                        (optionalClaims.includes('productionDate') ||
-                          details?.requiredClaims.includes('productionDate'))
-                      ) &&
-                      !details?.requiredClaims.includes(key),
+                      !details?.requiredClaims.includes(key) &&
+                      !isRetiredIngredientClaim(key),
                   )
                   .map((key) => (
                     <li key={key}>{ingredientClaimLabel(key)}</li>
@@ -435,7 +448,10 @@ export function SelectiveDisclosure({
               ? 'I reviewed and authorize full disclosure of all displayed credential claims and document references to this exact recipient.'
               : 'I reviewed this disclosure and authorize sharing only these selected claims for this exact request and recipient.'}
           </label>
-          <Btn disabled={busy || !approved || !details} onClick={() => void respond()}>
+          <Btn
+            disabled={busy || !approved || !details || hasRetiredRequiredClaim}
+            onClick={() => void respond()}
+          >
             {busy
               ? 'Signing and confirming...'
               : details?.credentialFormat === 'JWT_VC'

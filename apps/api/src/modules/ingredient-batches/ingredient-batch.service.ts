@@ -3,7 +3,11 @@ import {
   decodeCertificationFile,
   validateCertificationStructure,
 } from './certification-documents.js';
-import { ingredientDetailClaims, type CertificationDocument } from '@tracechain/shared';
+import {
+  ingredientDetailClaims,
+  visibleIngredientClaims,
+  type CertificationDocument,
+} from '@tracechain/shared';
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
@@ -100,7 +104,7 @@ export class IngredientBatchService {
     const agent = await this.dependencies.agentProvider();
 
     if (record) {
-      this.requireMatchingWorkflow(record, normalized, metadataHash);
+      await this.requireMatchingWorkflow(record, normalized, metadataHash, canonicalMetadata);
       await this.verifyStoredCredential(agent, record);
     } else {
       const existingBatch = await this.safeGateway(() =>
@@ -212,7 +216,7 @@ export class IngredientBatchService {
     };
   }
   private async verifyAttachments(input: IngredientBatchRequest, wallet: string) {
-    for (const entry of [...(input.certificationEntries ?? []), ...(input.qualityTests ?? [])])
+    for (const entry of input.certificationEntries ?? [])
       for (const file of entry.documents) {
         const stored = await this.dependencies.repository.findAttachment?.(file.id);
         if (
@@ -305,7 +309,11 @@ export class IngredientBatchService {
           'A stored registration could not be verified.',
           409,
         );
-      const { batchId, supplierWallet: _wallet, ...metadata } = envelope.metadata;
+      const {
+        batchId,
+        supplierWallet: _wallet,
+        ...metadata
+      } = visibleIngredientClaims(envelope.metadata);
       workflows.push({
         batchId: record.batchId,
         input: {
@@ -339,7 +347,7 @@ export class IngredientBatchService {
             const envelope = JSON.parse(
               await this.dependencies.contentStore.decrypt(record.encryptedPayload),
             ) as { metadata?: Record<string, unknown> };
-            metadata = envelope.metadata ?? {};
+            metadata = visibleIngredientClaims(envelope.metadata ?? {});
           } catch {
             metadata = {};
           }
@@ -359,10 +367,10 @@ export class IngredientBatchService {
           ingredientName: stringValue(metadata.ingredientName, 'Registered ingredient'),
           metadataHash: batch.metadataHash,
           origin: stringValue(metadata.origin),
-          originDetails: metadata.originDetails,
-          qualityTests: metadata.qualityTests,
-          productionDateMeaning: metadata.productionDateMeaning,
-          internalQualityRemarks: metadata.internalQualityRemarks,
+          originDetails:
+            metadata.originDetails && typeof metadata.originDetails === 'object'
+              ? metadata.originDetails
+              : undefined,
           allergen: metadata.allergen,
           certificationEntries: metadata.certificationEntries,
           producedAt: batch.producedAt,
@@ -447,15 +455,11 @@ export class IngredientBatchService {
         claims: {
           policyVersion: 2,
           supplierDid: walletAddressToDid(input.supplierWallet),
-          ...(input.internalQualityRemarks
-            ? { internalQualityRemarks: input.internalQualityRemarks }
-            : {}),
           allergenDeclaration: input.allergenInformation || undefined,
           ...ingredientDetailClaims(
             input.originDetails,
             input.allergen,
             input.certificationEntries,
-            input.qualityTests,
           ),
           batchId,
           batchReference: input.batchId,
@@ -468,9 +472,6 @@ export class IngredientBatchService {
           quantity: input.quantity,
           unit: input.unit,
           productionDate: input.productionDate.toISOString(),
-          ...(input.productionDateMeaning
-            ? { productionDateMeaning: input.productionDateMeaning }
-            : {}),
           supplierWallet: input.supplierWallet,
         },
         expiresAt: Math.floor(input.expiryDate.getTime() / 1_000),
@@ -505,10 +506,9 @@ export class IngredientBatchService {
       const record: IngredientBatchWorkflowRecord = {
         batchId,
         operationId: input.operationId,
-        certificationDocumentIds: [
-          ...(input.certificationEntries ?? []),
-          ...(input.qualityTests ?? []),
-        ].flatMap((entry) => entry.documents.map((file) => file.id)),
+        certificationDocumentIds: (input.certificationEntries ?? []).flatMap((entry) =>
+          entry.documents.map((file) => file.id),
+        ),
         ...(input.price !== undefined
           ? { price: input.price, currency: input.currency, priceBasis: input.priceBasis }
           : {}),
@@ -570,10 +570,9 @@ export class IngredientBatchService {
     const record: IngredientBatchWorkflowRecord = {
       batchId,
       operationId: input.operationId,
-      certificationDocumentIds: [
-        ...(input.certificationEntries ?? []),
-        ...(input.qualityTests ?? []),
-      ].flatMap((entry) => entry.documents.map((file) => file.id)),
+      certificationDocumentIds: (input.certificationEntries ?? []).flatMap((entry) =>
+        entry.documents.map((file) => file.id),
+      ),
       credentialHash: `0x${issued.credentialHash}`,
       credentialId,
       encryptedCid: stored.cid,
@@ -675,10 +674,6 @@ export class IngredientBatchService {
   private issueInput(input: IngredientBatchRequest, supplierWallet: string) {
     return {
       operationId: input.operationId,
-      ...(input.qualityTests ? { qualityTests: input.qualityTests } : {}),
-      ...(input.internalQualityRemarks
-        ? { internalQualityRemarks: input.internalQualityRemarks }
-        : {}),
       ...(input.originDetails ? { originDetails: input.originDetails } : {}),
       ...(input.allergen ? { allergen: input.allergen } : {}),
       ...(input.certificationEntries ? { certificationEntries: input.certificationEntries } : {}),
@@ -691,9 +686,6 @@ export class IngredientBatchService {
       ingredientName: input.ingredientName,
       origin: input.origin,
       productionDate: input.productionDate,
-      ...(input.productionDateMeaning
-        ? { productionDateMeaning: input.productionDateMeaning }
-        : {}),
       quantity: input.quantity,
       supplierWallet,
       unit: input.unit,
@@ -701,21 +693,37 @@ export class IngredientBatchService {
     };
   }
 
-  private requireMatchingWorkflow(
+  private async requireMatchingWorkflow(
     record: IngredientBatchWorkflowRecord,
     input: ReturnType<IngredientBatchService['issueInput']>,
     metadataHash: string,
+    canonicalMetadata: string,
   ) {
-    if (
-      record.metadataHash.toLowerCase() !== metadataHash.toLowerCase() ||
-      getAddress(record.supplierWallet) !== getAddress(input.supplierWallet)
-    ) {
-      throw new IngredientBatchApiError(
-        'WORKFLOW_CONFLICT',
-        'This batch ID already has a different registration workflow.',
-        409,
-      );
+    const sameSupplier = getAddress(record.supplierWallet) === getAddress(input.supplierWallet);
+    if (sameSupplier && record.metadataHash.toLowerCase() === metadataHash.toLowerCase()) return;
+    if (sameSupplier) {
+      try {
+        const envelope = JSON.parse(
+          await this.dependencies.contentStore.decrypt(record.encryptedPayload),
+        ) as { metadata?: Record<string, unknown> };
+        const stored = envelope.metadata;
+        if (
+          stored &&
+          `0x${createHash('sha256').update(JSON.stringify(stored)).digest('hex')}`.toLowerCase() ===
+            record.metadataHash.toLowerCase() &&
+          stableJson(visibleIngredientClaims(stored)) ===
+            stableJson(visibleIngredientClaims(JSON.parse(canonicalMetadata)))
+        )
+          return;
+      } catch {
+        // Fail closed below. Legacy retry compatibility never bypasses integrity checks.
+      }
     }
+    throw new IngredientBatchApiError(
+      'WORKFLOW_CONFLICT',
+      'This batch ID already has a different registration workflow.',
+      409,
+    );
   }
 
   private verifyCredentialRecord(
@@ -786,4 +794,13 @@ function decodeUnit(value: string) {
 
 function stringValue(value: unknown, fallback = '') {
   return typeof value === 'string' ? value : fallback;
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (!value || typeof value !== 'object') return JSON.stringify(value);
+  return `{${Object.entries(value as Record<string, unknown>)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`)
+    .join(',')}}`;
 }

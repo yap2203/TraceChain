@@ -2,7 +2,6 @@ import { z } from 'zod';
 import { normalizeIngredientQuantity } from '@tracechain/shared';
 import {
   ingredientOriginSchema,
-  ingredientQualityTestSchema,
   ingredientAllergenSchema,
   ingredientCertificationSchema,
 } from '@tracechain/ssi';
@@ -10,10 +9,13 @@ import { requestDateSchema } from '../../config/input-validation.js';
 
 export const ingredientBatchRequestSchema = z
   .object({
-    qualityTests: z.array(ingredientQualityTestSchema).max(20).optional(),
-    internalQualityRemarks: z.string().trim().max(4000).optional(),
     operationId: z.uuid().optional(),
-    originDetails: ingredientOriginSchema.optional(),
+    originDetails: ingredientOriginSchema
+      .safeExtend({
+        processingCountry: z.never().optional(),
+        processingLocation: z.never().optional(),
+      })
+      .optional(),
     allergen: ingredientAllergenSchema.optional(),
     certificationEntries: z
       .array(
@@ -46,7 +48,6 @@ export const ingredientBatchRequestSchema = z
     ingredientName: z.string().trim().min(1).max(160),
     origin: z.string().trim().min(1).max(160),
     productionDate: requestDateSchema,
-    productionDateMeaning: z.enum(['production', 'processing']).optional(),
     quantity: z.string().regex(/^(0|[1-9]\d{0,38})(\.\d{1,3})?$/),
     unit: z
       .string()
@@ -64,22 +65,7 @@ export const ingredientBatchRequestSchema = z
     } catch (error) {
       context.addIssue({ code: 'custom', path: ['quantity'], message: (error as Error).message });
     }
-    const files = [...(input.certificationEntries ?? []), ...(input.qualityTests ?? [])].flatMap(
-      (entry) => entry.documents,
-    );
-    const entries = [...(input.certificationEntries ?? []), ...(input.qualityTests ?? [])];
-    if (
-      new Set(entries.map((entry) => entry.id)).size !== entries.length ||
-      input.qualityTests?.some(
-        (test) => test.testedBatchReference !== input.batchReference || !test.documents.length,
-      )
-    )
-      context.addIssue({
-        code: 'custom',
-        path: ['qualityTests'],
-        message:
-          'Laboratory reports need unique IDs, exact tested batch references and supporting documents.',
-      });
+    const files = (input.certificationEntries ?? []).flatMap((entry) => entry.documents);
     if (
       files.length > 20 ||
       files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024 ||

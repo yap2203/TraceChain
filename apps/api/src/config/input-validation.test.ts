@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { requestDateSchema } from './input-validation.js';
 import { ingredientBatchRequestSchema } from '../modules/ingredient-batches/ingredient-batch.schema.js';
+import { evidenceRequestSchema } from '../modules/production-flow/production-flow.schema.js';
 describe('API input validation', () => {
   it('accepts explicit calendar/ISO dates and rejects coercions and impossible dates', () => {
     for (const input of ['2030-01-01', '2030-01-01T12:00:00.000Z', new Date('2030-01-01')])
@@ -49,5 +50,24 @@ describe('API input validation', () => {
     expect(result.success).toBe(false);
     if (!result.success)
       expect(result.error.issues.some((issue) => issue.path[0] === 'productionDate')).toBe(true);
+  });
+  it('accepts current ingredient evidence fields and rejects retired processing or quality fields', () => {
+    const valid = {
+      batchId: `0x${'11'.repeat(32)}`,
+      claims: ['countryOfOrigin', 'expiryDate'],
+      requiredClaims: ['countryOfOrigin'],
+      dueAt: '2099-01-01',
+      operationId: '11111111-1111-4111-8111-111111111111',
+      policy: { policyVersion: 2, template: 'basic' },
+      reason: 'Verify ingredient origin and expiry',
+    };
+    expect(evidenceRequestSchema.safeParse(valid).success).toBe(true);
+    for (const change of [
+      { claims: ['processingLocation'] },
+      { claims: ['qualityTests'] },
+      { claims: ['internalQualityRemarks'] },
+      { policy: { policyVersion: 2, template: 'quality' } },
+    ])
+      expect(evidenceRequestSchema.safeParse({ ...valid, ...change }).success).toBe(false);
   });
 });

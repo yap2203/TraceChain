@@ -1,5 +1,16 @@
 # Project Progress
 
+## 2026-11-20 - Complete ingredient processing/quality field removal
+
+- Removed retired processing/date-context and laboratory-quality fields from the
+  ingredient registration DTO, credential write path, Supplier review/detail responses
+  and new Manufacturer/Retailer evidence-request validation.
+- Kept legacy credential/request parsers for cryptographic and stored-record compatibility,
+  while filtering retired values from current API responses, evidence reviews and shared
+  claim rendering. Legacy unfinished registrations are compared through their current-field
+  projection so they can resume without resending or displaying retired values.
+- Added API, shared-policy and frontend regression coverage. Contracts remain unchanged.
+
 ## 2026-11-19 - Simplify ingredient processing and quality inputs
 
 - Removed processing country/location, date-type selection, laboratory/quality evidence
@@ -8,8 +19,8 @@
   Removed the unused laboratory editor component.
 - Removed processing/quality choices and the Quality template from new evidence-request
   forms. Existing credentials, request policies and private document verification remain
-  supported. Resuming an old registration submits its original frozen data and shows any
-  saved additional fields in a collapsed read-only summary.
+  supported for compatibility. Superseded by the 2026-11-20 hardening above: old
+  registrations now ignore these retired fields instead of displaying or resending them.
 - Updated creation/legacy-resume and request-template regression coverage plus the README
   and policy/creation documentation. No contract, storage, environment or login change.
 

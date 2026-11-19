@@ -51,17 +51,48 @@ export const INGREDIENT_REQUEST_CLAIMS = [
   ['internalQualityRemarks', 'Internal quality remarks'],
   ['certificationDetails', 'Legacy certification text'],
 ] as const;
+/**
+ * Historical credentials and requests may still contain these claims. Keep their
+ * parsers for verification, but do not offer or display them in the current
+ * ingredient experience.
+ */
+export const RETIRED_INGREDIENT_CLAIMS = [
+  'processingCountry',
+  'processingLocation',
+  'productionDateMeaning',
+  'qualityTests',
+  'qualityDocuments',
+  'qualityTestSummary',
+  'internalQualityRemarks',
+] as const;
+
+export function isRetiredIngredientClaim(key: string): boolean {
+  return (
+    (RETIRED_INGREDIENT_CLAIMS as readonly string[]).includes(key) ||
+    key.startsWith('qualityTest_') ||
+    key.startsWith('qualityDocuments_')
+  );
+}
+
+export function visibleIngredientClaims(claims: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(claims)
+      .filter(([key]) => !isRetiredIngredientClaim(key))
+      .map(([key, value]) => [
+        key,
+        key === 'originDetails' && value && typeof value === 'object' && !Array.isArray(value)
+          ? Object.fromEntries(
+              Object.entries(value as Record<string, unknown>).filter(
+                ([nested]) => !['processingCountry', 'processingLocation'].includes(nested),
+              ),
+            )
+          : value,
+      ]),
+  );
+}
 /** Current form choices; the wider set remains valid for historical requests/credentials. */
 export const CURRENT_INGREDIENT_REQUEST_CLAIMS = INGREDIENT_REQUEST_CLAIMS.filter(
-  ([key]) =>
-    ![
-      'processingCountry',
-      'processingLocation',
-      'qualityTests',
-      'qualityDocuments',
-      'qualityTestSummary',
-      'internalQualityRemarks',
-    ].includes(key),
+  ([key]) => !isRetiredIngredientClaim(key),
 ).map(
   ([key, label]) =>
     [key, key === 'productionDate' ? 'Production date (Supplier reported)' : label] as const,
@@ -164,14 +195,6 @@ export function ingredientDisclosureErrors(
 ): string[] {
   const errors: string[] = [];
   const requirements = ingredientPolicyRequirements(policy, required);
-  if (
-    payload.policyVersion === 2 &&
-    requirements.includes('productionDate') &&
-    !payload.productionDateMeaning
-  )
-    errors.push(
-      'The signed meaning of this date is unavailable. An authorized replacement credential is needed.',
-    );
   for (const key of requirements) {
     if (
       ['certifications', 'certificationDocuments', 'qualityTests', 'qualityDocuments'].includes(key)

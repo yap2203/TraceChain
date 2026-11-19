@@ -28,7 +28,6 @@ export const ALL_CLAIMS: { name: string; defaultReq: ClaimReq }[] = [
   { name: 'Expiry date', defaultReq: 'optional' },
   { name: 'Allergen information', defaultReq: 'required' },
   { name: 'Certification status', defaultReq: 'optional' },
-  { name: 'Quality-testing result', defaultReq: 'optional' },
 ];
 
 export const INIT_REQUESTS: EvidenceRequest[] = [
@@ -49,7 +48,6 @@ export const INIT_REQUESTS: EvidenceRequest[] = [
       { name: 'Origin', req: 'required' },
       { name: 'Allergen information', req: 'required' },
       { name: 'Certification status', req: 'required' },
-      { name: 'Quality-testing result', req: 'optional' },
     ],
     scenario: 'success',
     sharedClaims: [
@@ -58,7 +56,6 @@ export const INIT_REQUESTS: EvidenceRequest[] = [
       { name: 'Origin', value: 'Ghana', disclosed: true },
       { name: 'Allergen information', value: 'None', disclosed: true },
       { name: 'Certification status', value: 'Organic, Fair Trade', disclosed: true },
-      { name: 'Quality-testing result', value: null, disclosed: false },
     ],
     presentationId: 'PRES-2026-0031',
     credentialId: 'IC-COCOA-2026-001',

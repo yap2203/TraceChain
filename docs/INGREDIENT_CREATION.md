@@ -17,10 +17,10 @@ orders, stock ownership and receipt requirements are unchanged.
 
 Processing country/facility, date-type selection, laboratory evidence and internal
 quality remarks are removed from new creation. New records use production dates.
-Prepared registrations preserve their original data when resumed; removed fields
-appear only in a collapsed read-only summary when present. Previously issued records
-and presentations remain readable and verifiable. New request forms hide processing
-and quality claims and the Quality template; historical request policies still work.
+Prepared legacy registrations remain resumable after retired fields are ignored.
+Previously issued records and presentations remain readable and verifiable without
+displaying those retired values. New request forms and API validation reject processing
+and quality claims and the Quality template; historical request policies remain parseable.
 
 Back/Continue preserve values. Errors appear beside fields and focus moves to the
 first error. PDF/DOCX/PNG/JPEG extraction remains available; extracted values are

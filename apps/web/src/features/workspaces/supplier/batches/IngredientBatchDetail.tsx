@@ -139,23 +139,6 @@ export function IngredientBatchDetail({
           />
         </Card>
       ))}
-      {batch.qualityTests?.map((entry) => (
-        <Card key={entry.id}>
-          <IngredientClaimValue
-            name={'qualityTest_' + entry.id}
-            value={entry}
-            loadDocument={(id) => getCertificationDocument(batchId, id)}
-          />
-        </Card>
-      ))}
-      {batch.internalQualityRemarks && (
-        <Card>
-          <IngredientClaimValue
-            name="internalQualityRemarks"
-            value={batch.internalQualityRemarks}
-          />
-        </Card>
-      )}
       <div className="workspace-detail-grid">
         <Card>
           <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>

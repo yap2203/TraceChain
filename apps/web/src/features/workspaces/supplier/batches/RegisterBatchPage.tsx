@@ -1,4 +1,3 @@
-import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
 import './ingredient-creation.css';
 import { useEffect, useRef, useState } from 'react';
 import { type Country } from 'react-phone-number-input';
@@ -73,7 +72,6 @@ export function RegisterBatch({
 }: Props) {
   const [mode, setMode] = useState<'choose' | 'manual' | 'document'>('choose'),
     [step, setStep] = useState(0);
-  const [savedAdditionalDetails, setSavedAdditionalDetails] = useState<IngredientBatchInput>();
   const [operationId] = useState(() => crypto.randomUUID());
   const [drafts, setDrafts] = useState<{ batchId: string; input: IngredientBatchInput }[]>([]);
   const [draft, setDraft] = useState({
@@ -157,7 +155,6 @@ export function RegisterBatch({
     quantity: draft.quantity,
     unit: draft.unit,
     productionDate: draft.produced,
-    productionDateMeaning: 'production',
     expiryDate: draft.expiry,
     origin: origin.countryName,
     originDetails: origin,
@@ -308,7 +305,7 @@ export function RegisterBatch({
     setBusy(true);
     setError('');
     try {
-      const saved = record.input;
+      const saved = currentIngredientInput(record.input);
       const restored: CertificationDraft[] = [];
       for (const entry of saved.certificationEntries ?? []) {
         const files = [];
@@ -327,7 +324,6 @@ export function RegisterBatch({
         restored.push({ ...fields, files });
       }
       frozen.current = saved;
-      setSavedAdditionalDetails(saved);
       setStarted(true);
       setMode('manual');
       setStep(2);
@@ -800,12 +796,7 @@ export function RegisterBatch({
                               ? `${conversion.quantity} ${conversion.unit}`
                               : 'Invalid quantity',
                         ],
-                        [
-                          frozen.current?.productionDateMeaning === 'processing'
-                            ? 'Processing date (saved registration)'
-                            : 'Production date',
-                          draft.produced,
-                        ],
+                        ['Production date', draft.produced],
                         ['Expiry date', draft.expiry],
                         ['Country / legacy origin', origin.countryName || legacyOrigin],
                         ['State / region', draft.region],
@@ -865,49 +856,6 @@ export function RegisterBatch({
                       basis and image are separate listing metadata. A Supplier signature does not
                       verify a certification authority.
                     </p>
-                    {savedAdditionalDetails &&
-                    (savedAdditionalDetails.qualityTests?.length ||
-                      savedAdditionalDetails.originDetails?.processingCountry ||
-                      savedAdditionalDetails.originDetails?.processingLocation ||
-                      savedAdditionalDetails.internalQualityRemarks ||
-                      savedAdditionalDetails.productionDateMeaning === 'processing') ? (
-                      <details>
-                        <summary>Previously saved additional details (read-only)</summary>
-                        <p>
-                          These values belong to this saved registration and are preserved when
-                          resuming it.
-                        </p>
-                        {savedAdditionalDetails.originDetails?.processingCountry && (
-                          <IngredientClaimValue
-                            name="processingCountry"
-                            value={savedAdditionalDetails.originDetails.processingCountry}
-                          />
-                        )}{' '}
-                        {savedAdditionalDetails.originDetails?.processingLocation && (
-                          <IngredientClaimValue
-                            name="processingLocation"
-                            value={savedAdditionalDetails.originDetails.processingLocation}
-                          />
-                        )}{' '}
-                        {savedAdditionalDetails.productionDateMeaning === 'processing' && (
-                          <IngredientClaimValue name="productionDateMeaning" value="processing" />
-                        )}
-                        {savedAdditionalDetails.internalQualityRemarks && (
-                          <IngredientClaimValue
-                            name="internalQualityRemarks"
-                            value={savedAdditionalDetails.internalQualityRemarks}
-                          />
-                        )}{' '}
-                        {savedAdditionalDetails.qualityTests?.map((entry) => (
-                          <IngredientClaimValue
-                            key={entry.id}
-                            name={'qualityTest_' + entry.id}
-                            value={entry}
-                            loadDocument={(id) => getCertificationDocument(batchId, id)}
-                          />
-                        ))}
-                      </details>
-                    ) : null}
                     <PresentationSigningSettingsLink role="supplier" />
                     {started && <p role="status">{status}</p>}
                     {started && !complete && (
@@ -970,4 +918,16 @@ export function RegisterBatch({
       )}
     </div>
   );
+}
+
+function currentIngredientInput(input: IngredientBatchInput): IngredientBatchInput {
+  const current = { ...input } as IngredientBatchInput & Record<string, unknown>;
+  delete current.qualityTests;
+  delete current.internalQualityRemarks;
+  delete current.productionDateMeaning;
+  if (!current.originDetails) return current;
+  const originDetails = { ...current.originDetails } as IngredientOrigin & Record<string, unknown>;
+  delete originDetails.processingCountry;
+  delete originDetails.processingLocation;
+  return { ...current, originDetails };
 }

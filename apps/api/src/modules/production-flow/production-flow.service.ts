@@ -24,6 +24,7 @@ import {
   companyDisclosureGroup,
   ingredientDisclosureErrors,
   ingredientPolicyRequirements,
+  visibleIngredientClaims,
   type IngredientRequestPolicy,
 } from '@tracechain/shared';
 import { Resolver } from 'did-resolver';
@@ -554,9 +555,11 @@ export class ProductionFlowService {
       }
       const names = await this.identityNames([workflow.supplier]);
       const expiry = Number(claims.exp ?? 0);
-      const sharedClaims = Object.fromEntries(
-        Object.entries(claims).filter(
-          ([key]) => !['iss', 'sub', 'vct', 'cnf', 'iat', 'exp'].includes(key),
+      const sharedClaims = visibleIngredientClaims(
+        Object.fromEntries(
+          Object.entries(claims).filter(
+            ([key]) => !['iss', 'sub', 'vct', 'cnf', 'iat', 'exp'].includes(key),
+          ),
         ),
       );
       return {
@@ -594,7 +597,7 @@ export class ProductionFlowService {
       presentationExpiry:
         presentation.expirationDate ?? new Date(chain.presentationExpiresAt * 1_000).toISOString(),
       requestId,
-      sharedClaims: {
+      sharedClaims: visibleIngredientClaims({
         ...(credential.credentialSubject.originDetails
           ? { originDetails: credential.credentialSubject.originDetails }
           : {}),
@@ -614,7 +617,7 @@ export class ProductionFlowService {
         productionDate: credential.credentialSubject.productionDate,
         quantity: credential.credentialSubject.quantity,
         unit: credential.credentialSubject.unit,
-      },
+      }),
       supplier: workflow.supplier,
       supplierName: names.get(workflow.supplier.toLowerCase()),
       status: chain.status,
