@@ -1,29 +1,34 @@
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { BadgeCheck } from 'lucide-react';
+import { BadgeCheck, RefreshCw, Search } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { BrowserProvider } from 'ethers';
 
 import { getCompanyCredentials, type ChainCredential } from '../../../blockchain/blockchain.api';
 import { sendPreparedTransaction } from '../../../blockchain/blockchain.api';
 import { prepareAdministratorCredentialOnChain } from '../../../auth/auth.api';
-import {
-  Badge,
-  Btn,
-  Card,
-  EmptyState,
-  SectionTitle,
-  StatCard,
-  T,
-  Table,
-  TD,
-  TR,
-} from '../../shared/ui';
+import { Badge, Btn, Card, EmptyState, SectionTitle, T, Table, TD, TR } from '../../shared/ui';
 import { CredDetail } from './CredentialDetail';
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import { Alert } from '../../shared/ui';
 
 export function CompanyCredentials() {
   const [credentials, setCredentials] = useState<ChainCredential[]>([]);
-  const [selected, setSelected] = useState<ChainCredential | null>(null);
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [accessFilter, setAccessFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [params, setParams] = useSearchParams();
+  const selectedId = params.get('credentialId');
+  const selected = selectedId
+    ? credentials.find((record) => record.credentialId.toLowerCase() === selectedId.toLowerCase())
+    : undefined;
+  const selectCredential = (credentialId?: string) => {
+    const next = new URLSearchParams(params);
+    if (credentialId) next.set('credentialId', credentialId);
+    else next.delete('credentialId');
+    setParams(next);
+  };
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [connectingAdmin, setConnectingAdmin] = useState(false);
@@ -31,9 +36,12 @@ export function CompanyCredentials() {
     setLoading(true);
     setError('');
     try {
-      setCredentials((await getCompanyCredentials()).credentials);
+      const records = (await getCompanyCredentials()).credentials;
+      setCredentials(records);
+      return records;
     } catch (cause) {
       setError(reportError(cause, 'Credential registry read failed.'));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -73,32 +81,65 @@ export function CompanyCredentials() {
       setConnectingAdmin(false);
     }
   };
-  if (loading) return <LoadingIndicator page label="Loading records…" />;
+  if (loading && credentials.length === 0)
+    return <LoadingIndicator page label="Loading records…" />;
   if (selected)
     return (
       <CredDetail
+        key={selected.credentialId}
         cred={selected}
-        onBack={() => setSelected(null)}
+        onBack={() => selectCredential()}
+        refreshing={loading}
+        refreshError={error}
         onChanged={async () => {
-          await load();
-          setSelected(null);
+          const records = await load();
+          const record = records?.find((item) => item.credentialId === selected.credentialId);
+          if (!record) throw new Error('The company record could not be refreshed.');
+          return record;
         }}
       />
     );
-  const count = (status: ChainCredential['status']) =>
-    credentials.filter((item) => item.status === status).length;
+  if (selectedId)
+    return (
+      <div className="admin-company-detail">
+        <BackNavigation onClick={() => selectCredential()}>Back to Manage companies</BackNavigation>
+        {error ? (
+          <Alert type="error" message={error} />
+        ) : (
+          <EmptyState
+            icon={<BadgeCheck size={40} />}
+            title="Company record unavailable"
+            sub="No accessible company credential matches this link. Return to Manage companies or refresh the records."
+          />
+        )}
+        <div className="action-row">
+          <Btn variant="outline" onClick={() => void load()}>
+            Refresh records
+          </Btn>
+        </div>
+      </div>
+    );
+  const roles = ['Supplier', 'Manufacturer', 'Distributor', 'Retailer'];
+  const filtered = credentials.filter(
+    (record) =>
+      (roleFilter === 'all' || displayRole(record.role) === roleFilter) &&
+      (accessFilter === 'all' || record.stakeholderStatus === accessFilter) &&
+      [record.companyName, record.companyRegistrationNumber, record.subject].some((value) =>
+        value?.toLowerCase().includes(search.trim().toLowerCase()),
+      ),
+  );
   const administratorConnected = credentials.some((item) => item.role === 'SYSTEM_ADMIN');
   return (
-    <div>
+    <div className="admin-company-list">
       <SectionTitle
         title="Manage companies"
         sub={
           loading
             ? 'Reading CredentialRegistry...'
-            : `${credentials.length} company records ? Manage credentials and individual permissions`
+            : `${credentials.length} company records. Manage access, credentials and individual permissions.`
         }
         action={
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="action-row">
             {!administratorConnected && (
               <Btn
                 size="xs"
@@ -109,12 +150,82 @@ export function CompanyCredentials() {
                 {connectingAdmin ? 'Connecting Admin credential...' : 'Connect Admin credential'}
               </Btn>
             )}
-            <StatCard label="Active" value={String(count('active'))} color={T.green} />
-            <StatCard label="Suspended" value={String(count('suspended'))} color={T.amber} />
-            <StatCard label="Revoked" value={String(count('revoked'))} color={T.red} />
+            <Btn
+              size="sm"
+              variant="outline"
+              icon={<RefreshCw size={15} />}
+              disabled={loading || connectingAdmin}
+              onClick={() => void load()}
+            >
+              {loading ? 'Refreshing...' : 'Refresh companies'}
+            </Btn>
           </div>
         }
       />
+      <div className="admin-company-role-stats" aria-label="Company statistics by role">
+        {roles.map((name) => (
+          <button
+            key={name}
+            type="button"
+            aria-pressed={roleFilter === name}
+            onClick={() => setRoleFilter(roleFilter === name ? 'all' : name)}
+          >
+            <span>{name}s</span>{' '}
+            <strong>
+              {credentials.filter((record) => displayRole(record.role) === name).length}
+            </strong>
+          </button>
+        ))}
+      </div>
+      <div className="admin-company-filters">
+        <p className="admin-company-note">
+          Credential records:{' '}
+          {['active', 'suspended', 'revoked', 'expired']
+            .map(
+              (status) =>
+                `${credentials.filter((record) => record.status === status).length} ${status}`,
+            )
+            .join(' · ')}
+        </p>
+        <nav className="workspace-choice-tabs" aria-label="Filter companies by role">
+          {['all', ...roles].map((name) => (
+            <button
+              key={name}
+              type="button"
+              aria-pressed={roleFilter === name}
+              onClick={() => setRoleFilter(name)}
+            >
+              {name === 'all' ? 'All companies' : name}
+            </button>
+          ))}
+        </nav>
+        <div className="admin-company-search-row">
+          <label className="admin-company-search">
+            <Search size={17} aria-hidden="true" />
+            <span className="sr-only">Search companies</span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search company, registration or wallet"
+            />
+          </label>
+          <label className="admin-company-access-filter">
+            Company access
+            <select value={accessFilter} onChange={(event) => setAccessFilter(event.target.value)}>
+              <option value="all">All statuses</option>
+              <option value="active">Active</option>
+              <option value="suspended">Suspended</option>
+              <option value="revoked">Revoked</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </label>
+        </div>
+        <p className="admin-company-note" role="status">
+          Showing {filtered.length} of {credentials.length} company records · Credential status and
+          company access are recorded separately.
+        </p>
+      </div>
       {error && (
         <div style={{ color: T.red, marginBottom: 12, fontSize: 12 }}>
           {error}{' '}
@@ -124,11 +235,15 @@ export function CompanyCredentials() {
         </div>
       )}
       <Card padding="0">
-        {!loading && credentials.length === 0 ? (
+        {!loading && filtered.length === 0 ? (
           <EmptyState
             icon={<BadgeCheck size={44} />}
-            title="No issued credentials"
-            sub="Approve a company application and register its credential first."
+            title={credentials.length ? 'No matching companies' : 'No issued credentials'}
+            sub={
+              credentials.length
+                ? 'Change the role, access status or search to find a company.'
+                : 'Approve a company application and register its credential first.'
+            }
           />
         ) : (
           <Table
@@ -139,13 +254,17 @@ export function CompanyCredentials() {
               'Credential ID',
               'Issued',
               'Expiry',
-              'Status',
+              'Credential status',
+              'Company access',
               '',
             ]}
           >
-            {credentials.map((credential) => (
-              <TR key={credential.credentialId} onClick={() => setSelected(credential)}>
-                <TD bold>{credential.companyName}</TD>
+            {filtered.map((credential) => (
+              <TR
+                key={credential.credentialId}
+                onClick={() => selectCredential(credential.credentialId)}
+              >
+                <TD bold>{credential.companyName || 'Company name unavailable'}</TD>
                 <TD mono muted>
                   {credential.companyRegistrationNumber}
                 </TD>
@@ -159,7 +278,20 @@ export function CompanyCredentials() {
                   <Badge label={credential.status} variant={badge(credential.status)} />
                 </TD>
                 <TD>
-                  <Btn size="xs" variant="outline">
+                  <Badge
+                    label={credential.stakeholderStatus}
+                    variant={badge(credential.stakeholderStatus)}
+                  />
+                </TD>
+                <TD>
+                  <Btn
+                    size="xs"
+                    variant="outline"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      selectCredential(credential.credentialId);
+                    }}
+                  >
                     Manage
                   </Btn>
                 </TD>
@@ -179,7 +311,10 @@ function short(value: string) {
   return `${value.slice(0, 10)}...${value.slice(-6)}`;
 }
 function displayRole(role: string) {
-  return role.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return role
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 function badge(status: ChainCredential['status']) {
   return status === 'active' ? 'active' : status === 'suspended' ? 'suspended' : 'rejected';

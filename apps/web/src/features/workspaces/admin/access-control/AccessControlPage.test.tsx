@@ -38,6 +38,13 @@ describe('individual company permissions UI', () => {
     expect(workspaceNavigation.admin.some(([id]) => String(id) === 'personal')).toBe(false);
     expect(workspacePage('admin', 'permissions/companies')).toBe('credentials');
     expect(workspacePage('admin', 'personal')).toBe('credentials');
+    expect(workspacePage('admin', 'stakeholders')).toBe('credentials');
+    expect(workspacePage('admin', 'accesscontrol')).toBe('credentials');
+    expect(workspacePage('admin', 'credentials')).toBe('credentials');
+    expect(workspacePath('admin', 'accesscontrol')).toBe('/admin/credentials');
+    expect(workspaceNavigation.admin.some(([, label]) => String(label) === 'Stakeholders')).toBe(
+      false,
+    );
     expect(workspacePath('admin', 'credentials')).toBe('/admin/credentials');
   });
   it('keeps only role permissions and the matrix in Access Control', async () => {
@@ -91,11 +98,11 @@ describe('individual company permissions UI', () => {
   it('shows actual defaults and effective access and requires confirmation before a wallet update', async () => {
     await open();
     expect(mocks.getPersonalPermissions).toHaveBeenCalledWith(account);
-    fireEvent.change(screen.getByLabelText('Individual setting: Register ingredient batches'), {
+    fireEvent.change(screen.getByLabelText('Company override: Register ingredient batches'), {
       target: { value: '1' },
     });
     expect(mocks.preparePersonalPermission).not.toHaveBeenCalled();
-    expect(screen.getByText('Confirm individual permission')).toBeTruthy();
+    expect(screen.getByText('Confirm company permission')).toBeTruthy();
     fireEvent.click(screen.getByText('Cancel'));
     expect(mocks.preparePersonalPermission).not.toHaveBeenCalled();
   });
@@ -105,7 +112,7 @@ describe('individual company permissions UI', () => {
       wait: vi.fn().mockResolvedValue({ status: 1 }),
     });
     await open();
-    fireEvent.change(screen.getByLabelText('Individual setting: Register ingredient batches'), {
+    fireEvent.change(screen.getByLabelText('Company override: Register ingredient batches'), {
       target: { value: '0' },
     });
     fireEvent.click(screen.getByText('Confirm permission'));
@@ -125,7 +132,7 @@ describe('individual company permissions UI', () => {
     } as ChainCredential;
     render(<CredDetail cred={cred} onBack={() => undefined} onChanged={async () => undefined} />);
     await waitFor(() =>
-      expect(screen.getByText(/Individual permissions could not be read/)).toBeTruthy(),
+      expect(screen.getByText(/Company permissions could not be loaded/)).toBeTruthy(),
     );
     expect(screen.queryByText('Allowed')).toBeNull();
   });
@@ -148,7 +155,7 @@ describe('individual company permissions UI', () => {
     await screen.findByText('Denied');
     expect(mocks.getPersonalPermissions).toHaveBeenCalledWith(account);
     expect(screen.queryByLabelText('Company wallet')).toBeNull();
-    fireEvent.change(screen.getByLabelText('Individual setting: Register ingredient batches'), {
+    fireEvent.change(screen.getByLabelText('Company override: Register ingredient batches'), {
       target: { value: '1' },
     });
     expect(mocks.preparePersonalPermission).not.toHaveBeenCalled();

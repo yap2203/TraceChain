@@ -2,6 +2,8 @@
 
 ## Repository and implementation
 
+- Combine Company access and Issued credential controls visually in one Company management card, with visible labelled groups and separate status/actions (user-confirmed 2026-11-19). Keep independent contract records and transaction semantics; do not synchronize both records from one action. This supersedes the collapsed Advanced credential controls presentation.
+
 - End the per-transaction MetaMask preview-message trial (user-requested 2026-11-17): remove the extra signatures and unused metadata/formatters, preserve ordinary transaction confirmation, SIWE, application ownership signatures and duplicate-request guards. Profile location setup stays in one column at all sizes, with the empty-state icon/message centered across the section. This supersedes the earlier preview trial and two-column location presentation.
 
 

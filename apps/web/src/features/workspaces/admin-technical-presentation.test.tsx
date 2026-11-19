@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const { CREDENTIAL_ID, WALLET } = vi.hoisted(() => ({
@@ -34,18 +35,27 @@ vi.mock('../blockchain/blockchain.api', async (importOriginal) => {
       ],
     }),
     getRolePermissions: vi.fn().mockResolvedValue({ permissions: [] }),
+    getPersonalPermissions: vi.fn().mockResolvedValue({ permissions: [] }),
   };
 });
 
-import AccessControl from './admin/access-control/AccessControlPage';
+import { CompanyCredentials } from './admin/credentials/CompanyCredentialsPage';
 
 afterEach(cleanup);
 
 describe('administrator stakeholder presentation', () => {
-  it('keeps company names first while retaining technical wallet and credential columns', async () => {
-    render(<AccessControl />);
+  it('keeps company names first and full wallet/credential details accessible from Manage companies', async () => {
+    render(
+      <MemoryRouter>
+        <CompanyCredentials />
+      </MemoryRouter>,
+    );
     expect(await screen.findByText('Swift Distribution Sdn. Bhd.')).toBeTruthy();
-    expect(screen.getByText('0x400000...00004')).toBeTruthy();
-    expect(screen.getByText('0x121212...21212')).toBeTruthy();
+    expect(screen.getByText('0x12121212...121212')).toBeTruthy();
+    fireEvent.click(screen.getByText('Manage'));
+    expect(screen.getByRole('heading', { name: 'Swift Distribution Sdn. Bhd.' })).toBeTruthy();
+    expect(screen.getByText(WALLET)).toBeTruthy();
+    expect(screen.getByText(CREDENTIAL_ID)).toBeTruthy();
+    await screen.findByText('No operational permissions were returned for this company.');
   });
 });

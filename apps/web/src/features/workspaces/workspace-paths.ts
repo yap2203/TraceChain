@@ -3,7 +3,7 @@ import type { WorkspaceRole } from './workspace-navigation';
 // Map internal page identifiers to the canonical system URLs.
 const paths: Record<WorkspaceRole, Record<string, string>> = {
   admin: {
-    accesscontrol: 'stakeholders',
+    accesscontrol: 'credentials',
     roles: 'permissions/roles',
     matrix: 'permissions/matrix',
     audit: 'reports',
@@ -47,7 +47,12 @@ export function workspacePath(role: WorkspaceRole, page: string) {
 }
 
 export function workspacePage(role: WorkspaceRole, path: string) {
-  if (role === 'admin' && ['personal', 'permissions/companies'].includes(path))
+  if (
+    role === 'admin' &&
+    ['personal', 'permissions/companies', 'stakeholders', 'accesscontrol', 'credentials'].includes(
+      path,
+    )
+  )
     return 'credentials';
   if (role === 'retailer' && path === 'incoming-products') return 'shipments';
   if (role === 'distributor' && path === 'transfers') return 'product-shipments';

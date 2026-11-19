@@ -448,6 +448,12 @@ export function DeliveryIdentityPanel({
         <details className="company-evidence-card__shared">
           <summary>View shared evidence</summary>
           {status?.checks?.length ? <p>Verification checks: {status.checks.join(', ')}</p> : null}
+          {rawStatus === 'VERIFIED' && (
+            <p>
+              Verification records the checks at that time, not business acceptance. Protected
+              actions check current company authorization again.
+            </p>
+          )}
           {!status?.credential && (
             <p>
               {completed

@@ -1,38 +1,19 @@
 import { permissionLabels } from './PersonalPermissions';
 import { reportError } from '../../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { BrowserProvider, id } from 'ethers';
-import { ShieldCheck } from 'lucide-react';
+import { BrowserProvider } from 'ethers';
 import { useCallback, useEffect, useState } from 'react';
-
 import { targetChainId } from '../../../../config/chain';
 import {
   getCompanyCredentials,
   getRolePermissions,
   prepareRolePermission,
-  prepareStakeholderLifecycle,
   sendPreparedTransaction,
   type ChainCredential,
   type RolePermissionRecord,
 } from '../../../blockchain/blockchain.api';
-import {
-  Alert,
-  Badge,
-  Btn,
-  Card,
-  EmptyState,
-  Modal,
-  SectionTitle,
-  T,
-  Table,
-  TD,
-  Textarea,
-  TR,
-  UI,
-} from '../../shared/ui';
-
-type Tab = 'stakeholders' | 'roles' | 'matrix';
-const roles = ['System Admin', 'Supplier', 'Manufacturer', 'Distributor', 'Retailer'] as const;
+import { Alert, Card, SectionTitle, T, UI } from '../../shared/ui';
+type Tab = 'roles' | 'matrix';
 const operationalRoles = ['Supplier', 'Manufacturer', 'Distributor', 'Retailer'] as const;
 const roleColors: Record<string, string> = {
   Supplier: T.teal,
@@ -40,15 +21,10 @@ const roleColors: Record<string, string> = {
   Distributor: '#0369A1',
   Retailer: '#7C3AED',
 };
-
 export default function AccessControl({ section }: { section?: Tab } = {}) {
-  const [tab, setTab] = useState<Tab>(section ?? 'stakeholders');
+  const [tab, setTab] = useState<Tab>(section ?? 'roles');
   const [records, setRecords] = useState<ChainCredential[]>([]);
   const [permissions, setPermissions] = useState<RolePermissionRecord[]>([]);
-  const [selected, setSelected] = useState<ChainCredential | null>(null);
-  const [action, setAction] = useState<'reactivate' | 'revoke' | 'suspend' | null>(null);
-  const [reason, setReason] = useState('');
-  const [confirm, setConfirm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -56,18 +32,14 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
     setLoading(true);
     setError('');
     try {
-      const stakeholders = await getCompanyCredentials();
-      setRecords(stakeholders.credentials);
-      try {
-        setPermissions((await getRolePermissions()).permissions);
-      } catch {
-        setPermissions([]);
-        setError(
-          'The deployed StakeholderRegistry does not expose configurable permissions yet. Redeploy the updated contracts.',
-        );
-      }
+      const [companies, rolePermissions] = await Promise.all([
+        getCompanyCredentials(),
+        getRolePermissions(),
+      ]);
+      setRecords(companies.credentials);
+      setPermissions(rolePermissions.permissions);
     } catch (cause) {
-      setError(reportError(cause, 'Access-control registry read failed.'));
+      setError(reportError(cause, 'Permission registry read failed.'));
     } finally {
       setLoading(false);
     }
@@ -75,43 +47,6 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
   useEffect(() => {
     void load();
   }, [load]);
-  const execute = async () => {
-    if (reason.length > 4000) {
-      setError('Reason must be 4000 characters or fewer.');
-      return;
-    }
-    if (action === 'revoke' && !confirm) {
-      setError('Confirm that revocation is permanent.');
-      return;
-    }
-    if (!selected || !action || !window.ethereum || (action !== 'reactivate' && !reason.trim()))
-      return;
-    setBusy(true);
-    setError('');
-    try {
-      const prepared = await prepareStakeholderLifecycle({
-        account: selected.subject,
-        action,
-        reasonHash: action === 'reactivate' ? undefined : id(reason.trim()),
-      });
-      if (BigInt(prepared.chainId) !== targetChainId)
-        throw new Error('The API transaction targets a different chain.');
-      const transaction = await sendPreparedTransaction(
-        await new BrowserProvider(window.ethereum).getSigner(),
-        prepared,
-      );
-      if (!(await transaction.wait())) throw new Error('The transaction was not confirmed.');
-      setAction(null);
-      setSelected(null);
-      setReason('');
-      setConfirm(false);
-      await load();
-    } catch (cause) {
-      setError(reportError(cause, 'Stakeholder action failed.'));
-    } finally {
-      setBusy(false);
-    }
-  };
   const togglePermission = async (permission: RolePermissionRecord, roleNumber: number) => {
     if (!window.ethereum) return;
     setBusy(true);
@@ -137,334 +72,43 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
       setBusy(false);
     }
   };
-  const tabs = [
-    { id: 'stakeholders' as const, label: 'Stakeholders', description: 'Manage members & roles' },
-    { id: 'roles' as const, label: 'Role Permissions', description: 'Configure per-role access' },
-    { id: 'matrix' as const, label: 'Permission Matrix', description: 'Full access overview' },
-  ];
-  if (loading) return <LoadingIndicator page label="Loading records…" />;
+
+  if (loading) return <LoadingIndicator page label="Loading permissions..." />;
+  const active = section ?? tab;
   return (
     <div>
       <SectionTitle
-        title={
-          section === 'roles'
-            ? 'Role permissions'
-            : section === 'matrix'
-              ? 'Permission matrix'
-              : 'Stakeholder access'
-        }
+        title={active === 'roles' ? 'Role permissions' : 'Permission matrix'}
         sub={
-          section === 'roles'
+          active === 'roles'
             ? 'Set the default permissions for each role.'
-            : section === 'matrix'
-              ? 'Compare the permissions available to each role.'
-              : 'Manage company access and lifecycle status.'
+            : 'Compare the permissions available to each role.'
         }
       />
       {!section && (
         <nav className="workspace-choice-tabs" aria-label="Access control sections">
-          {tabs.map(({ id: value, label, description }) => (
-            <button
-              key={value}
-              aria-pressed={tab === value}
-              onClick={() => setTab(value)}
-              style={{
-                padding: '12px 20px',
-                borderRadius: 8,
-                border: `1px solid ${tab === value ? `color-mix(in srgb, ${T.teal} 31%, transparent)` : T.border}`,
-                background: tab === value ? T.tealLight : T.surface,
-                cursor: 'pointer',
-                fontFamily: UI,
-                textAlign: 'left',
-                transition: 'all 0.15s',
-              }}
-            >
-              <span
-                style={{
-                  display: 'block',
-                  fontWeight: 600,
-                  fontSize: 13,
-                  color: tab === value ? T.teal : T.text,
-                }}
-              >
-                {label}
-              </span>
-              <span style={{ display: 'block', color: T.text2, fontSize: 11, marginTop: 2 }}>
-                {description}
-              </span>
-            </button>
-          ))}
+          <button aria-pressed={active === 'roles'} onClick={() => setTab('roles')}>
+            Role Permissions
+          </button>
+          <button aria-pressed={active === 'matrix'} onClick={() => setTab('matrix')}>
+            Permission Matrix
+          </button>
         </nav>
       )}
-      {tab === 'stakeholders' && (
-        <StakeholderView
-          records={records}
-          loading={loading}
-          error={error}
-          reload={load}
-          act={(record, nextAction) => {
-            setSelected(record);
-            setAction(nextAction);
-          }}
-        />
-      )}
-      {tab === 'roles' && (
+      {active === 'roles' ? (
         <RoleView
           records={records}
           permissions={permissions}
           busy={busy}
           toggle={togglePermission}
         />
+      ) : (
+        <MatrixView permissions={permissions} />
       )}
-      {tab === 'matrix' && <MatrixView permissions={permissions} />}
-      {tab !== 'stakeholders' && error && <Alert type="error" message={error} />}
-      {selected && action && (
-        <Modal
-          title={`${capitalize(action)} stakeholder access`}
-          onClose={() => {
-            setSelected(null);
-            setAction(null);
-          }}
-        >
-          <div style={{ display: 'grid', gap: 12 }}>
-            <Alert
-              type={action === 'revoke' ? 'error' : action === 'suspend' ? 'warning' : 'info'}
-              message={
-                action === 'revoke'
-                  ? 'Stakeholder revocation is permanent and removes the assigned role.'
-                  : action === 'suspend'
-                    ? 'Suspension immediately blocks this wallet from role-authorized operations.'
-                    : 'Reactivation succeeds only while the linked credential is unexpired and valid.'
-              }
-            />
-            {action !== 'reactivate' && (
-              <Textarea
-                label="Reason"
-                value={reason}
-                onChange={setReason}
-                rows={3}
-                placeholder="The reason is hashed before it is written on-chain."
-              />
-            )}
-            {action === 'revoke' && (
-              <label style={{ fontSize: 12 }}>
-                <input
-                  type="checkbox"
-                  checked={confirm}
-                  onChange={(event) => setConfirm(event.target.checked)}
-                />{' '}
-                I understand that stakeholder revocation is permanent.
-              </label>
-            )}
-            <div className="action-row">
-              <Btn
-                variant="outline"
-                onClick={() => {
-                  setSelected(null);
-                  setAction(null);
-                }}
-              >
-                Cancel
-              </Btn>
-              <Btn
-                variant={action === 'revoke' ? 'danger' : 'primary'}
-                disabled={
-                  busy ||
-                  (action !== 'reactivate' && !reason.trim()) ||
-                  (action === 'revoke' && !confirm)
-                }
-                onClick={() => void execute()}
-              >
-                {busy ? 'Waiting for MetaMask...' : `Confirm ${action}`}
-              </Btn>
-            </div>
-          </div>
-        </Modal>
-      )}
+      {error && <Alert type="error" message={error} />}
     </div>
   );
 }
-
-function StakeholderView({
-  records,
-  loading,
-  error,
-  reload,
-  act,
-}: {
-  records: ChainCredential[];
-  loading: boolean;
-  error: string;
-  reload: () => Promise<void>;
-  act: (record: ChainCredential, action: 'reactivate' | 'revoke' | 'suspend') => void;
-}) {
-  const [filter, setFilter] = useState('all');
-  const roleNames = ['Supplier', 'Manufacturer', 'Distributor', 'Retailer'];
-  const filtered =
-    filter === 'all'
-      ? records
-      : records.filter((record) => role(record.role).toLowerCase() === filter);
-  return (
-    <div style={{ display: 'grid', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 12 }}>
-        {roleNames.map((name) => {
-          const count = records.filter((record) => role(record.role) === name).length;
-          const active = filter === name.toLowerCase();
-          return (
-            <Card
-              key={name}
-              onClick={() => setFilter(active ? 'all' : name.toLowerCase())}
-              style={{
-                padding: '16px 20px',
-                cursor: 'pointer',
-                borderColor: active ? roleColors[name] : T.border,
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      color: T.text2,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.08em',
-                      marginBottom: 8,
-                    }}
-                  >
-                    {name}s
-                  </div>
-                  <div style={{ fontSize: 28, fontWeight: 700, color: roleColors[name] }}>
-                    {count}
-                  </div>
-                </div>
-                <div
-                  style={{ width: 8, height: 8, borderRadius: '50%', background: roleColors[name] }}
-                />
-              </div>
-            </Card>
-          );
-        })}
-      </div>
-      <Card padding="0">
-        <div
-          style={{
-            padding: '14px 20px',
-            borderBottom: `1px solid ${T.border}`,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span style={{ fontWeight: 600, color: T.navy }}>
-            Stakeholders{' '}
-            <span style={{ color: T.text2, fontWeight: 400 }}>({filtered.length})</span>
-          </span>
-          <div
-            style={{
-              display: 'flex',
-              background: T.surface2,
-              border: `1px solid ${T.border}`,
-              borderRadius: 6,
-              overflow: 'hidden',
-            }}
-          >
-            {['all', 'supplier', 'manufacturer', 'distributor', 'retailer'].map((value) => (
-              <button
-                key={value}
-                onClick={() => setFilter(value)}
-                style={{
-                  padding: '6px 12px',
-                  border: 0,
-                  background: filter === value ? T.border2 : 'transparent',
-                  color: filter === value ? T.navy : T.text2,
-                  fontFamily: UI,
-                  fontSize: 11,
-                  textTransform: 'capitalize',
-                  cursor: 'pointer',
-                }}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div style={{ padding: '10px 20px 0' }}>
-          <Alert
-            type="warning"
-            message="Lifecycle and permission changes are real smart-contract transactions and require System Admin confirmation in MetaMask."
-          />
-        </div>
-        {error && (
-          <div style={{ color: T.red, margin: 12, fontSize: 12 }}>
-            {error}{' '}
-            <Btn size="xs" variant="outline" onClick={() => void reload()}>
-              Retry
-            </Btn>
-          </div>
-        )}
-        {!loading && filtered.length === 0 ? (
-          <EmptyState
-            icon={<ShieldCheck size={44} />}
-            title="No registered stakeholders"
-            sub="Approved companies appear here after credential registration."
-          />
-        ) : (
-          <Table
-            headers={['Stakeholder', 'Wallet', 'Role', 'Credential', 'Joined', 'Status', 'Actions']}
-          >
-            {filtered.map((record) => (
-              <TR key={record.subject}>
-                <TD bold>{record.companyName}</TD>
-                <TD mono muted>
-                  {short(record.subject)}
-                </TD>
-                <TD>
-                  <span style={{ color: roleColors[role(record.role)] }}>{role(record.role)}</span>
-                </TD>
-                <TD mono muted>
-                  {short(record.credentialId)}
-                </TD>
-                <TD muted>{new Date(record.issuedAt * 1_000).toLocaleDateString()}</TD>
-                <TD>
-                  <Badge
-                    label={record.stakeholderStatus}
-                    variant={
-                      record.stakeholderStatus === 'active'
-                        ? 'verified'
-                        : record.stakeholderStatus === 'suspended'
-                          ? 'pending'
-                          : 'rejected'
-                    }
-                  />
-                </TD>
-                <TD>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {record.stakeholderStatus === 'active' && (
-                      <Btn size="sm" variant="secondary" onClick={() => act(record, 'suspend')}>
-                        Manage
-                      </Btn>
-                    )}
-                    {record.stakeholderStatus === 'suspended' && (
-                      <Btn size="sm" onClick={() => act(record, 'reactivate')}>
-                        Reactivate
-                      </Btn>
-                    )}
-                    {record.stakeholderStatus !== 'revoked' && (
-                      <Btn size="sm" variant="danger" onClick={() => act(record, 'revoke')}>
-                        Revoke
-                      </Btn>
-                    )}
-                  </div>
-                </TD>
-              </TR>
-            ))}
-          </Table>
-        )}
-      </Card>
-    </div>
-  );
-}
-
 function RoleView({
   records,
   permissions,
@@ -694,12 +338,9 @@ function MatrixView({ permissions }: { permissions: RolePermissionRecord[] }) {
     </Card>
   );
 }
-function short(value: string) {
-  return `${value.slice(0, 8)}...${value.slice(-5)}`;
-}
 function role(value: string) {
-  return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-function capitalize(value: string) {
-  return `${value[0].toUpperCase()}${value.slice(1)}`;
+  return value
+    .toLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

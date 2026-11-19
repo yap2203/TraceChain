@@ -25,8 +25,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     organisation: 'TraceChain Authority',
     navigation: nav('admin', [
       ['applications', 'Applications', 'applications'],
-      ['credentials', 'Credentials', 'credentials'],
-      ['stakeholders', 'Stakeholders', 'stakeholders'],
+      ['credentials', 'Manage companies', 'credentials'],
       ['information-requests', 'Information requests', 'evidence'],
     ]),
   },
@@ -87,10 +86,10 @@ export const workspacePages: Record<string, PageDefinition> = {
     icon: 'credentials',
   },
   'admin:stakeholders': {
-    title: 'Stakeholders',
-    description: 'Manage approved organisations and their assigned supply-chain roles.',
-    actionLabel: 'View stakeholder',
-    icon: 'stakeholders',
+    title: 'Manage companies',
+    description: 'Manage company access, credentials and individual permissions.',
+    actionLabel: 'Manage company',
+    icon: 'credentials',
   },
   'supplier:ingredients': {
     title: 'Ingredient batches',

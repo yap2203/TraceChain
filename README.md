@@ -1,5 +1,28 @@
 # TraceChain
 
+**Admin company details:** **Manage companies → Manage** opens a responsive identity summary,
+collapsed technical identifiers, credential lifecycle controls and company permission overrides.
+Manage companies also contains the former Stakeholders role statistics and filters, company search,
+company-access status filtering and the separate stakeholder access controls. The duplicate
+Stakeholders navigation entry is removed; old `/admin/stakeholders` and `/admin/accesscontrol`
+links redirect to `/admin/credentials`. Role permissions and Permission matrix remain separate.
+Company access and issued-credential lifecycle controls share one **Company management** card.
+Both labelled groups are visible, with separate status badges and actions; a company-access action
+changes only the stakeholder record, and a credential action changes only that issued credential.
+Opening the page is read-only; each change requires its own explicit confirmation. Stakeholder revocation removes the role and cannot reactivate
+that current record. Lifecycle writes check the current Admin session, selected wallet and record
+before MetaMask; success is reported only after a successful receipt and a matching record reread.
+If the reread fails or is stale, refresh without resending. Company proof verification rechecks both
+the signed credential and current on-chain company authorization. Historical proof checks do not
+grant ongoing access or business acceptance; new protected attestations check authorization again.
+Company links use `/admin/credentials?credentialId=<credential-id>` and retain existing Admin
+authorization. Dates show Singapore time (SGT, UTC+08:00). Registry lifecycle status is separate
+from cryptographic verification; this management page does not verify VC signatures. Permission
+selections remain pending until their individual MetaMask transaction confirms and the API rereads
+the chain. Confirmed values stay visible during refresh; a failed refresh after confirmation asks
+for a reread instead of resending the transaction. Download summary exports the existing JSON
+record, excludes the encrypted CID and does not export the signed VC.
+
 **Windows Solidity builds:** Hardhat uses its supported WASM compiler on Windows because Application
 Control may block the downloaded native compiler (`spawn UNKNOWN`). Solidity version and optimizer
 settings are preserved. See [contract setup](packages/contracts/README.md).

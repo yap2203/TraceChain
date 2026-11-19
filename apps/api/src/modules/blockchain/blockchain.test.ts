@@ -158,6 +158,16 @@ describe('blockchain gateway API', () => {
     expect(
       (await request(app).get('/api/blockchain/applications').expect(403)).body.error.code,
     ).toBe('ADMIN_AUTHORIZATION_REQUIRED');
+    for (const endpoint of ['credential-lifecycle', 'stakeholder-lifecycle']) {
+      expect(
+        (
+          await request(app)
+            .post(`/api/blockchain/transactions/${endpoint}`)
+            .send({ action: 'suspend' })
+            .expect(403)
+        ).body.error.code,
+      ).toBe('ADMIN_AUTHORIZATION_REQUIRED');
+    }
     expect(
       (
         await request(app)

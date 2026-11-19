@@ -227,9 +227,21 @@ it.each([CompanyRole.SUPPLIER, CompanyRole.MANUFACTURER])(
         sellerRole === CompanyRole.SUPPLIER ? 'ISSUE_INGREDIENT_CREDENTIAL' : 'INITIATE_TRANSFER',
       );
       activeSupplier = false;
+      const historical = structuredClone(workflows.get(requestId)!.identityProof);
       await expect(service.verifyCompanyIdentityProof('session', requestId)).rejects.toMatchObject({
         code: 'COMPANY_CREDENTIAL_INACTIVE',
       });
+      // An earlier successful verification cannot authorize a new protected attestation.
+      await expect(service.orderIdentityAttestation('session', requestId)).rejects.toMatchObject({
+        code: 'COMPANY_CREDENTIAL_INACTIVE',
+      });
+      expect(workflows.get(requestId)!.identityProof).toEqual(historical);
+      expect(historical?.status).toBe('VERIFIED');
+      expect(historical?.verifiedAt).toBeTruthy();
+      activeSupplier = true;
+      expect((await service.verifyCompanyIdentityProof('session', requestId)).status).toBe(
+        'VERIFIED',
+      );
     } finally {
       if (dirname(resolve(directory)).toLowerCase() !== resolve(tmpdir()).toLowerCase())
         throw new Error('Unexpected test temporary directory.');

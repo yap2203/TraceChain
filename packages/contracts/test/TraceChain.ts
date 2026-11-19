@@ -158,6 +158,37 @@ describe('TraceChain integration', function () {
     expect(await system.stakeholders.roleOf(system.supplier.address)).to.equal(2n);
   });
 
+  it('keeps company access separate from credential status and prevents revoked-record reactivation', async function () {
+    const system = await networkHelpers.loadFixture(deployFixture);
+    await onboard(system, system.supplier, 2);
+    const credentialId = ethers.id(`company-credential-id:${system.supplier.address}`);
+    const permission = ethers.id('REGISTER_INGREDIENT');
+    await system.stakeholders.suspendStakeholder(system.supplier.address, ethers.id('review'));
+    expect(await system.credentials.effectiveStatus(credentialId)).to.equal(1n);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+    await system.stakeholders.reactivateStakeholder(system.supplier.address);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      true,
+    );
+    await system.credentials.suspendCredential(credentialId, ethers.id('incorrect credential'));
+    expect((await system.stakeholders.getStakeholder(system.supplier.address)).status).to.equal(1n);
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+    await system.credentials.reactivateCredential(credentialId);
+    await system.stakeholders.revokeStakeholder(system.supplier.address, ethers.id('revoke'));
+    expect(await system.credentials.effectiveStatus(credentialId)).to.equal(1n);
+    expect((await system.stakeholders.getStakeholder(system.supplier.address)).role).to.equal(0n);
+    await expect(
+      system.stakeholders.reactivateStakeholder(system.supplier.address),
+    ).to.be.revertedWithCustomError(system.stakeholders, 'InvalidState');
+    expect(await system.stakeholders.hasPermission(system.supplier.address, permission)).to.equal(
+      false,
+    );
+  });
+
   it('lets the administrator change operational role permissions on-chain', async function () {
     const system = await networkHelpers.loadFixture(deployFixture);
     await onboard(system, system.supplier, 2);

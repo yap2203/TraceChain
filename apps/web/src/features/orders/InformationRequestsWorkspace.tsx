@@ -714,7 +714,11 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
             </ul>
           )}
           {status.verifiedAt && (
-            <p>Last verification: {new Date(status.verifiedAt).toLocaleString()}</p>
+            <p>
+              Last successful verification (historical):{' '}
+              {new Date(status.verifiedAt).toLocaleString()}. This does not grant business
+              acceptance; protected actions check current authorization again.
+            </p>
           )}
         </>
       ) : (

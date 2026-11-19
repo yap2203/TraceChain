@@ -5,8 +5,12 @@ import type { WorkspaceRole } from './workspace-navigation';
 const startingPoints: Record<WorkspaceRole, readonly (readonly [string, string, string])[]> = {
   admin: [
     ['applications', 'Review applications', 'Approve or reject company registrations.'],
-    ['credentials', 'Manage credentials', 'Review issued credentials and their status.'],
-    ['accesscontrol', 'Manage access', 'Set role and individual permissions.'],
+    [
+      'credentials',
+      'Manage companies',
+      'Review company access, credentials and individual permissions.',
+    ],
+    ['roles', 'Role permissions', 'Set default permissions for each role.'],
   ],
   supplier: [
     ['batches', 'Manage ingredients', 'Register batches and check your remaining stock.'],

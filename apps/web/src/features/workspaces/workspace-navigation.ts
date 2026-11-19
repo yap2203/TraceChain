@@ -26,10 +26,9 @@ export const workspaceNavigation = {
     ['overview', 'Overview', LayoutDashboard],
     ['applications', 'Applications', ClipboardList],
     ['credentials', 'Manage companies', BadgeCheck],
-    ['accesscontrol', 'Stakeholders', ShieldCheck],
     ['roles', 'Role permissions', ShieldCheck],
     ['matrix', 'Permission matrix', Layers],
-    ['discrepancies', 'Receipt discrepancies', AlertTriangle],
+    // ['discrepancies', 'Receipt discrepancies', AlertTriangle],
     ['audit', 'Audit reports', ChartNoAxesCombined],
   ],
   supplier: [
@@ -101,7 +100,7 @@ export function workspaceNavigationGroups(role: WorkspaceRole) {
     role === 'admin'
       ? [
           ['Workspace', ['overview']],
-          ['Company administration', ['applications', 'credentials', 'accesscontrol']],
+          ['Company administration', ['applications', 'credentials']],
           ['Permissions', ['roles', 'matrix']],
           ['Review & records', ['discrepancies', 'audit']],
         ]
