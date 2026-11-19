@@ -1,3 +1,9 @@
+import {
+  ingredientOriginSchema,
+  ingredientQualityTestSchema,
+  ingredientAllergenSchema,
+  ingredientCertificationSchema,
+} from './ingredient-details.js';
 import type { VerifiableCredential } from '@veramo/core';
 import { z } from 'zod';
 
@@ -5,6 +11,7 @@ import { COMPANY_ROLE_CREDENTIAL_CONTEXT } from './company-role-credential.js';
 
 export const INGREDIENT_CREDENTIAL_TYPE = 'IngredientCredential';
 export const INGREDIENT_CREDENTIAL_SCHEMA_ID = 'urn:tracechain:schema:ingredient:v1';
+export const INGREDIENT_CREDENTIAL_SCHEMA_V2 = 'urn:tracechain:schema:ingredient:v2';
 export const SUPPLIER_INGREDIENT_ISSUER_NAME = 'TraceChain Supplier Ingredient Issuer';
 
 const didSchema = z.string().regex(/^did:ethr:sepolia:0x[0-9a-fA-F]+$/);
@@ -18,10 +25,15 @@ export const ingredientCredentialSchema = z.object({
       'Standard Verifiable Credential context is required',
     ),
   credentialSchema: z.object({
-    id: z.literal(INGREDIENT_CREDENTIAL_SCHEMA_ID),
+    id: z.enum([INGREDIENT_CREDENTIAL_SCHEMA_ID, INGREDIENT_CREDENTIAL_SCHEMA_V2]),
     type: z.literal('JsonSchema'),
   }),
   credentialSubject: z.object({
+    qualityTests: z.array(ingredientQualityTestSchema).max(20).optional(),
+    internalQualityRemarks: z.string().max(4000).optional(),
+    originDetails: ingredientOriginSchema.optional(),
+    allergen: ingredientAllergenSchema.optional(),
+    certificationEntries: z.array(ingredientCertificationSchema).max(20).optional(),
     allergenInformation: z.string(),
     batchId: z.string().min(1),
     category: z.string().min(1),
@@ -31,6 +43,7 @@ export const ingredientCredentialSchema = z.object({
     ingredientName: z.string().min(1),
     origin: z.string().min(1),
     productionDate: z.string().datetime(),
+    productionDateMeaning: z.enum(['production', 'processing']).optional(),
     quantity: z.string().regex(/^[1-9]\d*$/),
     supplierWallet: walletSchema,
     unit: z.string().min(1),

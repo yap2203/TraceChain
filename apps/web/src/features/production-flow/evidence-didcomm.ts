@@ -6,7 +6,11 @@ import {
   EVIDENCE_PRESENTATION_TYPE,
   EVIDENCE_REQUEST_TYPE,
 } from '../didcomm/didcomm.api';
-import { getEvidenceDetails, type EvidenceDetails } from './production-flow.api';
+import {
+  getEvidenceDetails,
+  getCompanyIdentityProofStatus,
+  type EvidenceDetails,
+} from './production-flow.api';
 
 const expiry = (maximum?: number) =>
   new Date(
@@ -19,6 +23,7 @@ export async function sendEvidenceRequestMessage(details: EvidenceDetails) {
     body: {
       batchId: details.batchId,
       claims: details.claims,
+      ...(details.policy ? { policy: details.policy, requiredClaims: details.requiredClaims } : {}),
       dueAt: details.dueAt,
       purpose: details.reason,
       requestId: details.requestId,
@@ -52,14 +57,22 @@ export async function sendEvidencePresentationMessage(details: EvidenceDetails) 
 }
 
 export async function sendCompanyIdentityRequestMessage(details: EvidenceDetails) {
+  const status = await getCompanyIdentityProofStatus(details.requestId);
   return didCommApi.send({
     body: {
-      purpose: 'Confirm requester company identity before restricted ingredient disclosure',
+      purpose:
+        status.purpose ??
+        'Confirm requester company identity before restricted ingredient disclosure',
       requestId: details.requestId,
-      requestedClaims: ['Company Role Credential'],
+      requestedClaims: status.requiredClaims
+        ? [...status.requiredClaims, ...(status.optionalClaims ?? [])]
+        : ['Company Role Credential'],
+      ...(status.requiredClaims
+        ? { requiredClaims: status.requiredClaims, optionalClaims: status.optionalClaims ?? [] }
+        : {}),
     },
     businessReference: details.requestId,
-    expiresAt: expiry(Date.now() + 15 * 60_000),
+    expiresAt: expiry(status.expiresAt ? status.expiresAt * 1000 : Date.now() + 15 * 60_000),
     ingredientBatchReference: details.batchId,
     messageType: COMPANY_IDENTITY_REQUEST_TYPE,
     recipientWallet: details.requester,

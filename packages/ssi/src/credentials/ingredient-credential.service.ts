@@ -1,3 +1,9 @@
+import type {
+  IngredientOrigin,
+  IngredientQualityTest,
+  IngredientAllergen,
+  IngredientCertification,
+} from '@tracechain/shared';
 import { createHash, randomUUID } from 'node:crypto';
 
 import type { VerifiableCredential } from '@veramo/core';
@@ -8,6 +14,7 @@ import { COMPANY_ROLE_CREDENTIAL_CONTEXT } from './company-role-credential.js';
 import { walletAddressToDid } from './company-role-credential.service.js';
 import {
   INGREDIENT_CREDENTIAL_SCHEMA_ID,
+  INGREDIENT_CREDENTIAL_SCHEMA_V2,
   INGREDIENT_CREDENTIAL_TYPE,
   SUPPLIER_INGREDIENT_ISSUER_NAME,
   ingredientCredentialSchema,
@@ -15,6 +22,12 @@ import {
 } from './ingredient-credential.js';
 
 export interface IssueIngredientCredentialInput {
+  originDetails?: IngredientOrigin;
+  qualityTests?: IngredientQualityTest[];
+  internalQualityRemarks?: string;
+  allergen?: IngredientAllergen;
+  certificationEntries?: IngredientCertification[];
+  priceBasis?: string;
   price?: string;
   currency?: string;
   allergenInformation: string;
@@ -28,6 +41,7 @@ export interface IssueIngredientCredentialInput {
   issuerOperatorChainId: number;
   origin: string;
   productionDate: Date;
+  productionDateMeaning?: 'production' | 'processing';
   quantity: string;
   supplierWallet: string;
   unit: string;
@@ -42,8 +56,18 @@ export async function issueIngredientCredential(
   const credential = await agent.createVerifiableCredential({
     credential: {
       '@context': [COMPANY_ROLE_CREDENTIAL_CONTEXT],
-      credentialSchema: { id: INGREDIENT_CREDENTIAL_SCHEMA_ID, type: 'JsonSchema' },
+      credentialSchema: {
+        id: input.originDetails ? INGREDIENT_CREDENTIAL_SCHEMA_V2 : INGREDIENT_CREDENTIAL_SCHEMA_ID,
+        type: 'JsonSchema',
+      },
       credentialSubject: {
+        ...(input.qualityTests ? { qualityTests: input.qualityTests } : {}),
+        ...(input.internalQualityRemarks
+          ? { internalQualityRemarks: input.internalQualityRemarks }
+          : {}),
+        ...(input.originDetails ? { originDetails: input.originDetails } : {}),
+        ...(input.allergen ? { allergen: input.allergen } : {}),
+        ...(input.certificationEntries ? { certificationEntries: input.certificationEntries } : {}),
         allergenInformation: input.allergenInformation,
         batchId: input.batchId,
         category: input.category,
@@ -53,6 +77,9 @@ export async function issueIngredientCredential(
         ingredientName: input.ingredientName,
         origin: input.origin,
         productionDate: input.productionDate.toISOString(),
+        ...(input.productionDateMeaning
+          ? { productionDateMeaning: input.productionDateMeaning }
+          : {}),
         quantity: input.quantity,
         supplierWallet,
         unit: input.unit,
@@ -144,6 +171,14 @@ export function canonicalIngredientMetadata(
 ) {
   return JSON.stringify(
     sortJson({
+      ...(input.qualityTests ? { qualityTests: input.qualityTests } : {}),
+      ...(input.internalQualityRemarks
+        ? { internalQualityRemarks: input.internalQualityRemarks }
+        : {}),
+      ...(input.originDetails ? { originDetails: input.originDetails } : {}),
+      ...(input.allergen ? { allergen: input.allergen } : {}),
+      ...(input.certificationEntries ? { certificationEntries: input.certificationEntries } : {}),
+      ...(input.priceBasis ? { priceBasis: input.priceBasis } : {}),
       allergenInformation: input.allergenInformation,
       batchId: input.batchId,
       category: input.category,
@@ -152,6 +187,9 @@ export function canonicalIngredientMetadata(
       ingredientName: input.ingredientName,
       origin: input.origin,
       productionDate: input.productionDate.toISOString(),
+      ...(input.productionDateMeaning
+        ? { productionDateMeaning: input.productionDateMeaning }
+        : {}),
       quantity: input.quantity,
       supplierWallet: getAddress(input.supplierWallet),
       unit: input.unit,

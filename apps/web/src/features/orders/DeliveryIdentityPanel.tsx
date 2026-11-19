@@ -1,3 +1,9 @@
+import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
+import {
+  COMPANY_ALWAYS_CLAIMS,
+  companyDisclosureGroup,
+  toggleCompanyDisclosure,
+} from '@tracechain/shared';
 import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -38,7 +44,10 @@ export function DeliveryIdentityPanel({
   const [purpose, setPurpose] = useState(
     'Verify seller company identity before collecting or dispatching these goods',
   );
-  const [claims, setClaims] = useState<string[]>(['companyName']);
+  const [requiredRequestClaims, setRequiredRequestClaims] = useState<string[]>([
+    ...COMPANY_ALWAYS_CLAIMS,
+  ]);
+  const [claims, setClaims] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [busy, setBusy] = useState(false),
@@ -201,25 +210,14 @@ export function DeliveryIdentityPanel({
             onChange={setPurpose}
             maxLength={500}
           />
-          <fieldset>
-            <legend>Additional claims to request</legend>
-            {['companyName', 'companyRegistrationNumber', 'id'].map((claim) => (
-              <label key={claim} className="mr-[12px] inline-flex items-center gap-[6px]">
-                <input
-                  type="checkbox"
-                  checked={claims.includes(claim)}
-                  onChange={(event) =>
-                    setClaims((current) =>
-                      event.target.checked
-                        ? [...current, claim]
-                        : current.filter((value) => value !== claim),
-                    )
-                  }
-                />
-                {friendlyClaim(claim)}
-              </label>
-            ))}
-          </fieldset>
+          <CompanyRequestFields
+            required={requiredRequestClaims}
+            optional={claims}
+            onChange={(required, optional) => {
+              setRequiredRequestClaims(required);
+              setClaims(optional);
+            }}
+          />
           <div className="company-evidence-card__actions action-row">
             <Btn
               disabled={
@@ -242,8 +240,8 @@ export function DeliveryIdentityPanel({
                       purpose: purpose.trim(),
                       expiresAt,
                       required: true,
-                      requiredClaims: ['companyId', 'role', 'walletAddress'],
-                      optionalClaims: claims,
+                      requiredClaims: requiredRequestClaims,
+                      optionalClaims: companyDisclosureGroup(claims),
                     }),
                   );
                   setNotice(
@@ -319,7 +317,11 @@ export function DeliveryIdentityPanel({
                   key={claim}
                   label={friendlyClaim(claim)}
                   value={displayClaimValue(claim, claimValues[claim])}
-                  requirement="required"
+                  requirement={
+                    (COMPANY_ALWAYS_CLAIMS as readonly string[]).includes(claim)
+                      ? 'always'
+                      : 'required'
+                  }
                   included
                   locked
                   technical={technicalClaim(claim)}
@@ -370,9 +372,7 @@ export function DeliveryIdentityPanel({
                   technical={technicalClaim(claim)}
                   onToggle={() =>
                     setSelected((current) =>
-                      current.includes(claim)
-                        ? current.filter((value) => value !== claim)
-                        : [...current, claim],
+                      toggleCompanyDisclosure(current, claim, !current.includes(claim)),
                     )
                   }
                 />
@@ -401,10 +401,18 @@ export function DeliveryIdentityPanel({
           <PresentationSigningSettingsLink
             role={order.productDelivery ? 'manufacturer' : 'supplier'}
           />
+          {material.binding && (
+            <TechnicalDetails
+              fields={Object.entries(material.binding).map(([label, value]) => ({
+                label,
+                value: String(value),
+              }))}
+            />
+          )}
           {!requiredAvailable && (
             <Alert
               type="error"
-              message="One or more required company fields are unavailable. Refresh your credential before signing."
+              message="A required signed company field is unavailable. An older credential without registration country needs an authorized replacement; unsigned profile data cannot supply this claim. You may decline this request."
             />
           )}
           <div className="company-evidence-card__footer is-sticky">
@@ -603,6 +611,7 @@ function friendlyClaim(claim: string) {
       companyId: 'Company ID',
       companyName: 'Company name',
       companyRegistrationNumber: 'Registration number',
+      registrationCountry: 'Registration country',
       walletAddress: 'Wallet address',
       applicationReference: 'Application reference',
       role: 'Company role',

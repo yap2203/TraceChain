@@ -1,5 +1,6 @@
 import { applicationDocumentsSchema } from './application-documents.js';
 import { z } from 'zod';
+import { ingredientCountryCodes } from '@tracechain/shared';
 import { catalogueImageSchema } from '../orders/orders.schema.js';
 
 const bytes32Schema = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
@@ -19,6 +20,13 @@ export const applicationTransactionSchema = z
     applicantSignature: z.string().regex(/^0x[0-9a-fA-F]{130}$/),
     companyName: z.string().trim().min(1).max(200),
     companyRegistrationNumber: z.string().trim().min(1).max(120),
+    registrationCountry: z
+      .string()
+      .refine(
+        (code) => (ingredientCountryCodes as readonly string[]).includes(code),
+        'Select an ISO registration country.',
+      )
+      .optional(),
     initialLocationName: z.string().trim().min(1).max(160).optional(),
     initialLocationAddress: z.string().trim().min(1).max(1000).optional(),
     encryptedProfileCid: z.string().min(1).max(512),

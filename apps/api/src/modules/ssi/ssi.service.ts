@@ -196,6 +196,7 @@ export class CompanyRoleSsiService {
         chainId: this.dependencies.chainId,
         companyName: credential.credentialSubject.companyName,
         companyRegistrationNumber: credential.credentialSubject.companyRegistrationNumber,
+        registrationCountry: credential.credentialSubject.registrationCountry,
         credentialHash: stakeholder.credentialHash,
         credentialId: credential.id,
         encryptedCredentialCid: stakeholder.credentialCid,
@@ -358,6 +359,7 @@ export class CompanyRoleSsiService {
         applicationId: `0x${'0'.repeat(64)}`,
         companyName: match.credential.credentialSubject.companyName,
         companyRegistrationNumber: match.credential.credentialSubject.companyRegistrationNumber,
+        registrationCountry: match.credential.credentialSubject.registrationCountry,
         credentialHash,
         credentialId,
         encryptedCredentialCid: stored.cid,
@@ -436,6 +438,7 @@ export class CompanyRoleSsiService {
       approvedRole: number;
       companyName: string;
       companyRegistrationNumber: string;
+      registrationCountry?: string;
       expirationDate: Date;
     },
   ) {
@@ -496,6 +499,12 @@ export class CompanyRoleSsiService {
       const credential = companyRoleCredentialSchema.parse(
         JSON.parse(await contentStore.decrypt(existing.encryptedPayload)),
       );
+      if (credential.credentialSubject.registrationCountry !== input.registrationCountry)
+        throw new SsiApiError(
+          'ISSUANCE_CONFLICT',
+          'Registration country differs from the persisted credential.',
+          409,
+        );
       await this.verifyIssuedCredential(
         agent,
         credential,
@@ -513,11 +522,19 @@ export class CompanyRoleSsiService {
       );
     }
 
+    if (!input.registrationCountry)
+      throw new SsiApiError(
+        'REGISTRATION_COUNTRY_REQUIRED',
+        'Select and verify the company registration country before issuing a new credential.',
+        400,
+      );
     const issued = await issueCompanyRoleCredential(agent, {
+      // New issuance must carry an authority-signed country; existing workflows above retain v1 compatibility.
       applicationReference: input.applicationId,
       companyId: `urn:tracechain:company:${input.companyRegistrationNumber}`,
       companyName: input.companyName,
       companyRegistrationNumber: input.companyRegistrationNumber,
+      registrationCountry: input.registrationCountry,
       expirationDate: input.expirationDate,
       issuanceDate: this.clock(),
       issuerDid: authorityDid,
@@ -546,6 +563,7 @@ export class CompanyRoleSsiService {
       applicationId: input.applicationId,
       companyName: input.companyName,
       companyRegistrationNumber: input.companyRegistrationNumber,
+      registrationCountry: input.registrationCountry,
       credentialHash,
       credentialId,
       encryptedCredentialCid: stored.cid,

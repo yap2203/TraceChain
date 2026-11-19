@@ -1,4 +1,11 @@
 import { apiErrorMessage } from '../../../../components/ui/feedback';
+import type {
+  IngredientOrigin,
+  IngredientQualityTest,
+  IngredientAllergen,
+  IngredientCertification,
+  CertificationDocument,
+} from '@tracechain/shared';
 import type { PreparedTransaction } from '../../../blockchain/blockchain.api';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
@@ -7,6 +14,13 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:300
 );
 
 export interface IngredientBatchInput {
+  operationId?: string;
+  originDetails?: IngredientOrigin;
+  qualityTests?: IngredientQualityTest[];
+  internalQualityRemarks?: string;
+  allergen?: IngredientAllergen;
+  certificationEntries?: IngredientCertification[];
+  priceBasis?: string;
   price?: string;
   currency?: string;
   allergenInformation: string;
@@ -17,6 +31,7 @@ export interface IngredientBatchInput {
   ingredientName: string;
   origin: string;
   productionDate: string;
+  productionDateMeaning?: 'production' | 'processing';
   quantity: string;
   unit: string;
 }
@@ -62,6 +77,11 @@ export interface IngredientDocumentExtraction {
 }
 
 export interface RegisteredIngredientBatch {
+  originDetails?: IngredientOrigin;
+  qualityTests?: IngredientQualityTest[];
+  internalQualityRemarks?: string;
+  allergen?: IngredientAllergen;
+  certificationEntries?: IngredientCertification[];
   allergenInformation: string;
   availableQuantity: string;
   batchId: string;
@@ -100,6 +120,59 @@ export function prepareIngredientBatch(input: IngredientBatchInput) {
 
 export function getIngredientBatches() {
   return ingredientBatchRequest<{ batches: RegisteredIngredientBatch[] }>('/');
+}
+export function getIngredientDrafts() {
+  return ingredientBatchRequest<{ workflows: { batchId: string; input: IngredientBatchInput }[] }>(
+    '/workflows',
+  );
+}
+export function uploadCertificationDocument(
+  input: {
+    id: string;
+    operationId: string;
+    certificationId: string;
+    fileName: string;
+    mimeType: string;
+    data: string;
+  },
+  onProgress?: (percent: number) => void,
+): Promise<CertificationDocument> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', API_BASE_URL + '/api/ingredient-batches/attachments');
+    xhr.withCredentials = true;
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onerror = () =>
+      reject(new Error('Document upload could not reach the API. Retry this file.'));
+    xhr.timeout = 120000;
+    xhr.ontimeout = () => reject(new Error('Document upload timed out. Retry this file.'));
+    xhr.onload = () => {
+      try {
+        const body = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300) resolve(body);
+        else
+          reject(
+            new Error(
+              apiErrorMessage(
+                body.error?.message,
+                'Encrypted document upload failed. Retry this file.',
+              ),
+            ),
+          );
+      } catch {
+        reject(new Error('Invalid upload response. Retry this file.'));
+      }
+    };
+    xhr.send(JSON.stringify(input));
+  });
+}
+export function getCertificationDocument(batchId: string, documentId: string) {
+  return ingredientBatchRequest<{ fileName: string; mimeType: string; data: string }>(
+    `/${encodeURIComponent(batchId)}/documents/${encodeURIComponent(documentId)}`,
+  );
 }
 
 export async function extractIngredientDocument(file: File) {

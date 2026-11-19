@@ -9,6 +9,7 @@ import { SEPOLIA_NETWORK_NAME } from '../config/ssi-config.js';
 import {
   COMPANY_ROLE_CREDENTIAL_CONTEXT,
   COMPANY_ROLE_CREDENTIAL_SCHEMA_ID,
+  COMPANY_ROLE_CREDENTIAL_SCHEMA_V2,
   COMPANY_ROLE_CREDENTIAL_TYPE,
   CompanyRoleCredentialStatus,
   TRACECHAIN_CREDENTIAL_STATUS_TYPE,
@@ -22,6 +23,7 @@ export interface IssueCompanyRoleCredentialInput {
   companyId: string;
   companyName: string;
   companyRegistrationNumber: string;
+  registrationCountry?: string;
   expirationDate: Date;
   issuanceDate?: Date;
   issuerDid: string;
@@ -56,7 +58,9 @@ export async function issueCompanyRoleCredential(
         type: TRACECHAIN_CREDENTIAL_STATUS_TYPE,
       },
       credentialSchema: {
-        id: COMPANY_ROLE_CREDENTIAL_SCHEMA_ID,
+        id: input.registrationCountry
+          ? COMPANY_ROLE_CREDENTIAL_SCHEMA_V2
+          : COMPANY_ROLE_CREDENTIAL_SCHEMA_ID,
         type: 'JsonSchema',
       },
       credentialSubject: {
@@ -64,6 +68,7 @@ export async function issueCompanyRoleCredential(
         companyId: input.companyId,
         companyName: input.companyName,
         companyRegistrationNumber: input.companyRegistrationNumber,
+        ...(input.registrationCountry ? { registrationCountry: input.registrationCountry } : {}),
         id: expectedSubjectDid,
         role: input.role,
         walletAddress,
@@ -96,7 +101,9 @@ export function serializeCompanyRoleCredential(credential: CompanyRoleCredential
 }
 
 export function hashCompanyRoleCredential(credential: CompanyRoleCredential): string {
-  return createHash('sha256').update(serializeCompanyRoleCredential(credential), 'utf8').digest('hex');
+  return createHash('sha256')
+    .update(serializeCompanyRoleCredential(credential), 'utf8')
+    .digest('hex');
 }
 
 function sortJson(value: unknown): unknown {

@@ -1,3 +1,4 @@
+import { CountryField } from '../../../registration/CountryField';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { ApplicationDocumentsPanel } from '../../../registration/ApplicationDocumentsPanel';
 import { notify, reportError } from '../../../../components/ui/feedback';
@@ -27,6 +28,7 @@ export function AppDetail({
   const [rejecting, setRejecting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [companyId, setCompanyId] = useState(app.companyRegistrationNumber ?? '');
+  const [registrationCountry, setRegistrationCountry] = useState(app.registrationCountry ?? '');
   const [companyName, setCompanyName] = useState(app.companyName ?? '');
   const [expirationDate, setExpirationDate] = useState(() => {
     const date = new Date();
@@ -72,6 +74,7 @@ export function AppDetail({
   const approve = async () => {
     if (workflowPending.current) return;
     const validationError =
+      textError(registrationCountry, 'Registration country', 2) ||
       textError(companyId, 'Company registration number', 120) ||
       textError(companyName, 'Verified company name', 200) ||
       futureDateError(expirationDate, 'Credential expiration');
@@ -89,6 +92,7 @@ export function AppDetail({
         approvedRole: roleNumber(app.requestedRole),
         companyName: companyName.trim(),
         companyRegistrationNumber: companyId.trim(),
+        ...(registrationCountry ? { registrationCountry } : {}),
         expirationDate: new Date(`${expirationDate}T23:59:59.000Z`).toISOString(),
       });
       const transactions = [
@@ -236,6 +240,17 @@ export function AppDetail({
               onChange={app.companyName ? () => undefined : setCompanyName}
               required
             />
+            <CountryField
+              label="Registration country (verified by Admin)"
+              required
+              value={registrationCountry}
+              onChange={setRegistrationCountry}
+            />
+            {!registrationCountry && (
+              <p>
+                Legacy issuance without a country cannot satisfy requests for registration country.
+              </p>
+            )}
             <Input
               label="Credential expiration"
               value={expirationDate}
@@ -248,7 +263,13 @@ export function AppDetail({
                 Cancel
               </Btn>
               <Btn
-                disabled={!companyId.trim() || !companyName.trim() || !expirationDate || busy}
+                disabled={
+                  !companyId.trim() ||
+                  !companyName.trim() ||
+                  !expirationDate ||
+                  !registrationCountry ||
+                  busy
+                }
                 onClick={() => void approve()}
               >
                 {busy

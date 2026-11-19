@@ -1,772 +1,972 @@
+import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
+import './ingredient-creation.css';
+import { useEffect, useRef, useState } from 'react';
+import { type Country } from 'react-phone-number-input';
+import flags from 'react-phone-number-input/flags';
+import { FileSearch, Keyboard, Upload } from 'lucide-react';
+import {
+  normalizeIngredientQuantity,
+  ingredientCountryCodes,
+  type IngredientOrigin,
+  type IngredientAllergen,
+} from '@tracechain/shared';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
-import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
-import { FileSearch, Keyboard, Upload } from 'lucide-react';
-
-import { Alert, Btn, Card, Input, SelectField, StepProgress, T } from '../../shared/ui';
+import { Alert, Btn, Card, Input, SelectField, StepProgress } from '../../shared/ui';
+import { RegistrationCountrySelect } from '../../../registration/RegistrationCountrySelect';
 import {
+  getIngredientDrafts,
+  getCertificationDocument,
   extractIngredientDocument,
   prepareIngredientBatch,
-  type ExtractedIngredientField,
-  type IngredientBatchInput,
   type IngredientDocumentExtraction,
-  type IngredientBatchWorkflow,
+  type IngredientBatchInput,
 } from './ingredient-batch.api';
 import { submitIngredientBatchTransaction } from './ingredient-batch-transaction';
-import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
 import { imageFilePayload, uploadIngredientCatalogueImage } from '../../../orders/orders.api';
 import {
   textError,
-  quantityError,
   referenceError,
   productionDateError,
 } from '../../../validation/form-validation';
-
-type WorkflowStep = 'waiting' | 'active' | 'complete';
-
-interface RegisterBatchProps {
+import {
+  CertificationEditor,
+  certificationError,
+  certificationEntries,
+  type CertificationDraft,
+} from './CertificationEditor';
+import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
+const names = new Intl.DisplayNames(['en'], { type: 'region' });
+function OriginCountryFlag({ country, label }: { country?: Country; label: string }) {
+  const Flag = country ? flags[country] : undefined;
+  return Flag ? (
+    <span className="block w-6 h-4 overflow-hidden rounded-sm [&>svg]:block [&>svg]:w-full [&>svg]:h-full">
+      <Flag title={label} />
+    </span>
+  ) : (
+    <span>{country ?? '—'}</span>
+  );
+}
+const countries = ingredientCountryCodes
+  .map((code) => ({ value: code as Country, label: names.of(code) ?? code }))
+  .sort((a, b) => a.label.localeCompare(b.label));
+const categories = [
+  { value: 'cocoa', label: 'Cocoa & Chocolate' },
+  { value: 'dairy', label: 'Dairy Products' },
+  { value: 'sugar', label: 'Sugar & Sweeteners' },
+  { value: 'grain', label: 'Grains & Flours' },
+  { value: 'other', label: 'Other' },
+];
+interface Props {
   onBack: () => void;
   onCompleted?: () => void;
   extractDocument?: typeof extractIngredientDocument;
   prepareWorkflow?: typeof prepareIngredientBatch;
   submitTransaction?: typeof submitIngredientBatchTransaction;
 }
-
 export function RegisterBatch({
   onBack,
   onCompleted,
   extractDocument = extractIngredientDocument,
   prepareWorkflow = prepareIngredientBatch,
   submitTransaction = submitIngredientBatchTransaction,
-}: RegisterBatchProps) {
-  const [entryMode, setEntryMode] = useState<'choose' | 'document' | 'manual'>('choose');
-  const [step, setStep] = useState(0);
-  const [name, setName] = useState('');
-  const [batchReference, setBatchReference] = useState('');
-  const [category, setCategory] = useState('cocoa');
-  const [origin, setOrigin] = useState('');
-  const [producedAt, setProducedAt] = useState('');
-  const [expiresAt, setExpiresAt] = useState('');
-  const [quantity, setQuantity] = useState('');
-  const [price, setPrice] = useState('');
-  const [currency, setCurrency] = useState('MYR');
-  const [unit, setUnit] = useState('g');
-  const [allergen, setAllergen] = useState('');
-  const [certifications, setCertifications] = useState('');
-  const [imageFile, setImageFile] = useState<File>();
-  const [imagePreview, setImagePreview] = useState('');
-  const [imageNotice, setImageNotice] = useState('');
-  const [extraction, setExtraction] = useState<IngredientDocumentExtraction>();
-  const [extracting, setExtracting] = useState(false);
-  const [extractionConfirmed, setExtractionConfirmed] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [complete, setComplete] = useState(false);
-  const [credentialStep, setCredentialStep] = useState<WorkflowStep>('waiting');
-  const [batchStep, setBatchStep] = useState<WorkflowStep>('waiting');
-  const activeSubmission = useRef(false);
-
+}: Props) {
+  const [mode, setMode] = useState<'choose' | 'manual' | 'document'>('choose'),
+    [step, setStep] = useState(0);
+  const [savedAdditionalDetails, setSavedAdditionalDetails] = useState<IngredientBatchInput>();
+  const [operationId] = useState(() => crypto.randomUUID());
+  const [drafts, setDrafts] = useState<{ batchId: string; input: IngredientBatchInput }[]>([]);
+  const [draft, setDraft] = useState({
+    name: '',
+    reference: '',
+    category: 'cocoa',
+    quantity: '',
+    unit: 'kg',
+    produced: '',
+    expiry: '',
+    country: '',
+    region: '',
+    city: '',
+    facility: '',
+    address: '',
+    allergenKind: '',
+    allergenDetails: '',
+    price: '',
+    currency: 'MYR',
+    priceBasis: 'kg',
+  });
+  const [entries, setEntries] = useState<CertificationDraft[]>([]),
+    [legacyCerts, setLegacyCerts] = useState<string[]>([]),
+    [legacyOrigin, setLegacyOrigin] = useState('');
+  const [extraction, setExtraction] = useState<IngredientDocumentExtraction>(),
+    [sourceFile, setSourceFile] = useState<File>(),
+    [extracting, setExtracting] = useState(false),
+    [reviewed, setReviewed] = useState(false);
+  const [image, setImage] = useState<File>(),
+    [imageUrl, setImageUrl] = useState(''),
+    [imageNotice, setImageNotice] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({}),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false),
+    [started, setStarted] = useState(false),
+    [complete, setComplete] = useState(false),
+    [status, setStatus] = useState('');
+  const [batchId, setBatchId] = useState('');
+  const confirmedStages = useRef(new Set<string>());
+  const form = useRef<HTMLDivElement>(null),
+    lock = useRef(false),
+    frozen = useRef<IngredientBatchInput | undefined>(undefined);
+  useEffect(() => setReviewed(false), [entries]);
   useEffect(() => {
-    if (!imageFile) {
-      setImagePreview('');
+    if (!image) {
+      setImageUrl('');
       return;
     }
-    const preview = URL.createObjectURL(imageFile);
-    setImagePreview(preview);
-    return () => URL.revokeObjectURL(preview);
-  }, [imageFile]);
-
-  const update = (setter: (value: string) => void) => (value: string) => {
-    setter(value);
-    if (extraction) setExtractionConfirmed(false);
+    const url = URL.createObjectURL(image);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image]);
+  const update = (key: keyof typeof draft) => (value: string) => {
+    setDraft((old) => ({ ...old, [key]: value }));
+    setReviewed(false);
+    setErrors((old) => ({ ...old, [key]: '' }));
   };
-
-  const startManualEntry = () => {
-    setEntryMode('manual');
-    setExtraction(undefined);
-    setExtractionConfirmed(false);
-    setName('');
-    setBatchReference('');
-    setCategory('cocoa');
-    setOrigin('');
-    setProducedAt('');
-    setExpiresAt('');
-    setQuantity('');
-    setUnit('g');
-    setPrice('');
-    setCurrency('MYR');
-    setAllergen('');
-    setCertifications('');
-    setImageFile(undefined);
+  const origin: IngredientOrigin = {
+    countryCode: draft.country,
+    countryName: names.of(draft.country || 'ZZ') ?? '',
+    ...(draft.region ? { region: draft.region } : {}),
+    ...(draft.city ? { city: draft.city } : {}),
+    ...(draft.facility ? { facility: draft.facility } : {}),
+    ...(draft.address ? { privateAddress: draft.address } : {}),
+  };
+  const allergen: IngredientAllergen = {
+    kind: draft.allergenKind as IngredientAllergen['kind'],
+    ...(['contains', 'mayContain'].includes(draft.allergenKind) && draft.allergenDetails
+      ? { details: draft.allergenDetails }
+      : {}),
+  };
+  let conversion: { quantity: string; unit: string } | undefined;
+  try {
+    conversion = normalizeIngredientQuantity(draft.quantity, draft.unit);
+  } catch {}
+  const input = (): IngredientBatchInput => ({
+    operationId,
+    ingredientName: draft.name.trim(),
+    batchReference: draft.reference.trim(),
+    category: draft.category,
+    quantity: draft.quantity,
+    unit: draft.unit,
+    productionDate: draft.produced,
+    productionDateMeaning: 'production',
+    expiryDate: draft.expiry,
+    origin: origin.countryName,
+    originDetails: origin,
+    allergen,
+    allergenInformation:
+      allergen.kind === 'declaresNone'
+        ? 'Supplier declares none'
+        : allergen.kind === 'unknown'
+          ? 'Unknown'
+          : `${allergen.kind === 'mayContain' ? 'May contain' : 'Contains'}: ${draft.allergenDetails}`,
+    certifications: legacyCerts,
+    certificationEntries: certificationEntries(entries),
+    ...(draft.price
+      ? { price: draft.price, currency: draft.currency, priceBasis: draft.priceBasis }
+      : {}),
+  });
+  const validate = (which: number) => {
+    const next: Record<string, string> = {};
+    const put = (key: string, message: string) => {
+      if (message) next[key] = message;
+    };
+    if (which === 0) {
+      put('name', textError(draft.name, 'Ingredient name', 160));
+      put('reference', referenceError(draft.reference));
+      put('category', textError(draft.category, 'Category', 80));
+      try {
+        normalizeIngredientQuantity(draft.quantity, draft.unit);
+      } catch (cause) {
+        put('quantity', (cause as Error).message);
+      }
+      put('expiry', productionDateError(draft.produced, draft.expiry));
+      if (!draft.produced) put('produced', 'Production date is required.');
+    }
+    if (which === 1) {
+      for (const [key, label, max] of [
+        ['region', 'State / region', 160],
+        ['city', 'City / district', 160],
+        ['facility', 'Source facility', 200],
+        ['address', 'Source address', 1000],
+      ] as const) {
+        if (draft[key]) put(key, textError(draft[key], label, max));
+      }
+      if (!countries.some((country) => country.value === draft.country))
+        put('country', 'Select the country of origin.');
+      if (!draft.allergenKind) put('allergenKind', 'Choose an allergen declaration.');
+      if (['contains', 'mayContain'].includes(draft.allergenKind))
+        put('allergenDetails', textError(draft.allergenDetails, 'Allergen details', 500));
+      put('certifications', certificationError(entries));
+    }
+    if (which === 2) {
+      if (draft.price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(draft.price))
+        put('price', 'Enter a non-negative price with up to two decimal places.');
+      if (draft.price && !/^[A-Z]{3}$/.test(draft.currency))
+        put('currency', 'Enter a three-letter currency code.');
+      if (
+        draft.price &&
+        !(
+          ['kg', 'g'].includes(draft.unit)
+            ? ['kg', 'g']
+            : ['litre', 'mL'].includes(draft.unit)
+              ? ['litre', 'mL']
+              : ['each']
+        ).includes(draft.priceBasis)
+      )
+        put('priceBasis', 'Choose a price basis compatible with this batch.');
+      if (extraction && !reviewed)
+        put('reviewed', 'Confirm that you reviewed the extracted information.');
+    }
+    return next;
+  };
+  const focusError = () =>
+    requestAnimationFrame(() =>
+      form.current
+        ?.querySelector<HTMLElement>(
+          '[aria-invalid="true"], [data-error="true"] button, [data-error="true"] input, [data-error="true"] select',
+        )
+        ?.focus(),
+    );
+  const next = () => {
+    const found = validate(step);
+    setErrors(found);
+    if (Object.keys(found).length) {
+      focusError();
+      return;
+    }
+    setStep((value) => Math.min(value + 1, 2));
     setError('');
   };
-
-  const extractFile = async (file: File | undefined) => {
+  const extract = async (file?: File) => {
     if (!file || extracting) return;
-    const supportedTypes = [
-      'application/pdf',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'image/png',
-      'image/jpeg',
-    ];
-    if (!supportedTypes.includes(file.type)) {
-      setError('Choose a PDF, DOCX, PNG or JPG/JPEG document.');
+    if (
+      ![
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/png',
+        'image/jpeg',
+      ].includes(file.type) ||
+      file.size > 10 * 1024 * 1024
+    ) {
+      setError('Choose a PDF, DOCX, PNG or JPEG up to 10 MB.');
       return;
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Documents must not exceed 10 MB.');
-      return;
-    }
-    setEntryMode('document');
     setExtracting(true);
-    setExtraction(undefined);
-    setExtractionConfirmed(false);
     setError('');
+    setSourceFile(file);
+    setReviewed(false);
     try {
       const result = await extractDocument(file);
       setExtraction(result);
-      setName(result.fields.ingredientName.value);
-      setBatchReference(result.fields.batchReference.value);
-      setCategory(result.fields.category.value);
-      setOrigin(result.fields.origin.value);
-      setProducedAt(result.fields.productionDate.value);
-      setExpiresAt(result.fields.expiryDate.value);
-      setQuantity(result.fields.quantity.value);
-      setUnit(result.fields.unit.value);
-      setPrice(result.fields.price.value);
-      setCurrency(result.fields.currency.value);
-      setCertifications(result.fields.certifications.value);
-      setAllergen(result.fields.allergenInformation.value);
-    } catch (caught) {
+      const f = result.fields;
+      const matched = countries.find(
+        (country) =>
+          country.label.toLowerCase() === f.origin.value.toLowerCase() ||
+          country.value === f.origin.value.toUpperCase(),
+      );
+      setLegacyOrigin(f.origin.value);
+      setLegacyCerts(
+        f.certifications.value
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean),
+      );
+      setDraft((old) => ({
+        ...old,
+        name: f.ingredientName.value,
+        reference: f.batchReference.value,
+        category: f.category.value,
+        quantity: f.quantity.value,
+        unit: f.unit.value === 'unit' ? 'each' : f.unit.value,
+        produced: f.productionDate.value,
+        expiry: f.expiryDate.value,
+        country: matched?.value ?? '',
+        price: f.price.value,
+        currency: f.currency.value || 'MYR',
+        priceBasis: f.unit.value === 'unit' ? 'each' : f.unit.value,
+        allergenDetails: f.allergenInformation.value,
+      }));
+      setStep(0);
+    } catch (cause) {
       setError(
-        reportError(
-          caught,
-          'The document could not be processed. Enter the values manually instead.',
-        ),
+        reportError(cause, 'The document could not be processed. Enter values manually or retry.'),
       );
     } finally {
       setExtracting(false);
     }
   };
-
-  const dropDocument = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragActive(false);
-    void extractFile(event.dataTransfer.files[0]);
-  };
-
-  const buildInput = (): IngredientBatchInput => ({
-    allergenInformation: allergen.trim(),
-    batchReference: batchReference.trim(),
-    category,
-    certifications: certifications
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean),
-    expiryDate: expiresAt,
-    ingredientName: name.trim(),
-    origin: origin.trim(),
-    productionDate: producedAt,
-    quantity,
-    unit,
-    ...(price ? { price, currency } : {}),
-  });
-
-  const validationError =
-    (price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(price)
-      ? 'Enter a non-negative unit price with at most two decimal places.'
-      : '') ||
-    (price && !/^[A-Z]{3}$/.test(currency) ? 'Enter a three-letter currency code.' : '') ||
-    textError(name, 'Ingredient name', 160) ||
-    referenceError(batchReference) ||
-    textError(origin, 'Origin', 160) ||
-    textError(category, 'Category', 80) ||
-    quantityError(quantity) ||
-    textError(unit, 'Unit', 31) ||
-    textError(allergen, 'Allergen information', 500, false) ||
-    (buildInput().certifications.length > 20 ||
-    buildInput().certifications.some((value) => value.length > 120)
-      ? 'Use at most 20 certifications, each with at most 120 characters.'
-      : '') ||
-    productionDateError(producedAt, expiresAt);
-  const extractionReviewError =
-    extraction && !extractionConfirmed
-      ? 'Review every extracted value and confirm that the information is accurate.'
-      : '';
-  const isFormComplete = !validationError && !extractionReviewError;
-
-  const applyState = (workflow: IngredientBatchWorkflow) => {
-    if (workflow.state === 'CREDENTIAL_REGISTRATION_REQUIRED') {
-      setCredentialStep('active');
-      setBatchStep('waiting');
-    } else if (workflow.state === 'BATCH_REGISTRATION_REQUIRED') {
-      setCredentialStep('complete');
-      setBatchStep('active');
-    } else {
-      setCredentialStep('complete');
-      setBatchStep('complete');
-    }
-  };
-
-  const register = async () => {
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
-    if (activeSubmission.current) return;
-    activeSubmission.current = true;
+  const resume = async (record: { batchId: string; input: IngredientBatchInput }) => {
     setBusy(true);
     setError('');
-    setImageNotice('');
-    setComplete(false);
     try {
-      let workflow = await prepareWorkflow(buildInput());
-      applyState(workflow);
-      for (let transactionCount = 0; workflow.state !== 'COMPLETE'; transactionCount += 1) {
-        if (transactionCount >= 2 || !workflow.transaction) {
-          throw new Error('The server returned an incomplete ingredient registration workflow.');
+      const saved = record.input;
+      const restored: CertificationDraft[] = [];
+      for (const entry of saved.certificationEntries ?? []) {
+        const files = [];
+        for (const descriptor of entry.documents) {
+          const stored = await getCertificationDocument(record.batchId, descriptor.id);
+          const bytes = Uint8Array.from(atob(stored.data), (c) => c.charCodeAt(0));
+          files.push({
+            id: descriptor.id,
+            file: new File([bytes], stored.fileName, { type: stored.mimeType }),
+            document: descriptor,
+            status: 'stored' as const,
+            progress: 100,
+          });
         }
-        await submitTransaction(workflow.transaction, workflow.supplierWallet);
-        workflow = await prepareWorkflow(buildInput());
-        applyState(workflow);
+        const { documents, ...fields } = entry;
+        restored.push({ ...fields, files });
       }
-      setComplete(true);
-      if (imageFile) {
-        try {
-          await uploadIngredientCatalogueImage(workflow.batchId, await imageFilePayload(imageFile));
-          setImageNotice('Supplier-provided presentation image uploaded successfully.');
-        } catch (imageError) {
-          setError(
-            `The batch was registered successfully, but its optional image could not be uploaded. ${reportError(
-              imageError,
-              'Add the image later from View details.',
-            )}`,
-          );
-        }
-      }
-    } catch (caught) {
-      setError(reportError(caught, 'The ingredient batch could not be registered.'));
+      frozen.current = saved;
+      setSavedAdditionalDetails(saved);
+      setStarted(true);
+      setMode('manual');
+      setStep(2);
+      setBatchId(record.batchId);
+      setEntries(restored);
+      setLegacyCerts(saved.certifications);
+      setLegacyOrigin(saved.origin);
+      setStatus(
+        'Recovered the persisted registration. Resume checks the chain before any transaction. Optional images must be reselected later if they were not saved.',
+      );
+      const source = saved.originDetails;
+      setDraft((old) => ({
+        ...old,
+        name: saved.ingredientName,
+        reference: saved.batchReference,
+        category: saved.category,
+        quantity: saved.quantity,
+        unit: saved.unit,
+        produced: saved.productionDate.slice(0, 10),
+        expiry: saved.expiryDate.slice(0, 10),
+        country: source?.countryCode ?? '',
+        region: source?.region ?? '',
+        city: source?.city ?? '',
+        facility: source?.facility ?? '',
+        address: source?.privateAddress ?? '',
+        allergenKind: saved.allergen?.kind ?? 'unknown',
+        allergenDetails: saved.allergen?.details ?? '',
+        price: saved.price ?? '',
+        currency: saved.currency ?? 'MYR',
+        priceBasis: saved.priceBasis ?? saved.unit,
+      }));
+    } catch (cause) {
+      setError(
+        reportError(
+          cause,
+          'The stored registration could not be retrieved. Retry; do not recreate its batch.',
+        ),
+      );
     } finally {
-      activeSubmission.current = false;
       setBusy(false);
     }
   };
-
+  const register = async () => {
+    if (lock.current || complete) return;
+    if (!frozen.current) {
+      for (let page = 0; page < 3; page++) {
+        const found = validate(page);
+        if (Object.keys(found).length) {
+          setStep(page);
+          setErrors(found);
+          focusError();
+          return;
+        }
+      }
+      frozen.current = input();
+    }
+    lock.current = true;
+    setBusy(true);
+    setStarted(true);
+    setError('');
+    try {
+      setStatus('Issuing and storing the encrypted Ingredient Credential...');
+      let workflow = await prepareWorkflow(frozen.current);
+      setBatchId(workflow.batchId);
+      for (let count = 0; workflow.state !== 'COMPLETE'; count++) {
+        if (count >= 2 || !workflow.transaction)
+          throw new Error(
+            'The server returned an incomplete workflow. Retry to read its current state.',
+          );
+        setStatus(
+          workflow.state === 'CREDENTIAL_REGISTRATION_REQUIRED'
+            ? 'Awaiting MetaMask: register the Ingredient Credential. Confirmation includes submission and mining.'
+            : 'Awaiting MetaMask: register the ingredient batch. Confirmation includes submission and mining.',
+        );
+        if (confirmedStages.current.has(workflow.state))
+          throw new Error(
+            'This transaction already confirmed. The RPC read is stale; resume to reread state without registering again.',
+          );
+        const currentStage = workflow.state;
+        await submitTransaction(workflow.transaction, workflow.supplierWallet, (stage) =>
+          setStatus(
+            stage === 'wallet'
+              ? 'Awaiting your explicit MetaMask confirmation.'
+              : stage === 'submitted'
+                ? 'Transaction submitted. Waiting for blockchain confirmation...'
+                : 'Transaction confirmed. Reading the resulting batch state...',
+          ),
+        );
+        confirmedStages.current.add(currentStage);
+        setStatus('Transaction confirmed. Reading the batch registration state...');
+        workflow = await prepareWorkflow(frozen.current);
+      }
+      setComplete(true);
+      setStatus('Ingredient batch confirmed and read back from the blockchain.');
+      if (image) {
+        try {
+          setStatus('Batch confirmed. Uploading the optional listing image...');
+          await uploadIngredientCatalogueImage(workflow.batchId, await imageFilePayload(image));
+          setImageNotice('Optional listing image saved.');
+        } catch (cause) {
+          setError(
+            `The batch is already registered. ${reportError(cause, 'Add the optional image later from batch details. Do not register again.')}`,
+          );
+        } finally {
+          setStatus('Ingredient batch confirmed and read back from the blockchain.');
+        }
+      }
+    } catch (cause) {
+      setError(
+        reportError(
+          cause,
+          'Registration could not finish. Retry to resume the same operation; keep the same batch reference.',
+        ),
+      );
+      setStatus(
+        'Registration paused. Your data and stable operation ID are retained. Retry reads the chain before preparing the next transaction.',
+      );
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  };
+  const field = (key: keyof typeof draft, label: string, extra: Record<string, unknown> = {}) => (
+    <Input
+      label={label}
+      value={draft[key]}
+      onChange={(value: string) => update(key)(key === 'currency' ? value.toUpperCase() : value)}
+      error={errors[key]}
+      {...extra}
+    />
+  );
   return (
-    <div>
+    <div className="ingredient-create" ref={form}>
       <BackNavigation onClick={onBack} disabled={busy}>
-        Back
+        Back to ingredient batches
       </BackNavigation>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: T.navy, margin: 0 }}>
-          Register Ingredient Batch
-        </h2>
-      </div>
-      <div className="workspace-editor">
-        {error && <Alert type="error" message={error} />}
-
-        {entryMode === 'choose' && (
-          <Card>
-            <div className="ingredient-entry-heading">
-              <div>
-                <h3>How would you like to add the ingredient?</h3>
-                <p>Upload a supply document to pre-fill the form, or enter the values manually.</p>
-              </div>
-            </div>
-            <div className="ingredient-entry-options">
-              <button
-                type="button"
-                className="ingredient-entry-option"
-                aria-label="Upload supply document"
-                onClick={() => setEntryMode('document')}
-              >
-                <FileSearch size={24} aria-hidden="true" />
-                <strong>Upload supply document</strong>
-                <span>Extract text locally from PDF, DOCX, PNG or JPG.</span>
-              </button>
-              <button
-                type="button"
-                className="ingredient-entry-option"
-                aria-label="Enter information manually"
-                onClick={startManualEntry}
-              >
-                <Keyboard size={24} aria-hidden="true" />
-                <strong>Enter information manually</strong>
-                <span>Complete the existing registration form yourself.</span>
-              </button>
-            </div>
-          </Card>
-        )}
-
-        {entryMode === 'document' && !extraction && (
-          <Card>
-            <div className="ingredient-entry-heading">
-              <div>
-                <h3>Upload supply document</h3>
-                <p>PDF, DOCX, PNG or JPG/JPEG. Maximum 10 MB.</p>
-              </div>
-              <Btn
-                variant="ghost"
-                size="sm"
-                onClick={() => setEntryMode('choose')}
-                disabled={extracting}
-              >
-                Change method
-              </Btn>
-            </div>
-            <div
-              className={`ingredient-document-dropzone ${dragActive ? 'is-dragging' : ''}`}
-              onDragEnter={(event) => {
-                event.preventDefault();
-                setDragActive(true);
-              }}
-              onDragOver={(event) => event.preventDefault()}
-              onDragLeave={() => setDragActive(false)}
-              onDrop={dropDocument}
+      <h2>Create ingredient batch</h2>
+      {error && <Alert type="error" message={error} />}
+      {mode === 'choose' ? (
+        <Card>
+          <h3>How would you like to add the ingredient?</h3>
+          <div className="ingredient-entry-options">
+            <button
+              type="button"
+              className="ingredient-entry-option"
+              aria-label="Upload supply document"
+              onClick={() => setMode('document')}
             >
-              <Upload size={28} aria-hidden="true" />
-              <strong>
-                {extracting ? 'Extracting document information…' : 'Drop your document here'}
-              </strong>
+              <FileSearch />
+              <strong>Upload supply document</strong>
+              <span>Extract editable values from a document.</span>
+            </button>
+            <button
+              type="button"
+              className="ingredient-entry-option"
+              aria-label="Enter information manually"
+              onClick={() => setMode('manual')}
+            >
+              <Keyboard />
+              <strong>Enter information manually</strong>
+              <span>Complete three short steps.</span>
+            </button>
+          </div>
+          <div className="action-row">
+            <Btn
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void getIngredientDrafts()
+                  .then((result) => setDrafts(result.workflows))
+                  .catch((cause) =>
+                    setError(reportError(cause, 'Stored registrations could not be loaded.')),
+                  )
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Resume a registration
+            </Btn>
+          </div>
+          {drafts.map((record) => (
+            <div key={record.batchId} className="action-row">
               <span>
-                {extracting
-                  ? 'The file stays in memory and is discarded after extraction.'
-                  : 'or choose one file from your device'}
+                {record.input.ingredientName} ? {record.input.batchReference}
               </span>
-              {!extracting && (
-                <label className="ingredient-document-picker">
-                  Choose document
-                  <input
-                    aria-label="Choose supply document"
-                    type="file"
-                    accept=".pdf,.docx,.png,.jpg,.jpeg,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg"
-                    onChange={(event) => void extractFile(event.target.files?.[0])}
-                  />
-                </label>
-              )}
-              {extracting && <span className="ingredient-document-progress" role="status" />}
-            </div>
-            <p className="ingredient-document-privacy">
-              The document is used only to assist data entry. It is not registered, stored, sent to
-              an external AI service or uploaded to IPFS.
-            </p>
-            <div className="action-row">
-              <Btn variant="outline" onClick={startManualEntry} disabled={extracting}>
-                Enter information manually instead
+              <Btn variant="outline" disabled={busy} onClick={() => void resume(record)}>
+                Resume saved batch
               </Btn>
             </div>
-          </Card>
-        )}
-
-        {entryMode !== 'choose' && (entryMode === 'manual' || extraction) && (
-          <StepProgress
-            steps={
-              extraction
-                ? ['Upload document', 'Review extracted information', 'Review & register']
-                : ['Ingredient information', 'Review & register']
-            }
-            current={extraction ? step + 1 : step}
-          />
-        )}
-
-        {step === 0 && (entryMode === 'manual' || extraction) && (
-          <Card>
-            <div className="ingredient-form-heading">
-              <div>
-                <strong>
-                  {extraction ? 'Review extracted information' : 'Ingredient information'}
-                </strong>
-                {extraction && (
-                  <span>
-                    {extraction.document.filename} · {(extraction.document.size / 1024).toFixed(1)}{' '}
-                    KB
-                  </span>
-                )}
-              </div>
-              <Btn
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setEntryMode('choose');
-                  setExtraction(undefined);
-                  setExtractionConfirmed(false);
-                }}
-              >
-                Change method
-              </Btn>
-            </div>
-            {extraction?.warnings.map((warning) => (
-              <Alert key={warning} type="warning" message={warning} />
-            ))}
-            <div className="ingredient-registration-form">
-              <fieldset className="ingredient-form-section">
-                <legend>Basic ingredient information</legend>
-                <div className="workspace-form-grid">
-                  <ExtractionField field={extraction?.fields.ingredientName} required>
-                    <Input
-                      label="Ingredient name"
-                      maxLength={160}
-                      placeholder="Cocoa Powder"
-                      value={name}
-                      onChange={update(setName)}
-                      required
-                    />
-                  </ExtractionField>
-                  <ExtractionField field={extraction?.fields.batchReference} required>
-                    <Input
-                      label="Batch reference"
-                      maxLength={120}
-                      pattern="[A-Za-z0-9._:/-]+"
-                      placeholder="COCOA-2026-001"
-                      value={batchReference}
-                      onChange={update(setBatchReference)}
-                      required
-                    />
-                  </ExtractionField>
-                </div>
-                <ExtractionField field={extraction?.fields.category} required>
-                  <SelectField
-                    label="Category"
-                    value={category}
-                    onChange={update(setCategory)}
-                    required
-                    options={[
-                      { value: '', label: 'Select category' },
-                      { value: 'cocoa', label: 'Cocoa & Chocolate' },
-                      { value: 'dairy', label: 'Dairy Products' },
-                      { value: 'sugar', label: 'Sugar & Sweeteners' },
-                      { value: 'grain', label: 'Grains & Flours' },
-                      { value: 'other', label: 'Other' },
-                    ]}
-                  />
-                </ExtractionField>
-              </fieldset>
-
-              <fieldset className="ingredient-form-section">
-                <legend>Origin and dates</legend>
-                <div className="workspace-form-grid">
-                  <ExtractionField field={extraction?.fields.origin} required>
-                    <Input
-                      label="Country / location of origin"
-                      maxLength={160}
-                      placeholder="Ghana"
-                      value={origin}
-                      onChange={update(setOrigin)}
-                      required
-                    />
-                  </ExtractionField>
-                  <ExtractionField field={extraction?.fields.productionDate} required>
-                    <Input
-                      label="Production date"
-                      max={new Date().toISOString().slice(0, 10)}
-                      type="date"
-                      value={producedAt}
-                      onChange={update(setProducedAt)}
-                      required
-                    />
-                  </ExtractionField>
-                  <ExtractionField field={extraction?.fields.expiryDate} required>
-                    <Input
-                      label="Expiry date"
-                      type="date"
-                      value={expiresAt}
-                      onChange={update(setExpiresAt)}
-                      required
-                    />
-                  </ExtractionField>
-                </div>
-              </fieldset>
-
-              <fieldset className="ingredient-form-section">
-                <legend>Quantity and indicative price</legend>
-                <div className="workspace-form-grid workspace-form-grid--quantity">
-                  <ExtractionField field={extraction?.fields.quantity} required>
-                    <Input
-                      label="Quantity"
-                      inputMode="numeric"
-                      pattern="[1-9][0-9]{0,38}"
-                      maxLength={39}
-                      placeholder="500"
-                      value={quantity}
-                      onChange={update(setQuantity)}
-                      required
-                    />
-                  </ExtractionField>
-                  <ExtractionField field={extraction?.fields.unit} required>
-                    <SelectField
-                      label="Unit"
-                      value={unit}
-                      onChange={update(setUnit)}
-                      required
-                      options={[
-                        { value: '', label: 'Select unit' },
-                        { value: 'kg', label: 'kg' },
-                        { value: 'g', label: 'g (integer grams; 1000 g = 1 kg)' },
-                        { value: 'each', label: 'each (individual items)' },
-                        { value: 'litre', label: 'litre' },
-                        { value: 'unit', label: 'unit' },
-                      ]}
-                    />
-                  </ExtractionField>
-                  <ExtractionField field={extraction?.fields.price}>
-                    <Input
-                      label={`Price per ${unit || 'unit'} (optional)`}
-                      value={price}
-                      onChange={update(setPrice)}
-                      type="number"
-                      min="0"
-                      step="0.01"
-                    />
-                  </ExtractionField>
-                  <ExtractionField field={extraction?.fields.currency}>
-                    <Input
-                      label="Currency code"
-                      value={currency}
-                      onChange={(value) => update(setCurrency)(value.toUpperCase())}
-                      maxLength={3}
-                    />
-                  </ExtractionField>
-                </div>
-              </fieldset>
-
-              <fieldset className="ingredient-form-section">
-                <legend>Credential claims</legend>
-                <p>
-                  These values become part of the signed Ingredient Credential and cannot be changed
-                  through listing edits.
-                </p>
-                <ExtractionField field={extraction?.fields.allergenInformation}>
-                  <Input
-                    label="Allergen information"
-                    maxLength={500}
-                    placeholder="None"
-                    value={allergen}
-                    onChange={update(setAllergen)}
-                  />
-                </ExtractionField>
-                <ExtractionField field={extraction?.fields.certifications}>
-                  <Input
-                    label="Certifications"
-                    placeholder="Organic, Halal, Fair Trade"
-                    value={certifications}
-                    onChange={update(setCertifications)}
-                    hint="Separate multiple certifications with commas"
-                  />
-                </ExtractionField>
-              </fieldset>
-
-              <fieldset className="ingredient-form-section">
-                <legend>Optional ingredient image</legend>
-                <p>
-                  Supplier-provided presentation information only. It is not a credential claim or
-                  laboratory evidence. PNG, JPEG or WebP, maximum 2 MB.
-                </p>
-                <input
-                  aria-label="Choose optional ingredient image"
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  disabled={busy}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (!file) {
-                      setImageFile(undefined);
-                      return;
-                    }
-                    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-                      setError('Choose a PNG, JPEG or WebP image.');
-                      setImageFile(undefined);
-                      event.currentTarget.value = '';
-                      return;
-                    }
-                    if (file.size > 2 * 1024 * 1024) {
-                      setError('Images must not exceed 2 MB.');
-                      setImageFile(undefined);
-                      event.currentTarget.value = '';
-                      return;
-                    }
-                    setError('');
-                    setImageFile(file);
-                  }}
-                />
-              </fieldset>
-              {extraction && (
-                <div className="ingredient-extraction-confirmation">
-                  <Alert
-                    type="warning"
-                    message="Extracted information is supplier-provided and has not been independently certified by TraceChain."
-                  />
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={extractionConfirmed}
-                      onChange={(event) => setExtractionConfirmed(event.target.checked)}
-                    />
-                    <span>
-                      I have reviewed the extracted information and confirm that it is accurate.
-                    </span>
-                  </label>
-                </div>
-              )}
-              <div className="action-row">
-                <Btn
-                  onClick={() => {
-                    if (!isFormComplete) setError(validationError || extractionReviewError);
-                    else {
-                      setError('');
-                      setStep(1);
-                    }
-                  }}
-
-                  disabled={busy}
-                >
-                  Continue to review
-                </Btn>
-              </div>
-            </div>
-          </Card>
-        )}
-
-        {step === 1 && (entryMode === 'manual' || extraction) && (
-          <div style={{ display: 'grid', gap: 16 }}>
-            <PresentationSigningSettingsLink role="supplier" />
+          ))}
+        </Card>
+      ) : (
+        <>
+          {mode === 'document' && !extraction ? (
             <Card>
-              <div style={{ fontWeight: 700, fontSize: 15, color: T.navy, marginBottom: 16 }}>
-                Review batch
-              </div>
-              <Alert
-                type="warning"
-                message="Ingredient name, batch reference, origin, category, quantity, unit, dates, allergens and certifications become signed or blockchain records. A separate catalogue listing copy of the name and category, plus its description, indicative price and image, can later be edited without changing those signed claims."
+              <h3>Upload supply document</h3>
+              <p>
+                PDF, DOCX, PNG or JPEG; maximum 10 MB. Extraction does not store the file as
+                certification evidence.
+              </p>
+              <label className="ingredient-document-dropzone">
+                <Upload />
+                <span role={extracting ? 'status' : undefined}>
+                  {extracting
+                    ? 'Extracting document information...'
+                    : 'Choose or drop your supply document'}
+                </span>
+                <input
+                  aria-label="Choose supply document"
+                  type="file"
+                  accept=".pdf,.docx,.png,.jpg,.jpeg"
+                  disabled={extracting}
+                  onChange={(event) => void extract(event.target.files?.[0])}
+                />
+              </label>
+              <Btn variant="outline" disabled={extracting} onClick={() => setMode('manual')}>
+                Enter information manually
+              </Btn>
+            </Card>
+          ) : (
+            <>
+              <StepProgress
+                steps={['Batch details', 'Origin and certifications', 'Listing and review']}
+                current={step}
               />
-              <div className="workspace-review-grid">
-                {[
-                  ['Ingredient', name],
-                  ['Batch reference', batchReference],
-                  ['Origin', origin],
-                  ['Category', category],
-                  ['Production date', producedAt],
-                  ['Expiry date', expiresAt],
-                  ['Quantity', `${quantity} ${unit}`],
-                  ['Certifications', certifications || 'None'],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    style={{ borderBottom: `1px solid ${T.border}`, padding: '8px 0' }}
-                  >
-                    <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
-                    <div style={{ fontSize: 13, color: T.navy, fontWeight: 600 }}>{value}</div>
+              {extraction && (
+                <Alert
+                  type="info"
+                  message={`Pre-filled from ${extraction.document.filename}. Review and edit all values. Extraction is not certification or attachment storage.`}
+                />
+              )}
+              {extraction && (
+                <details>
+                  <summary>Review extracted information</summary>
+                  <p>
+                    Extracted values are Supplier-provided, not independently certified. Edit them
+                    in the steps below.
+                  </p>
+                  <dl>
+                    {Object.entries(extraction.fields).map(([name, field]) => (
+                      <div key={name}>
+                        <dt>
+                          {name} ? {field.confidence}
+                        </dt>
+                        <dd>{field.value || 'Not found; enter this value if required.'}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </details>
+              )}
+              {extraction?.warnings.map((warning) => (
+                <Alert key={warning} type="warning" message={warning} />
+              ))}
+              <Card>
+                {step === 0 && (
+                  <fieldset disabled={busy || started} className="ingredient-create-fields">
+                    <legend>Batch details</legend>
+                    <div className="workspace-form-grid">
+                      {field('name', 'Ingredient name', {
+                        required: true,
+                        maxLength: 160,
+                        hint: extraction
+                          ? `Extracted confidence: ${extraction.fields.ingredientName.confidence}`
+                          : undefined,
+                      })}
+                      {field('reference', 'Supplier batch reference', {
+                        required: true,
+                        maxLength: 120,
+                      })}
+                      <div data-error={Boolean(errors.category)}>
+                        <SelectField
+                          label="Category"
+                          required
+                          value={draft.category}
+                          onChange={update('category')}
+                          options={[{ value: '', label: 'Select category' }, ...categories]}
+                        />
+                        {errors.category && (
+                          <p role="alert" className="text-ws-red">
+                            {errors.category}
+                          </p>
+                        )}
+                      </div>
+                      {field('quantity', 'Quantity', {
+                        required: true,
+                        inputMode: 'decimal',
+                        maxLength: 43,
+                        placeholder: 'e.g. 1.25',
+                      })}
+                      <SelectField
+                        label="Unit"
+                        required
+                        value={draft.unit}
+                        onChange={(value) => {
+                          update('unit')(value);
+                          update('priceBasis')(value);
+                        }}
+                        options={['kg', 'g', 'litre', 'mL', 'each'].map((value) => ({
+                          value,
+                          label: value,
+                        }))}
+                      />
+                      {field('produced', 'Production date', {
+                        type: 'date',
+                        required: true,
+                      })}
+                      {field('expiry', 'Expiry date', { type: 'date', required: true })}
+                    </div>
+                  </fieldset>
+                )}
+                {step === 1 && (
+                  <fieldset disabled={busy || started} className="ingredient-create-fields">
+                    <legend>Origin and certifications</legend>
+                    <p className="ingredient-help">
+                      Origin describes where the ingredient was sourced. Current storage and
+                      dispatch locations are managed through locations and shipments.
+                    </p>
+                    <div className="workspace-form-grid">
+                      <div data-error={Boolean(errors.country)} className="ingredient-country">
+                        <label>
+                          Country of origin <span className="text-ws-red">*</span>
+                        </label>
+                        <RegistrationCountrySelect
+                          variant="field"
+                          aria-label="Country of origin"
+                          value={(draft.country || undefined) as Country | undefined}
+                          onChange={(country) => update('country')(country ?? '')}
+                          options={countries}
+                          iconComponent={OriginCountryFlag}
+                        />
+                        {errors.country && (
+                          <p role="alert" className="text-ws-red">
+                            {errors.country}
+                          </p>
+                        )}
+                      </div>
+                      {field('region', 'State / region / province (optional)', { maxLength: 160 })}
+                      {field('city', 'City / district (optional)', { maxLength: 160 })}
+                      {field('facility', 'Source facility / farm name or reference (optional)', {
+                        maxLength: 200,
+                      })}
+                      {field('address', 'Detailed source address (private, optional)', {
+                        maxLength: 1000,
+                      })}
+                    </div>
+                    {legacyOrigin && (
+                      <p>
+                        Original extracted origin: {legacyOrigin}. Select the country explicitly if
+                        this text cannot be mapped confidently.
+                      </p>
+                    )}
+                    <h3>Allergen declaration</h3>
+                    <div data-error={Boolean(errors.allergenKind)}>
+                      <SelectField
+                        label="Allergen declaration"
+                        required
+                        value={draft.allergenKind}
+                        onChange={update('allergenKind')}
+                        options={[
+                          { value: '', label: 'Choose a declaration' },
+                          { value: 'contains', label: 'Contains' },
+                          { value: 'mayContain', label: 'May contain' },
+                          { value: 'declaresNone', label: 'Supplier declares none' },
+                          { value: 'unknown', label: 'Unknown' },
+                        ]}
+                      />
+                      {errors.allergenKind && (
+                        <p role="alert" className="text-ws-red">
+                          {errors.allergenKind}
+                        </p>
+                      )}
+                    </div>
+                    {['contains', 'mayContain'].includes(draft.allergenKind) &&
+                      field('allergenDetails', 'Allergen details', {
+                        required: true,
+                        maxLength: 500,
+                      })}
+                    <h3>Certifications (optional)</h3>
+                    {legacyCerts.length > 0 && (
+                      <p>
+                        Legacy extracted certification text: {legacyCerts.join(', ')}. Issuer,
+                        scope, references and dates were not established by extraction.
+                      </p>
+                    )}
+                    <div data-error={Boolean(errors.certifications)}>
+                      <CertificationEditor
+                        entries={entries}
+                        setEntries={setEntries}
+                        operationId={operationId}
+                        sourceFile={sourceFile}
+                        showErrors={Boolean(errors.certifications)}
+                        disabled={busy || started}
+                      />
+                      {errors.certifications && (
+                        <p role="alert" className="text-ws-red">
+                          {errors.certifications}
+                        </p>
+                      )}
+                    </div>
+                  </fieldset>
+                )}
+                {step === 2 && (
+                  <div className="ingredient-create-review">
+                    <h3>Optional listing details</h3>
+                    <fieldset disabled={busy || started} className="workspace-form-grid">
+                      {field('price', 'Indicative price (optional)', {
+                        inputMode: 'decimal',
+                        maxLength: 15,
+                      })}
+                      {draft.price && (
+                        <>
+                          {field('currency', 'Currency', { required: true, maxLength: 3 })}
+                          <SelectField
+                            label="Price basis"
+                            value={draft.priceBasis}
+                            onChange={update('priceBasis')}
+                            options={(['kg', 'g'].includes(draft.unit)
+                              ? ['kg', 'g']
+                              : ['litre', 'mL'].includes(draft.unit)
+                                ? ['litre', 'mL']
+                                : ['each']
+                            ).map((value) => ({ value, label: `Per ${value}` }))}
+                          />
+                          {errors.priceBasis && <p role="alert">{errors.priceBasis}</p>}
+                        </>
+                      )}
+                      <label>
+                        Ingredient image (optional)
+                        <input
+                          aria-label="Choose optional ingredient image"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (
+                              file &&
+                              (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+                                file.size > 2 * 1024 * 1024)
+                            ) {
+                              setError('Use a PNG, JPEG or WebP image up to 2 MB.');
+                              return;
+                            }
+                            setImage(file);
+                          }}
+                        />
+                        <small>
+                          Supplier-provided listing image; PNG, JPEG or WebP, maximum 2 MB.
+                        </small>
+                      </label>
+                    </fieldset>
+                    {imageUrl && (
+                      <img
+                        src={imageUrl}
+                        alt="Ingredient image preview"
+                        className="ingredient-create-image"
+                      />
+                    )}
+                    <h3>Review signed batch information</h3>
+                    <dl className="workspace-review-grid">
+                      {[
+                        ['Ingredient', draft.name],
+                        ['Batch reference', draft.reference],
+                        ['Category', draft.category],
+                        ['Quantity entered', `${draft.quantity} ${draft.unit}`],
+                        [
+                          'Registered quantity',
+                          frozen.current && !frozen.current.originDetails
+                            ? `${frozen.current.quantity} ${frozen.current.unit}`
+                            : conversion
+                              ? `${conversion.quantity} ${conversion.unit}`
+                              : 'Invalid quantity',
+                        ],
+                        [
+                          frozen.current?.productionDateMeaning === 'processing'
+                            ? 'Processing date (saved registration)'
+                            : 'Production date',
+                          draft.produced,
+                        ],
+                        ['Expiry date', draft.expiry],
+                        ['Country / legacy origin', origin.countryName || legacyOrigin],
+                        ['State / region', draft.region],
+                        ['City / district', draft.city],
+                        ['Source facility', draft.facility],
+                        ['Private source address', draft.address],
+                        [
+                          'Allergen declaration',
+                          frozen.current?.allergenInformation ?? input().allergenInformation,
+                        ],
+                        [
+                          'Indicative price',
+                          draft.price
+                            ? `${draft.currency} ${draft.price} per ${draft.priceBasis}`
+                            : 'Not supplied',
+                        ],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <dt>{label}</dt>
+                          <dd>{value || 'Unavailable'}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {legacyCerts.length > 0 && (
+                      <p>
+                        Legacy certification text: {legacyCerts.join(', ')}. Issuer, reference,
+                        dates and scope are unavailable unless separately supplied.
+                      </p>
+                    )}
+                    <CertificationEditor
+                      entries={entries}
+                      setEntries={setEntries}
+                      operationId={operationId}
+                      readOnly
+                    />
+                    {extraction && (
+                      <label data-error={Boolean(errors.reviewed)}>
+                        <input
+                          type="checkbox"
+                          checked={reviewed}
+                          disabled={started}
+                          onChange={(event) => setReviewed(event.target.checked)}
+                        />{' '}
+                        I have reviewed every extracted value and confirm that the information is
+                        accurate.
+                      </label>
+                    )}
+                    {errors.reviewed && (
+                      <p role="alert" className="text-ws-red">
+                        {errors.reviewed}
+                      </p>
+                    )}
+                    <p className="ingredient-help">
+                      Batch identity, canonical quantity/unit, dates, origin, allergen declaration,
+                      certification entries and document hashes/references become signed claims.
+                      Private details and documents are encrypted off-chain. Price, currency, price
+                      basis and image are separate listing metadata. A Supplier signature does not
+                      verify a certification authority.
+                    </p>
+                    {savedAdditionalDetails &&
+                    (savedAdditionalDetails.qualityTests?.length ||
+                      savedAdditionalDetails.originDetails?.processingCountry ||
+                      savedAdditionalDetails.originDetails?.processingLocation ||
+                      savedAdditionalDetails.internalQualityRemarks ||
+                      savedAdditionalDetails.productionDateMeaning === 'processing') ? (
+                      <details>
+                        <summary>Previously saved additional details (read-only)</summary>
+                        <p>
+                          These values belong to this saved registration and are preserved when
+                          resuming it.
+                        </p>
+                        {savedAdditionalDetails.originDetails?.processingCountry && (
+                          <IngredientClaimValue
+                            name="processingCountry"
+                            value={savedAdditionalDetails.originDetails.processingCountry}
+                          />
+                        )}{' '}
+                        {savedAdditionalDetails.originDetails?.processingLocation && (
+                          <IngredientClaimValue
+                            name="processingLocation"
+                            value={savedAdditionalDetails.originDetails.processingLocation}
+                          />
+                        )}{' '}
+                        {savedAdditionalDetails.productionDateMeaning === 'processing' && (
+                          <IngredientClaimValue name="productionDateMeaning" value="processing" />
+                        )}
+                        {savedAdditionalDetails.internalQualityRemarks && (
+                          <IngredientClaimValue
+                            name="internalQualityRemarks"
+                            value={savedAdditionalDetails.internalQualityRemarks}
+                          />
+                        )}{' '}
+                        {savedAdditionalDetails.qualityTests?.map((entry) => (
+                          <IngredientClaimValue
+                            key={entry.id}
+                            name={'qualityTest_' + entry.id}
+                            value={entry}
+                            loadDocument={(id) => getCertificationDocument(batchId, id)}
+                          />
+                        ))}
+                      </details>
+                    ) : null}
+                    <PresentationSigningSettingsLink role="supplier" />
+                    {started && <p role="status">{status}</p>}
+                    {started && !complete && (
+                      <p>
+                        Signed details are locked after registration begins. Retry resumes this same
+                        operation; changes to signed claims require replacement/reissuance.
+                      </p>
+                    )}
+                    {complete && (
+                      <Alert
+                        type="success"
+                        message="The ingredient batch was confirmed and read back from the blockchain."
+                      />
+                    )}
+                    {imageNotice && <Alert type="success" message={imageNotice} />}
+                    {batchId && (
+                      <details>
+                        <summary>Registration reference</summary>
+                        <code>{batchId}</code>
+                      </details>
+                    )}
                   </div>
-                ))}
-              </div>
-              <div className="ingredient-photo-review">
-                <div>
-                  <span className="ingredient-photo-review__label">Ingredient photo</span>
-                  {imagePreview && imageFile ? (
-                    <>
-                      <img src={imagePreview} alt="Ingredient photo preview" />
-                      <span className="ingredient-photo-review__filename" title={imageFile.name}>
-                        {imageFile.name}
-                      </span>
-                    </>
+                )}
+                <div className="action-row ingredient-create-actions">
+                  {step > 0 && !complete && (
+                    <Btn
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => {
+                        setErrors({});
+                        setStep((value) => value - 1);
+                      }}
+                    >
+                      Back
+                    </Btn>
+                  )}
+                  {step < 2 ? (
+                    <Btn disabled={busy} onClick={next}>
+                      Continue
+                    </Btn>
                   ) : (
-                    <span className="ingredient-photo-review__empty">No photo selected</span>
+                    <Btn
+                      disabled={busy}
+                      onClick={complete ? (onCompleted ?? onBack) : () => void register()}
+                    >
+                      {complete
+                        ? 'View ingredient batches'
+                        : busy
+                          ? 'Processing registration...'
+                          : started
+                            ? 'Resume registration'
+                            : 'Register with MetaMask'}
+                    </Btn>
                   )}
                 </div>
-                <Btn onClick={() => setStep(0)} variant="outline" size="sm" disabled={busy}>
-                  {imageFile ? 'Change photo' : 'Add photo'}
-                </Btn>
-              </div>
-            </Card>
-
-            <Card>
-              <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 12 }}>
-                Registration progress
-              </div>
-              <WorkflowStatus label="Register Ingredient Credential" status={credentialStep} />
-              <WorkflowStatus label="Register ingredient batch" status={batchStep} />
-              <p style={{ fontSize: 12, color: T.text2, margin: '12px 0 0' }}>
-                MetaMask confirms each blockchain step separately. If a later step fails, retrying
-                safely resumes from the confirmed step.
-              </p>
-            </Card>
-
-            {complete && (
-              <Alert
-                type="success"
-                message="The Ingredient Credential and ingredient batch are registered and verified on-chain."
-              />
-            )}
-            {imageNotice && <Alert type="success" message={imageNotice} />}
-
-            <div className="action-row">
-              {!complete && (
-                <Btn
-                  onClick={() => setStep(0)}
-                  variant="outline"
-
-                  disabled={busy}
-                >
-                  Edit details
-                </Btn>
-              )}
-              <Btn
-                onClick={complete ? (onCompleted ?? onBack) : register}
-
-                disabled={busy}
-              >
-                {complete
-                  ? 'View ingredient batches'
-                  : busy
-                    ? 'Waiting for confirmation…'
-                    : error
-                      ? 'Retry registration'
-                      : 'Register with MetaMask'}
-              </Btn>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function WorkflowStatus({ label, status }: { label: string; status: WorkflowStep }) {
-  const text = status === 'complete' ? 'Complete' : status === 'active' ? 'Next' : 'Waiting';
-  const color = status === 'complete' ? T.green : status === 'active' ? T.teal : T.text2;
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        padding: '10px 0',
-        borderBottom: `1px solid ${T.border}`,
-      }}
-    >
-      <span style={{ fontSize: 13, color: T.text }}>{label}</span>
-      <span style={{ color, fontSize: 12, fontWeight: 700 }}>{text}</span>
-    </div>
-  );
-}
-
-function ExtractionField({
-  children,
-  field,
-  required = false,
-}: {
-  children: ReactNode;
-  field?: ExtractedIngredientField;
-  required?: boolean;
-}) {
-  if (!field) return children;
-  const stateClass = field.confidence.toLowerCase().replace(/\s+/g, '-');
-  return (
-    <div className={`ingredient-extracted-field is-${stateClass}`}>
-      {children}
-      <span className="ingredient-extracted-field__status">{field.confidence}</span>
-      {required && field.confidence === 'Missing' && (
-        <span className="ingredient-extracted-field__required">
-          Required field not found. Enter a value before continuing.
-        </span>
+              </Card>
+            </>
+          )}
+        </>
       )}
     </div>
   );

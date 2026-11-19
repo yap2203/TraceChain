@@ -2,22 +2,31 @@
 
 ## Repository and implementation
 
+- Simplify ingredient creation and new request choices by removing processing fields,
+  the date-type selector, quality/laboratory evidence and internal quality remarks
+  (user-requested 2026-11-19). New batches use production dates. Retain schema/storage
+  compatibility and read-only access to existing saved/signed information; do not mutate
+  historical credentials or discard fields when resuming an existing registration.
+
+- Implement the user-supplied selective-disclosure policy v2 (2026-11-19): company name
+  and role/wallet/DID context are mandatory; signed registration number/country are one
+  disclosure group. Use versioned, issuer-authenticated Company attestations and Ingredient
+  SD-JWT proofs, shared request templates, scoped certificate/laboratory context and explicit
+  file consent. Preserve legacy signed content, SIWE, participant-controlled holder signing,
+  backend-managed DIDComm and encrypted Pinata storage. No automatic replacement, database
+  service or contract migration is introduced. See `DISCLOSURE_POLICY.md`.
+
 - Combine Company access and Issued credential controls visually in one Company management card, with visible labelled groups and separate status/actions (user-confirmed 2026-11-19). Keep independent contract records and transaction semantics; do not synchronize both records from one action. This supersedes the collapsed Advanced credential controls presentation.
 
 - End the per-transaction MetaMask preview-message trial (user-requested 2026-11-17): remove the extra signatures and unused metadata/formatters, preserve ordinary transaction confirmation, SIWE, application ownership signatures and duplicate-request guards. Profile location setup stays in one column at all sizes, with the empty-state icon/message centered across the section. This supersedes the earlier preview trial and two-column location presentation.
 
-
 - Keep trial wallet messages brief: action purpose, key business values and essential wallet/network/contract/value context, with one reference binding omitted technical details (user-requested 2026-11-17). Preserve distinct message and transaction prompts and all required on-chain steps; coalesce duplicate pending wallet requests and guard Admin issuance against repeated clicks.
-
 
 - Trial readable MetaMask message signatures before every contract transaction (user-requested 2026-11-17 follow-up). Show a clear two-prompt sequence: preview acknowledgement, then the real transaction. Derive displayed arguments from exact calldata, include wallet/site/chain/target/value context and a fresh preview identifier, verify locally and discard the preview signature. It is not a backend authorization token. Keep the app review dialog removed and preserve SIWE, business confirmations and contract checks.
 
-
 - Keep affirmative actions to the right of their negative/secondary alternative in right-aligned page and modal action rows (user-requested 2026-11-17). Reorder actual markup so keyboard focus follows the displayed order; keep contextual links before paired decisions and preserve handlers/authorization.
 
-
 - Make wallet signatures readable inside MetaMask, without a separate TraceChain transaction-review dialog (user clarification, 2026-11-17). Keep the shared readable company-application message and SIWE. Remove the added browser review and its unused API metadata; preserve actual calldata, transaction simulation, wallet network checks, authorization and existing business confirmations. MetaMask controls the normal transaction confirmation display.
-
 
 - Defer physical dispatch/receiving location setup from registration to Profile (user-confirmed 2026-11-17). Keep legal business address and wallet registration requirements, existing application location drafts and logistics location requirements. Standardize page-level Back navigation at the top left with a left chevron, retaining bottom form-step controls. This supersedes requiring a physical logistics location during registration.
 

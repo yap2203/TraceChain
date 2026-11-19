@@ -284,6 +284,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     'companyId',
     'companyName',
     'companyRegistrationNumber',
+    'registrationCountry',
     'role',
     'walletAddress',
     'id',

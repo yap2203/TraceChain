@@ -288,6 +288,7 @@ describe('Company Role Credential presentation API', () => {
       applicationId,
       companyName: 'Persistent Supplier',
       companyRegistrationNumber: 'REG-PERSIST-001',
+      registrationCountry: 'MY',
       approvedRole: 2,
       expirationDate: new Date('2030-01-01T00:00:00.000Z'),
     };

@@ -78,6 +78,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
     category: '',
     description: '',
     price: '',
+    priceBasis: '',
     currency: 'MYR',
   });
 
@@ -198,6 +199,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
       category: item.category ?? '',
       description: item.description ?? '',
       price: item.price ?? '',
+      priceBasis: item.priceBasis ?? item.unit,
       currency: item.currency ?? 'MYR',
     });
   };
@@ -507,7 +509,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
                 maxLength={1000}
               />
               <Input
-                label={`Price per ${editing.unit}`}
+                label={`Price per ${form.priceBasis || editing.unit}`}
                 value={form.price}
                 onChange={(price) => setForm((current) => ({ ...current, price }))}
                 type="number"
@@ -538,6 +540,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
                     description: form.description.trim(),
                     ...(form.price ? { price: form.price } : {}),
                     currency: form.currency,
+                    priceBasis: form.priceBasis,
                   })
                 }
               >
@@ -805,6 +808,11 @@ function IngredientDetailModal({
     <Modal title={item.name} onClose={onClose} width={840}>
       <div className="ingredient-detail">
         <div className="grid gap-[8px]">
+          <a
+            href={'/supplier/ingredients?view=batch-detail&id=' + encodeURIComponent(item.batchId)}
+          >
+            View signed batch details and certification documents
+          </a>
           <a href={'/supplier/transfers?batchId=' + encodeURIComponent(item.batchId)}>
             Send stock to a Distributor warehouse
           </a>
@@ -1033,7 +1041,7 @@ function inventorySummary(items: InventoryItem[]) {
 
 function price(item: OrderRecord) {
   return item.price !== undefined
-    ? `${item.currency ?? 'MYR'} ${item.price} / ${item.unit}`
+    ? `${item.currency ?? 'MYR'} ${item.price} / ${item.priceBasis || item.unit}`
     : 'Not provided';
 }
 

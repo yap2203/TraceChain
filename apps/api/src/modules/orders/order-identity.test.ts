@@ -8,6 +8,7 @@ import {
   createTraceChainAgent,
   createOrGetAuthorityDid,
   issueCompanyRoleCredential,
+  readIngredientSdJwtClaims,
   walletAddressToDid,
   type TraceChainAgent,
 } from '@tracechain/ssi';
@@ -81,7 +82,11 @@ afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-async function setup(buyerRole = CompanyRole.MANUFACTURER, selectiveDisclosure = false) {
+async function setup(
+  buyerRole = CompanyRole.MANUFACTURER,
+  selectiveDisclosure = false,
+  registrationCountry?: string,
+) {
   const buyer = '0x3000000000000000000000000000000000000003',
     seller = '0x2000000000000000000000000000000000000002';
   const buyerKey = holder();
@@ -90,6 +95,7 @@ async function setup(buyerRole = CompanyRole.MANUFACTURER, selectiveDisclosure =
     companyId: 'company-id',
     companyName: 'Registered test company',
     companyRegistrationNumber: 'TEST-REG',
+    registrationCountry,
     expirationDate: new Date(Date.now() + 3600000),
     issuerDid: issuer,
     issuerOperatorChainId: 31337,
@@ -202,6 +208,54 @@ async function setup(buyerRole = CompanyRole.MANUFACTURER, selectiveDisclosure =
   };
 }
 describe('order-bound Company Role VP verification with real holder and authority signatures', () => {
+  it.each([CompanyRole.MANUFACTURER, CompanyRole.RETAILER])(
+    'keeps name mandatory and shares signed registration number/country only together for %s',
+    async (role) => {
+      const fixture = await setup(role, true, 'MY');
+      const minimal = await selectiveProof(fixture, {}, fixture.buyerKey, []);
+      const minimalClaims = await readIngredientSdJwtClaims(minimal);
+      expect(minimalClaims.companyName).toBe('Registered test company');
+      expect(minimalClaims).not.toHaveProperty('applicationReference');
+      expect(minimalClaims).not.toHaveProperty('companyRegistrationNumber');
+      const numberOnly = await selectiveProof(fixture, {}, fixture.buyerKey, [
+        'companyRegistrationNumber',
+      ]);
+      await expect(
+        fixture.service.validateOrderIdentityPresentation('buyer', fixture.orderId, numberOnly),
+      ).rejects.toMatchObject({ code: 'IDENTITY_HOLDER_PROOF_INVALID' });
+      const grouped = await selectiveProof(fixture, {}, fixture.buyerKey, [
+        'companyRegistrationNumber',
+        'registrationCountry',
+      ]);
+      await expect(
+        fixture.service.validateOrderIdentityPresentation('buyer', fixture.orderId, grouped),
+      ).resolves.toBeUndefined();
+      expect(await readIngredientSdJwtClaims(grouped)).toMatchObject({
+        companyRegistrationNumber: 'TEST-REG',
+        registrationCountry: 'MY',
+      });
+    },
+  );
+  it('does not invent country for an older signed VC and blocks a fresh request requiring it', async () => {
+    const fixture = await setup(CompanyRole.MANUFACTURER, true);
+    fixture.workflows.get(fixture.orderId).identityProof.requiredClaims = [
+      'companyName',
+      'role',
+      'walletAddress',
+      'id',
+      'companyRegistrationNumber',
+      'registrationCountry',
+    ];
+    const material = await fixture.service.getCompanyIdentityProofMaterial(
+      'buyer',
+      fixture.orderId,
+    );
+    expect('claims' in material && material.claims).not.toHaveProperty('registrationCountry');
+    const proof = await selectiveProof(fixture, {}, fixture.buyerKey, []);
+    await expect(
+      fixture.service.validateOrderIdentityPresentation('buyer', fixture.orderId, proof),
+    ).rejects.toMatchObject({ code: 'IDENTITY_HOLDER_PROOF_INVALID' });
+  });
   async function selectiveProof(
     fixture: Awaited<ReturnType<typeof setup>>,
     changes: Record<string, unknown> = {},
@@ -253,8 +307,15 @@ describe('order-bound Company Role VP verification with real holder and authorit
   );
   it('rejects missing necessary company claims, wrong key, audience, nonce, expiry and revoked company', async () => {
     const fixture = await setup(CompanyRole.MANUFACTURER, true);
+    // Company name is now always disclosed by the v2 attestation, even with no optional claims.
+    await expect(
+      fixture.service.validateOrderIdentityPresentation(
+        'buyer',
+        fixture.orderId,
+        await selectiveProof(fixture, {}, fixture.buyerKey, []),
+      ),
+    ).resolves.toBeUndefined();
     for (const proof of [
-      await selectiveProof(fixture, {}, fixture.buyerKey, []),
       await selectiveProof(fixture, {}, holder()),
       await selectiveProof(fixture, { aud: 'another-verifier' }),
       await selectiveProof(fixture, { nonce: 'another-request' }),

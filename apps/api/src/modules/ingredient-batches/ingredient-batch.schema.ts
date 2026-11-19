@@ -1,8 +1,30 @@
 import { z } from 'zod';
+import { normalizeIngredientQuantity } from '@tracechain/shared';
+import {
+  ingredientOriginSchema,
+  ingredientQualityTestSchema,
+  ingredientAllergenSchema,
+  ingredientCertificationSchema,
+} from '@tracechain/ssi';
 import { requestDateSchema } from '../../config/input-validation.js';
 
 export const ingredientBatchRequestSchema = z
   .object({
+    qualityTests: z.array(ingredientQualityTestSchema).max(20).optional(),
+    internalQualityRemarks: z.string().trim().max(4000).optional(),
+    operationId: z.uuid().optional(),
+    originDetails: ingredientOriginSchema.optional(),
+    allergen: ingredientAllergenSchema.optional(),
+    certificationEntries: z
+      .array(
+        ingredientCertificationSchema.refine((entry) => entry.documents.length > 0, {
+          message: 'Attach at least one supporting document to each certification.',
+          path: ['documents'],
+        }),
+      )
+      .max(20)
+      .optional(),
+    priceBasis: z.enum(['kg', 'g', 'litre', 'mL', 'each']).optional(),
     price: z
       .string()
       .regex(/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/)
@@ -24,7 +46,8 @@ export const ingredientBatchRequestSchema = z
     ingredientName: z.string().trim().min(1).max(160),
     origin: z.string().trim().min(1).max(160),
     productionDate: requestDateSchema,
-    quantity: z.string().regex(/^[1-9]\d{0,38}$/),
+    productionDateMeaning: z.enum(['production', 'processing']).optional(),
+    quantity: z.string().regex(/^(0|[1-9]\d{0,38})(\.\d{1,3})?$/),
     unit: z
       .string()
       .trim()
@@ -34,6 +57,60 @@ export const ingredientBatchRequestSchema = z
   })
   .strict()
   .superRefine((input, context) => {
+    try {
+      if (input.originDetails) normalizeIngredientQuantity(input.quantity, input.unit);
+      else if (!/^[1-9]\d{0,38}$/.test(input.quantity))
+        throw new Error('Legacy quantities must be positive whole units.');
+    } catch (error) {
+      context.addIssue({ code: 'custom', path: ['quantity'], message: (error as Error).message });
+    }
+    const files = [...(input.certificationEntries ?? []), ...(input.qualityTests ?? [])].flatMap(
+      (entry) => entry.documents,
+    );
+    const entries = [...(input.certificationEntries ?? []), ...(input.qualityTests ?? [])];
+    if (
+      new Set(entries.map((entry) => entry.id)).size !== entries.length ||
+      input.qualityTests?.some(
+        (test) => test.testedBatchReference !== input.batchReference || !test.documents.length,
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['qualityTests'],
+        message:
+          'Laboratory reports need unique IDs, exact tested batch references and supporting documents.',
+      });
+    if (
+      files.length > 20 ||
+      files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024 ||
+      new Set(files.map((file) => file.id)).size !== files.length ||
+      (new Set(input.certificationEntries?.map((entry) => entry.id)).size !==
+        input.certificationEntries?.length &&
+        input.certificationEntries !== undefined)
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['certificationEntries'],
+        message: 'Use unique entries/files, at most 20 documents and 20 MB total.',
+      });
+    if (input.originDetails && (!input.allergen || !input.operationId))
+      context.addIssue({
+        code: 'custom',
+        path: ['allergen'],
+        message: 'Choose an explicit allergen declaration and a stable operation ID.',
+      });
+    if (
+      input.price &&
+      input.priceBasis &&
+      ((['g', 'kg'].includes(input.unit) && !['g', 'kg'].includes(input.priceBasis)) ||
+        (['litre', 'mL'].includes(input.unit) && !['litre', 'mL'].includes(input.priceBasis)) ||
+        (['unit', 'each'].includes(input.unit) && input.priceBasis !== 'each'))
+    )
+      context.addIssue({
+        code: 'custom',
+        path: ['priceBasis'],
+        message: 'Price basis must match the batch quantity dimension.',
+      });
     const now = Date.now();
     if (input.productionDate.getTime() > now) {
       context.addIssue({
@@ -56,6 +133,11 @@ export const ingredientBatchRequestSchema = z
         message: 'Expiry date must follow production date.',
       });
     }
-  });
+  })
+  .transform((input) =>
+    input.originDetails
+      ? { ...input, ...normalizeIngredientQuantity(input.quantity, input.unit) }
+      : input,
+  );
 
 export type IngredientBatchRequest = z.infer<typeof ingredientBatchRequestSchema>;

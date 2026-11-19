@@ -5,6 +5,7 @@ import { AuthError } from '../auth/auth.service.js';
 import {
   distributorTransferRequestSchema,
   companyIdentityPresentationSchema,
+  companyProofRequestSchema,
   evidenceCloseSchema,
   evidencePresentationSchema,
   evidenceRequestSchema,
@@ -16,6 +17,13 @@ import {
 import { ProductionFlowApiError, ProductionFlowService } from './production-flow.service.js';
 
 export class ProductionFlowController {
+  certificationDocument = this.action((request) =>
+    this.service.certificationDocument(
+      this.session(request),
+      String(request.params.requestId),
+      String(request.params.documentId),
+    ),
+  );
   constructor(
     private readonly service: ProductionFlowService,
     private readonly sessionCookieName: string,
@@ -49,7 +57,10 @@ export class ProductionFlowController {
   prepareEvidenceRequest = this.action((request) =>
     this.service.prepareEvidenceRequest(
       this.session(request),
-      evidenceRequestSchema.parse(request.body),
+      evidenceRequestSchema.parse({
+        ...request.body,
+        policy: request.body?.policy ?? { policyVersion: 2, template: 'custom' },
+      }),
     ),
   );
   prepareEvidenceResponse = this.action((request) =>
@@ -63,6 +74,7 @@ export class ProductionFlowController {
     this.service.requestCompanyIdentityProof(
       this.session(request),
       requestIdSchema.parse(request.params).requestId,
+      companyProofRequestSchema.parse(request.body ?? {}),
     ),
   );
   getCompanyIdentityProofMaterial = this.action((request) =>

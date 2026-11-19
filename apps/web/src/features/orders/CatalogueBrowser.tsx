@@ -1,3 +1,8 @@
+import {
+  CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
+  type IngredientRequestPolicy,
+} from '@tracechain/shared';
+import { IngredientRequestPolicyFields } from '../production-flow/IngredientRequestPolicyFields';
 import { formatLocationLabel } from './location-format';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { FilterX, PackageSearch, Search, ShieldCheck } from 'lucide-react';
@@ -29,6 +34,7 @@ export interface QuantityRequestInput {
 }
 
 export interface EvidenceRequestInput {
+  policy?: IngredientRequestPolicy;
   batchId: string;
   claims: string[];
   deadline: string;
@@ -434,6 +440,10 @@ function CatalogueDetail({
   const [quantity, setQuantity] = useState('');
   const [deadline, setDeadline] = useState('');
   const [note, setNote] = useState('');
+  const [policy, setPolicy] = useState<IngredientRequestPolicy>({
+    policyVersion: 2,
+    template: 'custom',
+  });
   const [evidenceReason, setEvidenceReason] = useState('');
   const [evidenceDeadline, setEvidenceDeadline] = useState('');
   const [evidenceBatch, setEvidenceBatch] = useState(
@@ -683,6 +693,7 @@ function CatalogueDetail({
                 void onEvidenceRequest(item, {
                   batchId: evidenceBatch,
                   claims: requestedClaims,
+                  policy,
                   deadline: evidenceDeadline,
                   reason: evidenceReason,
                   requiredClaims: requestedClaims.filter((claim) => claims[claim] === 'required'),
@@ -728,18 +739,26 @@ function CatalogueDetail({
               onChange={setEvidenceDeadline}
               required
             />
+            <IngredientRequestPolicyFields
+              policy={policy}
+              onChange={setPolicy}
+              onRequirements={(required) =>
+                setClaims((current) => ({
+                  ...current,
+                  ...Object.fromEntries(
+                    INGREDIENT_REQUEST_CLAIMS.map(([key]) => [
+                      key,
+                      required.includes(key) ? ('required' as const) : ('not-requested' as const),
+                    ]),
+                  ),
+                }))
+              }
+            />
             <div className="catalogue-claim-grid">
-              {[
-                'countryOfOrigin',
-                'productionDate',
-                'expiryDate',
-                'allergenDeclaration',
-                'certificationDetails',
-                'qualityTestSummary',
-              ].map((claim) => (
+              {INGREDIENT_REQUEST_CLAIMS.map(([claim, label]) => (
                 <SelectField
                   key={claim}
-                  label={`${claim} disclosure`}
+                  label={`${label} disclosure`}
                   value={claims[claim] ?? 'not-requested'}
                   onChange={(value) => setClaims((current) => ({ ...current, [claim]: value }))}
                   options={[
@@ -811,7 +830,7 @@ function itemState(item: OrderRecord) {
 
 function price(item: OrderRecord) {
   return item.price !== undefined
-    ? `${item.currency} ${item.price} / ${item.unit}`
+    ? `${item.currency} ${item.price} / ${item.priceBasis || item.unit}`
     : 'Not provided';
 }
 

@@ -68,3 +68,4 @@ export {
   verifyCompanyIdentitySdJwt,
   COMPANY_IDENTITY_BINDING_CLAIMS,
 } from './credentials/company-identity-sd-jwt.js';
+export * from './credentials/ingredient-details.js';

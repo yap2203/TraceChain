@@ -1,0 +1,76 @@
+@reference '../../../../styles/tailwind.css';
+@layer components {
+  .ingredient-create {
+    @apply grid min-w-0 w-full max-w-[1100px] mx-auto gap-5;
+  }
+  .ingredient-create h2 {
+    @apply text-xl font-bold text-ws-navy;
+  }
+  .ingredient-create h3 {
+    @apply text-base font-semibold text-ws-navy;
+  }
+  .ingredient-create-fields {
+    @apply grid min-w-0 border-0 p-0 m-0 gap-5;
+  }
+  .ingredient-create-fields legend {
+    @apply text-lg font-semibold text-ws-navy mb-4;
+  }
+  .ingredient-help {
+    @apply text-[13px] text-ws-text2 leading-relaxed;
+  }
+  .ingredient-country {
+    @apply relative grid min-w-0 gap-2 text-sm;
+  }
+  .ingredient-certifications {
+    @apply grid min-w-0 gap-4;
+  }
+  .ingredient-certification-card {
+    @apply min-w-0 border border-solid border-ws-border rounded-lg p-4;
+  }
+  .ingredient-certification-card > summary {
+    @apply cursor-pointer font-semibold text-sm text-ws-navy mb-3;
+  }
+  .ingredient-certification-card .workspace-form-grid {
+    @apply my-4;
+  }
+  .ingredient-certification-file {
+    @apply flex flex-wrap items-center justify-between gap-3 py-3 border-0 border-t border-solid border-ws-border;
+  }
+  .ingredient-certification-file > div {
+    @apply min-w-0;
+    overflow-wrap: anywhere;
+  }
+  .ingredient-certification-file small {
+    @apply block text-xs text-ws-text2 mt-1;
+  }
+  .ingredient-certification-upload {
+    @apply grid gap-2 min-w-0 text-sm;
+  }
+  .ingredient-certification-upload input {
+    @apply max-w-full min-w-0 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-ws-surface file:text-ws-text file:px-3 file:py-2;
+  }
+  .ingredient-create-review {
+    @apply grid min-w-0 gap-5;
+  }
+  .ingredient-create-review fieldset {
+    @apply border-0 p-0 m-0 min-w-0;
+  }
+  .ingredient-create-review dd {
+    @apply m-0 text-sm;
+    overflow-wrap: anywhere;
+  }
+  .ingredient-create-review dt {
+    @apply text-xs text-ws-text2 mb-1;
+  }
+  .ingredient-create-image {
+    @apply max-w-full max-h-[200px] object-contain rounded-lg;
+  }
+  .ingredient-create-actions {
+    @apply mt-6 pt-4 border-0 border-t border-solid border-ws-border;
+  }
+  @media (max-width: 640px) {
+    .ingredient-create .workspace-form-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

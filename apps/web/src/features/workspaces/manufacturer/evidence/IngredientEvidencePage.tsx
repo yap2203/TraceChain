@@ -1,3 +1,10 @@
+import {
+  CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
+  type IngredientRequestPolicy,
+} from '@tracechain/shared';
+import { IngredientRequestPolicyFields } from '../../../production-flow/IngredientRequestPolicyFields';
+import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
+import { getSharedCertificationDocument } from '../../../production-flow/production-flow.api';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
@@ -46,16 +53,7 @@ const statuses = [
   'Cancelled',
 ];
 
-const selectableClaims = [
-  ['countryOfOrigin', 'Country of origin'],
-  ['exactSourceFacility', 'Exact source facility'],
-  ['productionDate', 'Production date'],
-  ['expiryDate', 'Expiry date'],
-  ['allergenDeclaration', 'Allergen declaration'],
-  ['certificationDetails', 'Certification details'],
-  ['qualityTestSummary', 'Quality test summary'],
-  ['internalQualityRemarks', 'Internal quality remarks'],
-] as const;
+const selectableClaims = INGREDIENT_REQUEST_CLAIMS;
 
 export function IngredientEvidence({
   onNav: _onNav,
@@ -74,6 +72,10 @@ export function IngredientEvidence({
   const [batchId, setBatchId] = useState(initialBatchId ?? '');
   const [reason, setReason] = useState('Product ingredient traceability verification');
   const [dueAt, setDueAt] = useState('');
+  const [policy, setPolicy] = useState<IngredientRequestPolicy>({
+    policyVersion: 2,
+    template: 'custom',
+  });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -157,6 +159,7 @@ export function IngredientEvidence({
           batchId,
           claims,
           requiredClaims,
+          policy,
           dueAt: new Date(`${dueAt}T23:59:59`).toISOString(),
           operationId,
           reason,
@@ -330,6 +333,21 @@ export function IngredientEvidence({
               onChange={setDueAt}
               required
             />
+            <IngredientRequestPolicyFields
+              policy={policy}
+              onChange={setPolicy}
+              onRequirements={(required) =>
+                setClaimChoices((current) => ({
+                  ...current,
+                  ...Object.fromEntries(
+                    INGREDIENT_REQUEST_CLAIMS.map(([key]) => [
+                      key,
+                      required.includes(key) ? ('required' as const) : ('none' as const),
+                    ]),
+                  ),
+                }))
+              }
+            />
             <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
               <legend style={{ color: T.navy, fontWeight: 700 }}>Requested claims</legend>
               <div style={{ fontSize: 12, color: T.text2, marginBottom: 10 }}>
@@ -341,7 +359,7 @@ export function IngredientEvidence({
                 {selectableClaims.map(([name, label]) => (
                   <label
                     key={name}
-                    style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 12 }}
+                    className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]"
                   >
                     <span>{label}</span>
                     <select
@@ -474,7 +492,12 @@ export function IngredientEvidence({
               ['Supplier', review.supplierName ?? review.supplier],
               ...Object.entries(review.sharedClaims).map(([label, value]) => [
                 label,
-                Array.isArray(value) ? value.join(', ') : String(value ?? 'Unavailable'),
+                <IngredientClaimValue
+                  key={label}
+                  name={label}
+                  value={value}
+                  loadDocument={(id) => getSharedCertificationDocument(review.requestId, id)}
+                />,
               ]),
               ['Presentation expiry', new Date(review.presentationExpiry).toLocaleString()],
               [
@@ -484,7 +507,10 @@ export function IngredientEvidence({
                   : new Date(review.credentialExpiry).toLocaleString(),
               ],
             ].map(([label, value]) => (
-              <div key={label} style={{ padding: 10, background: T.surface2, borderRadius: 8 }}>
+              <div
+                key={String(label)}
+                style={{ padding: 10, background: T.surface2, borderRadius: 8 }}
+              >
                 <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
                 <div style={{ marginTop: 4, overflowWrap: 'anywhere' }}>{value}</div>
               </div>

@@ -531,11 +531,7 @@ export function createApp({
   app.use('/api/ssi', express.json({ limit: '256kb' }), createSsiRouter(ssiController));
   app.use('/api/orders', express.json({ limit: '4mb' }), ordersRouter);
   app.use('/api/ingredients', createDocumentExtractionRouter(documentExtractionController));
-  app.use(
-    '/api/ingredient-batches',
-    express.json({ limit: '32kb' }),
-    createIngredientBatchRouter(ingredientBatchController),
-  );
+  app.use('/api/ingredient-batches', createIngredientBatchRouter(ingredientBatchController));
   app.use(
     '/api/blockchain',
     express.json({ limit: '58mb' }),
@@ -835,6 +831,8 @@ function createDefaultIngredientBatchService(
     return repository;
   };
   const lazyRepository: IngredientBatchWorkflowRepository = {
+    findAttachment: (id) => resolveRepository().findAttachment!(id),
+    saveAttachment: (record) => resolveRepository().saveAttachment!(record),
     find: (batchId) => resolveRepository().find(batchId),
     listForSupplier: (wallet) => resolveRepository().listForSupplier(wallet),
     save: (record) => resolveRepository().save(record),
@@ -923,6 +921,8 @@ function createDefaultProductionFlowService(
       storage().ingredientWorkflowStorePath,
     ));
   const lazyIngredientRepository: IngredientBatchWorkflowRepository = {
+    findAttachment: (id) => resolveIngredientRepository().findAttachment!(id),
+    saveAttachment: (record) => resolveIngredientRepository().saveAttachment!(record),
     find: (input) => resolveIngredientRepository().find(input),
     listForSupplier: (input) => resolveIngredientRepository().listForSupplier(input),
     save: (input) => resolveIngredientRepository().save(input),

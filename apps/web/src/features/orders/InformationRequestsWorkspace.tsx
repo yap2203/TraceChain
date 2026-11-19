@@ -1,3 +1,5 @@
+import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
+import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -654,6 +656,12 @@ function offerStatusVariant(status: CustodyOffer['status']) {
   return 'pending' as const;
 }
 function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requestId: string }) {
+  const [required, setRequired] = useState<string[]>([...COMPANY_ALWAYS_CLAIMS]);
+  const [optional, setOptional] = useState<string[]>([]);
+  const [purpose, setPurpose] = useState(
+    'Verify requesting company identity before sharing ingredient evidence',
+  );
+  const [deadline, setDeadline] = useState('');
   const [status, setStatus] = useState<CompanyIdentityProofStatus>(),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -676,7 +684,14 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
     try {
       if (verify) setStatus(await verifyCompanyIdentityProof(requestId));
       else {
-        setStatus(await requestCompanyIdentityProof(requestId));
+        setStatus(
+          await requestCompanyIdentityProof(requestId, {
+            purpose,
+            requiredClaims: required,
+            optionalClaims: optional,
+            ...(deadline ? { expiresAt: Math.floor(Date.parse(deadline) / 1000) } : {}),
+          }),
+        );
         await sendCompanyIdentityRequestMessage(await getEvidenceDetails(requestId));
       }
     } catch (cause) {
@@ -693,8 +708,30 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
       <p>Status: {status?.status ?? 'Checking authorization…'}</p>
       {status && role === 'supplier' ? (
         <>
+          <CompanyRequestFields
+            required={required}
+            optional={optional}
+            onChange={(r, o) => {
+              setRequired(r);
+              setOptional(o);
+            }}
+          />
+          <Input
+            label="Company proof purpose"
+            value={purpose}
+            onChange={setPurpose}
+            maxLength={500}
+          />
+          <Input
+            label="Company proof deadline"
+            type="datetime-local"
+            value={deadline}
+            onChange={setDeadline}
+          />
           <Btn
-            disabled={busy || !['NOT_REQUESTED', 'EXPIRED'].includes(status.status)}
+            disabled={
+              busy || !purpose.trim() || !['NOT_REQUESTED', 'EXPIRED'].includes(status.status)
+            }
             onClick={() => void run(false)}
           >
             Request company proof

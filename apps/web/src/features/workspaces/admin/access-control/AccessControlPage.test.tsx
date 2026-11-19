@@ -145,6 +145,7 @@ describe('individual company permissions UI', () => {
       expiresAt: 2_000_000_000,
       updatedAt: 1,
       companyRegistrationNumber: 'TEST-1',
+      registrationCountry: 'MY',
       issuer: account,
       applicationId: 'app',
       credentialHash: 'hash',

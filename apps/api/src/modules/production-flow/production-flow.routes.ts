@@ -13,6 +13,10 @@ export function createProductionFlowRouter(controller: ProductionFlowController)
   router.get('/retailer/evidence-options', controller.listRetailerEvidenceOptions);
   router.get('/evidence-requests/:requestId', controller.getEvidenceDetails);
   router.get('/evidence-requests/:requestId/review', controller.reviewEvidence);
+  router.get(
+    '/evidence-requests/:requestId/documents/:documentId',
+    controller.certificationDocument,
+  );
   router.post('/evidence-requests/prepare', controller.prepareEvidenceRequest);
   router.post('/evidence-requests/:requestId/respond/prepare', controller.prepareEvidenceResponse);
   router.post(

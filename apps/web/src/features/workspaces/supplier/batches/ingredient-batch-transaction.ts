@@ -24,6 +24,7 @@ export class IngredientBatchTransactionError extends Error {
 export async function submitIngredientBatchTransaction(
   transaction: PreparedTransaction,
   supplierWallet: string,
+  onProgress?: (stage: 'wallet' | 'submitted' | 'confirmed') => void,
 ) {
   if (!window.ethereum) {
     throw new IngredientBatchTransactionError(
@@ -53,7 +54,9 @@ export async function submitIngredientBatchTransaction(
         'MetaMask is using a different wallet. Select the authenticated Supplier wallet and retry.',
       );
     }
+    onProgress?.('wallet');
     const pending = await sendPreparedTransaction(signer, transaction);
+    onProgress?.('submitted');
     const receipt = await pending.wait();
     if (!receipt || receipt.status !== 1) {
       throw new IngredientBatchTransactionError(
@@ -61,6 +64,7 @@ export async function submitIngredientBatchTransaction(
         'The transaction reverted. The workflow can be resumed safely.',
       );
     }
+    onProgress?.('confirmed');
   } catch (error) {
     if (error instanceof IngredientBatchTransactionError) throw error;
     const candidate = error as {

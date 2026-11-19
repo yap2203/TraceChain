@@ -92,6 +92,7 @@ export class IpfsEncryptedCredentialStore implements CredentialContentStore {
       `${credentialId.replace(/[^a-zA-Z0-9_-]/g, '_')}.encrypted.json`,
     );
     const response = await fetch(this.pinningApiUrl, {
+      signal: AbortSignal.timeout(60000),
       body: form,
       headers: { Authorization: `Bearer ${this.pinningToken}` },
       method: 'POST',

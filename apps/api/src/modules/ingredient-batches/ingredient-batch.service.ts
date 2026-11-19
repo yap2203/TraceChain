@@ -1,7 +1,14 @@
+import {
+  certificationUploadSchema,
+  decodeCertificationFile,
+  validateCertificationStructure,
+} from './certification-documents.js';
+import { ingredientDetailClaims, type CertificationDocument } from '@tracechain/shared';
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
   canonicalIngredientMetadata,
+  walletAddressToDid,
   createOrGetSupplierIssuerDid,
   ingredientCredentialSchema,
   issueIngredientCredential,
@@ -47,6 +54,7 @@ interface Dependencies {
 
 export class IngredientBatchService {
   private readonly clock: () => Date;
+  private readonly pending = new Map<string, Promise<unknown>>();
 
   constructor(private readonly dependencies: Dependencies) {
     this.clock = dependencies.clock ?? (() => new Date());
@@ -62,9 +70,28 @@ export class IngredientBatchService {
     return { supplierWallet };
   }
 
-  async prepare(sessionId: string | undefined, input: IngredientBatchRequest) {
+  async prepare(
+    sessionId: string | undefined,
+    input: IngredientBatchRequest,
+  ): Promise<Awaited<ReturnType<IngredientBatchService['workflowResponse']>>> {
+    const key = id(input.batchReference);
+    const previous = this.pending.get(key);
+    if (previous) {
+      await previous;
+      return this.prepare(sessionId, input);
+    }
+    const operation = this.prepareOnce(sessionId, input);
+    this.pending.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.pending.get(key) === operation) this.pending.delete(key);
+    }
+  }
+  private async prepareOnce(sessionId: string | undefined, input: IngredientBatchRequest) {
     const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
 
+    await this.verifyAttachments(input, supplierWallet);
     const normalized = this.issueInput(input, supplierWallet);
     const batchId = id(input.batchReference);
     const canonicalMetadata = canonicalIngredientMetadata(normalized);
@@ -98,6 +125,198 @@ export class IngredientBatchService {
     return this.workflowResponse(record);
   }
 
+  async uploadCertificationDocument(
+    sessionId: string | undefined,
+    raw: unknown,
+  ): Promise<CertificationDocument> {
+    const file = certificationUploadSchema.parse(raw),
+      key = 'file:' + file.id;
+    const previous = this.pending.get(key);
+    if (previous) {
+      await previous;
+      return this.uploadCertificationDocument(sessionId, raw);
+    }
+    const operation = this.uploadDocumentOnce(sessionId, raw);
+    this.pending.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      if (this.pending.get(key) === operation) this.pending.delete(key);
+    }
+  }
+  private async uploadDocumentOnce(sessionId: string | undefined, raw: unknown) {
+    const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
+    const file = certificationUploadSchema.parse(raw),
+      repo = this.dependencies.repository;
+    if (!repo.findAttachment || !repo.saveAttachment)
+      throw new IngredientBatchApiError(
+        'DOCUMENT_STORAGE_UNAVAILABLE',
+        'Document storage is not available.',
+        503,
+      );
+    const { bytes, sha256 } = decodeCertificationFile(file);
+    const old = await repo.findAttachment(file.id);
+    if (!old)
+      try {
+        await validateCertificationStructure(bytes, file.mimeType);
+      } catch {
+        throw new IngredientBatchApiError(
+          'DOCUMENT_INVALID',
+          'The document could not be parsed safely. Use a readable PDF within the project page limit, PNG or JPEG.',
+          400,
+        );
+      }
+    if (
+      old &&
+      (old.supplierWallet !== supplierWallet ||
+        old.operationId !== file.operationId ||
+        old.certificationId !== file.certificationId ||
+        old.sha256 !== sha256)
+    )
+      throw new IngredientBatchApiError(
+        'DOCUMENT_CONFLICT',
+        'This document ID is already bound to different content.',
+        409,
+      );
+    const stored =
+      old ??
+      (await (async () => {
+        const encrypted = await this.dependencies.contentStore
+          .encryptAndStore(JSON.stringify(file), file.id)
+          .catch(() => {
+            throw new IngredientBatchApiError(
+              'DOCUMENT_STORAGE_UNAVAILABLE',
+              'Encrypted document upload failed. Retry this file; no credential was issued.',
+              503,
+            );
+          });
+        const record = {
+          id: file.id,
+          operationId: file.operationId,
+          certificationId: file.certificationId,
+          supplierWallet,
+          sha256,
+          cid: encrypted.cid,
+          payload: encrypted.payload,
+        };
+        await repo.saveAttachment!(record);
+        return record;
+      })());
+    return {
+      id: file.id,
+      fileName: file.fileName,
+      mimeType: file.mimeType,
+      size: bytes.length,
+      sha256,
+      cid: stored.cid,
+    };
+  }
+  private async verifyAttachments(input: IngredientBatchRequest, wallet: string) {
+    for (const entry of [...(input.certificationEntries ?? []), ...(input.qualityTests ?? [])])
+      for (const file of entry.documents) {
+        const stored = await this.dependencies.repository.findAttachment?.(file.id);
+        if (
+          !stored ||
+          stored.supplierWallet !== wallet ||
+          stored.operationId !== input.operationId ||
+          stored.certificationId !== entry.id ||
+          stored.sha256 !== file.sha256 ||
+          stored.cid !== file.cid
+        )
+          throw new IngredientBatchApiError(
+            'DOCUMENT_BINDING_MISMATCH',
+            'Upload each certification document for this exact entry and operation before issuing.',
+            409,
+          );
+        const original = JSON.parse(await this.dependencies.contentStore.decrypt(stored.payload));
+        if (
+          decodeCertificationFile(original).sha256 !== file.sha256 ||
+          original.fileName !== file.fileName ||
+          original.mimeType !== file.mimeType ||
+          Buffer.from(original.data, 'base64').length !== file.size
+        )
+          throw new IngredientBatchApiError(
+            'DOCUMENT_HASH_MISMATCH',
+            'The document reference does not match its stored content.',
+            409,
+          );
+      }
+  }
+  async certificationDocument(sessionId: string | undefined, batchId: string, documentId: string) {
+    const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
+    const batch = await this.dependencies.repository.find(batchId);
+    const file = await this.dependencies.repository.findAttachment?.(documentId);
+    if (
+      !batch ||
+      batch.supplierWallet !== supplierWallet ||
+      !batch.certificationDocumentIds?.includes(documentId) ||
+      !file ||
+      file.supplierWallet !== supplierWallet
+    )
+      throw new IngredientBatchApiError(
+        'DOCUMENT_ACCESS_DENIED',
+        'This certification document is not available to your company.',
+        403,
+      );
+    let value;
+    try {
+      value = JSON.parse(await this.dependencies.contentStore.decrypt(file.payload));
+    } catch {
+      throw new IngredientBatchApiError(
+        'DOCUMENT_RETRIEVAL_UNAVAILABLE',
+        'The encrypted document is temporarily unavailable. Retry when the service is restored.',
+        503,
+      );
+    }
+    let actualHash;
+    try {
+      actualHash = decodeCertificationFile(value).sha256;
+    } catch {
+      actualHash = 'invalid';
+    }
+    if (actualHash !== file.sha256)
+      throw new IngredientBatchApiError(
+        'DOCUMENT_HASH_MISMATCH',
+        'Document integrity check failed.',
+        409,
+      );
+    return { fileName: value.fileName, mimeType: value.mimeType, data: value.data };
+  }
+  async drafts(sessionId: string | undefined) {
+    const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
+    const records = await this.dependencies.repository.listForSupplier(supplierWallet),
+      workflows = [];
+    for (const record of records) {
+      if (
+        record.supplierWallet.toLowerCase() !== supplierWallet.toLowerCase() ||
+        (await this.safeGateway(() => this.dependencies.gateway.getBatch(record.batchId)))
+      )
+        continue;
+      const envelope = JSON.parse(
+        await this.dependencies.contentStore.decrypt(record.encryptedPayload),
+      );
+      if (
+        !envelope.metadata ||
+        `0x${createHash('sha256').update(JSON.stringify(envelope.metadata)).digest('hex')}` !==
+          record.metadataHash
+      )
+        throw new IngredientBatchApiError(
+          'WORKFLOW_INTEGRITY_FAILED',
+          'A stored registration could not be verified.',
+          409,
+        );
+      const { batchId, supplierWallet: _wallet, ...metadata } = envelope.metadata;
+      workflows.push({
+        batchId: record.batchId,
+        input: {
+          ...metadata,
+          batchReference: batchId,
+          ...(record.operationId ? { operationId: record.operationId } : {}),
+        },
+      });
+    }
+    return { workflows };
+  }
   async list(sessionId: string | undefined) {
     const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
     const batchIds = await this.safeGateway(() =>
@@ -140,6 +359,12 @@ export class IngredientBatchService {
           ingredientName: stringValue(metadata.ingredientName, 'Registered ingredient'),
           metadataHash: batch.metadataHash,
           origin: stringValue(metadata.origin),
+          originDetails: metadata.originDetails,
+          qualityTests: metadata.qualityTests,
+          productionDateMeaning: metadata.productionDateMeaning,
+          internalQualityRemarks: metadata.internalQualityRemarks,
+          allergen: metadata.allergen,
+          certificationEntries: metadata.certificationEntries,
           producedAt: batch.producedAt,
           quantity: batch.totalQuantity,
           status: batch.status,
@@ -217,18 +442,35 @@ export class IngredientBatchService {
         409,
       );
     if (messagingIdentity) {
-      const credentialUrn = `urn:uuid:${randomUUID()}`;
+      const credentialUrn = `urn:tracechain:ingredient:${batchId}`;
       const sdJwt = await issueIngredientSdJwt(agent, {
         claims: {
+          policyVersion: 2,
+          supplierDid: walletAddressToDid(input.supplierWallet),
+          ...(input.internalQualityRemarks
+            ? { internalQualityRemarks: input.internalQualityRemarks }
+            : {}),
           allergenDeclaration: input.allergenInformation || undefined,
+          ...ingredientDetailClaims(
+            input.originDetails,
+            input.allergen,
+            input.certificationEntries,
+            input.qualityTests,
+          ),
           batchId,
           batchReference: input.batchId,
           certificationDetails: input.certifications.length ? input.certifications : undefined,
-          countryOfOrigin: input.origin,
+          countryOfOrigin: input.originDetails?.countryName ?? input.origin,
           credentialId: credentialUrn,
           expiryDate: input.expiryDate.toISOString(),
           ingredientName: input.ingredientName,
+          category: input.category,
+          quantity: input.quantity,
+          unit: input.unit,
           productionDate: input.productionDate.toISOString(),
+          ...(input.productionDateMeaning
+            ? { productionDateMeaning: input.productionDateMeaning }
+            : {}),
           supplierWallet: input.supplierWallet,
         },
         expiresAt: Math.floor(input.expiryDate.getTime() / 1_000),
@@ -262,6 +504,14 @@ export class IngredientBatchService {
       }
       const record: IngredientBatchWorkflowRecord = {
         batchId,
+        operationId: input.operationId,
+        certificationDocumentIds: [
+          ...(input.certificationEntries ?? []),
+          ...(input.qualityTests ?? []),
+        ].flatMap((entry) => entry.documents.map((file) => file.id)),
+        ...(input.price !== undefined
+          ? { price: input.price, currency: input.currency, priceBasis: input.priceBasis }
+          : {}),
         credentialFormat: 'SD_JWT_VC',
         credentialHash,
         credentialId,
@@ -319,6 +569,11 @@ export class IngredientBatchService {
     }
     const record: IngredientBatchWorkflowRecord = {
       batchId,
+      operationId: input.operationId,
+      certificationDocumentIds: [
+        ...(input.certificationEntries ?? []),
+        ...(input.qualityTests ?? []),
+      ].flatMap((entry) => entry.documents.map((file) => file.id)),
       credentialHash: `0x${issued.credentialHash}`,
       credentialId,
       encryptedCid: stored.cid,
@@ -419,6 +674,15 @@ export class IngredientBatchService {
 
   private issueInput(input: IngredientBatchRequest, supplierWallet: string) {
     return {
+      operationId: input.operationId,
+      ...(input.qualityTests ? { qualityTests: input.qualityTests } : {}),
+      ...(input.internalQualityRemarks
+        ? { internalQualityRemarks: input.internalQualityRemarks }
+        : {}),
+      ...(input.originDetails ? { originDetails: input.originDetails } : {}),
+      ...(input.allergen ? { allergen: input.allergen } : {}),
+      ...(input.certificationEntries ? { certificationEntries: input.certificationEntries } : {}),
+      ...(input.priceBasis ? { priceBasis: input.priceBasis } : {}),
       allergenInformation: input.allergenInformation,
       batchId: input.batchReference,
       category: input.category,
@@ -427,6 +691,9 @@ export class IngredientBatchService {
       ingredientName: input.ingredientName,
       origin: input.origin,
       productionDate: input.productionDate,
+      ...(input.productionDateMeaning
+        ? { productionDateMeaning: input.productionDateMeaning }
+        : {}),
       quantity: input.quantity,
       supplierWallet,
       unit: input.unit,

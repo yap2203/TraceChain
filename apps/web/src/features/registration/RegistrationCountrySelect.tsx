@@ -16,6 +16,7 @@ interface Option {
   divider?: boolean;
 }
 interface Props {
+  variant?: 'compact' | 'field';
   value?: Country;
   options: Option[];
   onChange: (country?: Country) => void;
@@ -28,6 +29,7 @@ interface Props {
 }
 
 export function RegistrationCountrySelect({
+  variant = 'compact',
   value,
   options,
   onChange,
@@ -81,7 +83,7 @@ export function RegistrationCountrySelect({
   return (
     <div
       ref={root}
-      className="relative shrink-0"
+      className={variant === 'field' ? 'relative w-full min-w-0' : 'relative shrink-0'}
       onFocus={onFocus}
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node)) {
@@ -107,22 +109,31 @@ export function RegistrationCountrySelect({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
-        className="flex min-h-7 items-center gap-2 rounded border-0 bg-transparent px-1 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-ui-primary"
+        className={
+          variant === 'field'
+            ? 'flex min-h-11 w-full min-w-0 items-center gap-3 rounded-lg border border-solid border-[var(--c-border2,var(--color-border))] bg-[var(--c-surface,var(--color-surface))] px-3 py-2 text-left text-sm text-[var(--c-text,var(--color-text))] outline-none focus-visible:ring-2 focus-visible:ring-ui-primary'
+            : 'flex min-h-7 items-center gap-2 rounded border-0 bg-transparent px-1 text-inherit outline-none focus-visible:ring-2 focus-visible:ring-ui-primary'
+        }
         onClick={() => {
           setSearch('');
           setOpen((current) => !current);
         }}
       >
-        <span aria-hidden="true" className="block w-6">
+        <span aria-hidden="true" className="block w-6 shrink-0">
           <Icon country={value} label={selected?.label ?? 'International'} />
         </span>
-        <ChevronDown aria-hidden="true" size={13} />
+        {variant === 'field' && (
+          <span className="min-w-0 flex-1 truncate">{selected?.label ?? 'Select a country'}</span>
+        )}
+        <ChevronDown aria-hidden="true" size={16} className="shrink-0" />
       </button>
       <span id={`${listId}-selected`} className="sr-only">
         Selected country: {selected?.label ?? 'International'}
       </span>
       {open && (
-        <div className="absolute top-full left-0 z-50 mt-3 w-72 max-w-[calc(100vw-4rem)] rounded-xl border border-ui-border bg-ui-surface p-2 text-ui-text shadow-xl">
+        <div
+          className={`absolute top-full left-0 z-50 mt-2 rounded-xl border border-ui-border bg-ui-surface p-2 text-ui-text shadow-xl ${variant === 'field' ? 'w-full min-w-0' : 'w-72 max-w-[calc(100vw-4rem)]'}`}
+        >
           <label className="mb-2 flex items-center gap-2 rounded-lg border border-ui-border px-2">
             <Search aria-hidden="true" size={16} />
             <input

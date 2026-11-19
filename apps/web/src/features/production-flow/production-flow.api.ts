@@ -1,3 +1,4 @@
+import type { IngredientRequestPolicy } from '@tracechain/shared';
 import { apiErrorMessage } from '../../components/ui/feedback';
 import type { CompanyRole } from '@tracechain/shared';
 
@@ -62,6 +63,7 @@ export interface WorkflowResponse {
   requestId?: string;
   holderSigning?: {
     audience: string;
+    context?: { requestId: string; purpose: string; batchId: string; expiresAt: number };
     claims: string[];
     credential: string;
     holderDid: string;
@@ -95,6 +97,9 @@ export interface RetailerEvidenceOption {
 export const listRetailerEvidenceOptions = () =>
   request<{ options: RetailerEvidenceOption[] }>('/retailer/evidence-options');
 export interface EvidenceDetails {
+  policy?: IngredientRequestPolicy;
+  credentialFormat?: 'JWT_VC' | 'SD_JWT_VC';
+  legacyClaims?: Record<string, unknown>;
   batchId: string;
   claims: string[];
   requiredClaims: string[];
@@ -148,6 +153,7 @@ export const listDistributorInventory = () =>
 export const listRetailers = () => request<{ retailers: StakeholderRecipient[] }>('/retailers');
 
 export const prepareEvidenceRequest = (input: {
+  policy?: IngredientRequestPolicy;
   batchId: string;
   claims: string[];
   requiredClaims: string[];
@@ -186,6 +192,8 @@ export const verifyEvidence = (requestId: string) =>
     method: 'POST',
   });
 export interface CompanyIdentityProofStatus {
+  requiredClaims?: string[];
+  optionalClaims?: string[];
   expiresAt?: number;
   presenterRole?: string;
   presenterWallet?: string;
@@ -213,6 +221,12 @@ export interface CompanyIdentityProofStatus {
   };
 }
 export interface CompanyIdentityProofMaterial {
+  binding?: Record<string, string>;
+  format?: 'COMPANY_IDENTITY_SD_JWT';
+  sdJwt?: string;
+  claims?: Record<string, unknown>;
+  requiredClaims?: string[];
+  optionalClaims?: string[];
   audience: string;
   challenge: string;
   credential: Record<string, unknown>;
@@ -224,9 +238,18 @@ export interface CompanyIdentityProofMaterial {
   purpose: string;
   requestId: string;
 }
-export const requestCompanyIdentityProof = (requestId: string) =>
+export const requestCompanyIdentityProof = (
+  requestId: string,
+  input?: {
+    purpose?: string;
+    expiresAt?: number;
+    requiredClaims?: string[];
+    optionalClaims?: string[];
+  },
+) =>
   request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/request`, {
     method: 'POST',
+    body: input ? JSON.stringify(input) : undefined,
   });
 export const getCompanyIdentityProofStatus = (requestId: string) =>
   request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity`);
@@ -287,3 +310,8 @@ export const prepareDistributorTransfer = (input: {
     body: JSON.stringify(input),
     method: 'POST',
   });
+export function getSharedCertificationDocument(requestId: string, documentId: string) {
+  return request<{ fileName: string; mimeType: string; data: string }>(
+    `/evidence-requests/${encodeURIComponent(requestId)}/documents/${encodeURIComponent(documentId)}`,
+  );
+}

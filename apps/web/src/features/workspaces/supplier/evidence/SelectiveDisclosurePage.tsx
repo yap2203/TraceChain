@@ -1,3 +1,12 @@
+import {
+  INGREDIENT_ALWAYS_CLAIMS,
+  expandIngredientRequestedClaims,
+  toggleIngredientDisclosure,
+  ingredientDisclosureErrors,
+} from '@tracechain/shared';
+import { ingredientClaimLabel } from '@tracechain/shared';
+import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
+import { getCertificationDocument } from '../batches/ingredient-batch.api';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
@@ -39,9 +48,16 @@ export function SelectiveDisclosure({
   const [declineReason, setDeclineReason] = useState('');
   const [optionalClaims, setOptionalClaims] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown>>();
+  const [previewCredential, setPreviewCredential] = useState('');
+  const [previewExpiresAt, setPreviewExpiresAt] = useState<number>();
   const [identityProof, setIdentityProof] = useState<CompanyIdentityProofStatus>();
   const [holderDid, setHolderDid] = useState('');
   useEffect(() => {
+    setPreview(undefined);
+    setPreviewCredential('');
+    setPreviewExpiresAt(undefined);
+    setApproved(false);
+    setOptionalClaims([]);
     void getEvidenceDetails(request.requestId)
       .then(setDetails)
       .catch((cause) => setError(reportError(cause, 'Could not load the private request.')));
@@ -55,7 +71,19 @@ export function SelectiveDisclosure({
     setBusy(true);
     setError('');
     try {
+      if (details?.credentialFormat === 'JWT_VC') {
+        if (!preview)
+          throw new Error('Preview all legacy credential claims before approving full disclosure.');
+        await completePreparedWorkflow(() => prepareEvidenceResponse(request.requestId));
+        await sendEvidencePresentationMessage(await getEvidenceDetails(request.requestId));
+        onBack();
+        return;
+      }
       const signing = await prepareEvidenceResponse(request.requestId);
+      if (!preview || signing.holderSigning?.credential !== previewCredential)
+        throw new Error(
+          'Preview the actual current credential values before approving this presentation.',
+        );
       if (signing.state !== 'HOLDER_SIGNATURE_REQUIRED' || !signing.holderSigning)
         throw new Error('The API did not return holder-controlled signing material.');
       setHolderDid(signing.holderSigning.holderDid);
@@ -66,7 +94,50 @@ export function SelectiveDisclosure({
         throw new Error(
           'The active presentation key is not bound to this credential. Restore the correct signing-key backup.',
         );
-      const selected = [...new Set([...signing.holderSigning.requiredClaims, ...optionalClaims])];
+      const required = signing.holderSigning.requiredClaims;
+      const selected = [
+        ...new Set([
+          ...required.filter(
+            (claim) =>
+              ![
+                'certifications',
+                'certificationDocuments',
+                'qualityTests',
+                'qualityDocuments',
+              ].includes(claim),
+          ),
+          ...optionalClaims,
+        ]),
+      ];
+      if (selected.includes('productionDate') && preview?.productionDateMeaning)
+        selected.push('productionDateMeaning');
+      if (
+        required.includes('certifications') &&
+        !selected.some((key) => key.startsWith('certification_'))
+      )
+        throw new Error('Select at least one complete certification entry.');
+      if (
+        required.includes('certificationDocuments') &&
+        !selected.some((key) => key.startsWith('certificationDocuments_'))
+      )
+        throw new Error('Select at least one certification document and its entry.');
+      if (details?.policy) {
+        const disclosed = Object.fromEntries(
+          Object.entries(preview ?? {}).filter(
+            ([key]) =>
+              selected.includes(key) ||
+              key === 'policyVersion' ||
+              (INGREDIENT_ALWAYS_CLAIMS as readonly string[]).includes(key),
+          ),
+        );
+        const failures = ingredientDisclosureErrors(
+          disclosed,
+          details.policy,
+          required,
+          String(preview?.batchReference ?? ''),
+        );
+        if (failures.length) throw new Error(failures[0]);
+      }
       const presentation = await createSelectiveIngredientPresentation(
         holder,
         signing.holderSigning.credential,
@@ -74,6 +145,15 @@ export function SelectiveDisclosure({
           audience: signing.holderSigning.audience,
           claims: selected,
           nonce: signing.holderSigning.nonce,
+          context: signing.holderSigning.context
+            ? {
+                ...signing.holderSigning.context,
+                expiresAt: Math.min(
+                  previewExpiresAt ?? signing.holderSigning.context.expiresAt,
+                  signing.holderSigning.context.expiresAt,
+                ),
+              }
+            : undefined,
         },
       );
       await completePreparedWorkflow(() =>
@@ -91,10 +171,16 @@ export function SelectiveDisclosure({
     setBusy(true);
     setError('');
     try {
+      if (details?.credentialFormat === 'JWT_VC') {
+        setPreview(details.legacyClaims ?? {});
+        return;
+      }
       const signing = await prepareEvidenceResponse(request.requestId);
       if (signing.state !== 'HOLDER_SIGNATURE_REQUIRED' || !signing.holderSigning)
         throw new Error('Selective-disclosure signing material is unavailable.');
       setHolderDid(signing.holderSigning.holderDid);
+      setPreviewCredential(signing.holderSigning.credential);
+      setPreviewExpiresAt(signing.holderSigning.context?.expiresAt);
       setPreview(await readSelectiveIngredientClaims(signing.holderSigning.credential));
     } catch (cause) {
       setError(reportError(cause, 'Could not preview the credential claims.'));
@@ -136,7 +222,8 @@ export function SelectiveDisclosure({
       <Card>
         <div style={{ display: 'grid', gap: 10 }}>
           <div>
-            <b>Manufacturer</b> · {request.manufacturerName ?? 'Verified Manufacturer'}
+            <b>Requesting company</b> ·{' '}
+            {request.requesterName ?? request.manufacturerName ?? 'Company name unavailable'}
           </div>
           <div>
             <b>Deadline</b> · {chainDate(request.dueAt)}
@@ -152,11 +239,26 @@ export function SelectiveDisclosure({
           </div>
           <Alert
             type="warning"
-            message="Only the always-disclosed identity claims, required claims, and optional claims you select below will be included. Other SD-JWT claims remain hidden."
+            message={
+              details?.credentialFormat === 'JWT_VC'
+                ? 'Legacy full disclosure: this issuer-signed presentation shares the complete Ingredient Credential, including all its fields and document references. This legacy format cannot selectively hide claims.'
+                : 'Only the always-disclosed identity claims, required claims and optional claims you select below will be included. Other SD-JWT claims remain hidden.'
+            }
           />
+          {details?.requiredClaims.length ? (
+            <p>
+              <strong>Required by this request:</strong>{' '}
+              {details.requiredClaims.map(ingredientClaimLabel).join(', ')}. Missing requirements
+              block verification and acceptance; you may decline.
+            </p>
+          ) : null}
           <Alert
             type="info"
-            message="Your browser creates the key-bound presentation with the participant-controlled key. The API never receives that private key and stores only the resulting presentation."
+            message={
+              details?.credentialFormat === 'JWT_VC'
+                ? 'Legacy presentations use the existing issuer-signing flow. The entire credential is shared; this is not selective disclosure.'
+                : 'Your browser creates the key-bound presentation with the participant-controlled key. The API never receives that private key and stores only the resulting presentation.'
+            }
           />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a
@@ -204,48 +306,141 @@ export function SelectiveDisclosure({
             Preview available claim values
           </Btn>
           {holderDid && <PresentationSigningSettingsLink role="supplier" />}
-          {details?.claims.map((claim) => {
-            const required = details.requiredClaims.includes(claim);
-            return (
-              <label key={claim} style={{ display: 'flex', gap: 8, alignItems: 'start' }}>
-                <input
-                  type="checkbox"
-                  checked={required || optionalClaims.includes(claim)}
-                  disabled={required || busy}
-                  onChange={(event) =>
-                    setOptionalClaims((current) =>
-                      event.target.checked
-                        ? [...new Set([...current, claim])]
-                        : current.filter((item) => item !== claim),
-                    )
-                  }
-                />
-                <span>
-                  <b>{claim}</b> · {required ? 'Required by Manufacturer' : 'Optional'}
-                  {preview && (
-                    <span style={{ display: 'block', color: T.text2, overflowWrap: 'anywhere' }}>
-                      {preview[claim] === undefined
-                        ? 'Unavailable in this credential'
-                        : Array.isArray(preview[claim])
-                          ? preview[claim].join(', ')
-                          : String(preview[claim])}
-                    </span>
-                  )}
-                </span>
-              </label>
-            );
-          })}
+          {previewExpiresAt && (
+            <p>
+              Presentation expires: {chainDate(previewExpiresAt)}. Verify it before this time; the
+              request deadline and credential expiry are separate.
+            </p>
+          )}
+          {details?.credentialFormat === 'JWT_VC' &&
+            preview &&
+            Object.entries(preview).map(([name, value]) => (
+              <IngredientClaimValue
+                key={name}
+                name={name}
+                value={value}
+                loadDocument={(documentId) => getCertificationDocument(details.batchId, documentId)}
+              />
+            ))}
+          {preview && details?.credentialFormat !== 'JWT_VC' && (
+            <section>
+              <h3>Always included</h3>
+              {INGREDIENT_ALWAYS_CLAIMS.filter((key) => preview[key] !== undefined).map((key) => (
+                <IngredientClaimValue key={key} name={key} value={preview[key]} />
+              ))}
+            </section>
+          )}
+          {details?.credentialFormat !== 'JWT_VC' &&
+            expandIngredientRequestedClaims(details?.claims ?? [], preview ?? {})
+              .filter((claim) => claim !== 'productionDateMeaning')
+              .map((claim) => {
+                const required = details?.requiredClaims.includes(claim) ?? false;
+                return (
+                  <div key={claim}>
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'start' }}>
+                      <input
+                        type="checkbox"
+                        checked={required || optionalClaims.includes(claim)}
+                        disabled={required || busy}
+                        onChange={(event) =>
+                          setOptionalClaims((current) =>
+                            toggleIngredientDisclosure(
+                              current,
+                              claim,
+                              event.target.checked,
+                              preview ?? {},
+                            ),
+                          )
+                        }
+                      />
+                      <span>
+                        <b>
+                          {claim.startsWith('certificationDocuments_')
+                            ? `Supporting document: ${((preview?.[claim] as { documents?: { fileName: string }[] })?.documents ?? []).map((file) => file.fileName).join(', ')}`
+                            : claim.startsWith('certification_')
+                              ? `Supplier-provided certification: ${(preview?.[claim] as { name?: string })?.name ?? 'Unavailable'} ? ${(preview?.[claim] as { reference?: string })?.reference ?? 'Unavailable'}`
+                              : ingredientClaimLabel(claim)}
+                        </b>{' '}
+                        · {required ? 'Required by this request' : 'Optional'}
+                      </span>
+                    </label>
+                    {preview && (
+                      <IngredientClaimValue
+                        name={claim}
+                        value={preview[claim]}
+                        loadDocument={(documentId) =>
+                          getCertificationDocument(
+                            details?.batchId ?? request.ingredientBatchId,
+                            documentId,
+                          )
+                        }
+                      />
+                    )}
+                    {claim === 'productionDate' && Boolean(preview?.productionDateMeaning) && (
+                      <p>
+                        Date meaning shared with this date: {String(preview?.productionDateMeaning)}
+                        .
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+          {(details?.claims.includes('certifications') ||
+            details?.claims.includes('certificationDocuments')) && (
+            <p>
+              Preview the available entries, select the certifications to share, and separately
+              select any documents. Required certification requests need at least one complete
+              entry. Selecting a document also shares its certification scope and provenance.
+            </p>
+          )}
+          {preview && details?.credentialFormat !== 'JWT_VC' && (
+            <details>
+              <summary>Available information remaining undisclosed</summary>
+              <ul>
+                {Object.keys(preview)
+                  .filter(
+                    (key) =>
+                      ![
+                        'iss',
+                        'vct',
+                        'cnf',
+                        'exp',
+                        'iat',
+                        'sub',
+                        'credentialId',
+                        'policyVersion',
+                        ...INGREDIENT_ALWAYS_CLAIMS,
+                      ].includes(key) &&
+                      !optionalClaims.includes(key) &&
+                      !(
+                        key === 'productionDateMeaning' &&
+                        (optionalClaims.includes('productionDate') ||
+                          details?.requiredClaims.includes('productionDate'))
+                      ) &&
+                      !details?.requiredClaims.includes(key),
+                  )
+                  .map((key) => (
+                    <li key={key}>{ingredientClaimLabel(key)}</li>
+                  ))}
+              </ul>
+            </details>
+          )}
           <label style={{ fontSize: 13 }}>
             <input
               type="checkbox"
               checked={approved}
               onChange={(event) => setApproved(event.target.checked)}
             />{' '}
-            I reviewed this disclosure and authorize sharing only these selected claims for this
-            exact request and recipient.
+            {details?.credentialFormat === 'JWT_VC'
+              ? 'I reviewed and authorize full disclosure of all displayed credential claims and document references to this exact recipient.'
+              : 'I reviewed this disclosure and authorize sharing only these selected claims for this exact request and recipient.'}
           </label>
           <Btn disabled={busy || !approved || !details} onClick={() => void respond()}>
-            {busy ? 'Signing and confirming…' : 'Sign selective presentation and confirm'}
+            {busy
+              ? 'Signing and confirming...'
+              : details?.credentialFormat === 'JWT_VC'
+                ? 'Share full legacy credential and confirm'
+                : 'Sign selective presentation and confirm'}
           </Btn>
           <input
             aria-label="Decline reason"
@@ -266,8 +461,23 @@ export function SelectiveDisclosure({
           <TechnicalDetails
             fields={[
               { label: 'Request ID', value: request.requestId },
-              { label: 'Manufacturer wallet', value: request.requester },
+              { label: 'Requesting company wallet', value: request.requester },
               { label: 'Ingredient batch ID', value: request.ingredientBatchId },
+              ...(preview
+                ? [
+                    { label: 'Issuer DID', value: String(preview.iss ?? 'Unavailable') },
+                    {
+                      label: 'Credential reference',
+                      value: String(preview.credentialId ?? 'Unavailable'),
+                    },
+                    {
+                      label: 'Credential expiry',
+                      value:
+                        typeof preview.exp === 'number' ? chainDate(preview.exp) : 'Unavailable',
+                    },
+                    { label: 'Holder signing DID', value: holderDid || 'Unavailable' },
+                  ]
+                : []),
             ]}
           />
         </div>

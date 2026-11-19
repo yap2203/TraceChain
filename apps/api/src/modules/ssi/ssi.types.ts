@@ -37,6 +37,7 @@ export interface CompanyIdentityResponse {
     chainId: number;
     companyName: string;
     companyRegistrationNumber: string;
+    registrationCountry?: string;
     credentialHash: string;
     credentialId: string;
     encryptedCredentialCid: string;

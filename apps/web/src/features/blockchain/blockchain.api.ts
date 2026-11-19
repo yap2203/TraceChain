@@ -36,6 +36,7 @@ export interface ChainCredential {
   applicationId: string;
   companyName: string;
   companyRegistrationNumber: string;
+  registrationCountry?: string;
   credentialHash: string;
   credentialId: string;
   encryptedCredentialCid: string;
@@ -57,6 +58,7 @@ export function getCompanyCredentials() {
 export interface MyChainCredential {
   companyName?: string;
   companyRegistrationNumber?: string;
+  registrationCountry?: string;
   credentialHash: string;
   credentialId: string;
   encryptedCredentialCid: string;
@@ -222,6 +224,7 @@ export function prepareCompanyApplication(input: {
   applicantSignature: string;
   companyName: string;
   companyRegistrationNumber: string;
+  registrationCountry?: string;
   initialLocationName?: string;
   initialLocationAddress?: string;
   documents?: { kind: string; fileName: string; mimeType: string; data: string }[];

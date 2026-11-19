@@ -920,6 +920,7 @@ export class OrdersService {
     input: {
       operationId: string;
       batchId: string;
+      policy?: import('@tracechain/shared').IngredientRequestPolicy;
       claims: string[];
       requiredClaims: string[];
       reason: string;
@@ -953,6 +954,12 @@ export class OrdersService {
       throw new OrdersError('EVIDENCE_SERVICE_UNAVAILABLE', 'Evidence service unavailable.', 503);
     return this.flow.prepareEvidenceRequest(sessionId, {
       ...input,
+      policy: {
+        ...input.policy,
+        policyVersion: 2,
+        template: input.policy?.template ?? 'custom',
+        allowUnknownAllergens: input.policy?.allowUnknownAllergens ?? false,
+      },
       reason: `Order ${orderId}: ${input.reason}`.slice(0, 500),
       ...(Number(item.kind) === 2 ? { productBatchId: order.proposedBatch } : {}),
     });
@@ -1278,10 +1285,11 @@ export class OrdersService {
         metadata.productName ??
         (kind === 1 ? 'Ingredient name unavailable' : 'Product name unavailable'),
       category: metadata.category,
-      countryOfOrigin: metadata.origin,
+      countryOfOrigin: metadata.originDetails?.countryName ?? metadata.origin,
       description: metadata.description,
       batchReference: metadata.batchId ?? metadata.batchReference,
       price: metadata.price,
+      priceBasis: metadata.priceBasis,
       currency: metadata.price !== undefined ? metadata.currency : undefined,
       productionLocation: metadata.productionLocation,
       productionLocationName: metadata.productionLocationName,
@@ -1329,6 +1337,7 @@ export class OrdersService {
             summary.category = value.category;
             summary.description = value.description;
             summary.price = value.price;
+            summary.priceBasis = value.priceBasis ?? this.batchUnit(batch.unit);
             summary.currency = value.price !== undefined ? value.currency : undefined;
             summary.nameSource = 'Supplier listing metadata';
           }
@@ -2738,6 +2747,22 @@ export class OrdersService {
         args = [input.batchId, input.archived];
       } else {
         const listing = await this.gateway.read('ingredients', 'getListing', [input.batchId]);
+        if (input.priceBasis) {
+          const unit = this.batchUnit(batch.unit);
+          const choices = ['g', 'kg'].includes(unit)
+            ? ['g', 'kg']
+            : ['litre', 'mL', 'ml', 'L', 'l'].includes(unit)
+              ? ['litre', 'mL']
+              : ['unit', 'each', 'units'].includes(unit)
+                ? ['each', unit]
+                : [unit];
+          if (!choices.includes(input.priceBasis))
+            throw new OrdersError(
+              'INVALID_PRICE_BASIS',
+              'Choose a price basis compatible with this batch unit.',
+              400,
+            );
+        }
         if (!same(listing.metadataHash, input.expectedHash))
           throw new OrdersError(
             'INGREDIENT_LISTING_CHANGED',
@@ -2749,6 +2774,7 @@ export class OrdersService {
           description: input.description,
           price: input.price,
           currency: input.currency,
+          ...(input.priceBasis ? { priceBasis: input.priceBasis } : {}),
         };
         const hash = `0x${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
         const stored = await this.privateRecord(

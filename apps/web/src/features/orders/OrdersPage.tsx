@@ -1,3 +1,9 @@
+import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
+import {
+  COMPANY_ALWAYS_CLAIMS,
+  companyDisclosureGroup,
+  toggleCompanyDisclosure,
+} from '@tracechain/shared';
 import { BackNavigation } from '../../components/ui/BackNavigation';
 import { formatLocationLabel } from './location-format';
 import { reportError } from '../../components/ui/feedback';
@@ -102,6 +108,7 @@ export function OrdersPage({
     unit: 'g',
   });
   const [identityMaterial, setIdentityMaterial] = useState<any>();
+  const [optionalIdentityClaims, setOptionalIdentityClaims] = useState<string[]>([]);
   const [identitySelectedClaims, setIdentitySelectedClaims] = useState<string[]>([]);
   const [identityStatus, setIdentityStatus] = useState<any>();
   const [requiredClaims, setRequiredClaims] = useState<string[]>([
@@ -382,6 +389,7 @@ export function OrdersPage({
                   : {}),
                 operationId: crypto.randomUUID(),
                 claims: input.claims,
+                policy: input.policy,
                 requiredClaims: input.requiredClaims,
                 reason: input.reason,
                 dueAt: new Date(input.deadline).toISOString(),
@@ -993,39 +1001,14 @@ export function OrdersPage({
                           />
                         </div>
 
-                        <fieldset>
-                          <legend>Required signed company claims</legend>
-                          {[
-                            'companyId',
-                            'companyName',
-                            'companyRegistrationNumber',
-                            'role',
-                            'walletAddress',
-                            'id',
-                            'applicationReference',
-                          ].map((claim) => (
-                            <label key={claim} style={{ display: 'inline-block', marginRight: 14 }}>
-                              <input
-                                type="checkbox"
-                                checked={requiredClaims.includes(claim)}
-                                disabled={['id', 'walletAddress', 'role'].includes(claim)}
-                                onChange={(event) =>
-                                  setRequiredClaims((current) =>
-                                    event.target.checked
-                                      ? [...current, claim]
-                                      : current.filter((value) => value !== claim),
-                                  )
-                                }
-                              />
-                              {claim}
-                            </label>
-                          ))}
-                        </fieldset>
-                        <p>
-                          Other claims are optional. The presenter can omit them; the subject DID,
-                          wallet and role are mandatory for holder and authorization checks. Legacy
-                          full-credential presentations are labelled separately.
-                        </p>
+                        <CompanyRequestFields
+                          required={requiredClaims}
+                          optional={optionalIdentityClaims}
+                          onChange={(required, optional) => {
+                            setRequiredClaims(required);
+                            setOptionalIdentityClaims(optional);
+                          }}
+                        />
                         <Btn
                           disabled={busy || !form.purpose?.trim() || !form.identityDeadline}
                           onClick={() =>
@@ -1035,16 +1018,13 @@ export function OrdersPage({
                                 purpose: form.purpose,
                                 expiresAt: Math.floor(Date.parse(form.identityDeadline) / 1000),
                                 required: false,
-                                requiredClaims,
-                                optionalClaims: [
-                                  'companyId',
-                                  'companyName',
-                                  'companyRegistrationNumber',
-                                  'role',
-                                  'walletAddress',
-                                  'id',
-                                  'applicationReference',
-                                ].filter((claim) => !requiredClaims.includes(claim)),
+                                requiredClaims: [
+                                  ...new Set([
+                                    ...COMPANY_ALWAYS_CLAIMS,
+                                    ...companyDisclosureGroup(requiredClaims),
+                                  ]),
+                                ],
+                                optionalClaims: optionalIdentityClaims,
                               });
                               await sign(result.transaction);
                             })
@@ -1152,27 +1132,52 @@ export function OrdersPage({
                                     disabled={identityMaterial.requiredClaims.includes(key)}
                                     onChange={(event) =>
                                       setIdentitySelectedClaims((current) =>
-                                        event.target.checked
-                                          ? [...current, key]
-                                          : current.filter((claim) => claim !== key),
+                                        toggleCompanyDisclosure(current, key, event.target.checked),
                                       )
                                     }
                                   />
-                                  {identityMaterial.requiredClaims.includes(key)
-                                    ? 'Necessary'
-                                    : 'Optional'}
+                                  {(COMPANY_ALWAYS_CLAIMS as readonly string[]).includes(key)
+                                    ? 'Always included'
+                                    : identityMaterial.requiredClaims.includes(key)
+                                      ? 'Required by this request'
+                                      : 'Optional'}
                                 </label>
                               )}
                               <dd style={{ overflowWrap: 'anywhere' }}>{String(value)}</dd>
                             </div>
                           ))}
                         </dl>
+                        {identityMaterial.binding && (
+                          <TechnicalDetails
+                            fields={Object.entries(identityMaterial.binding).map(
+                              ([label, value]) => ({ label, value: String(value) }),
+                            )}
+                          />
+                        )}
                         <PresentationSigningSettingsLink role={role} />
+                        {identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' &&
+                          identityMaterial.requiredClaims.some(
+                            (key: string) => !identityMaterial.claims?.[key],
+                          ) && (
+                            <Alert
+                              type="warning"
+                              message="A required signed field is unavailable. Request an authorized replacement credential or decline; profile fields cannot supply a missing signed claim."
+                            />
+                          )}
                         <Btn
                           disabled={busy}
                           onClick={() =>
                             void run(async () => {
                               const holder = getActiveMessagingAgent();
+                              if (
+                                identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' &&
+                                identityMaterial.requiredClaims.some(
+                                  (key: string) => !identityMaterial.claims?.[key],
+                                )
+                              )
+                                throw new Error(
+                                  'A required signed claim is unavailable. An authorized replacement credential is needed.',
+                                );
                               if (!holder || holder.did !== identityMaterial.holderDid)
                                 throw new Error(
                                   'Restore the holder signing key bound to your wallet.',

@@ -1,8 +1,10 @@
+import { COMPANY_ALWAYS_CLAIMS, toggleCompanyDisclosure } from '@tracechain/shared';
 import { reportError } from '../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 
 import {
   createCompanyIdentityPresentation,
+  createSelectiveCompanyIdentityPresentation,
   getActiveMessagingAgent,
 } from '../didcomm/didcomm-agent';
 import {
@@ -17,7 +19,7 @@ import {
   sendCompanyIdentityDeclineMessage,
   sendCompanyIdentityPresentationMessage,
 } from './evidence-didcomm';
-import { Alert, Btn } from '../workspaces/shared/ui';
+import { Alert, Btn, TechnicalDetails } from '../workspaces/shared/ui';
 import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 
@@ -31,6 +33,7 @@ export function CompanyIdentityProofAction({
   const [status, setStatus] = useState<CompanyIdentityProofStatus>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [selected, setSelected] = useState<string[]>([]);
   const [material, setMaterial] = useState<CompanyIdentityProofMaterial>();
   useEffect(() => {
     void getCompanyIdentityProofStatus(requestId)
@@ -42,7 +45,9 @@ export function CompanyIdentityProofAction({
     setBusy(true);
     setError('');
     try {
-      setMaterial(await getCompanyIdentityProofMaterial(requestId));
+      const value = await getCompanyIdentityProofMaterial(requestId);
+      setMaterial(value);
+      setSelected(value.requiredClaims ?? []);
     } catch (cause) {
       setError(reportError(cause, 'Identity preview failed.'));
     } finally {
@@ -53,13 +58,19 @@ export function CompanyIdentityProofAction({
     setBusy(true);
     setError('');
     try {
-      const material = await getCompanyIdentityProofMaterial(requestId);
+      if (!material) throw new Error('Preview the requested claims before approving.');
       const holder = getActiveMessagingAgent();
       if (!holder || holder.did !== material.holderDid)
         throw new Error(
           'Restore the wallet-bound holder presentation signing-key backup before presenting identity.',
         );
-      const presentation = await createCompanyIdentityPresentation(holder, material);
+      const presentation = material.sdJwt
+        ? await createSelectiveCompanyIdentityPresentation(holder, material.sdJwt, {
+            audience: material.audience,
+            nonce: material.challenge,
+            claims: selected,
+          })
+        : await createCompanyIdentityPresentation(holder, material);
       await sendCompanyIdentityPresentationMessage(requestId, presentation);
       setStatus(await presentCompanyIdentityProof(requestId, presentation));
     } catch (cause) {
@@ -99,16 +110,35 @@ export function CompanyIdentityProofAction({
           <div>
             <b>{material.presenterRole}</b> · {material.credentialHash}
           </div>
+          <dl>
+            {Object.entries(material.claims ?? material.credential?.credentialSubject ?? {}).map(
+              ([name, value]) => (
+                <div key={name}>
+                  <dt>{name} — Always included</dt>
+                  <dd>{String(value)}</dd>
+                </div>
+              ),
+            )}
+          </dl>
           <div style={{ fontSize: 12 }}>
             Purpose: {material.purpose}
             <br />
             Expires: {new Date(material.expiresAt * 1000).toLocaleString()}
           </div>
+          {material.binding && (
+            <TechnicalDetails
+              fields={Object.entries(material.binding).map(([label, value]) => ({ label, value }))}
+            />
+          )}
           <div className="action-row">
             <Btn size="sm" variant="outline" disabled={busy} onClick={() => void decline()}>
               Decline
             </Btn>
-            <Btn size="sm" disabled={busy} onClick={() => void present()}>
+            <Btn
+              size="sm"
+              disabled={busy || !!material.requiredClaims?.some((key) => !material.claims?.[key])}
+              onClick={() => void present()}
+            >
               {busy ? 'Signing…' : 'Approve and present'}
             </Btn>
           </div>

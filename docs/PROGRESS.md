@@ -1,5 +1,139 @@
 # Project Progress
 
+## 2026-11-19 - Simplify ingredient processing and quality inputs
+
+- Removed processing country/location, date-type selection, laboratory/quality evidence
+  and internal quality remarks from new ingredient creation and its normal review.
+  Retained origin, production date, expiry, explicit allergens, certifications and files.
+  Removed the unused laboratory editor component.
+- Removed processing/quality choices and the Quality template from new evidence-request
+  forms. Existing credentials, request policies and private document verification remain
+  supported. Resuming an old registration submits its original frozen data and shows any
+  saved additional fields in a collapsed read-only summary.
+- Updated creation/legacy-resume and request-template regression coverage plus the README
+  and policy/creation documentation. No contract, storage, environment or login change.
+
+## 2026-11-19 - Version 2 Company and Ingredient disclosure policy
+
+- Implemented the user-supplied policy across the normal Company order/delivery and
+  ingredient-linked proof entry points, Manufacturer/Retailer evidence composers and
+  catalogue requests. Shared request controls distinguish mandatory identity context,
+  Required and Optional fields. Company registration number/country are one selection
+  group; company name is always included. Application reference is absent from defaults.
+- Added optional registration-country collection and Admin ISO-country review. New normal
+  issuance requires country and signs Company Role schema v2. Derived selective identity
+  attestations use a distinct v2 VCT and are issued only after verifying the original VC
+  and exact hash, with source credential ID/validity and holder binding. Legacy sources
+  missing country cannot satisfy required country requests and show replacement guidance.
+- Added explicit Ingredient v2 schemas/VCT, processing country, signed production/processing
+  date meaning, structured exact-batch laboratory reports/results, internal remarks and
+  separately selected encrypted laboratory files. Reused existing source-region/city,
+  facility/address, allergen, certification and document fields without duplicate aliases.
+  Creation, persisted workflow resume, owner read models and consent/review support them.
+- New Ingredient HTTP requests use policy v2 with Basic traceability, Food suitability,
+  Certification, Quality or Custom templates; type/scope requirements do not expose the
+  Supplier's undisclosed entries. Policy participates in the encrypted/on-chain request
+  commitment. Contains/May contain needs details; Unknown fails food requests by default.
+  Complete certificate/laboratory context is required with selected documents, while
+  unselected entries/files/private references remain withheld.
+- Ingredient holder key binding adds exact request, purpose, batch and expiry context;
+  verification checks the original issuer JWT, source hash, signatures, requirements,
+  current roles/credential status, certificate scope/validity and exact tested batch.
+  Private file reads reverify and match exact signed entry association/hash/CID. Company
+  proofs compare disclosed values and source validity/reference to the verified VC and
+  current company authorization. Explicit preview/consent is required; missing data,
+  changed preview source or unmet policy cannot be accepted. Existing View/Verify/Accept,
+  login, holder signing and backend DIDComm responsibilities remain separate.
+- Added real-signature regressions for Manufacturer/Retailer Company proofs, registration
+  grouping/legacy missing country, independently disclosed laboratory and certification
+  entries/files, hidden fields, wrong request/purpose/expiry, and file-entry authorization.
+  UI regressions check template/requirement choices and the exact grouped claims passed to
+  signing. Existing replay, wrong holder/verifier/challenge/batch, revoked authorization,
+  source failure and explicit decline tests remain in place.
+- Validation: 397 frontend, 386 API, 25 SSI, 34 shared and 18 local contract tests passed.
+  Frontend suite used `--maxWorkers=4` after an unrestricted concurrent run hit Windows
+  resource-related timeouts; the complete limited-worker run passed. Production build and
+  all workspace type checks passed. Existing Vite bundle/directive warnings remain.
+- Isolated Chrome checked creation, expanded laboratory fields, review and Company/
+  Ingredient request controls at 375px, 768px and 1440px without horizontal overflow.
+  Synthetic screenshots are ignored under `.tracechain/ui-review/ingredient-*.png`.
+  No real MetaMask approval or live Pinata upload was performed.
+- No contract implementation/migration, new dependency, database service, environment
+  change, commit, push or public deployment. General replacement/reissuance UI remains
+  missing; old signed records are not mutated. The existing five-minute holder-proof
+  freshness window is explicit. Details, versions, field mappings and manual tests:
+  [DISCLOSURE_POLICY.md](DISCLOSURE_POLICY.md).
+
+## 2026-11-19 - Standard country dropdown layout
+
+- Ingredient origin now uses a full-width field: flag and country name inside one
+  clickable trigger, arrow on the right, and a matching-width searchable menu.
+  Removed the separate phone-style flag trigger and outside country label. The
+  phone input retains its compact selector. No dependency change.
+- Validation: 37 ingredient/registration frontend tests and frontend TypeScript/production
+  build passed. Existing Vite bundle/directive warnings remain.
+
+## 2026-11-19 - Country flags in ingredient origin selection
+
+- Added bundled SVG flags beside country names in the searchable ingredient-origin
+  dropdown and selected value. Reused the installed `react-phone-number-input/flags`
+  export; no dependency installation or external flag-image requests are required.
+- Preserved ISO values, searchable names, keyboard behavior and the existing theme.
+  Regression coverage checks flags in both the dropdown option and selected trigger.
+- Validation: 21 ingredient frontend tests and the frontend TypeScript/production build
+  passed. Existing Vite bundle/directive warnings remain.
+
+## 2026-11-19 - Three-step Supplier ingredient creation and granular certification evidence
+
+- Replaced the normal Add ingredient form with Batch details, Origin and certifications,
+  and Listing and review. Reused existing navigation, form fields, step progress, theme,
+  country selector, extraction, storage and transaction services. Values survive step
+  navigation; inline errors focus the first invalid field. Extracted values remain editable
+  and require review. Optional price/basis/image stay separate from signed claims.
+- Added exact BigInt kg→g and litre→mL normalization for new structured registrations,
+  whole each/g/mL validation, searchable ISO origin, separate processing/private source
+  fields and explicit allergen declarations. Existing registered units, origin text,
+  certification strings and JWT credentials are preserved.
+- Added repeatable stable-ID certification cards with issuer/reference/dates/scope and
+  multiple PDF/image files. New entries require at least one supporting file. Browser/API
+  enforce file limits; API validates signatures, PDF structure/page count and image dimensions.
+  Uploads use existing AES-256-GCM Pinata storage and a durable encrypted attachment index.
+  Preview/download, upload progress, failure/retry and entry/file removal are implemented.
+- Extended SSI schemas and presentation consent/review to support independent source claims,
+  complete certification entries and individually selected file descriptors. File disclosure
+  requires its parent context. Required generic certification/file claims require actual
+  selected data. Whole-file disclosure is explicit; Supplier signatures are not presented as
+  independent certification-authority checks. Legacy JWT sharing stays full disclosure with
+  preview/consent, and unavailable structured claims fail honestly.
+- Added owner-only unfinished-workflow retrieval and attachment retrieval, plus requester
+  document access gated by request parties, verified presentation, current Supplier
+  authorization, expiry and matching signed CID/hash. Requesters cannot retrieve unshared
+  source credential claims. SD presentations must match the registered source credential.
+- Registration locks duplicate submissions and resumes persisted workflows. Confirmed stages
+  are reread rather than resent; optional image/readback failures do not invite duplicate
+  registration. The chooser can resume prepared registrations after reload, including stored
+  files. Removed/abandoned files may leave encrypted orphan pins; automatic cleanup and
+  distributed/multi-process issuance locking are not implemented.
+- Changed files span Supplier batch creation/detail/transaction/API components, the reusable
+  certification editor/claim renderer, Supplier/Manufacturer/Retailer presentation screens,
+  ingredient-batches/production-flow/orders API modules, encrypted-store timeout, shared
+  ingredient types/normalization, SSI credential schemas/issuance/disclosure and regression
+  tests. Contract changes are tests only. Detailed schema, routes, storage, compatibility,
+  manual test flow and limitations: [INGREDIENT_CREATION.md](INGREDIENT_CREATION.md).
+- Validation: full frontend 394 tests, full API 382 tests, SSI 25 tests and shared source
+  30 tests passed. `npm run build` and `npm run typecheck` passed. Hardhat build and contract
+  TypeScript passed; `hardhat test test/TraceChain.ts` passed 18 tests, including canonical
+  g/mL and legacy litre integration. Windows Hardhat build required execution outside the
+  sandbox because the sandbox blocked Node's OS user lookup. Existing Vite bundle/directive
+  warnings remain. No Solidity implementation change, contract redeployment, dependency,
+  environment variable, public deployment, commit or push.
+- Isolated Chrome review checked all three steps and expanded certification layout at 375px,
+  768px and 1440px without horizontal page overflow. Manual navigation confirmed retained
+  values, ISO selection, explicit allergens and `1.25 kg → 1250 g` review. Ignored screenshots:
+  `.tracechain/ui-review/ingredient-*.png`. Live Pinata uploads and real MetaMask approvals
+  were not exercised. Existing signed claims are not editable/replaced by this feature;
+  backend decryption remains server-managed.
+
 ## 2026-11-19 - Combine company management controls visually
 
 - Replaced the separate Company access card and collapsed Advanced credential controls with one Company management card containing visible, labelled Company access and Issued credential groups, individual status badges and a subtle separator. Removed the obsolete disclosure styling.
@@ -35,13 +169,12 @@
 - Validation: all 341 frontend tests and the production build/TypeScript check passed. Added eight interaction checks covering both input families, date/time types, keyboard changes, constraints, read-only/disabled inputs and browser restrictions. Isolated Chrome trusted clicks invoked actual native date and datetime-local pickers without errors; no forms were submitted. Existing Vite warnings remain.
 - Preserved the existing registration-page and package-lock edits. No dependency, API, contract, environment or data changes.
 
-
-
 ## 2026-11-19 - Diagnose Hardhat builtin node loading failure
 
 - Confirmed Hardhat 3.21.1 and its built-in node plugin are installed with deduplicated workspace dependencies. Read-only `hardhat node --help --show-stack-traces` succeeded outside the sandbox; loading the actual node task failed because Windows Application Control denied the installed EDR 0.25.0 native binary. The outer HHE200 message is misleading for this failure.
 - Verified the Windows engine package/binary exists and the nested error names the denied file. The official `@nomicfoundation/edr-wasm32-wasi@0.25.0` registry lookup returned 404, so no supported published WASM fallback was installed. Documented the issue and approved-environment options in README.
 - No config, dependency, security-policy, environment, blockchain state or deployment changes. Full node startup and contract execution remain blocked by the Windows policy; compilation/compiler WASM preferences do not address this native-engine load. Preserved the existing registration-page edit.
+
 ## 2026-11-19 - Human-readable company evidence sharing
 
 - Replaced the Supplier company-claim checkbox form with accessible required/optional toggle rows, readable claim labels and role values, compact technical-value previews, copy/show-full controls and a selected-claim summary. Required request claims stay enabled and locked; unavailable required values prevent signing.

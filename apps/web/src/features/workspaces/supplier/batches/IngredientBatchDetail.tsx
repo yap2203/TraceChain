@@ -1,3 +1,5 @@
+import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
+import { getCertificationDocument } from './ingredient-batch.api';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
@@ -73,8 +75,8 @@ export function IngredientBatchDetail({
     ['Available quantity', `${batch.availableQuantity} ${batch.unit}`],
     ['Production date', formatDate(batch.producedAt)],
     ['Expiry date', formatDate(batch.expiresAt)],
-    ['Allergen information', batch.allergenInformation || 'None declared'],
-    ['Certifications', batch.certifications.join(', ') || 'None declared'],
+    ['Allergen information', batch.allergenInformation || 'Unavailable (legacy record)'],
+    ['Certifications', batch.certifications.join(', ') || 'Not supplied'],
   ];
 
   return (
@@ -112,10 +114,46 @@ export function IngredientBatchDetail({
           <p>
             Price:{' '}
             {listing.price !== undefined
-              ? `${listing.currency} ${listing.price} per ${batch.unit}`
+              ? `${listing.currency} ${listing.price} per ${listing.priceBasis || batch.unit}`
               : 'Unavailable'}
           </p>
           <p>Description: {listing.description || 'No description provided'}</p>
+        </Card>
+      )}
+      {batch.originDetails && (
+        <Card>
+          <IngredientClaimValue name="originDetails" value={batch.originDetails} />
+        </Card>
+      )}
+      {batch.allergen && (
+        <Card>
+          <IngredientClaimValue name="allergenDeclaration" value={batch.allergen} />
+        </Card>
+      )}
+      {batch.certificationEntries?.map((entry) => (
+        <Card key={entry.id}>
+          <IngredientClaimValue
+            name={'certification_' + entry.id}
+            value={entry}
+            loadDocument={(id) => getCertificationDocument(batchId, id)}
+          />
+        </Card>
+      ))}
+      {batch.qualityTests?.map((entry) => (
+        <Card key={entry.id}>
+          <IngredientClaimValue
+            name={'qualityTest_' + entry.id}
+            value={entry}
+            loadDocument={(id) => getCertificationDocument(batchId, id)}
+          />
+        </Card>
+      ))}
+      {batch.internalQualityRemarks && (
+        <Card>
+          <IngredientClaimValue
+            name="internalQualityRemarks"
+            value={batch.internalQualityRemarks}
+          />
         </Card>
       )}
       <div className="workspace-detail-grid">

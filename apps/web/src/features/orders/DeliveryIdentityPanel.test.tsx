@@ -16,6 +16,57 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
+it('shares exactly the paired optional registration values with the mandatory company identity after review', async () => {
+  const material = {
+    format: 'COMPANY_IDENTITY_SD_JWT',
+    sdJwt: 'v2-attestation',
+    holderDid: 'did:key:supplier',
+    audience: 'distributor',
+    challenge: 'fresh',
+    purpose: 'Check seller',
+    expiresAt: Math.floor(Date.now() / 1000) + 240,
+    requiredClaims: ['companyName', 'role', 'walletAddress', 'id'],
+    optionalClaims: ['companyRegistrationNumber', 'registrationCountry'],
+    claims: {
+      companyName: 'Actual company',
+      role: 'SUPPLIER',
+      walletAddress: 'supplier',
+      id: 'did:key:supplier',
+      companyRegistrationNumber: 'REG-1',
+      registrationCountry: 'MY',
+    },
+  };
+  mocks.identity.mockImplementation(async (_order, input) =>
+    input.action === 'material' ? material : { status: 'REQUESTED' },
+  );
+  mocks.selective.mockResolvedValue('holder-presentation');
+  renderSupplierPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Review request' }));
+  await screen.findByRole('switch', { name: 'Share Registration number' });
+  expect(
+    (screen.getByRole('switch', { name: 'Share Company name' }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  fireEvent.click(screen.getByRole('switch', { name: 'Share Registration number' }));
+  expect(
+    screen.getByRole('switch', { name: 'Share Registration country' }).getAttribute('aria-checked'),
+  ).toBe('true');
+  fireEvent.click(screen.getByRole('button', { name: 'Review and sign proof' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Sign and share' }));
+  await waitFor(() =>
+    expect(mocks.selective).toHaveBeenCalledWith(expect.anything(), 'v2-attestation', {
+      audience: 'distributor',
+      nonce: 'fresh',
+      claims: [
+        'companyName',
+        'role',
+        'walletAddress',
+        'id',
+        'companyRegistrationNumber',
+        'registrationCountry',
+      ],
+    }),
+  );
+});
 
 it('uses locked required toggles, readable optional claims and a review modal before signing', async () => {
   const material = {

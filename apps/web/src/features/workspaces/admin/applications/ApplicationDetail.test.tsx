@@ -53,6 +53,7 @@ it.each(['pending', 'approved'] as const)(
       applicant: '0x1000000000000000000000000000000000000001',
       companyName: 'Test Company',
       companyRegistrationNumber: 'TEST-1',
+      registrationCountry: 'MY',
       requestedRole: 'Supplier',
       status,
       submittedAt: 1,

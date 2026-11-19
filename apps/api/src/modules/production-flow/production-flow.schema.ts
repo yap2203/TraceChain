@@ -1,9 +1,34 @@
 import { z } from 'zod';
+import { INGREDIENT_REQUEST_CLAIMS } from '@tracechain/shared';
 import { requestDateSchema } from '../../config/input-validation.js';
 
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
 const positiveInteger = z.string().regex(/^[1-9]\d{0,38}$/);
+export const companyProofRequestSchema = z
+  .object({
+    purpose: z.string().trim().min(1).max(500).optional(),
+    expiresAt: z.number().int().positive().optional(),
+    requiredClaims: z
+      .array(
+        z.enum([
+          'companyName',
+          'role',
+          'walletAddress',
+          'id',
+          'companyRegistrationNumber',
+          'registrationCountry',
+          'companyId',
+        ]),
+      )
+      .max(7)
+      .default([]),
+    optionalClaims: z
+      .array(z.enum(['companyRegistrationNumber', 'registrationCountry', 'companyId']))
+      .max(3)
+      .default([]),
+  })
+  .strict();
 export const productionIngredientsQuerySchema = z
   .object({ location: bytes32.optional(), purpose: z.literal('production').optional() })
   .strict();
@@ -11,6 +36,22 @@ export const productionIngredientsQuerySchema = z
 export const evidenceRequestSchema = z
   .object({
     batchId: bytes32,
+    policy: z
+      .object({
+        policyVersion: z.literal(2),
+        template: z.enum(['custom', 'basic', 'food', 'certification', 'quality']).default('custom'),
+        allowUnknownAllergens: z.boolean().default(false),
+        certificationRequirement: z
+          .object({
+            name: z.string().trim().min(1).max(120).optional(),
+            scope: z.enum(['Company', 'Facility', 'Ingredient', 'This batch']).optional(),
+            scopeReference: z.string().trim().min(1).max(160).optional(),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     claims: z.array(z.string().trim().min(1).max(80)).min(1).max(20),
     requiredClaims: z.array(z.string().trim().min(1).max(80)).max(20).default([]),
     dueAt: requestDateSchema,
@@ -18,7 +59,18 @@ export const evidenceRequestSchema = z
     productBatchId: bytes32.optional(),
     reason: z.string().trim().min(1).max(500),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (
+      input.policy &&
+      input.claims.some((key) => !INGREDIENT_REQUEST_CLAIMS.some(([claim]) => claim === key))
+    )
+      ctx.addIssue({
+        code: 'custom',
+        path: ['claims'],
+        message: 'Use the supported claims in the version 2 request policy.',
+      });
+  });
 
 export const productRequestSchema = z
   .object({

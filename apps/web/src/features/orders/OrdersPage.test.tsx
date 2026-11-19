@@ -226,7 +226,7 @@ describe('browse and request-only UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Request evidence or information' }));
     expect(container.querySelectorAll('.catalogue-dialog-alert')).toHaveLength(1);
     expect(container.querySelector('.catalogue-request-form')).toBeTruthy();
-    expect(screen.getByLabelText('expiryDate disclosure')).toBeTruthy();
+    expect(screen.getByLabelText('Ingredient expiry date disclosure')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request quantity' })).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
   });

@@ -7,6 +7,7 @@ export interface ApplicationMetadata {
   applicantWallet?: string;
   companyName: string;
   companyRegistrationNumber: string;
+  registrationCountry?: string;
   profileHash: string;
   initialLocationName?: string;
   initialLocationDetails?: StoredEncryptedCredential;

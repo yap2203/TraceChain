@@ -4,6 +4,7 @@ export type ApplicationStatus =
 export interface ChainApplication {
   companyName?: string;
   companyRegistrationNumber?: string;
+  registrationCountry?: string;
   applicant: string;
   encryptedProfileCid: string;
   id: string;

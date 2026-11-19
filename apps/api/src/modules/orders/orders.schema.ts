@@ -38,6 +38,11 @@ export const orderActionSchema = z.discriminatedUnion('action', [
     .object({
       ...base,
       action: z.literal('ingredient-update'),
+      priceBasis: z
+        .string()
+        .max(31)
+        .regex(/^[A-Za-z0-9._/-]+$/)
+        .optional(),
       batchId: hash,
       expectedHash: hash,
       name: z.string().trim().min(1).max(160),

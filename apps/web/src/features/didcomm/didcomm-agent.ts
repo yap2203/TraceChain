@@ -103,7 +103,12 @@ export async function createCompanyIdentityPresentation(
 export async function createSelectiveIngredientPresentation(
   holder: HolderMessagingAgent,
   credential: string,
-  input: { audience: string; claims: string[]; nonce: string },
+  input: {
+    audience: string;
+    claims: string[];
+    nonce: string;
+    context?: { requestId: string; purpose: string; batchId: string; expiresAt: number };
+  },
 ) {
   const signer = EdDSASigner(holder.privateKey);
   const instance = new SDJwtInstance<Record<string, unknown>>({
@@ -130,6 +135,14 @@ export async function createSelectiveIngredientPresentation(
           aud: input.audience,
           iat: Math.floor(Date.now() / 1_000),
           nonce: input.nonce,
+          ...(input.context
+            ? {
+                requestId: input.context.requestId,
+                purpose: input.context.purpose,
+                batchId: input.context.batchId,
+                exp: input.context.expiresAt,
+              }
+            : {}),
         },
       },
     },

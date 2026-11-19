@@ -1,3 +1,9 @@
+import {
+  ingredientCertificationSchema,
+  ingredientQualityTestSchema,
+  ingredientAllergenSchema,
+  certificationDocumentSchema,
+} from './ingredient-details.js';
 import { createHash, createPublicKey, randomBytes, verify as verifySignature } from 'node:crypto';
 
 import { SDJwtInstance, type PresentationFrame } from '@sd-jwt/core';
@@ -9,6 +15,7 @@ import { z } from 'zod';
 
 import type { TraceChainAgent } from '../agent/tracechain-agent.js';
 
+export const INGREDIENT_SD_JWT_VCT_V2 = 'urn:tracechain:credential:ingredient:sd-jwt:v2';
 export const INGREDIENT_SD_JWT_VCT = 'urn:tracechain:credential:ingredient:sd-jwt:v1';
 
 const claimText = (maximum: number) =>
@@ -22,21 +29,150 @@ const issuanceInputSchema = z
   .object({
     claims: z
       .object({
-        allergenDeclaration: z.string().max(500).optional(),
+        policyVersion: z.literal(2).optional(),
+        supplierDid: z.string().startsWith('did:').optional(),
+        processingCountry: z
+          .string()
+          .regex(/^[A-Z]{2}$/)
+          .optional(),
+        allergenDeclaration: z.union([z.string().max(500), ingredientAllergenSchema]).optional(),
         batchId: claimText(120),
         batchReference: claimText(120).optional(),
         certificationDetails: z.array(claimText(120)).max(20).optional(),
         countryOfOrigin: claimText(160).optional(),
+        originCountryCode: z
+          .string()
+          .regex(/^[A-Z]{2}$/)
+          .optional(),
+        originRegion: claimText(160).optional(),
+        originCity: claimText(160).optional(),
+        privateOriginAddress: claimText(1000).optional(),
+        processingLocation: claimText(1000).optional(),
         credentialId: claimText(512),
         exactSourceFacility: z.string().max(2000).optional(),
         expiryDate: claimDate.optional(),
         ingredientName: claimText(160),
+        category: claimText(80).optional(),
+        quantity: z
+          .string()
+          .regex(/^[1-9]\d{0,38}$/)
+          .optional(),
+        unit: claimText(31).optional(),
         internalQualityRemarks: z.string().max(4000).optional(),
         productionDate: claimDate.optional(),
+        productionDateMeaning: z.enum(['production', 'processing']).optional(),
         qualityTestSummary: z.string().max(4000).optional(),
         supplierWallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
       })
-      .strict(),
+      .catchall(z.unknown())
+      .superRefine((claims, ctx) => {
+        const known = [
+          'policyVersion',
+          'supplierDid',
+          'processingCountry',
+          'allergenDeclaration',
+          'batchId',
+          'batchReference',
+          'certificationDetails',
+          'countryOfOrigin',
+          'processingCountry',
+          'originCountryCode',
+          'originRegion',
+          'originCity',
+          'privateOriginAddress',
+          'processingLocation',
+          'credentialId',
+          'exactSourceFacility',
+          'expiryDate',
+          'ingredientName',
+          'category',
+          'quantity',
+          'unit',
+          'internalQualityRemarks',
+          'productionDate',
+          'productionDateMeaning',
+          'qualityTestSummary',
+          'supplierWallet',
+        ];
+        for (const [key, value] of Object.entries(claims)) {
+          if (
+            /^qualityTest_[a-f0-9]{32}$/.test(key) &&
+            (!value ||
+              typeof value !== 'object' ||
+              'documents' in value ||
+              !ingredientQualityTestSchema.safeParse({ ...(value as object), documents: [] })
+                .success ||
+              (value as { id?: string }).id?.replaceAll('-', '') !==
+                key.slice('qualityTest_'.length))
+          )
+            ctx.addIssue({
+              code: 'custom',
+              path: [key],
+              message: 'Invalid laboratory test context.',
+            });
+          if (
+            /^qualityDocuments_[a-f0-9]{32}$/.test(key) &&
+            !z
+              .object({
+                qualityTestId: z.uuid(),
+                documents: z.array(certificationDocumentSchema).length(1),
+              })
+              .strict()
+              .safeParse(value).success
+          )
+            ctx.addIssue({
+              code: 'custom',
+              path: [key],
+              message: 'Invalid laboratory document context.',
+            });
+          if (
+            !known.includes(key) &&
+            !/^(?:certification|certificationDocuments|qualityTest|qualityDocuments)_[a-f0-9]{32}$/.test(
+              key,
+            )
+          )
+            ctx.addIssue({
+              code: 'custom',
+              path: [key],
+              message: 'Unsupported or reserved claim.',
+            });
+          if (
+            /^certification_[a-f0-9]{32}$/.test(key) &&
+            (typeof value !== 'object' ||
+              !value ||
+              'documents' in value ||
+              (value as { id?: string }).id?.replaceAll('-', '') !==
+                key.slice('certification_'.length))
+          )
+            ctx.addIssue({
+              code: 'custom',
+              path: [key],
+              message:
+                'Certification scope must match its stable entry ID; documents need a separate disclosure.',
+            });
+          if (
+            /^certification_[a-f0-9]{32}$/.test(key) &&
+            !ingredientCertificationSchema.safeParse({ ...(value as object), documents: [] })
+              .success
+          )
+            ctx.addIssue({ code: 'custom', path: [key], message: 'Invalid certification entry.' });
+          if (
+            /^certificationDocuments_[a-f0-9]{32}$/.test(key) &&
+            !z
+              .object({
+                certificationId: z.uuid(),
+                documents: z.array(certificationDocumentSchema).min(1).max(3),
+              })
+              .strict()
+              .safeParse(value).success
+          )
+            ctx.addIssue({
+              code: 'custom',
+              path: [key],
+              message: 'Invalid certification documents.',
+            });
+        }
+      }),
     expiresAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     issuedAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     holderDid: z.string().startsWith('did:key:'),
@@ -46,7 +182,8 @@ const issuanceInputSchema = z
   .refine((value) => value.expiresAt > value.issuedAt, 'Credential expiry must follow issuance.');
 
 export interface IngredientSdJwtClaims {
-  allergenDeclaration?: string;
+  [key: string]: unknown;
+  allergenDeclaration?: string | z.infer<typeof ingredientAllergenSchema>;
   batchId: string;
   batchReference?: string;
   certificationDetails?: string[];
@@ -70,6 +207,11 @@ export interface IssueIngredientSdJwtInput {
 }
 
 const selectiveClaims = [
+  'originCountryCode',
+  'originRegion',
+  'originCity',
+  'privateOriginAddress',
+  'processingLocation',
   'allergenDeclaration',
   'certificationDetails',
   'countryOfOrigin',
@@ -77,6 +219,7 @@ const selectiveClaims = [
   'expiryDate',
   'internalQualityRemarks',
   'productionDate',
+  'productionDateMeaning',
   'qualityTestSummary',
 ] as const;
 
@@ -90,16 +233,23 @@ export async function issueIngredientSdJwt(
   const issuerKey = issuer.keys[0];
   if (!issuerKey) throw new Error('The Supplier issuer DID has no managed signing key.');
   const instance = issuerInstance(agent, issuerKey.kid);
+  validateCertificationDisclosure(input.claims, []);
   const payload = {
     cnf: { jwk: holderJwk },
     exp: input.expiresAt,
     iat: input.issuedAt,
     iss: input.issuerDid,
     sub: input.claims.supplierWallet.toLowerCase(),
-    vct: INGREDIENT_SD_JWT_VCT,
+    vct: input.claims.policyVersion === 2 ? INGREDIENT_SD_JWT_VCT_V2 : INGREDIENT_SD_JWT_VCT,
     ...input.claims,
   };
-  const disclosed = selectiveClaims.filter((claim) => payload[claim] !== undefined);
+  const disclosed = Object.keys(payload).filter(
+    (claim) =>
+      selectiveClaims.includes(claim as (typeof selectiveClaims)[number]) ||
+      /^(?:certification|certificationDocuments|qualityTest|qualityDocuments)_[a-f0-9]{32}$/.test(
+        claim,
+      ),
+  );
   return instance.issue<Record<string, unknown>>(
     payload as Record<string, unknown>,
     { _sd: disclosed } as never,
@@ -117,6 +267,7 @@ export async function verifyIngredientSdJwtPresentation(
     now: number;
     requiredClaims: string[];
     supplierWallet: string;
+    context?: { requestId: string; purpose: string; expiresAt: number };
   },
 ) {
   const instance = verifierInstance(agent);
@@ -125,7 +276,7 @@ export async function verifyIngredientSdJwtPresentation(
     allowedKeyBindingAlgorithms: ['EdDSA'],
     currentDate: input.now,
     expectedKeyBindingAudience: input.audience,
-    expectedVct: INGREDIENT_SD_JWT_VCT,
+    expectedVct: [INGREDIENT_SD_JWT_VCT, INGREDIENT_SD_JWT_VCT_V2],
     keyBindingMaxAgeSeconds: 300,
     keyBindingNonce: input.nonce,
     requiredClaimKeys: [
@@ -136,9 +287,32 @@ export async function verifyIngredientSdJwtPresentation(
       'ingredientName',
       'batchId',
       'supplierWallet',
-      ...input.requiredClaims,
+      ...input.requiredClaims.filter(
+        (claim) =>
+          ![
+            'certifications',
+            'certificationDocuments',
+            'qualityTests',
+            'qualityDocuments',
+          ].includes(claim),
+      ),
     ],
   });
+  validateCertificationDisclosure(result.payload, input.requiredClaims);
+  if (input.context) {
+    const keyBinding = JSON.parse(
+      Buffer.from(presentation.split('~').at(-1)!.split('.')[1]!, 'base64url').toString(),
+    ) as Record<string, unknown>;
+    if (
+      keyBinding.requestId !== input.context.requestId ||
+      keyBinding.purpose !== input.context.purpose ||
+      keyBinding.batchId !== input.batchId ||
+      typeof keyBinding.exp !== 'number' ||
+      keyBinding.exp <= input.now ||
+      keyBinding.exp > input.context.expiresAt
+    )
+      throw new Error('The presentation request, purpose, batch or expiry binding did not match.');
+  }
   const presentedBatch = String(result.payload.batchId ?? '');
   const batchMatches =
     presentedBatch.toLowerCase() === input.batchId.toLowerCase() ||
@@ -146,6 +320,12 @@ export async function verifyIngredientSdJwtPresentation(
   if (!batchMatches) throw new Error('The selective presentation is bound to a different batch.');
   if (String(result.payload.supplierWallet).toLowerCase() !== input.supplierWallet.toLowerCase())
     throw new Error('The selective presentation is bound to a different Supplier.');
+  if (
+    result.payload.policyVersion === 2 &&
+    String(result.payload.supplierDid).toLowerCase() !==
+      `did:ethr:sepolia:${input.supplierWallet}`.toLowerCase()
+  )
+    throw new Error('The Supplier subject DID does not match its wallet binding.');
   return result;
 }
 
@@ -157,7 +337,7 @@ export async function verifyIssuedIngredientSdJwt(
   const result = await verifierInstance(agent).verify(credential, {
     allowedIssuerAlgorithms: ['ES256K', 'ES256K-R'],
     currentDate: input.now,
-    expectedVct: INGREDIENT_SD_JWT_VCT,
+    expectedVct: [INGREDIENT_SD_JWT_VCT, INGREDIENT_SD_JWT_VCT_V2],
     requiredClaimKeys: [
       'iss',
       'vct',
@@ -276,4 +456,51 @@ async function hasher(data: string | ArrayBuffer, algorithm: string) {
   if (algorithm !== 'sha-256') throw new Error(`Unsupported disclosure hash: ${algorithm}`);
   const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data);
   return new Uint8Array(createHash('sha256').update(bytes).digest());
+}
+
+function validateCertificationDisclosure(payload: Record<string, unknown>, required: string[]) {
+  const keys = Object.keys(payload);
+  if (payload.policyVersion === 2)
+    for (const key of [
+      'ingredientName',
+      'batchId',
+      'supplierWallet',
+      'supplierDid',
+      'batchReference',
+    ])
+      if (!payload[key]) throw new Error(`Missing ingredient binding claim: ${key}.`);
+  for (const key of keys.filter((key) => key.startsWith('qualityDocuments_'))) {
+    const files = payload[key] as { qualityTestId?: string };
+    const test = payload['qualityTest_' + String(files.qualityTestId ?? '').replaceAll('-', '')] as
+      { id?: string } | undefined;
+    if (!test || test.id !== files.qualityTestId)
+      throw new Error('Laboratory documents require their complete test context.');
+  }
+  if (required.includes('qualityTests') && !keys.some((key) => key.startsWith('qualityTest_')))
+    throw new Error('Required laboratory results were not disclosed.');
+  if (
+    required.includes('qualityDocuments') &&
+    !keys.some((key) => key.startsWith('qualityDocuments_'))
+  )
+    throw new Error('Required laboratory documents were not disclosed.');
+  if (
+    required.includes('certifications') &&
+    !keys.some((key) => /^certification_[a-f0-9]{32}$/.test(key))
+  )
+    throw new Error('A required certification entry was not disclosed.');
+  if (
+    required.includes('certificationDocuments') &&
+    !keys.some((key) => /^certificationDocuments_[a-f0-9]{32}$/.test(key))
+  )
+    throw new Error('Required certification documents were not disclosed.');
+  for (const key of keys.filter((key) => /^certificationDocuments_[a-f0-9]{32}$/.test(key))) {
+    const files = payload[key] as { certificationId?: string };
+    const entry = payload[
+      'certification_' + String(files.certificationId ?? '').replaceAll('-', '')
+    ] as { id?: string } | undefined;
+    if (!entry || entry.id !== files.certificationId)
+      throw new Error(
+        'Disclosed documents require their complete certification scope and provenance.',
+      );
+  }
 }

@@ -148,6 +148,7 @@ export interface CompanyIdentityResponse {
     chainId: number;
     companyName: string;
     companyRegistrationNumber: string;
+    registrationCountry?: string;
     credentialHash: string;
     credentialId: string;
     encryptedCredentialCid: string;
@@ -195,6 +196,7 @@ export function issueCompanyRoleCredential(input: {
   approvedRole: number;
   companyName: string;
   companyRegistrationNumber: string;
+  registrationCountry?: string;
   expirationDate: string;
 }) {
   return apiRequest<CompanyRoleIssuanceResponse>('/api/ssi/company-role/issue', {

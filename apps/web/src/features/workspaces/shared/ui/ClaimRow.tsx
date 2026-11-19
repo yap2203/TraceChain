@@ -12,7 +12,7 @@ export function ClaimRow({
 }: {
   label: string;
   value: string;
-  requirement: 'required' | 'optional';
+  requirement: 'required' | 'optional' | 'always';
   included: boolean;
   locked?: boolean;
   technical?: boolean;
@@ -32,8 +32,14 @@ export function ClaimRow({
       <div className="evidence-claim-row__content">
         <div className="evidence-claim-row__title">
           <strong>{label}</strong>
-          <span className={`evidence-claim-row__requirement is-${requirement}`}>
-            {requirement === 'required' ? 'Required' : 'Optional'}
+          <span
+            className={`evidence-claim-row__requirement is-${requirement === 'always' ? 'required' : requirement}`}
+          >
+            {requirement === 'always'
+              ? 'Always included'
+              : requirement === 'required'
+                ? 'Required'
+                : 'Optional'}
           </span>
         </div>
         <span className="evidence-claim-row__value" title={technical ? value : undefined}>

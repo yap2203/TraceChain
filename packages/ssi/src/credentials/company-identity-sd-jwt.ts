@@ -1,7 +1,9 @@
 import type { TraceChainAgent } from '../agent/tracechain-agent.js';
+import { COMPANY_ALWAYS_CLAIMS, companyDisclosureGroup } from '@tracechain/shared';
 import { holderPublicJwk, issuerInstance, verifierInstance } from './ingredient-sd-jwt.js';
 
 export const COMPANY_IDENTITY_SD_VCT = 'urn:tracechain:company-identity-proof:sd-jwt:v1';
+export const COMPANY_IDENTITY_SD_VCT_V2 = 'urn:tracechain:company-identity-proof:sd-jwt:v2';
 export const COMPANY_IDENTITY_BINDING_CLAIMS = ['id', 'walletAddress', 'role'] as const;
 
 /** Authority-signed selective attestation derived from a verified existing VC. Not a replacement VC. */
@@ -18,6 +20,9 @@ export async function issueCompanyIdentitySdJwt(
     challenge: string;
     issuedAt: number;
     expiresAt: number;
+    sourceCredentialId: string;
+    sourceCredentialIssuedAt: string;
+    sourceCredentialExpiresAt: string;
   },
 ) {
   const issuer = await agent.didManagerGet({ did: input.issuerDid });
@@ -29,6 +34,7 @@ export async function issueCompanyIdentitySdJwt(
         'companyId',
         'companyName',
         'companyRegistrationNumber',
+        'registrationCountry',
         'role',
         'walletAddress',
         'id',
@@ -36,16 +42,29 @@ export async function issueCompanyIdentitySdJwt(
       ].includes(name),
     ),
   );
-  for (const name of COMPANY_IDENTITY_BINDING_CLAIMS)
-    if (!claims[name]) throw new Error(`Missing company binding claim: ${name}`);
+  if (!claims.registrationCountry || !claims.companyRegistrationNumber) {
+    delete claims.companyRegistrationNumber;
+    delete claims.registrationCountry;
+  }
+  for (const name of COMPANY_ALWAYS_CLAIMS)
+    if (!String(claims[name] ?? '').trim())
+      throw new Error(`Missing company binding claim: ${name}`);
   return issuerInstance(agent, key.kid).issue(
     {
       iss: input.issuerDid,
-      vct: COMPANY_IDENTITY_SD_VCT,
+      vct: COMPANY_IDENTITY_SD_VCT_V2,
+      policyVersion: 2,
       cnf: { jwk: await holderPublicJwk(input.holderDid) },
       iat: input.issuedAt,
       exp: input.expiresAt,
       sourceCredentialHash: input.credentialHash,
+      ...(input.sourceCredentialId
+        ? {
+            sourceCredentialId: input.sourceCredentialId,
+            sourceCredentialIssuedAt: input.sourceCredentialIssuedAt,
+            sourceCredentialExpiresAt: input.sourceCredentialExpiresAt,
+          }
+        : {}),
       holderDid: input.holderDid,
       requestId: input.requestId,
       purpose: input.purpose,
@@ -54,9 +73,7 @@ export async function issueCompanyIdentitySdJwt(
       ...claims,
     },
     {
-      _sd: Object.keys(claims).filter(
-        (name) => !COMPANY_IDENTITY_BINDING_CLAIMS.includes(name as never),
-      ),
+      _sd: Object.keys(claims).filter((name) => !COMPANY_ALWAYS_CLAIMS.includes(name as never)),
     } as never,
     { header: { kid: key.kid, typ: 'dc+sd-jwt' } },
   );
@@ -77,7 +94,7 @@ export async function verifyCompanyIdentitySdJwt(
   const result = await verifierInstance(agent).verify(presentation, {
     allowedIssuerAlgorithms: ['ES256K'],
     allowedKeyBindingAlgorithms: ['EdDSA'],
-    expectedVct: COMPANY_IDENTITY_SD_VCT,
+    expectedVct: [COMPANY_IDENTITY_SD_VCT, COMPANY_IDENTITY_SD_VCT_V2],
     currentDate: input.now,
     expectedKeyBindingAudience: input.audience,
     keyBindingNonce: input.challenge,
@@ -92,6 +109,15 @@ export async function verifyCompanyIdentitySdJwt(
     ],
   });
   const p = result.payload;
+  if (p.vct === COMPANY_IDENTITY_SD_VCT_V2) {
+    for (const key of [...COMPANY_ALWAYS_CLAIMS, ...companyDisclosureGroup(input.requiredClaims)])
+      if (!p[key])
+        throw new Error(
+          `Required signed company claim is unavailable: ${key}. Authorized replacement may be needed.`,
+        );
+    if ('companyRegistrationNumber' in p !== 'registrationCountry' in p)
+      throw new Error('Registration number and country must be disclosed together.');
+  }
   const expectedJwk = await holderPublicJwk(String(p.holderDid ?? ''));
   const jwk = (p.cnf as { jwk?: { x?: string; crv?: string; kty?: string } } | undefined)?.jwk;
   if (jwk?.x !== expectedJwk.x || jwk?.crv !== expectedJwk.crv || jwk?.kty !== expectedJwk.kty)

@@ -157,6 +157,40 @@ describe('TraceChain integration', function () {
     await system.stakeholders.reactivateStakeholder(system.supplier.address);
     expect(await system.stakeholders.roleOf(system.supplier.address)).to.equal(2n);
   });
+  it('stores new whole gram/millilitre quantities and preserves legacy litre units without conversion', async function () {
+    const system = await networkHelpers.loadFixture(deployFixture);
+    await onboard(system, system.supplier, 2);
+    const now = await networkHelpers.time.latest();
+    for (const [unit, quantity] of [
+      ['g', 1250n],
+      ['mL', 1250n],
+      ['litre', 500n],
+    ] as const) {
+      const credentialId = ethers.id('unit-credential:' + unit),
+        batchId = ethers.id('unit-batch:' + unit);
+      await asSigner(system.credentials, system.supplier).registerCredential(
+        credentialId,
+        ethers.id('unit-hash:' + unit),
+        'encrypted-cid',
+        system.supplier.address,
+        2,
+        now + 3600,
+      );
+      await asSigner(system.ingredients, system.supplier).registerBatch(
+        batchId,
+        ethers.id('metadata:' + unit),
+        'encrypted-cid',
+        credentialId,
+        quantity,
+        ethers.encodeBytes32String(unit),
+        now,
+        now + 3600,
+      );
+      const batch = await system.ingredients.getBatch(batchId);
+      expect(batch.totalQuantity).to.equal(quantity);
+      expect(ethers.decodeBytes32String(batch.unit)).to.equal(unit);
+    }
+  });
 
   it('keeps company access separate from credential status and prevents revoked-record reactivation', async function () {
     const system = await networkHelpers.loadFixture(deployFixture);

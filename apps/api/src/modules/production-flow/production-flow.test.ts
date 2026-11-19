@@ -748,6 +748,65 @@ describe('production flow service', () => {
       code: 'REQUEST_NOT_FOUND',
       status: 404,
     });
+    await expect(
+      unrelated.certificationDocument('session', requestId, 'known-document-id'),
+    ).rejects.toMatchObject({ code: 'REQUEST_NOT_FOUND', status: 404 });
+  });
+
+  it('shows source credential claims only to their Supplier, never to a requester before sharing', async () => {
+    const prepared = await service.prepareEvidenceRequest('session', requestInput());
+    const record = evidence.get(prepared.requestId!.toLowerCase())!;
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({
+      requester: record.requester,
+      supplier: record.supplier,
+      ingredientBatchId: record.batchId,
+      challengeHash: record.challengeHash,
+      claimsHash: record.claimsHash,
+      requestCid: record.requestCid,
+      dueAt: record.dueAt,
+      status: 1,
+      updatedAt: 0,
+      presentationCid: '',
+      presentationHash: id('none'),
+      presentationExpiresAt: 0,
+    });
+    const sourcePayload = { ...PAYLOAD, ciphertext: 'supplier-only-credential' };
+    const decrypt = vi.fn(async (payload: typeof PAYLOAD) =>
+      payload.ciphertext === sourcePayload.ciphertext
+        ? JSON.stringify({
+            credential: { credentialSubject: { privateOriginAddress: 'Supplier secret' } },
+          })
+        : JSON.stringify({ claims: ['countryOfOrigin'] }),
+    );
+    const find = vi.fn().mockResolvedValue({
+      supplierWallet: SUPPLIER,
+      encryptedPayload: sourcePayload,
+      credentialFormat: 'JWT_VC',
+    });
+    const dependencies = {
+      agentProvider: vi.fn(),
+      authService: manufacturerAuth(),
+      clock: () => NOW,
+      gateway,
+      repository,
+      contentStore: { decrypt, encryptAndStore: vi.fn() },
+      ingredientRepository: { find, listForSupplier: vi.fn(), save: vi.fn() },
+    };
+    const requesterDetails = await new ProductionFlowService(dependencies).getEvidenceDetails(
+      'session',
+      record.requestId,
+    );
+    expect(requesterDetails).not.toHaveProperty('legacyClaims');
+    expect(find).not.toHaveBeenCalled();
+    expect(decrypt.mock.calls.some(([payload]) => payload === sourcePayload)).toBe(false);
+    const supplier = {
+      requireSession: vi.fn().mockResolvedValue(session(CompanyRole.SUPPLIER, SUPPLIER)),
+    } as unknown as AuthService;
+    const supplierDetails = await new ProductionFlowService({
+      ...dependencies,
+      authService: supplier,
+    }).getEvidenceDetails('session', record.requestId);
+    expect(supplierDetails.legacyClaims).toEqual({ privateOriginAddress: 'Supplier secret' });
   });
 
   it('rechecks live evidence participants and binding before any private read and whitelists inbox context', async () => {

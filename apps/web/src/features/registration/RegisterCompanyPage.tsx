@@ -1,3 +1,4 @@
+import { CountryField } from './CountryField';
 import { BackNavigation } from '../../components/ui/BackNavigation';
 import { RequiredLabel } from '../../components/ui/RequiredLabel';
 import { RegistrationCountrySelect } from './RegistrationCountrySelect';
@@ -75,6 +76,7 @@ interface RegistrationData {
   contactNumber: string;
   declaration: boolean;
   registrationNumber: string;
+  registrationCountry: string;
   representativeName: string;
   representativePosition: string;
   requestedRole: string;
@@ -88,6 +90,7 @@ const initialData: RegistrationData = {
   contactNumber: '',
   declaration: false,
   registrationNumber: '',
+  registrationCountry: '',
   representativeName: '',
   representativePosition: '',
   requestedRole: '',
@@ -367,7 +370,7 @@ export function RegisterCompanyPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || transaction) return;
-    if (step !== steps.length - 1) { 
+    if (step !== steps.length - 1) {
       next();
       return;
     }
@@ -432,6 +435,7 @@ export function RegisterCompanyPage() {
         applicantWallet: data.wallet,
         companyName: data.companyName.trim(),
         companyRegistrationNumber: data.registrationNumber.trim(),
+        ...(data.registrationCountry ? { registrationCountry: data.registrationCountry } : {}),
         encryptedProfileCid: localContentReference,
         previousApplicationId: ZeroHash,
         profileHash,
@@ -549,6 +553,11 @@ export function RegisterCompanyPage() {
                             onChange={(e) => update('requestedRole', e.target.value)}
                             options={roleOptions}
                             value={data.requestedRole}
+                          />
+                          <CountryField
+                            label="Company registration country (Admin will verify)"
+                            value={data.registrationCountry}
+                            onChange={(country) => update('registrationCountry', country)}
                           />
                           <label className="field registration-field--wide">
                             <span className="field__label">

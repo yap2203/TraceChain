@@ -1,5 +1,26 @@
 # TraceChain
 
+**Selective-disclosure policy v2:** Company proofs always include company name and
+wallet/role/DID binding; registration number and signed ISO registration country are
+selected together. Ingredient requests offer Basic traceability, Food suitability,
+Certification and Custom templates. New ingredient creation uses production dates,
+origin, allergens and certifications, with processing and quality-evidence inputs removed.
+Previously saved processing/laboratory data and presentations remain supported.
+Required evidence is checked before verification/acceptance; legacy
+credentials remain supported without invented fields. See [policy, versions and test flow](docs/DISCLOSURE_POLICY.md).
+
+**Supplier ingredient creation:** Add ingredient now has three steps: Batch details,
+Origin and certifications, and Listing and review. It supports exact kg/g and litre/mL
+conversion, searchable ISO origin, explicit allergen declarations, repeatable certifications
+with encrypted PDF/image attachments, optional price basis/image and resumable registration.
+Selective presentations can disclose individual certification entries/files with required
+context while withholding other entries and private source fields. Legacy credentials and
+units remain supported. No contract redeployment or new environment settings are required.
+See [ingredient creation, storage, disclosure and test flow](docs/INGREDIENT_CREATION.md).
+The full-width searchable origin selector shows a flag and country name with an arrow
+on the right. It displays bundled SVG country flags from the existing
+`react-phone-number-input/flags` package; no external flag-image service is required.
+
 **Admin company details:** **Manage companies → Manage** opens a responsive identity summary,
 collapsed technical identifiers, credential lifecycle controls and company permission overrides.
 Manage companies also contains the former Stakeholders role statistics and filters, company search,

@@ -32,7 +32,12 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
 - ERC-4361 Sign-In with Ethereum
 - Veramo agent services and stakeholder-specific repositories
 - Company Role Credentials for credential-based RBAC
-- Ingredient Credentials and request-bound full-credential presentations covering request, batch, parties, purpose, challenge, dates, and exact credential identity; selective disclosure requires a future credential format
+- Versioned Ingredient SD-JWT and authority-derived Company identity attestations with
+  holder-controlled selective presentations; request, batch, parties, purpose, challenge,
+  dates and exact source credential remain bound. Policy v2 adds grouped signed company
+  registration country/number, shared request templates, scoped certifications and laboratory
+  evidence. Legacy full-credential presentations remain supported separately. See
+  `docs/DISCLOSURE_POLICY.md`.
 - Solidity smart contracts and a blockchain gateway
 - QR-code generation and scanning
 
@@ -111,7 +116,9 @@ Role VC, although issuance and manual verification remain available separately.
 - Veramo manages the current DID, credential, and presentation foundation.
 - Login roles come only from current contract authorization. Company Role VCs remain independently verifiable off-chain and their registered type, subject, hash/reference, lifecycle, and expiry constrain on-chain company access.
 - A historical Company Role Credential is not invalidated solely because its issuer is no longer the current administrator; the current credential and stakeholder records remain authoritative.
-- Suppliers issue Ingredient Credentials through their authenticated, permission-checked workflow. Selective disclosure is not implemented by the current JWT credential format.
+- Suppliers issue Ingredient Credentials through their authenticated, permission-checked workflow.
+  Existing JWT VCs remain full disclosure; the Ingredient SD-JWT path supports holder-bound
+  selective presentations, including granular origin and certification/file claims.
 - Invalid, expired, suspended, or revoked credentials must never grant access.
 - Routes, wallet addresses, fixture data, and browser storage are not trusted role evidence.
 - Complete credentials, supporting identity documents, and sensitive identity data remain off-chain.
@@ -121,7 +128,12 @@ Role VC, although issuance and manual verification remain available separately.
 ## Supply-chain rules
 
 - System Admin reviews company applications and approved companies receive Company Role Credentials.
-- Suppliers register ingredient batches and issue Ingredient Credentials.
+- Suppliers register ingredient batches and issue Ingredient Credentials. Creation uses
+  three steps with exact canonical quantity conversion, structured ISO origin, explicit
+  allergens and repeatable certifications with encrypted supporting files. Ingredient
+  SD-JWT presentations can disclose individual entries/files while retaining their context;
+  legacy JWT VCs remain full disclosure. See `docs/INGREDIENT_CREATION.md` for schema,
+  authorization, retry behavior and compatibility limits.
 - Manufacturers request and verify ingredient evidence, create product batches, and link verified ingredients.
 - Manufacturers transfer products to Distributors.
 - Distributors receive products, reconcile quantities, and transfer available products to Retailers.

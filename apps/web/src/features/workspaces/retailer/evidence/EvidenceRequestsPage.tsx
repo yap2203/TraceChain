@@ -1,4 +1,11 @@
+import {
+  CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
+  type IngredientRequestPolicy,
+} from '@tracechain/shared';
+import { IngredientRequestPolicyFields } from '../../../production-flow/IngredientRequestPolicyFields';
 import { reportError } from '../../../../components/ui/feedback';
+import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
+import { getSharedCertificationDocument } from '../../../production-flow/production-flow.api';
 import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { FileCheck2, RefreshCw } from 'lucide-react';
@@ -38,16 +45,7 @@ import {
 import { chainDate, shortChainId } from '../../shared/operational-format';
 import { textError, futureDateError } from '../../../validation/form-validation';
 
-const claimOptions = [
-  ['countryOfOrigin', 'Country of origin'],
-  ['exactSourceFacility', 'Exact source facility'],
-  ['productionDate', 'Production date'],
-  ['expiryDate', 'Expiry date'],
-  ['allergenDeclaration', 'Allergen declaration'],
-  ['certificationDetails', 'Certification details'],
-  ['qualityTestSummary', 'Quality test summary'],
-  ['internalQualityRemarks', 'Internal quality remarks'],
-] as const;
+const claimOptions = INGREDIENT_REQUEST_CLAIMS;
 const statuses = [
   'Unknown',
   'Awaiting response',
@@ -77,6 +75,10 @@ export function RetailerEvidenceRequests({
   const [selected, setSelected] = useState('');
   const [reason, setReason] = useState('Retail product ingredient traceability review');
   const [dueAt, setDueAt] = useState('');
+  const [policy, setPolicy] = useState<IngredientRequestPolicy>({
+    policyVersion: 2,
+    template: 'custom',
+  });
   const [choices, setChoices] = useState<Record<string, 'none' | 'optional' | 'required'>>({
     countryOfOrigin: 'required',
     expiryDate: 'required',
@@ -143,6 +145,7 @@ export function RetailerEvidenceRequests({
           batchId: chosen.ingredientBatchId,
           claims,
           requiredClaims: claims.filter((name) => choices[name] === 'required'),
+          policy,
           dueAt: new Date(`${dueAt}T23:59:59`).toISOString(),
           operationId: crypto.randomUUID(),
           productBatchId: chosen.productBatchId,
@@ -300,17 +303,27 @@ export function RetailerEvidenceRequests({
               </div>
             </div>
           )}
+          <IngredientRequestPolicyFields
+            policy={policy}
+            onChange={setPolicy}
+            onRequirements={(required) =>
+              setChoices((current) => ({
+                ...current,
+                ...Object.fromEntries(
+                  INGREDIENT_REQUEST_CLAIMS.map(([key]) => [
+                    key,
+                    required.includes(key) ? ('required' as const) : ('none' as const),
+                  ]),
+                ),
+              }))
+            }
+          />
           <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
             <legend>Requested claims</legend>
             {claimOptions.map(([name, label]) => (
               <label
                 key={name}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 150px',
-                  gap: 10,
-                  margin: '7px 0',
-                }}
+                className="my-2 grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]"
               >
                 <span>{label}</span>
                 <select
@@ -481,7 +494,11 @@ export function RetailerEvidenceRequests({
           <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
             {Object.entries(review.sharedClaims).map(([key, value]) => (
               <div key={key}>
-                <b>{key}</b>: {Array.isArray(value) ? value.join(', ') : String(value)}
+                <IngredientClaimValue
+                  name={key}
+                  value={value}
+                  loadDocument={(id) => getSharedCertificationDocument(review.requestId, id)}
+                />
               </div>
             ))}
           </div>

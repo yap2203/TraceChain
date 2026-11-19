@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { ingredientBatchRequestSchema } from './ingredient-batch.schema.js';
+import { certificationClaim, certificationDocumentsClaim } from '@tracechain/shared';
+import { verifyIngredientSdJwtPresentation } from '@tracechain/ssi';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -169,6 +173,430 @@ describe('Supplier ingredient-batch API', () => {
     service = new IngredientBatchService(dependencies);
   });
 
+  it.each([0, 1, 3])(
+    'issues %i structured certifications without inventing optional values',
+    async (count) => {
+      const repository = dependencies.repository;
+      const attachments = new Map<string, any>();
+      const content = new Map<string, string>();
+      repository.findAttachment = async (id) => attachments.get(id);
+      repository.saveAttachment = async (record) => {
+        attachments.set(record.id, record);
+      };
+      dependencies.contentStore = {
+        encryptAndStore: async (value, key) => {
+          content.set(key, value);
+          return {
+            cid: 'bafy-' + key,
+            payload: {
+              algorithm: 'aes-256-gcm',
+              version: 1,
+              ciphertext: key,
+              iv: 'test',
+              authTag: 'test',
+            },
+          };
+        },
+        decrypt: async (payload) => content.get(payload.ciphertext)!,
+      };
+      const issuer = new IngredientBatchService(dependencies);
+      const operationId = randomUUID();
+      const entries = [];
+      for (let index = 0; index < count; index++) {
+        const entryId = randomUUID();
+        const document = await issuer.uploadCertificationDocument('session', {
+          id: randomUUID(),
+          operationId,
+          certificationId: entryId,
+          fileName: 'cert.png',
+          mimeType: 'image/png',
+          data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jDfsAAAAASUVORK5CYII=',
+        });
+        entries.push({
+          id: entryId,
+          name: 'Organic',
+          issuer: 'Stated organization',
+          reference: 'CERT-' + index,
+          noExpiry: true,
+          scope: 'Company',
+          documents: [document],
+        });
+      }
+      const input = ingredientBatchRequestSchema.parse({
+        ...BODY,
+        operationId,
+        originDetails: {
+          countryCode: 'GH',
+          countryName: 'Ghana',
+          processingLocation: 'Different processing facility',
+        },
+        allergen: { kind: 'declaresNone' },
+        certificationEntries: entries,
+      });
+      const prepared = await issuer.prepare('session', input);
+      const record = await repository.find(prepared.batchId);
+      const credential = JSON.parse(
+        await dependencies.contentStore.decrypt(record!.encryptedPayload),
+      ).credential;
+      expect(credential.credentialSubject.certificationEntries).toHaveLength(count);
+      expect(credential.credentialSubject.originDetails.processingLocation).toBe(
+        'Different processing facility',
+      );
+      expect(credential.credentialSubject.certificationEntries[0]?.issueDate).toBeUndefined();
+    },
+  );
+  it('normalizes new decimals while leaving legacy whole litre records unchanged', () => {
+    const originDetails = { countryCode: 'GH', countryName: 'Ghana' };
+    const modern = ingredientBatchRequestSchema.parse({
+      ...BODY,
+      operationId: randomUUID(),
+      originDetails,
+      allergen: { kind: 'unknown' },
+      quantity: '1.25',
+      unit: 'litre',
+    });
+    expect(modern.quantity).toBe('1250');
+    expect(modern.unit).toBe('mL');
+    expect(ingredientBatchRequestSchema.parse({ ...BODY, unit: 'litre' }).unit).toBe('litre');
+    for (const patch of [
+      { quantity: '0.0001' },
+      { quantity: '0' },
+      { originDetails: { countryCode: 'EU', countryName: 'European Union' } },
+      { allergen: { kind: 'contains' } },
+    ])
+      expect(
+        ingredientBatchRequestSchema.safeParse({
+          ...BODY,
+          operationId: randomUUID(),
+          originDetails,
+          allergen: { kind: 'unknown' },
+          ...patch,
+        }).success,
+      ).toBe(false);
+  });
+  it('stores multiple certification files encrypted, binds references and discloses only one complete entry', async () => {
+    const browser = await import(
+      new URL('../../../../web/src/features/didcomm/didcomm-agent.ts', import.meta.url).href
+    );
+    const holder = await browser.createMessagingAgent();
+    const documents = new Map<string, any>(),
+      contents = new Map<string, string>();
+    const repo = {
+      ...dependencies.repository,
+      findAttachment: async (key: string) => documents.get(key),
+      saveAttachment: async (record: any) => {
+        documents.set(record.id, record);
+      },
+    };
+    const store = {
+      encryptAndStore: vi.fn(async (value: string, key: string) => {
+        contents.set(key, value);
+        return {
+          cid: 'bafy-' + key,
+          payload: {
+            algorithm: 'aes-256-gcm' as const,
+            version: 1 as const,
+            iv: 'test',
+            authTag: 'test',
+            ciphertext: key,
+          },
+        };
+      }),
+      decrypt: async (payload: any) => contents.get(payload.ciphertext)!,
+    };
+    const issuing = new IngredientBatchService({
+      ...dependencies,
+      repository: repo,
+      contentStore: store,
+      messagingIdentityResolver: { findIdentityByWallet: async () => ({ did: holder.did }) },
+    });
+    const operationId = randomUUID(),
+      entryId = randomUUID(),
+      otherId = randomUUID();
+    const data =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jDfsAAAAASUVORK5CYII=';
+    const upload = (id: string, certificationId = entryId) =>
+      issuing.uploadCertificationDocument('session', {
+        id,
+        operationId,
+        certificationId,
+        fileName: 'certification.png',
+        mimeType: 'image/png',
+        data,
+      });
+    const first = await upload(randomUUID()),
+      second = await upload(randomUUID());
+    const otherDocument = await upload(randomUUID(), otherId);
+    const qualityId = randomUUID();
+    const laboratoryDocument = await upload(randomUUID(), qualityId);
+    const before = store.encryptAndStore.mock.calls.length;
+    await upload(first.id);
+    expect(store.encryptAndStore).toHaveBeenCalledTimes(before);
+    const certification = {
+      id: entryId,
+      name: 'Organic',
+      issuer: 'Supplier-stated certifier',
+      reference: 'CERT-42',
+      scope: 'This batch' as const,
+      scopeReference: BODY.batchReference,
+      noExpiry: true,
+      documents: [first, second],
+    };
+    const input = ingredientBatchRequestSchema.parse({
+      ...BODY,
+      operationId,
+      originDetails: {
+        countryCode: 'GH',
+        countryName: 'Ghana',
+        region: 'Ashanti',
+        privateAddress: 'Private source farm address',
+      },
+      allergen: { kind: 'unknown' },
+      qualityTests: [
+        {
+          id: qualityId,
+          laboratoryName: 'Supplier-stated laboratory',
+          reportNumber: 'LAB-1',
+          testDate: '2026-10-01',
+          sampleReference: 'SAMPLE-1',
+          testedBatchReference: BODY.batchReference,
+          results: 'Stated result',
+          documents: [laboratoryDocument],
+        },
+      ],
+      certificationEntries: [
+        certification,
+        { ...certification, id: otherId, reference: 'OTHER', documents: [otherDocument] },
+      ],
+    });
+    const result = await issuing.prepare('session', input);
+    const record = [...records.values()][0]!;
+    const envelope = JSON.parse(await store.decrypt(record.encryptedPayload));
+    expect(record.certificationDocumentIds).toEqual([
+      first.id,
+      second.id,
+      otherDocument.id,
+      laboratoryDocument.id,
+    ]);
+    expect((await issuing.certificationDocument('session', result.batchId, first.id)).data).toBe(
+      data,
+    );
+    await expect(
+      issuing.prepare('session', {
+        ...input,
+        certificationEntries: [
+          { ...certification, documents: [{ ...first, sha256: '0'.repeat(64) }] },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_BINDING_MISMATCH' });
+    const audience = 'manufacturer',
+      nonce = 'fresh-request';
+    const now = Math.floor(Date.now() / 1000);
+    const context = {
+      requestId: 'exact-request',
+      purpose: 'Quality verification',
+      batchId: record.batchId,
+      expiresAt: now + 240,
+    };
+    const laboratoryPresentation = await browser.createSelectiveIngredientPresentation(
+      holder,
+      envelope.sdJwt,
+      {
+        audience,
+        nonce,
+        context,
+        claims: [
+          'qualityTest_' + qualityId.replaceAll('-', ''),
+          'qualityDocuments_' + laboratoryDocument.id.replaceAll('-', ''),
+        ],
+      },
+    );
+    const expected = {
+      audience,
+      nonce,
+      now,
+      context,
+      requiredClaims: ['qualityTests', 'qualityDocuments'],
+      supplierWallet: SUPPLIER,
+      batchId: record.batchId,
+    };
+    const laboratoryVerified = await verifyIngredientSdJwtPresentation(
+      agent,
+      laboratoryPresentation,
+      expected,
+    );
+    expect(laboratoryVerified.payload).toHaveProperty(
+      'qualityTest_' + qualityId.replaceAll('-', ''),
+    );
+    expect(laboratoryVerified.payload).not.toHaveProperty(certificationClaim(entryId));
+    expect(laboratoryVerified.payload).not.toHaveProperty('privateOriginAddress');
+    for (const change of [
+      { requestId: 'wrong-request' },
+      { purpose: 'wrong-purpose' },
+      { expiresAt: now - 1 },
+    ])
+      await expect(
+        verifyIngredientSdJwtPresentation(agent, laboratoryPresentation, {
+          ...expected,
+          context: { ...context, ...change },
+        }),
+      ).rejects.toThrow(/binding/);
+    const selected = await browser.createSelectiveIngredientPresentation(holder, envelope.sdJwt, {
+      audience,
+      nonce,
+      claims: ['countryOfOrigin', certificationClaim(entryId)],
+    });
+    const verified = await verifyIngredientSdJwtPresentation(agent, selected, {
+      audience,
+      nonce,
+      now: Math.floor(Date.now() / 1000),
+      requiredClaims: ['certifications'],
+      supplierWallet: SUPPLIER,
+      batchId: record.batchId,
+    });
+    expect(verified.payload[certificationClaim(entryId)]).toMatchObject({
+      reference: 'CERT-42',
+      scope: 'This batch',
+    });
+    expect(verified.payload).not.toHaveProperty(certificationClaim(otherId));
+    expect(verified.payload).toMatchObject({
+      category: input.category,
+      quantity: input.quantity,
+      unit: input.unit,
+    });
+    expect(verified.payload).not.toHaveProperty('privateOriginAddress');
+    expect(verified.payload).not.toHaveProperty(certificationDocumentsClaim(first.id));
+    const docsOnly = await browser.createSelectiveIngredientPresentation(holder, envelope.sdJwt, {
+      audience,
+      nonce,
+      claims: [certificationDocumentsClaim(first.id)],
+    });
+    await expect(
+      verifyIngredientSdJwtPresentation(agent, docsOnly, {
+        audience,
+        nonce,
+        now: Math.floor(Date.now() / 1000),
+        requiredClaims: [],
+        supplierWallet: SUPPLIER,
+        batchId: record.batchId,
+      }),
+    ).rejects.toThrow(/complete certification/);
+    const sharedFiles = await browser.createSelectiveIngredientPresentation(
+      holder,
+      envelope.sdJwt,
+      {
+        audience,
+        nonce,
+        claims: [certificationClaim(entryId), certificationDocumentsClaim(first.id)],
+      },
+    );
+    expect(
+      (
+        await verifyIngredientSdJwtPresentation(agent, sharedFiles, {
+          audience,
+          nonce,
+          now: Math.floor(Date.now() / 1000),
+          requiredClaims: ['certificationDocuments'],
+          supplierWallet: SUPPLIER,
+          batchId: record.batchId,
+        })
+      ).payload[certificationDocumentsClaim(first.id)],
+    ).toMatchObject({ documents: [{ id: first.id }] });
+    const tampered = sharedFiles
+      .split('~')
+      .map((part: string) => {
+        try {
+          const disclosure = JSON.parse(Buffer.from(part, 'base64url').toString());
+          if (
+            Array.isArray(disclosure) &&
+            disclosure[1] === certificationDocumentsClaim(first.id)
+          ) {
+            disclosure[2].documents[0].sha256 = '0'.repeat(64);
+            return Buffer.from(JSON.stringify(disclosure)).toString('base64url');
+          }
+        } catch {}
+        return part;
+      })
+      .join('~');
+    await expect(
+      verifyIngredientSdJwtPresentation(agent, tampered, {
+        audience,
+        nonce,
+        now: Math.floor(Date.now() / 1000),
+        requiredClaims: ['certificationDocuments'],
+        supplierWallet: SUPPLIER,
+        batchId: record.batchId,
+      }),
+    ).rejects.toBeDefined();
+    expect(await browser.readSelectiveIngredientClaims(sharedFiles)).not.toHaveProperty(
+      certificationDocumentsClaim(second.id),
+    );
+    expect((await issuing.drafts('session')).workflows[0]?.input).not.toHaveProperty(
+      'supplierWallet',
+    );
+    const foreign = new IngredientBatchService({
+      ...dependencies,
+      repository: repo,
+      contentStore: store,
+      authService: {
+        requireSession: async () => ({
+          ...(await authorizedAuthService().requireSession('session')),
+          address: '0x5000000000000000000000000000000000000005',
+        }),
+      } as any,
+    });
+    await expect(
+      foreign.certificationDocument('session', record.batchId, first.id),
+    ).rejects.toMatchObject({ code: 'DOCUMENT_ACCESS_DENIED' });
+  });
+  it('rejects corrupt and unsupported uploads before storage and supports a stable retry after storage failure', async () => {
+    const documents = new Map<string, any>(),
+      repo = {
+        ...dependencies.repository,
+        findAttachment: async (key: string) => documents.get(key),
+        saveAttachment: async (record: any) => {
+          documents.set(record.id, record);
+        },
+      };
+    const encryptAndStore = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Pinning failed'))
+      .mockResolvedValue({
+        cid: 'bafy-test',
+        payload: { algorithm: 'aes-256-gcm', version: 1, iv: '', authTag: '', ciphertext: 'test' },
+      });
+    const uploader = new IngredientBatchService({
+      ...dependencies,
+      repository: repo,
+      contentStore: { ...dependencies.contentStore, encryptAndStore },
+    });
+    const file = {
+      id: randomUUID(),
+      operationId: randomUUID(),
+      certificationId: randomUUID(),
+      fileName: 'cert.png',
+      mimeType: 'image/png',
+      data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jDfsAAAAASUVORK5CYII=',
+    };
+    for (const patch of [
+      { data: Buffer.from('not an image').toString('base64') },
+      { mimeType: 'text/html' },
+      { data: Buffer.alloc(10 * 1024 * 1024 + 1).toString('base64') },
+      {
+        fileName: 'bad.pdf',
+        mimeType: 'application/pdf',
+        data: Buffer.from('%PDF-1.7 fake %%EOF').toString('base64'),
+      },
+    ])
+      await expect(
+        uploader.uploadCertificationDocument('session', { ...file, ...patch }),
+      ).rejects.toBeDefined();
+    expect(encryptAndStore).not.toHaveBeenCalled();
+    await expect(uploader.uploadCertificationDocument('session', file)).rejects.toMatchObject({
+      code: 'DOCUMENT_STORAGE_UNAVAILABLE',
+    });
+    expect((await uploader.uploadCertificationDocument('session', file)).id).toBe(file.id);
+  });
   it('filters a foreign Supplier batch from management reads before decryption', async () => {
     vi.mocked(gateway.listBatchIds).mockResolvedValue([`0x${'11'.repeat(32)}`]);
     batch = { supplier: '0x5000000000000000000000000000000000000005' } as ChainIngredientBatch;

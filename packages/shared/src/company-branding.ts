@@ -3,6 +3,7 @@ export interface CompanyApplicationBinding {
   applicantWallet: string;
   companyName: string;
   companyRegistrationNumber: string;
+  registrationCountry?: string;
   encryptedProfileCid: string;
   initialLocationName?: string;
   initialLocationAddress?: string;
@@ -35,6 +36,9 @@ export function companyApplicationBindingMessage(binding: CompanyApplicationBind
     '',
     'Company: ' + text(binding.companyName),
     'Registration number: ' + text(binding.companyRegistrationNumber),
+    ...(binding.registrationCountry
+      ? ['Registration country: ' + text(binding.registrationCountry)]
+      : []),
     'Requested role: ' +
       (roles[binding.requestedRole] ?? 'Unknown') +
       ' (' +

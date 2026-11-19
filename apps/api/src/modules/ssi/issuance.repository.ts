@@ -11,6 +11,7 @@ export interface CompanyRoleIssuanceRecord {
   applicationId: string;
   companyName: string;
   companyRegistrationNumber: string;
+  registrationCountry?: string;
   credentialHash: string;
   credentialId: string;
   encryptedCredentialCid: string;

@@ -27,6 +27,35 @@ export class IngredientBatchController {
       this.handle(error, response, next);
     }
   };
+  uploadDocument = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      response.json(
+        await this.service.uploadCertificationDocument(this.session(request), request.body),
+      );
+    } catch (error) {
+      this.handle(error, response, next);
+    }
+  };
+  drafts = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      response.json(await this.service.drafts(this.session(request)));
+    } catch (error) {
+      this.handle(error, response, next);
+    }
+  };
+  document = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      response.json(
+        await this.service.certificationDocument(
+          this.session(request),
+          String(request.params.batchId),
+          String(request.params.documentId),
+        ),
+      );
+    } catch (error) {
+      this.handle(error, response, next);
+    }
+  };
 
   private session(request: Request) {
     return request.cookies?.[this.sessionCookieName] as string | undefined;
