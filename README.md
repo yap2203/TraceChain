@@ -585,6 +585,11 @@ normalizes the number to E.164 before review/signing. Country flags are bundled 
 is currently the only phone-entry form; changing the country supports international companies.
 The dependency is installed by the normal root `npm install` command.
 
+Clicking anywhere inside a date or date/time input opens its native picker when supported by the
+browser. Keyboard entry and existing min/max/required validation remain available; disabled/read-only
+fields and ordinary text inputs are unaffected. Browsers that restrict picker opening keep their
+normal calendar-icon and editing behavior.
+
 Required-field asterisks share a red marker across public registration, workspace forms and custom
 document/production/receipt labels. Optional fields have no required marker, and existing native
 required validation remains in place.
@@ -795,6 +800,15 @@ See the [smart-contract process and verification guide](packages/contracts/READM
 npx hardhat compile
 npx hardhat test
 ```
+
+On Windows, `HHE200: Plugin "builtin:node" is not installed` can mask a failure to load
+Hardhat's native EDR engine. If the underlying error says **An Application Control policy has
+blocked this file**, check the installed
+`node_modules/@nomicfoundation/edr-win32-x64-msvc/edr.win32-x64-msvc.node` dependency with
+your device administrator. The plugin is built into Hardhat; installing `builtin:node` is not a fix.
+Use a device-policy-approved runtime or a Linux/WSL installation with its own Linux dependencies.
+Do not delete the lockfile, deployment journals or application data to address a Windows policy block.
+The Solidity compiler's `preferWasm` setting does not replace EDR's native engine.
 
 The contract suite contains stakeholder/application and reviewed role-change management, credential lifecycle, evidence requests, ingredient batches, product composition, and custody/inventory transfers. Deploy and wire all contracts as one module:
 

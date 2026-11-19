@@ -1,4 +1,5 @@
 import { RequiredLabel } from '../../../../components/ui/RequiredLabel';
+import { openDatePicker } from '../../../../components/ui/date-picker';
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 
 const inputClasses =
@@ -106,6 +107,7 @@ export function Input({
           type={type}
           value={value}
           placeholder={placeholder}
+          onClick={openDatePicker}
           onChange={(e) => {
             e.target.setCustomValidity('');
             setValidationMessage('');

@@ -1,3 +1,4 @@
+import { openDatePicker } from '../../components/ui/date-picker';
 import { LoaderCircle, PackageCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
@@ -145,6 +146,7 @@ export function ReceiptReconciliationForm({
       <label>
         Actual arrival time
         <input
+          onClick={openDatePicker}
           type="datetime-local"
           value={arrival}
           onChange={(event) => setArrival(event.target.value)}

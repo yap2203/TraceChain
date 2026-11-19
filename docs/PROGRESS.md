@@ -1,5 +1,19 @@
 # Project Progress
 
+## 2026-11-19 - Open native date pickers from field clicks
+
+- Added one shared click handler for date, datetime-local, time, month and week inputs. Applied it to public/workspace shared Inputs and the three remaining standalone receipt/evidence date inputs. Retained consumer click cancellation, keyboard entry and validation; skip disabled/read-only/text fields and fall back to native behavior when showPicker is missing or restricted.
+- Validation: all 341 frontend tests and the production build/TypeScript check passed. Added eight interaction checks covering both input families, date/time types, keyboard changes, constraints, read-only/disabled inputs and browser restrictions. Isolated Chrome trusted clicks invoked actual native date and datetime-local pickers without errors; no forms were submitted. Existing Vite warnings remain.
+- Preserved the existing registration-page and package-lock edits. No dependency, API, contract, environment or data changes.
+
+
+
+## 2026-11-19 - Diagnose Hardhat builtin node loading failure
+
+- Confirmed Hardhat 3.21.1 and its built-in node plugin are installed with deduplicated workspace dependencies. Read-only `hardhat node --help --show-stack-traces` succeeded outside the sandbox; loading the actual node task failed because Windows Application Control denied the installed EDR 0.25.0 native binary. The outer HHE200 message is misleading for this failure.
+- Verified the Windows engine package/binary exists and the nested error names the denied file. The official `@nomicfoundation/edr-wasm32-wasi@0.25.0` registry lookup returned 404, so no supported published WASM fallback was installed. Documented the issue and approved-environment options in README.
+- No config, dependency, security-policy, environment, blockchain state or deployment changes. Full node startup and contract execution remain blocked by the Windows policy; compilation/compiler WASM preferences do not address this native-engine load. Preserved the existing registration-page edit.
+
 ## 2026-11-17 - Correct empty-location centering on wide screens
 
 - Fixed the remaining unlayered fixed-column rule that kept the empty state centered over only three 360 px tracks. An explicit empty-grid modifier now creates one full-width track; populated location-card layout stays unchanged.

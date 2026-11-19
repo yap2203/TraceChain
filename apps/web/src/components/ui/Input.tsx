@@ -1,4 +1,5 @@
 import { RequiredLabel } from './RequiredLabel';
+import { openDatePicker } from './date-picker';
 import { useId, useState, type InputHTMLAttributes } from 'react';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -16,6 +17,7 @@ export function Input({
   onBlur,
   onChange,
   onInvalid,
+  onClick,
   ...props
 }: InputProps) {
   const generatedId = useId();
@@ -35,6 +37,10 @@ export function Input({
         className="field__control"
         id={inputId}
         {...props}
+        onClick={(event) => {
+          onClick?.(event);
+          openDatePicker(event);
+        }}
         onChange={(event) => {
           event.currentTarget.setCustomValidity('');
           setValidationMessage('');

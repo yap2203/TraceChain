@@ -1,3 +1,4 @@
+import { openDatePicker } from '../../../../components/ui/date-picker';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { RequiredMarker } from '../../../../components/ui/RequiredLabel';
 import { useState } from 'react';
@@ -343,6 +344,7 @@ export function RequestWizard({
                   Response Due Date <RequiredMarker />
                 </div>
                 <input
+                  onClick={openDatePicker}
                   type="date"
                   value={dueDate}
                   onChange={(e) => setDueDate(e.target.value)}

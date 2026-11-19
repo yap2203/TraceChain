@@ -1,3 +1,4 @@
+import { openDatePicker } from '../../../../components/ui/date-picker';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { useState } from 'react';
@@ -310,6 +311,7 @@ export function ReviewEvidence({
               Response Due Date
             </div>
             <input
+              onClick={openDatePicker}
               type="date"
               defaultValue="2026-09-21"
               style={{

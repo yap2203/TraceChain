@@ -367,7 +367,7 @@ export function RegisterCompanyPage() {
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (submitting || transaction) return;
-    if (step !== steps.length - 1) {
+    if (step !== steps.length - 1) { 
       next();
       return;
     }
