@@ -1,90 +1,78 @@
-import { T } from './tokens';
+import { Copy, LockKeyhole } from 'lucide-react';
+import { useState } from 'react';
 
 export function ClaimRow({
   label,
   value,
-  sensitivity,
+  requirement,
   included,
+  locked = false,
+  technical = false,
   onToggle,
 }: {
   label: string;
-  value?: string;
-  sensitivity: 'public' | 'restricted' | 'confidential';
+  value: string;
+  requirement: 'required' | 'optional';
   included: boolean;
+  locked?: boolean;
+  technical?: boolean;
   onToggle?: () => void;
 }) {
-  const senColor = { public: T.green, restricted: T.amber, confidential: T.red }[sensitivity];
+  const [showFull, setShowFull] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const displayValue = technical && !showFull ? shortenTechnicalValue(value) : value;
+
+  const copyValue = async () => {
+    await navigator.clipboard?.writeText(value);
+    setCopied(true);
+  };
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        padding: '10px 14px',
-        background: included ? T.greenBg : T.redBg,
-        borderRadius: 8,
-        border: `1px solid ${included ? `color-mix(in srgb, ${T.green} 19%, transparent)` : `color-mix(in srgb, ${T.red} 13%, transparent)`}`,
-        transition: 'all 0.2s',
-      }}
-    >
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: T.navy }}>{label}</div>
-        {value && <div style={{ fontSize: 12, color: T.text2, marginTop: 1 }}>{value}</div>}
+    <div className={`evidence-claim-row${included ? ' is-included' : ''}`}>
+      <div className="evidence-claim-row__content">
+        <div className="evidence-claim-row__title">
+          <strong>{label}</strong>
+          <span className={`evidence-claim-row__requirement is-${requirement}`}>
+            {requirement === 'required' ? 'Required' : 'Optional'}
+          </span>
+        </div>
+        <span className="evidence-claim-row__value" title={technical ? value : undefined}>
+          {displayValue}
+        </span>
+        {technical && (
+          <div className="evidence-claim-row__technical-actions">
+            <button type="button" onClick={() => setShowFull((current) => !current)}>
+              {showFull ? 'Hide full value' : 'Show full value'}
+            </button>
+            <button type="button" aria-label={`Copy ${label}`} onClick={() => void copyValue()}>
+              <Copy size={13} aria-hidden="true" />
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        )}
       </div>
-      <span
-        style={{
-          fontSize: 10,
-          color: senColor,
-          background: `color-mix(in srgb, ${senColor} 8%, transparent)`,
-          padding: '2px 7px',
-          borderRadius: 10,
-          fontWeight: 600,
-          textTransform: 'capitalize',
-        }}
-      >
-        {sensitivity}
-      </span>
-      {onToggle && (
+      <div className="evidence-claim-row__control">
+        <span>{locked ? 'On — locked' : included ? 'On' : 'Off'}</span>
         <button
+          type="button"
+          role="switch"
+          aria-label={`Share ${label}`}
+          aria-checked={included}
+          disabled={locked}
+          className="evidence-claim-switch"
           onClick={onToggle}
-          style={{
-            width: 38,
-            height: 20,
-            borderRadius: 10,
-            border: 'none',
-            cursor: 'pointer',
-            background: included ? T.green : T.border2,
-            position: 'relative',
-            transition: 'background 0.2s',
-            flexShrink: 0,
-          }}
         >
-          <div
-            style={{
-              position: 'absolute',
-              top: 2,
-              left: included ? 20 : 2,
-              width: 16,
-              height: 16,
-              borderRadius: '50%',
-              background: '#fff',
-              transition: 'left 0.2s',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-            }}
-          />
+          <span aria-hidden="true" />
         </button>
-      )}
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 600,
-          color: included ? T.green : T.red,
-          minWidth: 44,
-          textAlign: 'right',
-        }}
-      >
-        {included ? 'Share' : 'Hide'}
+        {locked && <LockKeyhole size={14} aria-label="Required and locked" />}
       </div>
     </div>
   );
+}
+
+function shortenTechnicalValue(value: string) {
+  if (value.length <= 20) return value;
+  if (value.startsWith('0x')) return `${value.slice(0, 6)}…${value.slice(-4)}`;
+  if (value.startsWith('did:')) return `${value.slice(0, 16)}…${value.slice(-8)}`;
+  return `${value.slice(0, 12)}…${value.slice(-6)}`;
 }

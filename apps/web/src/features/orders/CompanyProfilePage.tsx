@@ -1,13 +1,23 @@
 import { ApplicationDocumentsPanel } from '../registration/ApplicationDocumentsPanel';
 import { reportError } from '../../components/ui/feedback';
-import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, MapPin, Pencil, Plus, Warehouse } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  MapPin,
+  PackageCheck,
+  Pencil,
+  Plus,
+  Send,
+  Warehouse,
+} from 'lucide-react';
 import {
   getCompanyProfile,
   prepareOrder,
   prepareLogistics,
   updateLocationLabel,
+  type CompanyLocation,
   type CompanyProfile,
 } from './orders.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
@@ -34,6 +44,7 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
     [editAddress, setEditAddress] = useState('');
   const [name, setName] = useState(''),
     [busy, setBusy] = useState(false),
+    [adding, setAdding] = useState(false),
     [editing, setEditing] = useState<string>(),
     [editName, setEditName] = useState('');
   const lock = useRef(false);
@@ -83,24 +94,36 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
     });
     await submitProductionTransaction(prepared.transaction, data.wallet);
   };
-  if (!data && !error) return <LoadingIndicator page label="Loading records…" />;
+  if (!data && !error) return <CompanyProfileSkeleton />;
+  const incompleteLocations = data?.locations.filter((location) =>
+    locationIncomplete(role, location),
+  );
   return (
     <div className="workspace-flow-page">
       <SectionTitle
-        title="Company profile"
-        sub={
-          role === 'distributor'
-            ? 'Manage your registered warehouses and company locations.'
-            : 'Manage the locations your company uses for orders and deliveries.'
+        title="Company profile & locations"
+        sub="Manage your company details and locations used for orders and deliveries."
+        action={
+          data ? (
+            <Btn icon={<Plus size={16} />} onClick={() => setAdding(true)}>
+              Add location
+            </Btn>
+          ) : undefined
         }
       />
-      <ApplicationDocumentsPanel />
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
       {!data ? (
-        <Btn variant="outline" onClick={() => void load()}>
-          Reload profile
-        </Btn>
+        <Card className="workspace-profile-error">
+          <AlertTriangle size={22} aria-hidden="true" />
+          <div>
+            <strong>Locations could not be loaded</strong>
+            <span>Check the connection and try again. Existing records are unchanged.</span>
+          </div>
+          <Btn variant="outline" onClick={() => void load()}>
+            Retry
+          </Btn>
+        </Card>
       ) : (
         <>
           <div className="profile-summary-grid" aria-label="Location summary">
@@ -110,28 +133,140 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
               icon={<MapPin size={20} />}
             />
             <InventorySummaryCard
-              label="Active warehouses"
-              value={data.locations.filter((location) => location.warehouse).length}
-              icon={<Warehouse size={20} />}
+              label="Active locations"
+              value={data.locations.length - (incompleteLocations?.length ?? 0)}
+              icon={<CheckCircle2 size={20} />}
             />
             <InventorySummaryCard
-              label="Setup incomplete"
-              value={
-                role === 'distributor'
-                  ? data.locations.filter((location) => !location.warehouse).length
-                  : 0
-              }
-              note={
-                role === 'distributor'
-                  ? 'Location registered, warehouse pending'
-                  : 'No additional setup'
-              }
+              label="Incomplete setup"
+              value={incompleteLocations?.length ?? 0}
+              note="Missing address or required warehouse setup"
               icon={<AlertTriangle size={20} />}
             />
           </div>
-          <Card>
-            <SectionTitle title={role === 'distributor' ? 'Add a warehouse' : 'Add a location'} />
-            <div className="workspace-profile-form workspace-profile-form--location">
+          <header className="workspace-profile-section-heading">
+            <div>
+              <h3>Registered locations</h3>
+              <p>Locations available to your company for operational workflows.</p>
+            </div>
+            <span>
+              {data.locations.length} {data.locations.length === 1 ? 'location' : 'locations'}
+            </span>
+          </header>
+          <section
+            className={`workspace-profile-locations${data.locations.length ? '' : ' workspace-profile-locations--empty'}`}
+            aria-label="Your registered locations"
+          >
+            {!data.locations.length && (
+              <div className="workspace-profile-empty">
+                <EmptyState
+                  icon={<MapPin size={30} />}
+                  title="No registered locations"
+                  sub="Add a location before arranging orders, dispatches or deliveries."
+                  action={
+                    <Btn icon={<Plus size={16} />} onClick={() => setAdding(true)}>
+                      Add your first location
+                    </Btn>
+                  }
+                />
+              </div>
+            )}
+            {data.locations.map((location) => {
+              const capabilities = locationCapabilities(role, location.warehouse);
+              const incomplete = locationIncomplete(role, location);
+              return (
+                <Card key={location.location} className="workspace-location-card">
+                  <div className="workspace-location-heading">
+                    <span className="workspace-location-heading__icon">
+                      {location.warehouse ? <Warehouse size={20} /> : <Building2 size={20} />}
+                    </span>
+                    <div>
+                      <span>{capabilities.type}</span>
+                      <h3>{location.label}</h3>
+                    </div>
+                    <Badge
+                      label={incomplete ? 'Setup incomplete' : 'Active'}
+                      variant={incomplete ? 'pending' : 'active'}
+                    />
+                  </div>
+                  <div className="workspace-location-address">
+                    <MapPin size={16} aria-hidden="true" />
+                    <span>{location.address || 'Address not provided'}</span>
+                  </div>
+                  <dl className="workspace-location-usage">
+                    <div>
+                      <dt>Supported activities</dt>
+                      <dd>{capabilities.activities}</dd>
+                    </div>
+                  </dl>
+                  <div
+                    className="workspace-location-capabilities"
+                    aria-label="Location capabilities"
+                  >
+                    <LocationCapability
+                      icon={<Send size={15} />}
+                      label="Dispatch"
+                      enabled={capabilities.dispatch}
+                    />
+                    <LocationCapability
+                      icon={<PackageCheck size={15} />}
+                      label="Receiving"
+                      enabled={capabilities.receiving}
+                    />
+                  </div>
+                  <div className="workspace-location-actions action-row">
+                    <Btn
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      icon={<Pencil size={14} />}
+                      onClick={() => {
+                        setEditing(location.location);
+                        setEditName(location.label);
+                        setEditAddress(location.address ?? '');
+                      }}
+                    >
+                      Edit location
+                    </Btn>
+                    {role === 'distributor' && !location.warehouse && (
+                      <Btn
+                        size="sm"
+                        disabled={busy}
+                        onClick={() =>
+                          void run(async () => {
+                            await publishWarehouse(location.location, location.label);
+                            setNotice('Warehouse registration completed.');
+                          })
+                        }
+                      >
+                        Complete warehouse setup
+                      </Btn>
+                    )}
+                  </div>
+                  <TechnicalDetails
+                    fields={[
+                      { label: 'Location ID', value: location.location },
+                      { label: 'Original registered name', value: location.registeredLabel },
+                    ]}
+                  />
+                </Card>
+              );
+            })}
+          </section>
+          <ApplicationDocumentsPanel collapsible />
+        </>
+      )}
+      {adding && data && (
+        <Modal
+          title={role === 'distributor' ? 'Add warehouse location' : 'Add location'}
+          width={720}
+          onClose={() => {
+            if (!busy) setAdding(false);
+          }}
+        >
+          <div className="company-location-form">
+            <section>
+              <span>1. Location name</span>
               <Input
                 label={role === 'distributor' ? 'Warehouse name' : 'Location name'}
                 value={name}
@@ -140,6 +275,9 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
                 required
                 placeholder="A name your company can recognize"
               />
+            </section>
+            <section>
+              <span>2. Full address</span>
               <Textarea
                 label="Dispatch / receiving address"
                 value={address}
@@ -148,136 +286,61 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
                 maxLength={1000}
                 placeholder="Street address, building or unit, city, postcode and country"
               />
-              <div className="action-row">
-                <Btn
-                  icon={<Plus size={16} />}
-                  disabled={busy || !name.trim() || !address.trim()}
-                  onClick={() =>
-                    void run(async () => {
-                      const prepared = await prepareOrder({
-                        action: 'location',
-                        operationId: crypto.randomUUID(),
-                        label: name.trim(),
-                        address: address.trim(),
-                      });
-                      await submitProductionTransaction(prepared.transaction, data.wallet);
-                      if (role === 'distributor') {
-                        try {
-                          await publishWarehouse(prepared.resultId, name.trim());
-                        } catch {
-                          setNotice(
-                            'Location registered. Complete warehouse registration using the button on its card.',
-                          );
-                          return;
-                        }
+            </section>
+            <section>
+              <span>3. Location capabilities</span>
+              <p>{locationCapabilities(role, role === 'distributor').activities}</p>
+              {role === 'distributor' && (
+                <p className="workspace-list-guidance">
+                  Saving requires two MetaMask confirmations: location registration, then warehouse
+                  registration.
+                </p>
+              )}
+            </section>
+            <section className="company-location-form__review">
+              <span>4. Review and save</span>
+              <strong>{name.trim() || 'Location name required'}</strong>
+              <p>{address.trim() || 'Full address required'}</p>
+            </section>
+            <div className="company-location-form__actions action-row">
+              <Btn variant="ghost" disabled={busy} onClick={() => setAdding(false)}>
+                Cancel
+              </Btn>
+              <Btn
+                icon={<Plus size={16} />}
+                disabled={busy || !name.trim() || !address.trim()}
+                onClick={() =>
+                  void run(async () => {
+                    const prepared = await prepareOrder({
+                      action: 'location',
+                      operationId: crypto.randomUUID(),
+                      label: name.trim(),
+                      address: address.trim(),
+                    });
+                    await submitProductionTransaction(prepared.transaction, data.wallet);
+                    if (role === 'distributor') {
+                      try {
+                        await publishWarehouse(prepared.resultId, name.trim());
+                      } catch {
+                        setAdding(false);
+                        setNotice(
+                          'Location registered. Complete warehouse setup using the button on its card.',
+                        );
+                        return;
                       }
-                      setName('');
-                      setAddress('');
-                      setNotice('Location registered successfully.');
-                    })
-                  }
-                >
-                  {busy
-                    ? 'Waiting for confirmation…'
-                    : role === 'distributor'
-                      ? 'Register warehouse'
-                      : 'Register location'}
-                </Btn>
-              </div>
-            </div>
-            {role === 'distributor' && (
-              <p className="workspace-list-guidance">
-                A new warehouse requires two MetaMask confirmations: location registration, then
-                warehouse registration.
-              </p>
-            )}
-          </Card>
-          <section
-            className={`workspace-profile-locations${data.locations.length ? '' : ' workspace-profile-locations--empty'}`}
-            aria-label="Your registered locations"
-          >
-            {!data.locations.length && (
-              <div className="workspace-profile-empty">
-                <EmptyState
-                  icon={<MapPin size={38} />}
-                  title="No registered locations"
-                  sub="Register your first location to use it on orders and deliveries."
-                />
-              </div>
-            )}
-            {data.locations.map((location) => (
-              <Card key={location.location} className="workspace-location-card">
-                <div className="workspace-location-heading">
-                  {location.warehouse ? <Warehouse size={20} /> : <MapPin size={20} />}
-                  <div>
-                    <span>{location.warehouse ? 'Warehouse' : 'Company location'}</span>
-                    <h3>{location.label}</h3>
-                    <p style={{ whiteSpace: 'pre-line' }}>
-                      {location.address || 'Address not provided'}
-                    </p>
-                  </div>
-                  <Badge
-                    label={
-                      role === 'distributor' && !location.warehouse
-                        ? 'Setup incomplete'
-                        : 'Registered'
                     }
-                    variant={role === 'distributor' && !location.warehouse ? 'pending' : 'active'}
-                  />
-                </div>
-                <dl className="workspace-location-usage">
-                  <div>
-                    <dt>Used by</dt>
-                    <dd>{locationWorkflows(role, location.warehouse)}</dd>
-                  </div>
-                  <div>
-                    <dt>Registration</dt>
-                    <dd>
-                      {role === 'distributor' && !location.warehouse
-                        ? 'Location complete; warehouse registration required'
-                        : 'Ready for authorized workflows'}
-                    </dd>
-                  </div>
-                </dl>
-                <div className="workspace-location-actions action-row">
-                  <Btn
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    icon={<Pencil size={14} />}
-                    onClick={() => {
-                      setEditing(location.location);
-                      setEditName(location.label);
-                      setEditAddress(location.address ?? '');
-                    }}
-                  >
-                    Edit location
-                  </Btn>
-                  {role === 'distributor' && !location.warehouse && (
-                    <Btn
-                      size="sm"
-                      disabled={busy}
-                      onClick={() =>
-                        void run(async () => {
-                          await publishWarehouse(location.location, location.label);
-                          setNotice('Warehouse registration completed.');
-                        })
-                      }
-                    >
-                      Complete warehouse registration
-                    </Btn>
-                  )}
-                </div>
-                <TechnicalDetails
-                  fields={[
-                    { label: 'Location ID', value: location.location },
-                    { label: 'Original registered name', value: location.registeredLabel },
-                  ]}
-                />
-              </Card>
-            ))}
-          </section>
-        </>
+                    setName('');
+                    setAddress('');
+                    setAdding(false);
+                    setNotice('Location registered successfully.');
+                  })
+                }
+              >
+                {busy ? 'Waiting for confirmationâ€¦' : 'Save location'}
+              </Btn>
+            </div>
+          </div>
+        </Modal>
       )}
       {editing && (
         <Modal
@@ -326,12 +389,82 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
   );
 }
 
-function locationWorkflows(role: WorkspaceRole, warehouse: boolean) {
+function locationCapabilities(role: WorkspaceRole, warehouse: boolean) {
   if (role === 'distributor')
     return warehouse
-      ? 'Custody intake, inventory, dispatch and receipt'
-      : 'Profile only until warehouse setup is completed';
-  if (role === 'manufacturer') return 'Ingredient receipt, production and product dispatch';
-  if (role === 'supplier') return 'Ingredient stock pickup and custody dispatch';
-  return 'Product receipt and retail custody';
+      ? {
+          type: 'Distributor warehouse',
+          activities: 'Custody intake, inventory, dispatch and receipt',
+          dispatch: true,
+          receiving: true,
+        }
+      : {
+          type: 'Company location',
+          activities: 'Warehouse setup must be completed before custody workflows',
+          dispatch: false,
+          receiving: false,
+        };
+  if (role === 'manufacturer')
+    return {
+      type: 'Production location',
+      activities: 'Ingredient receipt, production and product dispatch',
+      dispatch: true,
+      receiving: true,
+    };
+  if (role === 'supplier')
+    return {
+      type: 'Supplier location',
+      activities: 'Ingredient stock pickup and custody dispatch',
+      dispatch: true,
+      receiving: false,
+    };
+  return {
+    type: 'Retail location',
+    activities: 'Product receipt and retail custody',
+    dispatch: false,
+    receiving: true,
+  };
+}
+
+function locationIncomplete(role: WorkspaceRole, location: CompanyLocation) {
+  return !location.address?.trim() || (role === 'distributor' && !location.warehouse);
+}
+
+function LocationCapability({
+  icon,
+  label,
+  enabled,
+}: {
+  icon: ReactNode;
+  label: string;
+  enabled: boolean;
+}) {
+  return (
+    <span className={enabled ? 'is-enabled' : 'is-disabled'}>
+      {icon}
+      <span>{label}</span>
+      <strong>{enabled ? 'Enabled' : 'Disabled'}</strong>
+    </span>
+  );
+}
+
+function CompanyProfileSkeleton() {
+  return (
+    <div
+      className="workspace-flow-page workspace-profile-skeleton"
+      aria-label="Loading company profile"
+    >
+      <div className="workspace-profile-skeleton__heading" />
+      <div className="profile-summary-grid">
+        {[0, 1, 2].map((item) => (
+          <div className="workspace-profile-skeleton__summary" key={item} />
+        ))}
+      </div>
+      <div className="workspace-profile-skeleton__cards">
+        {[0, 1].map((item) => (
+          <div className="workspace-profile-skeleton__card" key={item} />
+        ))}
+      </div>
+    </div>
+  );
 }

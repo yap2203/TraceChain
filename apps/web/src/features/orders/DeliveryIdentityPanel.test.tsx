@@ -17,7 +17,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-it('previews claims first and passes the actual SD-JWT and explicitly selected claims to the holder signer', async () => {
+it('uses locked required toggles, readable optional claims and a review modal before signing', async () => {
   const material = {
     format: 'COMPANY_IDENTITY_SD_JWT',
     sdJwt: 'issuer-signed-selective-company-material',
@@ -26,12 +26,15 @@ it('previews claims first and passes the actual SD-JWT and explicitly selected c
     challenge: 'delivery-challenge',
     purpose: 'Check before collection',
     expiresAt: Math.floor(Date.now() / 1000) + 600,
-    requiredClaims: ['role'],
-    optionalClaims: ['companyName'],
+    requiredClaims: ['companyId', 'role', 'walletAddress'],
+    optionalClaims: ['companyName', 'companyRegistrationNumber', 'id'],
     claims: {
+      companyId: 'company-001',
       role: 'SUPPLIER',
+      walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
       companyName: 'Actual company record',
-      companyRegistrationNumber: 'Unselected company field',
+      companyRegistrationNumber: 'REG-2026-001',
+      id: 'did:key:z6MkSupplierIdentityForTraceChain123456789',
     },
   };
   mocks.identity.mockImplementation(async (_order, input) =>
@@ -49,22 +52,58 @@ it('previews claims first and passes the actual SD-JWT and explicitly selected c
         locations: [],
         shipments: [],
       }}
+      requestedBy="Bayu Food Logistics"
       onChanged={vi.fn().mockResolvedValue(undefined)}
     />,
   );
-  fireEvent.click(
-    await screen.findByRole('button', { name: 'Preview requested company evidence' }),
-  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Review request' }));
   await screen.findByText('Actual company record');
   expect(mocks.selective).not.toHaveBeenCalled();
   expect(mocks.identity.mock.calls.some(([, input]) => input.action === 'present')).toBe(false);
-  fireEvent.click(screen.getByLabelText('Share companyName'));
-  fireEvent.click(screen.getByRole('button', { name: 'Approve & sign Supplier company proof' }));
+
+  const requiredCompanyId = screen.getByRole('switch', { name: 'Share Company ID' });
+  const requiredRole = screen.getByRole('switch', { name: 'Share Company role' });
+  expect(requiredCompanyId.getAttribute('aria-checked')).toBe('true');
+  expect(requiredCompanyId).toHaveProperty('disabled', true);
+  expect(requiredRole).toHaveProperty('disabled', true);
+  expect(screen.getByText('Supplier')).toBeTruthy();
+  expect(screen.getByText('3 of 6 fields will be shared')).toBeTruthy();
+  expect(
+    screen.getByRole('switch', { name: 'Share Wallet address' }).closest('.evidence-claim-row')
+      ?.textContent,
+  ).not.toContain(material.claims.walletAddress);
+  expect(
+    document
+      .querySelector(`code[title="${material.claims.walletAddress}"]`)
+      ?.closest('details')
+      ?.hasAttribute('open'),
+  ).toBe(false);
+
+  fireEvent.click(screen.getByRole('switch', { name: 'Share Company name' }));
+  expect(screen.getByText('4 of 6 fields will be shared')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Review and sign proof' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
+  expect(screen.queryByText(/Approve & sign/)).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Review and sign proof' }));
+  expect(await screen.findByRole('dialog')).toBeTruthy();
+  expect(screen.getAllByText('Bayu Food Logistics').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('Company ID').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('Company role').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('Wallet address').length).toBeGreaterThan(1);
+  expect(screen.getAllByText('Company name').length).toBeGreaterThan(1);
+  expect(mocks.selective).not.toHaveBeenCalled();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Sign and share' }));
   await waitFor(() =>
     expect(mocks.selective).toHaveBeenCalledWith(
       expect.objectContaining({ did: material.holderDid }),
       material.sdJwt,
-      { audience: material.audience, nonce: material.challenge, claims: ['role', 'companyName'] },
+      {
+        audience: material.audience,
+        nonce: material.challenge,
+        claims: ['companyId', 'role', 'walletAddress', 'companyName'],
+      },
     ),
   );
   expect(mocks.full).not.toHaveBeenCalled();
@@ -75,3 +114,116 @@ it('previews claims first and passes the actual SD-JWT and explicitly selected c
     }),
   );
 });
+
+it('shows a neutral not-requested state without presenting refresh as the primary action', async () => {
+  mocks.identity.mockResolvedValue({ status: 'NOT_REQUESTED' });
+  renderSupplierPanel();
+  expect((await screen.findAllByText('Not requested')).length).toBeGreaterThan(0);
+  expect(
+    screen.getByText('No company evidence has been requested for this custody offer.'),
+  ).toBeTruthy();
+  expect(screen.getByText('No action required')).toBeTruthy();
+  const refresh = screen.getByRole('button', { name: 'Refresh status' });
+  expect(refresh.className).toContain('bg-transparent');
+  const raw = screen.getByText('NOT_REQUESTED');
+  expect(raw.closest('details')?.hasAttribute('open')).toBe(false);
+});
+
+it('shows a clear review action for a pending request', async () => {
+  mocks.identity.mockResolvedValue({
+    status: 'REQUESTED',
+    purpose: 'Optional delivery check',
+    requiredClaims: ['companyId', 'role'],
+    optionalClaims: ['companyName'],
+    expiresAt: 2_000_000_000,
+  });
+  renderSupplierPanel();
+  expect((await screen.findAllByText('Awaiting response')).length).toBeGreaterThan(0);
+  expect(screen.getByRole('button', { name: 'Review request' })).toBeTruthy();
+});
+
+it('shows a readable completed result and shared-evidence disclosure', async () => {
+  mocks.identity.mockResolvedValue({
+    status: 'VERIFIED',
+    purpose: 'Optional delivery check',
+    checks: ['Signature verified'],
+    credential: { companyName: 'Rimba Cocoa Ingredients' },
+  });
+  renderSupplierPanel();
+  expect((await screen.findAllByText('Verified')).length).toBeGreaterThan(0);
+  expect(screen.getByText('The shared company evidence passed verification.')).toBeTruthy();
+  expect(screen.getByText('View shared evidence')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
+});
+
+it('toggles all optional fields and updates the selected claim count', async () => {
+  const material = {
+    format: 'COMPANY_IDENTITY_SD_JWT',
+    sdJwt: 'selective-material',
+    holderDid: 'did:key:supplier',
+    audience: 'distributor',
+    challenge: 'challenge',
+    purpose: 'Verify seller identity',
+    expiresAt: Math.floor(Date.now() / 1000) + 600,
+    requiredClaims: ['companyId', 'role', 'walletAddress'],
+    optionalClaims: ['companyName', 'companyRegistrationNumber', 'id'],
+    claims: {
+      companyId: 'company-001',
+      role: 'SUPPLIER',
+      walletAddress: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+      companyName: 'Rimba Cocoa Ingredients',
+      companyRegistrationNumber: 'REG-001',
+      id: 'did:key:z6MkSupplierIdentityForTraceChain',
+    },
+  };
+  mocks.identity.mockImplementation(async (_order, input) =>
+    input.action === 'material' ? material : { status: 'REQUESTED' },
+  );
+  renderSupplierPanel();
+  fireEvent.click(await screen.findByRole('button', { name: 'Review request' }));
+  expect(await screen.findByText('3 of 6 fields will be shared')).toBeTruthy();
+
+  const shareAll = screen.getByRole('switch', { name: 'Share all optional fields' });
+  fireEvent.click(shareAll);
+  expect(screen.getByText('6 of 6 fields will be shared')).toBeTruthy();
+  expect(shareAll.getAttribute('aria-checked')).toBe('true');
+  fireEvent.click(screen.getByRole('switch', { name: 'Share Registration number' }));
+  expect(screen.getByText('5 of 6 fields will be shared')).toBeTruthy();
+});
+
+it('does not allow an expired request to enter the signing flow', async () => {
+  mocks.identity.mockResolvedValue({
+    status: 'EXPIRED',
+    purpose: 'Verify seller identity',
+    expiresAt: 1,
+  });
+  renderSupplierPanel();
+  expect((await screen.findAllByText('Expired')).length).toBeGreaterThanOrEqual(2);
+  expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Review and sign proof' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Sign and share' })).toBeNull();
+});
+
+function renderSupplierPanel() {
+  return render(
+    <DeliveryIdentityPanel
+      order={{
+        orderId: 'order',
+        seller: 'supplier',
+        delivery: { identityChallenge: 'challenge', distributor: 'distributor' },
+      }}
+      data={{
+        actor: 'supplier',
+        role: 'SUPPLIER',
+        orders: [],
+        catalogue: [],
+        locations: [],
+        shipments: [],
+        companies: [
+          { wallet: 'distributor', companyName: 'Bayu Food Logistics', role: 'DISTRIBUTOR' },
+        ],
+      }}
+      onChanged={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+}

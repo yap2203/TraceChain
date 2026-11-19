@@ -107,3 +107,34 @@ it('shows a readable authorization error without exposing private file contents'
   ).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'View document' })).toBeNull();
 });
+
+it('shows profile documents as a collapsed disclosure with the loaded count', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url.endsWith('/me')
+        ? new Response(JSON.stringify({ applications: [{ id: '0x123', status: 'approved' }] }))
+        : new Response(
+            JSON.stringify({
+              documents: [
+                {
+                  kind: 'registrationProof',
+                  fileName: 'registration.pdf',
+                  mimeType: 'application/pdf',
+                  size: 2048,
+                  index: 0,
+                },
+              ],
+            }),
+          ),
+    ),
+  );
+  render(<ApplicationDocumentsPanel collapsible />);
+  const summary = await screen.findByText('Registration documents (1)');
+  const disclosure = summary.closest('details') as HTMLDetailsElement;
+  expect(disclosure.open).toBe(false);
+  expect(screen.getByText(/Private files available only/)).toBeTruthy();
+  fireEvent.click(summary.closest('summary')!);
+  expect(disclosure.open).toBe(true);
+  expect(await screen.findByText(/registration.pdf/)).toBeTruthy();
+});

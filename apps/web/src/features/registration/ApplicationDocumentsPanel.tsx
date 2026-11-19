@@ -1,6 +1,6 @@
 import { RequiredLabel } from '../../components/ui/RequiredLabel';
 import { useEffect, useRef, useState } from 'react';
-import { Download, Eye, FileText } from 'lucide-react';
+import { ChevronDown, Download, Eye, FileText, LockKeyhole } from 'lucide-react';
 import { Alert, Btn, Card, Modal, SectionTitle } from '../workspaces/shared/ui';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { notify, readableError } from '../../components/ui/feedback';
@@ -31,12 +31,56 @@ async function request(path: string, init?: RequestInit) {
   }
   return response;
 }
+interface ApplicationDocumentsPanelProps {
+  applicationId?: string;
+  readOnly?: boolean;
+  collapsible?: boolean;
+}
+
 export function ApplicationDocumentsPanel({
   applicationId,
   readOnly = false,
+  collapsible = false,
+}: ApplicationDocumentsPanelProps) {
+  const [count, setCount] = useState<number>();
+  if (!collapsible)
+    return <ApplicationDocumentsContent applicationId={applicationId} readOnly={readOnly} />;
+  return (
+    <Card padding="0" className="registration-documents-disclosure">
+      <details>
+        <summary>
+          <LockKeyhole size={19} aria-hidden="true" />
+          <span>
+            <strong>Registration documents{count === undefined ? '' : ` (${count})`}</strong>
+            <small>
+              Private files available only to this company and the current Administrator.
+            </small>
+          </span>
+          <ChevronDown size={18} aria-hidden="true" />
+        </summary>
+        <div className="registration-documents-disclosure__body">
+          <ApplicationDocumentsContent
+            applicationId={applicationId}
+            readOnly={readOnly}
+            embedded
+            onCountChange={setCount}
+          />
+        </div>
+      </details>
+    </Card>
+  );
+}
+
+function ApplicationDocumentsContent({
+  applicationId,
+  readOnly = false,
+  embedded = false,
+  onCountChange,
 }: {
   applicationId?: string;
   readOnly?: boolean;
+  embedded?: boolean;
+  onCountChange?: (count: number) => void;
 }) {
   const loadVersion = useRef(0);
   const [applications, setApplications] = useState<{ id: string; status: string }[]>([]);
@@ -96,6 +140,9 @@ export function ApplicationDocumentsPanel({
       active = false;
     };
   }, [applicationId]);
+  useEffect(() => {
+    if (!loading) onCountChange?.(files.length);
+  }, [files.length, loading, onCountChange]);
   const open = async (file: DocumentInfo, download: boolean) => {
     setBusy(true);
     setError('');
@@ -148,7 +195,7 @@ export function ApplicationDocumentsPanel({
     }
   };
   return (
-    <Card>
+    <Card className={embedded ? 'registration-documents-disclosure__content' : ''}>
       <SectionTitle
         title="Registration documents"
         sub="Private applicant-provided files. Available only to this company and the current Administrator; uploading is not document certification."

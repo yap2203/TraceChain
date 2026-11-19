@@ -180,6 +180,7 @@ export interface CompanyProofRequestRow {
   direction: 'sent' | 'received';
   company: string;
   purpose: string;
+  requestedAt?: string | number;
   expiresAt: number;
   status: string;
 }
@@ -279,4 +280,3 @@ export async function imageFilePayload(file: File): Promise<CatalogueImageUpload
 }
 export const prepareLogistics = (input: Record<string, unknown>) =>
   request<{ resultId: string; transaction: PreparedTransaction }>('/logistics/prepare', input);
-

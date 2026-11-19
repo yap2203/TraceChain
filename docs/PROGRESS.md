@@ -13,13 +13,34 @@
 - Confirmed Hardhat 3.21.1 and its built-in node plugin are installed with deduplicated workspace dependencies. Read-only `hardhat node --help --show-stack-traces` succeeded outside the sandbox; loading the actual node task failed because Windows Application Control denied the installed EDR 0.25.0 native binary. The outer HHE200 message is misleading for this failure.
 - Verified the Windows engine package/binary exists and the nested error names the denied file. The official `@nomicfoundation/edr-wasm32-wasi@0.25.0` registry lookup returned 404, so no supported published WASM fallback was installed. Documented the issue and approved-environment options in README.
 - No config, dependency, security-policy, environment, blockchain state or deployment changes. Full node startup and contract execution remain blocked by the Windows policy; compilation/compiler WASM preferences do not address this native-engine load. Preserved the existing registration-page edit.
+## 2026-11-19 - Human-readable company evidence sharing
+
+- Replaced the Supplier company-claim checkbox form with accessible required/optional toggle rows, readable claim labels and role values, compact technical-value previews, copy/show-full controls and a selected-claim summary. Required request claims stay enabled and locked; unavailable required values prevent signing.
+- Consolidated the response into one review flow: load the request, select optional claims, review recipient/purpose/expiry/claims in a confirmation modal, then explicitly sign and share. Decline and refresh remain secondary actions in a responsive sticky footer, and expired requests cannot enter the signing flow.
+- Preserved the existing selective-disclosure/full-credential presentation creation, holder key check, recipient/challenge/expiry binding, encrypted submission, API calls and custody separation. Full technical claim values remain available in collapsed Technical details.
+
+## 2026-11-19 - Compact shared information-request inbox
+
+- Redesigned the shared received/sent company-evidence request cards for Supplier, Manufacturer, Distributor and Retailer with registered company names and logos, a compact participant route, aligned request facts, readable status/deadline badges and a prominent next-action row. Raw request IDs, references and workflow status remain in collapsed Technical details.
+- Tightened the page header, category tabs, guidance, search and status-filter spacing. Category and status tabs remain keyboard accessible and now scroll horizontally at narrow widths instead of overflowing.
+- Preserved the existing request selection, evidence sharing, privacy, permission, API and blockchain behavior. Request creation times are shown when supplied by the existing data shape; legacy records without that timestamp display `Not recorded` rather than an invented date.
+
+## 2026-11-19 - Compact company evidence request details
+
+- Redesigned the shared Supplier, Manufacturer, Distributor and Retailer company-evidence detail presentation with a compact header, breadcrumb, counted Company/Ingredient tabs, user-facing evidence statuses and a responsive request card with clear next actions. Raw workflow values and identifiers remain available only in collapsed Technical details.
+- Custody-linked evidence details now load and present the authorized offer context: item, batch reference, requesting company, quantity, readable offer state and a direct custody-offer link. A single information banner clarifies that evidence sharing, custody acceptance and stock movement remain separate.
+- Preserved the existing encrypted proof request, selective presentation, verification, permission and MetaMask transaction flows. Not-requested Supplier views show no action required with a small secondary refresh; pending and completed states expose their existing review/share or evidence-result controls.
+
+## 2026-11-19 - Shared company profile and location management UI
+
+- Reorganized the shared Supplier, Manufacturer, Distributor and Retailer Profile page around registered operational locations. Added compact real-data summaries, bounded responsive location cards, role-specific capability presentation, collapsed technical identifiers and compact skeleton, error and empty states.
+- Moved the add-location workflow into a focused responsive modal with grouped name, address, capability and review sections. Existing owner checks, MetaMask transactions, Distributor warehouse registration and encrypted presentation updates remain unchanged; successful saves close the modal and refresh the authoritative list.
+- Moved private registration documents below locations into a collapsed shared disclosure with the authorized document count and privacy guidance. Existing view, download, supplemental upload, authorization and object-URL cleanup behavior is preserved.
 
 ## 2026-11-17 - Correct empty-location centering on wide screens
 
 - Fixed the remaining unlayered fixed-column rule that kept the empty state centered over only three 360 px tracks. An explicit empty-grid modifier now creates one full-width track; populated location-card layout stays unchanged.
 - Corrected visual verification to compare the icon center with the full location form/content width, rather than with its own wrapper. Chrome at 2148/1440/768/375 px (with a 240 px sidebar offset on desktop) measured zero center difference and no horizontal overflow. The wide-screen screenshot was inspected. Three Profile tests and the frontend production build/type check passed.
-
-
 
 ## 2026-11-17 - Stacked location fields and end wallet-message trial
 
@@ -27,22 +48,16 @@
 - Removed the optional transaction-preview signature flow, formatter/tests/exports and unused prepared-transaction ABI metadata. Normal MetaMask transaction confirmation remains, along with SIWE and registration ownership signatures, network checks, request snapshots, duplicate-request coalescing and the Admin workflow lock. Required multi-transaction operations remain separate.
 - Validation: all 333 frontend and 358 API tests passed; root production build/type compilation passed. Chrome at 1440/768/375 px verified stacked full-width fields, centered map icon (zero center offset), right-aligned register action and no horizontal overflow. Direct-send tests confirm no extra signMessage request. No live signatures, transactions or contract changes.
 
-
-
 ## 2026-11-17 - Profile location form layout
 
 - Scoped a dedicated location-form layout to Profile: top-aligned fields, 40/60 name/address columns, and the register action on its own full-span right-aligned row. Stack fields below 600 px of available workspace width. Preserved the separate pickup-time form layout.
 - Validation: three Profile tests and frontend production build/type checking passed. Chrome at 1440/768/375 px verified equal field top alignment on larger layouts, full-width stacked fields on mobile, action placement below both controls, right alignment and no horizontal overflow. Synthetic profile data only; no location transaction was submitted.
-
-
 
 ## 2026-11-17 - Shorter wallet messages and duplicate-request guards
 
 - Shortened trial signatures to purpose, up to six key values and essential website/wallet/network/contract/value information. Removed raw technical arguments and separate nonce/time/format explanations; one reference commits to the complete call and context, including omitted fields. Kept the distinction between message signing and real transaction execution explicit.
 - Coalesce concurrent identical wallet requests so repeated calls share one preview and one transaction prompt. Guard Admin approval/rejection through confirmation and refresh with a synchronous workflow lock. Required approval and credential-registration transactions remain separate; their two signature/transaction pairs can legitimately produce four MetaMask prompts in this trial.
 - Validation: 59 shared and 336 frontend tests passed; root production build and TypeScript compilation passed. Added tests for a single request under concurrent calls and binding omitted hash/CID arguments. Existing signature cancellation, wrong-wallet/network, exact-call and issuance tests remain passing. No real signatures, transactions or contract changes.
-
-
 
 ## 2026-11-17 - Readable MetaMask previews for all contract actions (trial)
 
@@ -51,15 +66,11 @@
 - SIWE and Company Role ownership signatures remain separate. Multi-step issuance repeats the preview/transaction pair per contract call. No contract change/redeployment or new environment variable is required.
 - Validation: 57 shared, 358 API and 335 frontend tests passed; shared/API/frontend type checking and root production build passed. Tests cover named argument decoding, units, UTC dates, exact large quantities, nested arrays, string injection, unknown/mismatched methods, preview cancellation, wrong signer, network changes, request snapshot and exact final transaction bytes. Existing build warnings remain. No real wallet signing or transactions were performed.
 
-
-
 ## 2026-11-17 - Remove the extra transaction-review dialog
 
 - Removed the added TraceChain wallet-review dialog, its styles/tests and unused API transaction-review metadata/helper. Existing business approval/confirmation screens now proceed directly to MetaMask. Preserved named ABI parameters, exact calldata, network checks, local nonce handling, readable application ownership signatures and SIWE.
 - Clarified the earlier implementation: the user wanted readable content inside MetaMask, not another app confirmation. Standard transaction RPC supplies transaction parameters rather than arbitrary confirmation prose; message-signature text remains under application control. No Snap, replacement signing flow, contract change or deployment was introduced.
 - Validation: all 332 frontend and 358 API tests passed; root production build/type compilation passed. Added direct-send/cancellation/network/snapshot coverage to the existing transaction tests and confirmed no runtime references to the deleted review remain. Existing build warnings remain.
-
-
 
 ## 2026-11-17 - Centered document previews
 
@@ -67,23 +78,17 @@
 - Moved application-document Download into a separate right-aligned row below the image/PDF, with spacing and an icon. Existing authorized retrieval, downloads and object-URL cleanup remain unchanged.
 - Validation: eleven relevant registration/document/application tests and frontend production build (including TypeScript checks) passed. Chrome at 1440/375 px verified zero horizontal center offset, the download row below the image and no page overflow using a synthetic image. Existing build warnings remain.
 
-
-
 ## 2026-11-17 - Positive actions on the right
 
 - Reordered actual JSX action controls across approvals, delivery acceptance, custody, evidence, receipts, registration, company credentials and batch dialogs. Negative/secondary choices precede affirmative actions: Reject then Approve, Decline then Accept and Cancel then Save/Confirm. Contextual information actions precede paired decisions so Reject/Approve remain adjacent.
 - Preserved right alignment, responsive wrapping, handlers and authorization. Source order also matches keyboard/screen-reader order; no CSS visual-order workaround. Destructive confirmation dialogs retain Cancel before their explicit confirmation.
 - Validation: all 334 frontend tests and frontend production build, including TypeScript checks, passed. Existing Vite warnings remain; no API or contract changes.
 
-
-
 ## 2026-11-17 - Right-aligned page and modal actions
 
 - Applied a shared responsive action-row layout to approval/rejection, save/cancel, evidence, batch, order, shipment, document-related and export action groups across stakeholder pages and workspace dialogs. Right-aligned standalone form submission actions and registration footer controls; retained top-left page Back navigation.
 - Removed conflicting full-width/flex-grow action-button settings, including modal confirmations. Actions keep natural widths, wrap when necessary and remain within the page/dialog. Shared public-modal footers use the same layout. Navigation, filters, input controls and action handlers are unchanged.
 - Validation: all 334 frontend tests, frontend type checking and production build passed. Chrome at 1440/375 px checked page actions and both modal implementations: right alignment matched their content edges, no horizontal overflow, and approval/rejection/cancel labels remained visible. Synthetic preview only; no signing or transactions. Existing Vite warnings remain.
-
-
 
 ## 2026-11-17 - Readable wallet signatures and transaction review
 
@@ -93,14 +98,11 @@
 - Added keyboard focus handling, responsive scrollable review content and unique modal title IDs for nested confirmations. Chrome at 1440/375 px verified dialogs fit the viewport with no horizontal overflow and Cancel completes without a wallet action.
 - Validation: 49 shared, 360 API and 334 frontend tests passed; shared/API/frontend type checks and the root production build passed. Tests cover all application-field signature bindings, line injection, ABI decoding, exact large quantities, cancellation, modified call data, request mutation and network changes. Existing build warnings remain. No live signatures/transactions, contract changes or deployments were performed. Restart API and refresh browser together; old in-progress application signatures must be regenerated.
 
-
-
 ## 2026-11-17 - Button icon alignment and spacing
 
 - Scoped registration document metadata selectors to the file-details column, preventing Preview labels from inheriting top margins and metadata typography.
 - Standardized shared public/workspace button content to centered icon/text rows with 6 px spacing, zero content margins and nonshrinking block SVGs. Applied the same spacing to custom QR/download/scanner actions; excluded the shared Back control from traceability action styling. Preserved navigation/card layouts and button actions.
 - All 328 frontend tests and the production build (including TypeScript checks) passed. Isolated Chrome previews at 1440/375 px verified shared buttons have zero icon/label center offset, 6 px gaps and no horizontal overflow; native QR/download text differed by at most 0.5 px. No real documents, signing or transactions were used. Existing build warnings remain.
-
 
 ## 2026-11-17 - Consistent Back navigation and deferred location setup
 
@@ -108,13 +110,11 @@
 - Removed dispatch/receiving name and address fields from new registration state, validation, review and submitted payload. The third step is Wallet & identity. Profile location setup and legacy application metadata remain supported; logistics still requires registered locations.
 - Updated registration/navigation tests and documentation. All 328 frontend tests, frontend type checking and production build passed. Existing Vite bundle-size and dependency directive warnings remain. No API, contract, stored record or authorization changes.
 
-
 ## 2026-11-17 - Local document review and explicit final submission
 
 - Added per-file local PDF/image preview, filename/type-purpose/size review and a selected-file download fallback. Preview URLs are revoked on close/replacement/unmount; preview performs no upload or signing. Change documents preserves selected files and resets the declaration on returning to Review.
 - Separated Continue and Submit button identities so a click cannot reuse a button whose type changes to submit during React reconciliation. Final submission requires the actual marked Submit button as submitter and the declaration; Continue only opens Review.
 - Seventeen relevant UI tests, frontend type checking and production build passed. Isolated Chrome at 1440/375 px reached Review with three preview buttons, disabled Submit pending declaration, zero wallet signing requests, zero application preparation calls and no horizontal overflow; PDF preview dialogs opened at both sizes. Synthetic local files only; no application was submitted.
-
 
 ## 2026-11-17 - Clickable registration steps and centered button icons
 
@@ -122,20 +122,17 @@
 - Added a trailing-icon slot to the shared public Button and separated registration Continue/Back/wallet icons from their text. Normalized label line height and SVG display for vertical centering.
 - All 328 frontend tests, frontend type checking and production build passed. Chrome at 1440/375 px measured zero vertical center difference between Continue text and icon, five selectable steps and no horizontal overflow; desktop screenshot inspected.
 
-
 ## 2026-11-17 - Short five-step registration wizard
 
 - Split the long information page into Company details, Contact & representative and Location & wallet, followed by Supporting documents and Review & submit. Render only the current page, validate only its fields before Continue and preserve data/files/wallet on Back. Final submission still validates the complete application.
 - Updated the five-position responsive progress indicator, current-step count and heading focus/scroll behavior. Existing category groups, phone/wallet controls, encrypted upload and signed registration logic remain in place.
 - Browser checks at 1440/375 px found one category on the first page, two on the contact page and no horizontal overflow. First-page cards measured approximately 764/947 px high, substantially shorter than the prior all-fields page; desktop screenshot inspected. All sixteen relevant registration/navigation tests, frontend type checking and production build passed. No API, contract, environment or stored-record changes.
 
-
 ## 2026-11-17 - Categorized company registration
 
 - Grouped the first registration step into Company details, Contact details, Dispatch & receiving location, Authorised representative, and Wallet & digital identity. Added semantic fieldsets/legends with themed icons and separated legal business details from physical delivery details.
 - Preserved field values, required validation, phone/wallet/document behavior and the three-step submission flow. Contact controls remain aligned; groups stack on mobile without horizontal overflow.
 - Validation: fifteen registration/navigation tests and frontend type checking passed. Headless Chrome checks at 1440/375 px verified five named groups, no overflow and equal contact-field heights; both screenshots inspected.
-
 
 ## 2026-11-17 - Named physical dispatch and receiving addresses
 
@@ -144,13 +141,11 @@
 - Existing location IDs, stock, contracts and historical movement records are preserved. Current profile edits do not move goods; use a new location for a different physical site.
 - Validation: all 358 API and 325 frontend tests passed with four workers. Shared/API/frontend type checks and the root production build passed. Added tests for signed address binding, encrypted registration persistence, owner-only address editing, address preservation on label-only edits, registration drafts and separate required name/address entry. Tests use synthetic data and simulated pinning; no live files, chain records or keys were changed. Existing Vite bundle/directive warnings remain.
 
-
 ## 2026-11-17 - Consistent required-field markers
 
 - Added shared RequiredLabel/RequiredMarker rendering for public inputs/selects and workspace FormField inputs/selects/textareas. Existing label asterisks are colored without duplication; required public fields without a marker receive one.
 - Updated custom registration phone/address/wallet/document, legacy document reattachment, production-location and receipt/evidence-dialog labels. Optional fields and validation rules are preserved. Source audit found no remaining raw JSX asterisks outside the shared marker component.
 - Validation: all 324 frontend tests passed with four workers after one phone-selector timeout in the unrestricted parallel run; frontend type checking and production build passed. Headless Chrome confirmed all ten visible registration markers use the same red color, optional logo remains unmarked, and email/phone heights and top coordinates remain aligned.
-
 
 ## 2026-11-17 - Registration phone-field alignment
 
@@ -158,24 +153,20 @@
 - Country selection no longer automatically focuses/blurs the empty number input or marks it touched; phone validation still runs when the actual phone input is blurred.
 - Headless Chrome measurements at 1440 px showed identical email/phone top coordinates, 44 px heights and 455 px widths. At 375 px both controls were 44 px high and 278 px wide with no horizontal overflow; desktop screenshot inspected. Frontend type checking passed.
 
-
 ## 2026-11-17 - Flag and country-name phone dropdown
 
 - Replaced the native phone-country dropdown with a page-specific searchable selector that uses bundled SVG flags. Options display flag plus country name; the closed trigger displays only the selected flag and dropdown arrow, with the country still available to assistive technology.
 - Preserved react-phone-number-input formatting/validation and added keyboard selection, Escape/outside-click dismissal, and responsive bounded popup sizing. Fourteen relevant registration/navigation tests and frontend type checking passed. No backend or storage changes.
-
 
 ## 2026-11-17 - International registration phone input
 
 - Installed react-phone-number-input in the web workspace and updated the lockfile. Replaced the sole system phone-entry field (registration contact number) with a country selector, local SVG flags, E.164 form values and max-metadata country-aware validation instead of the generic digit-count regex. Default country is Malaysia; international selection remains available.
 - Retained theme colors/field sizing and added accessible required/invalid feedback. Updated registration fixtures to valid international numbers and tested Malaysia/US selection and invalid-number recovery. Thirteen relevant registration/navigation tests passed.
 
-
 ## 2026-11-17 - Explicit registration wallet selection
 
 - Connect MetaMask now requests wallet account permissions before reading the selected account; existing connections can be changed explicitly. Added pending instructions, a success announcement and Change account label, cancellation/pending-request messages and a synchronous duplicate-request guard. The selected wallet is preserved if the user cancels.
 - Eleven relevant registration/navigation tests passed, including three new account-selection tests; frontend type checking passed. Tests simulate wallet RPC responses; actual extension popup appearance remains controlled by MetaMask. No login, contract, IPFS or key changes.
-
 
 ## 2026-11-17 — Cross-role workspace UI consistency
 
