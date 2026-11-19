@@ -1,9 +1,16 @@
-import { BackNavigation } from '../../components/ui/BackNavigation';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { Inbox, RefreshCw, Search } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import {
+  ArrowRight,
+  ChevronRight,
+  Clock3,
+  Inbox,
+  PackageSearch,
+  RefreshCw,
+  Search,
+} from 'lucide-react';
 import {
   getInformationRequests,
   getOrders,
@@ -12,7 +19,11 @@ import {
   type CompanyProofRequestRow,
   type OrdersState,
 } from './orders.api';
-import { DeliveryIdentityPanel } from './DeliveryIdentityPanel';
+import {
+  DeliveryIdentityPanel,
+  proofStatusLabel,
+  proofStatusVariant,
+} from './DeliveryIdentityPanel';
 import { OrdersPage } from './OrdersPage';
 import { CompanyIdentityProofAction } from '../production-flow/CompanyIdentityProofAction';
 import {
@@ -24,6 +35,7 @@ import {
 } from '../production-flow/production-flow.api';
 import { sendCompanyIdentityRequestMessage } from '../production-flow/evidence-didcomm';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
+import { workspacePath } from '../workspaces/workspace-paths';
 import {
   Alert,
   Badge,
@@ -97,6 +109,8 @@ export function InformationRequestsWorkspace({
     children &&
     (params.get('tab') === 'evidence' ||
       Boolean(params.get('batchId') || params.get('productBatchId')));
+  const requestDetail = Boolean(reference && !showEvidence);
+  const custodyDetail = requestDetail && context === 'custody';
   const directionRows = useMemo(
     () => rows.filter((row) => row.direction === direction),
     [direction, rows],
@@ -116,14 +130,43 @@ export function InformationRequestsWorkspace({
     });
   }, [directionRows, search, status]);
   return (
-    <div className="grid min-w-0 gap-[16px]">
+    <div className={`information-requests-page${requestDetail ? ' is-detail' : ''}`}>
+      {requestDetail && (
+        <nav className="information-request-breadcrumb" aria-label="Breadcrumb">
+          <button
+            type="button"
+            onClick={() => {
+              setParams({});
+              void load();
+            }}
+          >
+            Received requests
+          </button>
+          <ChevronRight size={14} aria-hidden="true" />
+          {custodyDetail ? (
+            <Link to={custodyOfferPath(role, reference)}>Custody offer</Link>
+          ) : (
+            <span>{contextLabel(context as CompanyProofRequestRow['context'])}</span>
+          )}
+          <ChevronRight size={14} aria-hidden="true" />
+          <span aria-current="page">Company evidence</span>
+        </nav>
+      )}
       <SectionTitle
         title={
-          initialDirection
-            ? `${initialDirection === 'received' ? 'Received' : 'Sent'} information requests`
-            : 'Information requests'
+          requestDetail
+            ? 'Company evidence request'
+            : initialDirection
+              ? `${initialDirection === 'received' ? 'Received' : 'Sent'} information requests`
+              : 'Information requests'
         }
-        sub="Review requests for company identity or ingredient evidence. Sharing and verification are separate actions."
+        sub={
+          requestDetail
+            ? custodyDetail
+              ? 'Review and respond to evidence requests for this custody offer.'
+              : 'Review and respond to this company evidence request.'
+            : 'Review and respond to company or ingredient evidence requests.'
+        }
         action={
           <Btn
             variant="outline"
@@ -131,43 +174,33 @@ export function InformationRequestsWorkspace({
             disabled={loading}
             onClick={() => void load()}
           >
-            Refresh requests
+            Refresh
           </Btn>
         }
       />
       {children && (
-        <nav className="flex flex-wrap gap-[8px]" aria-label="Information request category">
-          <Btn
-            aria-pressed={!showEvidence}
-            variant={!showEvidence ? 'primary' : 'outline'}
-            onClick={() => setParams({})}
-          >
-            Company evidence
-          </Btn>
-          {children && (
-            <Btn
-              variant={showEvidence ? 'primary' : 'outline'}
-              aria-pressed={!!showEvidence}
-              onClick={() => setParams({ tab: 'evidence' })}
-            >
-              Ingredient evidence
-            </Btn>
-          )}
-        </nav>
+        <div className="information-request-category-tabs">
+          <StatusTabs
+            label="Information request category"
+            value={showEvidence ? 'ingredient' : 'company'}
+            onChange={(value) => setParams(value === 'ingredient' ? { tab: 'evidence' } : {})}
+            variant="connected"
+            tabs={[
+              { value: 'company', label: 'Company evidence', count: directionRows.length },
+              {
+                value: 'ingredient',
+                label: 'Ingredient evidence',
+                count: showEvidence ? 1 : 0,
+              },
+            ]}
+          />
+        </div>
       )}
       {error && <Alert type="error" message={error} />}
       {showEvidence ? (
         children
       ) : reference ? (
         <>
-          <BackNavigation
-            onClick={() => {
-              setParams({});
-              void load();
-            }}
-          >
-            Back to company requests
-          </BackNavigation>
           {loading && !data ? (
             <LoadingIndicator page label="Checking request participants…" />
           ) : selected?.status === 'UNAVAILABLE' ? (
@@ -176,7 +209,7 @@ export function InformationRequestsWorkspace({
               message="This historical proof request is unavailable for further actions. Its participant binding or current authorization is no longer valid."
             />
           ) : context === 'custody' && data ? (
-            <CustodyCompanyProof referenceId={reference} data={data} />
+            <CustodyCompanyProof referenceId={reference} data={data} role={role} />
           ) : context === 'delivery' ? (
             data && canDelivery ? (
               <Card>
@@ -232,103 +265,62 @@ export function InformationRequestsWorkspace({
               </Btn>
             </nav>
           )}
-          <p className="workspace-list-guidance">
-            {direction === 'received'
-              ? 'Other companies are asking your company to share information.'
-              : 'Track information your company has requested from others.'}
-          </p>
-          <Input
-            label="Search company requests"
-            type="search"
-            icon={<Search size={16} />}
-            value={search}
-            onChange={setSearch}
-            placeholder="Search company, purpose, reference or status"
-          />
-          <StatusTabs
-            label="Filter information requests by status"
-            value={status}
-            onChange={setStatus}
-            variant="connected"
-            tabs={[
-              { value: 'all', label: 'All', count: directionRows.length },
-              {
-                value: 'pending',
-                label: 'Pending',
-                count: directionRows.filter((row) => requestGroup(row.status) === 'pending').length,
-              },
-              {
-                value: 'verified',
-                label: 'Verified',
-                count: directionRows.filter((row) => requestGroup(row.status) === 'verified')
-                  .length,
-              },
-              {
-                value: 'unavailable',
-                label: 'Unavailable',
-                count: directionRows.filter((row) => requestGroup(row.status) === 'unavailable')
-                  .length,
-              },
-            ]}
-          />
+          <div className="information-request-list-controls">
+            <p className="workspace-list-guidance">
+              {direction === 'received'
+                ? 'Other companies are asking your company to share information.'
+                : 'Track information your company has requested from others.'}
+            </p>
+            <Input
+              label="Search company requests"
+              type="search"
+              icon={<Search size={16} />}
+              value={search}
+              onChange={setSearch}
+              placeholder="Search company, purpose, reference or status"
+            />
+            <div className="information-request-status-filters">
+              <StatusTabs
+                label="Filter information requests by status"
+                value={status}
+                onChange={setStatus}
+                variant="connected"
+                tabs={[
+                  { value: 'all', label: 'All', count: directionRows.length },
+                  {
+                    value: 'pending',
+                    label: 'Pending',
+                    count: directionRows.filter((row) => requestGroup(row.status) === 'pending')
+                      .length,
+                  },
+                  {
+                    value: 'verified',
+                    label: 'Verified',
+                    count: directionRows.filter((row) => requestGroup(row.status) === 'verified')
+                      .length,
+                  },
+                  {
+                    value: 'unavailable',
+                    label: 'Unavailable',
+                    count: directionRows.filter((row) => requestGroup(row.status) === 'unavailable')
+                      .length,
+                  },
+                ]}
+              />
+            </div>
+          </div>
           {loading ? (
             <LoadingIndicator page label="Loading your company proof requests…" />
           ) : (
             <div className="information-request-list">
               {visibleRows.map((row) => (
-                <article className="information-request-card" key={row.requestId}>
-                  <div className="information-request-card__heading">
-                    <div>
-                      <span>{contextLabel(row.context)}</span>
-                      <h3>{row.purpose}</h3>
-                    </div>
-                    <Badge
-                      label={row.status === 'VERIFIED' ? 'Previously verified' : row.status}
-                      variant={row.status === 'VERIFIED' ? 'verified' : 'pending'}
-                    />
-                  </div>
-                  <div className="information-request-card__parties">
-                    <RequestParty
-                      label="Requesting company"
-                      name={direction === 'received' ? row.company : 'Your company'}
-                    />
-                    <span aria-hidden="true">→</span>
-                    <RequestParty
-                      label="Responding company"
-                      name={direction === 'received' ? 'Your company' : row.company}
-                    />
-                  </div>
-                  <dl className="information-request-card__facts">
-                    <div>
-                      <dt>Related record</dt>
-                      <dd>{contextLabel(row.context)}</dd>
-                    </div>
-                    <div>
-                      <dt>Deadline</dt>
-                      <dd>{new Date(row.expiresAt * 1000).toLocaleString()}</dd>
-                    </div>
-                    <div>
-                      <dt>Next action</dt>
-                      <dd>{requestNextAction(row, direction)}</dd>
-                    </div>
-                  </dl>
-                  <div className="information-request-card__actions action-row">
-                    <Btn
-                      variant="outline"
-                      onClick={() =>
-                        setParams({ context: row.context, referenceId: row.referenceId })
-                      }
-                    >
-                      Manage proof request
-                    </Btn>
-                  </div>
-                  <TechnicalDetails
-                    fields={[
-                      { label: 'Request ID', value: row.requestId },
-                      { label: 'Related record ID', value: row.referenceId },
-                    ]}
-                  />
-                </article>
+                <InformationRequestCard
+                  key={row.requestId}
+                  row={row}
+                  direction={direction}
+                  data={data}
+                  onReview={() => setParams({ context: row.context, referenceId: row.referenceId })}
+                />
               ))}
               {!visibleRows.length && (
                 <EmptyState
@@ -362,22 +354,155 @@ function contextLabel(context: CompanyProofRequestRow['context']) {
 
 function requestGroup(status: string): 'pending' | 'verified' | 'unavailable' {
   if (status === 'VERIFIED') return 'verified';
-  if (status === 'UNAVAILABLE') return 'unavailable';
+  if (['UNAVAILABLE', 'EXPIRED', 'DECLINED', 'REJECTED'].includes(status)) return 'unavailable';
   return 'pending';
 }
 
 function requestNextAction(row: CompanyProofRequestRow, direction: 'received' | 'sent') {
-  if (row.status === 'VERIFIED') return 'Evidence was verified; no further action is required.';
-  if (row.status === 'UNAVAILABLE') return 'This historical request is no longer actionable.';
-  return direction === 'received'
-    ? 'Review the request before sharing any evidence.'
-    : `Waiting for ${row.company} to respond.`;
+  if (row.status === 'VERIFIED') return 'No action required';
+  if (['UNAVAILABLE', 'EXPIRED'].includes(row.status)) return 'No action available';
+  if (['PRESENTED', 'SHARED'].includes(row.status)) return 'Review shared evidence';
+  return direction === 'received' ? 'Review and respond' : 'Await company response';
 }
 
-function RequestParty({ label, name }: { label: string; name: string }) {
+function requestActionMessage(row: CompanyProofRequestRow, direction: 'received' | 'sent') {
+  if (row.status === 'VERIFIED') return 'The company evidence has been verified.';
+  if (['UNAVAILABLE', 'EXPIRED'].includes(row.status))
+    return 'This request is no longer available for a response.';
+  if (['PRESENTED', 'SHARED'].includes(row.status))
+    return direction === 'received'
+      ? 'Review the shared evidence and its verification status.'
+      : 'Your company evidence has been shared for review.';
+  return direction === 'received'
+    ? 'Review the request and choose whether to share your company evidence.'
+    : `Wait for ${row.company} to review and respond to the evidence request.`;
+}
+
+function InformationRequestCard({
+  row,
+  direction,
+  data,
+  onReview,
+}: {
+  row: CompanyProofRequestRow;
+  direction: 'received' | 'sent';
+  data?: OrdersState;
+  onReview: () => void;
+}) {
+  const actor = data?.companies?.find((company) => same(company.wallet, data.actor));
+  const actorCompany = {
+    name: actor?.companyName ?? registeredCompanyFallback(data?.role),
+    logoPath: actor?.logoPath,
+  };
+  const counterparty = data?.companies?.find(
+    (company) => company.companyName.toLocaleLowerCase() === row.company.toLocaleLowerCase(),
+  );
+  const counterpartyCompany = { name: row.company, logoPath: counterparty?.logoPath };
+  const requesting = direction === 'received' ? counterpartyCompany : actorCompany;
+  const responding = direction === 'received' ? actorCompany : counterpartyCompany;
+  const deadline = deadlineIndicator(row.expiresAt);
+
+  return (
+    <article className="information-request-card">
+      <div className="information-request-card__heading">
+        <div>
+          <span>{contextLabel(row.context)}</span>
+          <h3>Company identity verification</h3>
+          <p>{row.purpose}</p>
+        </div>
+        <div className="information-request-card__badges">
+          <Badge label={proofStatusLabel(row.status)} variant={proofStatusVariant(row.status)} />
+          {deadline && <Badge label={deadline.label} variant={deadline.variant} />}
+        </div>
+      </div>
+      <div className="information-request-card__parties" aria-label="Request participants">
+        <RequestParty
+          label="Requesting company"
+          name={requesting.name}
+          logoPath={requesting.logoPath}
+        />
+        <span className="information-request-card__direction" aria-hidden="true">
+          <ArrowRight size={18} />
+        </span>
+        <RequestParty
+          label="Responding company"
+          name={responding.name}
+          logoPath={responding.logoPath}
+        />
+      </div>
+      <dl className="information-request-card__facts">
+        <div>
+          <dt>Related to</dt>
+          <dd>{contextLabel(row.context)}</dd>
+        </div>
+        <div>
+          <dt>Requested</dt>
+          <dd>{row.requestedAt ? formatRequestDate(row.requestedAt) : 'Not recorded'}</dd>
+        </div>
+        <div>
+          <dt>Deadline</dt>
+          <dd>{formatRequestDate(row.expiresAt)}</dd>
+        </div>
+        <div>
+          <dt>Evidence requested</dt>
+          <dd>Company identity</dd>
+        </div>
+        <div>
+          <dt>Next action</dt>
+          <dd>{requestNextAction(row, direction)}</dd>
+        </div>
+      </dl>
+      <div className="information-request-card__next">
+        <span className="information-request-card__next-icon" aria-hidden="true">
+          <Clock3 size={17} />
+        </span>
+        <p>
+          <strong>Next action:</strong> {requestActionMessage(row, direction)}
+        </p>
+        <Btn variant="primary" onClick={onReview}>
+          Review request
+        </Btn>
+      </div>
+      <TechnicalDetails
+        fields={[
+          { label: 'Request ID', value: row.requestId },
+          { label: 'Reference ID', value: row.referenceId },
+          { label: 'Raw proof status', value: row.status },
+        ]}
+      />
+    </article>
+  );
+}
+
+function registeredCompanyFallback(role?: string) {
+  if (!role) return 'Registered company';
+  return `Registered ${role.charAt(0)}${role.slice(1).toLocaleLowerCase()} company`;
+}
+
+function deadlineIndicator(expiresAt: number) {
+  const remaining = expiresAt * 1000 - Date.now();
+  if (remaining <= 0) return { label: 'Overdue', variant: 'rejected' as const };
+  if (remaining <= 48 * 60 * 60 * 1000) return { label: 'Due soon', variant: 'pending' as const };
+  return undefined;
+}
+
+function formatRequestDate(value: string | number) {
+  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
+  return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+}
+
+function RequestParty({
+  label,
+  name,
+  logoPath,
+}: {
+  label: string;
+  name: string;
+  logoPath?: string;
+}) {
   return (
     <span className="information-request-card__party">
-      <CompanyAvatar name={name} size="sm" />
+      <CompanyAvatar name={name} logoPath={logoPath} size="md" />
       <span>
         <small>{label}</small>
         <strong>{name}</strong>
@@ -386,7 +511,15 @@ function RequestParty({ label, name }: { label: string; name: string }) {
   );
 }
 
-function CustodyCompanyProof({ referenceId, data }: { referenceId: string; data: OrdersState }) {
+function CustodyCompanyProof({
+  referenceId,
+  data,
+  role,
+}: {
+  referenceId: string;
+  data: OrdersState;
+  role: WorkspaceRole;
+}) {
   const [offer, setOffer] = useState<CustodyOffer>(),
     [error, setError] = useState('');
   const load = useCallback(async () => {
@@ -414,10 +547,67 @@ function CustodyCompanyProof({ referenceId, data }: { referenceId: string; data:
               ? 5
               : 6,
   };
+  const item = (data.catalogue ?? []).find((entry) =>
+    (entry.batches ?? []).some((batchId: string) => same(batchId, offer.batchId)),
+  );
+  const batch = item?.batchDetails?.find((entry: { batchId?: string }) =>
+    same(entry.batchId, offer.batchId),
+  );
   return (
-    <Card>
-      <h3>Company evidence for this custody offer</h3>
-      <p>Verification and custody acceptance are separate decisions.</p>
+    <div className="custody-evidence-detail">
+      <Card className="custody-evidence-context">
+        <div className="custody-evidence-context__heading">
+          <span>
+            <PackageSearch size={18} aria-hidden="true" />
+          </span>
+          <div>
+            <small>Custody offer</small>
+            <h3>{offer.itemName || item?.name || 'Registered stock'}</h3>
+            <p>{batch?.batchReference ?? item?.batchReference ?? shortReference(offer.batchId)}</p>
+          </div>
+          <Badge
+            label={offerStatusLabel(offer.status)}
+            variant={offerStatusVariant(offer.status)}
+          />
+        </div>
+        <dl className="custody-evidence-context__facts">
+          <div>
+            <dt>Requesting company</dt>
+            <dd>{offer.distributorName}</dd>
+          </div>
+          <div>
+            <dt>Quantity</dt>
+            <dd>
+              {offer.quantity} {offer.unit}
+            </dd>
+          </div>
+          <div>
+            <dt>Reference</dt>
+            <dd>{shortReference(offer.offerId)}</dd>
+          </div>
+        </dl>
+        <div className="custody-evidence-context__actions">
+          <Link
+            className="custody-evidence-context__link"
+            to={custodyOfferPath(role, offer.offerId)}
+          >
+            View custody offer
+          </Link>
+        </div>
+        <TechnicalDetails
+          fields={[
+            { label: 'Offer ID', value: offer.offerId },
+            { label: 'Batch ID', value: offer.batchId },
+            { label: 'Raw custody status', value: offer.status },
+            { label: 'Sender wallet', value: offer.sender },
+            { label: 'Distributor wallet', value: offer.distributor },
+          ]}
+        />
+      </Card>
+      <Alert
+        type="info"
+        message="Evidence verification and custody acceptance are separate. Sharing evidence does not accept or move the stock."
+      />
       <DeliveryIdentityPanel
         data={data}
         order={{
@@ -428,10 +618,40 @@ function CustodyCompanyProof({ referenceId, data }: { referenceId: string; data:
           delivery,
           ...(offer.kind === 2 ? { productDelivery: delivery } : {}),
         }}
+        requestedBy={offer.distributorName}
         onChanged={load}
       />
-    </Card>
+    </div>
   );
+}
+
+function custodyOfferPath(role: WorkspaceRole, offerId: string) {
+  const page = role === 'distributor' ? 'intake' : 'transfers';
+  return `${workspacePath(role, page)}?offerId=${encodeURIComponent(offerId)}`;
+}
+
+function shortReference(value: string) {
+  return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
+}
+
+function offerStatusLabel(status: CustodyOffer['status']) {
+  return (
+    {
+      REQUESTED: 'Awaiting acceptance',
+      ACCEPTED: 'Accepted',
+      SCHEDULED: 'Pickup arranged',
+      REJECTED: 'Rejected',
+      DISPATCHED: 'In transit',
+      RECEIVED: 'Received',
+      EXPIRED: 'Expired',
+    } satisfies Record<CustodyOffer['status'], string>
+  )[status];
+}
+
+function offerStatusVariant(status: CustodyOffer['status']) {
+  if (status === 'RECEIVED') return 'verified' as const;
+  if (['REJECTED', 'EXPIRED'].includes(status)) return 'rejected' as const;
+  return 'pending' as const;
 }
 function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requestId: string }) {
   const [status, setStatus] = useState<CompanyIdentityProofStatus>(),

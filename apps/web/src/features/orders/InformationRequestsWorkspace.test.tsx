@@ -10,6 +10,7 @@ const api = vi.hoisted(() => ({
   requestProof: vi.fn(),
   details: vi.fn(),
   send: vi.fn(),
+  offer: vi.fn(),
 }));
 vi.mock('../production-flow/production-flow.api', () => ({
   getCompanyIdentityProofStatus: api.proofStatus,
@@ -20,11 +21,33 @@ vi.mock('../production-flow/production-flow.api', () => ({
 vi.mock('../production-flow/evidence-didcomm', () => ({
   sendCompanyIdentityRequestMessage: api.send,
 }));
-vi.mock('./orders.api', () => ({ getInformationRequests: api.requests, getOrders: api.orders }));
+vi.mock('./orders.api', () => ({
+  getInformationRequests: api.requests,
+  getOrders: api.orders,
+  getCustodyOffer: api.offer,
+}));
 vi.mock('./DeliveryIdentityPanel', () => ({
-  DeliveryIdentityPanel: ({ order }: { order: { orderId: string } }) => (
-    <p>Delivery proof manager: {order.orderId}</p>
+  DeliveryIdentityPanel: ({
+    order,
+    requestedBy,
+  }: {
+    order: { orderId: string };
+    requestedBy?: string;
+  }) => (
+    <p>
+      Delivery proof manager: {order.orderId} {requestedBy}
+    </p>
   ),
+  proofStatusLabel: (status: string) =>
+    status === 'VERIFIED'
+      ? 'Verified'
+      : status === 'UNAVAILABLE'
+        ? 'Unavailable'
+        : status === 'EXPIRED'
+          ? 'Expired'
+          : 'Awaiting response',
+  proofStatusVariant: (status: string) =>
+    status === 'VERIFIED' ? 'verified' : status === 'EXPIRED' ? 'expired' : 'pending',
 }));
 vi.mock('./OrdersPage', () => ({ OrdersPage: () => <p>Order proof manager</p> }));
 vi.mock('../production-flow/CompanyIdentityProofAction', () => ({
@@ -45,6 +68,7 @@ beforeEach(() => {
         direction: 'received',
         company: 'Warehouse Company',
         purpose: 'Confirm Supplier role',
+        requestedAt: 1900000000,
         expiresAt: 2000000000,
         status: 'REQUESTED',
       },
@@ -55,6 +79,7 @@ beforeEach(() => {
         direction: 'sent',
         company: 'Manufacturer Company',
         purpose: 'Company evidence for order',
+        requestedAt: 1900000000,
         expiresAt: 2000000000,
         status: 'PRESENTED',
       },
@@ -63,6 +88,18 @@ beforeEach(() => {
   api.orders.mockResolvedValue({
     actor: supplier,
     role: 'SUPPLIER',
+    companies: [
+      { wallet: supplier, companyName: 'Rimba Cocoa Ingredients', role: 'SUPPLIER' },
+      { wallet: distributor, companyName: 'Warehouse Company', role: 'DISTRIBUTOR' },
+      {
+        wallet: 'manufacturer',
+        companyName: 'Manufacturer Company',
+        role: 'MANUFACTURER',
+      },
+    ],
+    catalogue: [],
+    locations: [],
+    shipments: [],
     orders: [{ orderId: 'order', seller: supplier, buyer: 'manufacturer' }],
     logistics: {
       shipments: [
@@ -75,6 +112,24 @@ beforeEach(() => {
           expiresAt: 2000000000,
         },
       ],
+    },
+  });
+  api.offer.mockResolvedValue({
+    offer: {
+      offerId: '0x' + 'c'.repeat(64),
+      kind: 1,
+      batchId: '0x' + 'b'.repeat(64),
+      quantity: '8',
+      unit: 'kg',
+      sender: supplier,
+      distributor,
+      senderName: 'Rimba Cocoa Ingredients',
+      distributorName: 'Bayu Food Logistics',
+      itemName: 'Unsweetened Cocoa Powder',
+      fromLocation: 'source',
+      toLocation: 'warehouse',
+      expiresAt: 2000000000,
+      status: 'REQUESTED',
     },
   });
 });
@@ -115,13 +170,71 @@ it('separates sent and received company proof requests and opens the correct exi
   );
   expect(await screen.findByText('Warehouse Company')).toBeTruthy();
   expect(screen.queryByText('Manufacturer Company')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Manage proof request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
   expect(screen.getByText('Delivery proof manager: ' + shipment)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Back to company requests' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Received requests' }));
   fireEvent.click(screen.getByRole('button', { name: 'Sent requests' }));
   expect(await screen.findByText('Manufacturer Company')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Manage proof request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
   expect(screen.getByText('Order proof manager')).toBeTruthy();
+});
+
+it('shows registered participants, readable status and a compact next action', async () => {
+  render(
+    <MemoryRouter>
+      <InformationRequestsWorkspace role="supplier" initialDirection="received">
+        <p>Ingredient evidence controls</p>
+      </InformationRequestsWorkspace>
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByText('Company identity verification')).toBeTruthy();
+  expect(screen.getByText('Warehouse Company')).toBeTruthy();
+  expect(screen.getByText('Rimba Cocoa Ingredients')).toBeTruthy();
+  expect(screen.queryByText('Your company')).toBeNull();
+  expect(screen.getByText('Awaiting response')).toBeTruthy();
+  expect(screen.getByText('Review and respond')).toBeTruthy();
+  expect(document.querySelector('.information-request-card__next p')?.textContent).toBe(
+    'Next action: Review the request and choose whether to share your company evidence.',
+  );
+  expect(screen.getByRole('button', { name: 'Review request' })).toBeTruthy();
+  expect(screen.getByRole('tab', { name: /Company evidence/ })).toBeTruthy();
+  expect(screen.getByRole('tab', { name: /Ingredient evidence/ })).toBeTruthy();
+
+  const technical = screen.getByText('Technical details').closest('details');
+  expect(technical?.hasAttribute('open')).toBe(false);
+  expect(document.querySelector('.information-request-card__parties')).toBeTruthy();
+  expect(document.querySelector('.information-request-card__next')).toBeTruthy();
+});
+
+it('uses Expired and Overdue labels without exposing the raw status in the summary', async () => {
+  api.requests.mockResolvedValueOnce({
+    requests: [
+      {
+        requestId: 'expired-proof',
+        referenceId: shipment,
+        context: 'delivery',
+        direction: 'received',
+        company: 'Warehouse Company',
+        purpose: 'Confirm Supplier role',
+        expiresAt: 1,
+        status: 'EXPIRED',
+      },
+    ],
+  });
+  render(
+    <MemoryRouter>
+      <InformationRequestsWorkspace role="supplier" initialDirection="received" />
+    </MemoryRouter>,
+  );
+
+  expect(await screen.findByText('Expired')).toBeTruthy();
+  expect(screen.getByText('Overdue')).toBeTruthy();
+  expect(document.querySelector('.information-request-card__heading')?.textContent).not.toContain(
+    'EXPIRED',
+  );
+  expect(screen.getByText('EXPIRED').closest('details')?.hasAttribute('open')).toBe(false);
+  expect(screen.getByText('No action available')).toBeTruthy();
 });
 it('denies an unrelated delivery reference in a direct URL', async () => {
   render(
@@ -143,7 +256,7 @@ it('preserves the existing ingredient-evidence workflow under its own category',
     </MemoryRouter>,
   );
   await screen.findByText('Warehouse Company');
-  fireEvent.click(screen.getByRole('button', { name: 'Ingredient evidence' }));
+  fireEvent.click(screen.getByRole('tab', { name: /Ingredient evidence/ }));
   expect(screen.getByText('Existing ingredient request controls')).toBeTruthy();
 });
 it('keeps company and ingredient evidence as compact tabs on the sent-request route', async () => {
@@ -155,8 +268,8 @@ it('keeps company and ingredient evidence as compact tabs on the sent-request ro
     </MemoryRouter>,
   );
   await screen.findByText('Manufacturer Company');
-  expect(screen.getByRole('button', { name: 'Company evidence' })).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Ingredient evidence' }));
+  expect(screen.getByRole('tab', { name: /Company evidence/ })).toBeTruthy();
+  fireEvent.click(screen.getByRole('tab', { name: /Ingredient evidence/ }));
   expect(screen.getByText('Retailer ingredient evidence controls')).toBeTruthy();
   expect(screen.queryByText('Manufacturer Company')).toBeNull();
 });
@@ -182,4 +295,30 @@ it('verifies an ingredient-linked company proof only after explicit action and s
   expect(await screen.findByText('Signature and holder checks passed')).toBeTruthy();
   expect(api.verify).toHaveBeenCalledWith('ingredient-proof');
   expect(api.send).not.toHaveBeenCalled();
+});
+
+it('shows readable custody-offer context, compact tabs and collapsed technical details', async () => {
+  const offerId = '0x' + 'c'.repeat(64);
+  render(
+    <MemoryRouter
+      initialEntries={[`/supplier/information-requests?context=custody&referenceId=${offerId}`]}
+    >
+      <InformationRequestsWorkspace role="supplier" initialDirection="received">
+        <p>Ingredient evidence controls</p>
+      </InformationRequestsWorkspace>
+    </MemoryRouter>,
+  );
+  expect(await screen.findByRole('heading', { name: 'Company evidence request' })).toBeTruthy();
+  expect(await screen.findByText('Unsweetened Cocoa Powder')).toBeTruthy();
+  expect(screen.getAllByText('Bayu Food Logistics').length).toBeGreaterThan(0);
+  expect(screen.getByText('8 kg')).toBeTruthy();
+  expect(screen.getByText('Awaiting acceptance')).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'View custody offer' }).getAttribute('href')).toContain(
+    '/supplier/transfers?offerId=',
+  );
+  expect(screen.getByRole('tab', { name: /Company evidence/ })).toBeTruthy();
+  expect(screen.getByRole('tab', { name: /Ingredient evidence/ })).toBeTruthy();
+  const technical = screen.getAllByText('Technical details')[0]!.closest('details');
+  expect(technical?.hasAttribute('open')).toBe(false);
+  expect(screen.queryByRole('button', { name: 'Back to company requests' })).toBeNull();
 });
