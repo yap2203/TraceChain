@@ -5,6 +5,7 @@ import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { COMPANY_ALWAYS_CLAIMS, type IngredientRequestPolicy } from '@tracechain/shared';
 import { CompanyRequestFields } from './CompanyRequestFields';
 import { IngredientRequestPolicyFields } from './IngredientRequestPolicyFields';
+import { IngredientClaimValue } from './IngredientClaimValue';
 afterEach(cleanup);
 it('requests registration number and country together while keeping company identity mandatory', () => {
   function Form() {
@@ -73,4 +74,26 @@ it('uses shared request templates and explicit unknown-allergen policy', () => {
     target: { value: 'This batch' },
   });
   expect(screen.getByLabelText('policy').textContent).toContain('"scope":"This batch"');
+});
+it('does not render retired processing or quality values from legacy metadata', () => {
+  const { container } = render(
+    <>
+      <IngredientClaimValue name="processingLocation" value="Legacy processing plant" />
+      <IngredientClaimValue name="qualityTest_legacy" value={{ results: 'Legacy result' }} />
+      <IngredientClaimValue
+        name="originDetails"
+        value={{
+          countryName: 'Ghana',
+          region: 'Ashanti',
+          processingLocation: 'Legacy processing plant',
+        }}
+      />
+    </>,
+  );
+  expect(screen.queryByText('Legacy processing plant')).toBeNull();
+  expect(screen.queryByText('Legacy result')).toBeNull();
+  expect(screen.getByText('Ghana')).toBeTruthy();
+  expect(screen.getByText('Ashanti')).toBeTruthy();
+  expect(container.textContent).not.toContain('Processing');
+  expect(container.textContent).not.toContain('quality');
 });

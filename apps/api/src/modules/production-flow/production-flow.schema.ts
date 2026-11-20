@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { INGREDIENT_REQUEST_CLAIMS } from '@tracechain/shared';
+import { CURRENT_INGREDIENT_REQUEST_CLAIMS } from '@tracechain/shared';
 import { requestDateSchema } from '../../config/input-validation.js';
 
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
@@ -39,7 +39,7 @@ export const evidenceRequestSchema = z
     policy: z
       .object({
         policyVersion: z.literal(2),
-        template: z.enum(['custom', 'basic', 'food', 'certification', 'quality']).default('custom'),
+        template: z.enum(['custom', 'basic', 'food', 'certification']).default('custom'),
         allowUnknownAllergens: z.boolean().default(false),
         certificationRequirement: z
           .object({
@@ -62,13 +62,20 @@ export const evidenceRequestSchema = z
   .strict()
   .superRefine((input, ctx) => {
     if (
-      input.policy &&
-      input.claims.some((key) => !INGREDIENT_REQUEST_CLAIMS.some(([claim]) => claim === key))
+      input.claims.some(
+        (key) => !CURRENT_INGREDIENT_REQUEST_CLAIMS.some(([claim]) => claim === key),
+      )
     )
       ctx.addIssue({
         code: 'custom',
         path: ['claims'],
         message: 'Use the supported claims in the version 2 request policy.',
+      });
+    if (input.requiredClaims.some((key) => !input.claims.includes(key)))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['requiredClaims'],
+        message: 'Required claims must be selected from the supported requested claims.',
       });
   });
 

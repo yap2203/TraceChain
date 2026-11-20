@@ -167,13 +167,19 @@ describe('Supplier ingredient batch workflow', () => {
     fireEvent.click(screen.getByText('Resume a registration'));
     fireEvent.click(await screen.findByText('Resume saved batch'));
     await screen.findByText('Recovered ingredient');
-    expect(screen.getByText('Previously saved additional details (read-only)')).toBeTruthy();
-    expect(screen.getByText('Previously saved facility')).toBeTruthy();
+    expect(screen.queryByText('Previously saved additional details (read-only)')).toBeNull();
+    expect(screen.queryByText('Previously saved facility')).toBeNull();
+    expect(screen.queryByText('Previously saved quality note')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Resume registration' }));
     await screen.findByText(
       'The ingredient batch was confirmed and read back from the blockchain.',
     );
-    expect(prepareWorkflow).toHaveBeenCalledWith(saved);
+    const submitted = prepareWorkflow.mock.calls[0]?.[0];
+    expect(submitted).not.toHaveProperty('qualityTests');
+    expect(submitted).not.toHaveProperty('internalQualityRemarks');
+    expect(submitted).not.toHaveProperty('productionDateMeaning');
+    expect(submitted.originDetails).not.toHaveProperty('processingCountry');
+    expect(submitted.originDetails).not.toHaveProperty('processingLocation');
     expect(window.localStorage.length).toBe(0);
   });
   it('submits sequentially, reuses the operation ID and blocks duplicate clicks', async () => {

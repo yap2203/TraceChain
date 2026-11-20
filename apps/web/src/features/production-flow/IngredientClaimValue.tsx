@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ingredientClaimLabel } from '@tracechain/shared';
+import { ingredientClaimLabel, isRetiredIngredientClaim } from '@tracechain/shared';
 import { Btn, Modal, Alert } from '../workspaces/shared/ui';
 import { readableError } from '../../components/ui/feedback';
 export interface PrivateEvidenceFile {
@@ -14,14 +14,6 @@ const fieldLabels: Record<string, string> = {
   city: 'City / district',
   facility: 'Source facility / farm reference',
   privateAddress: 'Private source address',
-  processingCountry: 'Processing country',
-  processingLocation: 'Processing facility reference',
-  laboratoryName: 'Laboratory name',
-  reportNumber: 'Report number',
-  testDate: 'Test date',
-  sampleReference: 'Sample reference',
-  testedBatchReference: 'Tested Supplier batch reference',
-  results: 'Test results',
   name: 'Certification name',
   issuer: 'Stated issuing organization',
   reference: 'Certificate reference',
@@ -57,6 +49,7 @@ export function IngredientClaimValue({
     },
     [preview],
   );
+  if (isRetiredIngredientClaim(name)) return null;
   const open = async (id: string, download = false) => {
     if (!loadDocument) return;
     setBusy(true);
@@ -107,7 +100,15 @@ export function IngredientClaimValue({
         <dl>
           {Object.entries(object)
             .filter(
-              ([key]) => !['documents', 'id', 'certificationId', 'qualityTestId'].includes(key),
+              ([key]) =>
+                ![
+                  'documents',
+                  'id',
+                  'certificationId',
+                  'qualityTestId',
+                  'processingCountry',
+                  'processingLocation',
+                ].includes(key),
             )
             .map(([key, item]) => (
               <div key={key}>
@@ -135,12 +136,6 @@ export function IngredientClaimValue({
         <p className="text-sm text-ws-text2">
           Supplier-provided certification; the stated authority has not independently verified this
           document through TraceChain.
-        </p>
-      )}
-      {object && name.startsWith('quality') && (
-        <p>
-          Supplier-provided laboratory evidence. The report has not been independently verified with
-          the laboratory by TraceChain.
         </p>
       )}
       {object && Array.isArray(object.documents) && (

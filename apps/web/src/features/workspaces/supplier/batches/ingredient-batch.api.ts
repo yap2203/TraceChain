@@ -1,7 +1,6 @@
 import { apiErrorMessage } from '../../../../components/ui/feedback';
 import type {
   IngredientOrigin,
-  IngredientQualityTest,
   IngredientAllergen,
   IngredientCertification,
   CertificationDocument,
@@ -15,9 +14,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:300
 
 export interface IngredientBatchInput {
   operationId?: string;
-  originDetails?: IngredientOrigin;
-  qualityTests?: IngredientQualityTest[];
-  internalQualityRemarks?: string;
+  originDetails?: Omit<IngredientOrigin, 'processingCountry' | 'processingLocation'>;
   allergen?: IngredientAllergen;
   certificationEntries?: IngredientCertification[];
   priceBasis?: string;
@@ -31,7 +28,6 @@ export interface IngredientBatchInput {
   ingredientName: string;
   origin: string;
   productionDate: string;
-  productionDateMeaning?: 'production' | 'processing';
   quantity: string;
   unit: string;
 }
@@ -77,9 +73,7 @@ export interface IngredientDocumentExtraction {
 }
 
 export interface RegisteredIngredientBatch {
-  originDetails?: IngredientOrigin;
-  qualityTests?: IngredientQualityTest[];
-  internalQualityRemarks?: string;
+  originDetails?: Omit<IngredientOrigin, 'processingCountry' | 'processingLocation'>;
   allergen?: IngredientAllergen;
   certificationEntries?: IngredientCertification[];
   allergenInformation: string;

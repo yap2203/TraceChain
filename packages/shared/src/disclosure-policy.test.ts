@@ -7,6 +7,8 @@ import {
   ingredientPolicyRequirements,
   toggleIngredientDisclosure,
   expandIngredientRequestedClaims,
+  isRetiredIngredientClaim,
+  visibleIngredientClaims,
 } from './disclosure-policy.js';
 it('keeps processing and quality claims out of new form choices without removing legacy support', () => {
   const choices = CURRENT_INGREDIENT_REQUEST_CLAIMS.map(([key]) => key);
@@ -16,6 +18,28 @@ it('keeps processing and quality claims out of new form choices without removing
   expect(choices).not.toContain('processingLocation');
   expect(choices).not.toContain('qualityTests');
   expect(choices).not.toContain('qualityDocuments');
+  expect(choices).not.toContain('productionDateMeaning');
+});
+it('hides retired legacy values while preserving useful ingredient evidence', () => {
+  expect(isRetiredIngredientClaim('qualityTest_' + 'a'.repeat(32))).toBe(true);
+  expect(
+    visibleIngredientClaims({
+      countryOfOrigin: 'Ghana',
+      processingCountry: 'MY',
+      qualityTestSummary: 'Legacy result',
+      ['qualityDocuments_' + 'a'.repeat(32)]: { documents: [] },
+      originDetails: {
+        countryName: 'Ghana',
+        region: 'Ashanti',
+        processingLocation: 'Legacy plant',
+      },
+      allergenDeclaration: { kind: 'declaresNone' },
+    }),
+  ).toEqual({
+    countryOfOrigin: 'Ghana',
+    originDetails: { countryName: 'Ghana', region: 'Ashanti' },
+    allergenDeclaration: { kind: 'declaresNone' },
+  });
 });
 it('groups registration fields and leaves internal/application references independent', () => {
   expect(companyDisclosureGroup(['companyRegistrationNumber'])).toEqual([

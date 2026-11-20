@@ -50,7 +50,8 @@ wallet/role/DID binding; registration number and signed ISO registration country
 selected together. Ingredient requests offer Basic traceability, Food suitability,
 Certification and Custom templates. New ingredient creation uses production dates,
 origin, allergens and certifications, with processing and quality-evidence inputs removed.
-Previously saved processing/laboratory data and presentations remain supported.
+Previously saved credentials remain parseable for compatibility, but retired
+processing/laboratory values are ignored by current ingredient responses and UI.
 Required evidence is checked before verification/acceptance; legacy
 credentials remain supported without invented fields. See [policy, versions and test flow](docs/DISCLOSURE_POLICY.md).
 

@@ -29,6 +29,7 @@ import { CustodyOffers, type CustodyOffer } from './custody-offers.js';
 import type { ApplicationMetadataRepository } from '../blockchain/application-metadata.repository.js';
 import type { LogisticsAction } from './logistics.schema.js';
 import type { ProductionFlowService } from '../production-flow/production-flow.service.js';
+import type { EvidenceRequestInput } from '../production-flow/production-flow.schema.js';
 import type { DidCommService } from '../didcomm/didcomm.service.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import {
@@ -920,7 +921,7 @@ export class OrdersService {
     input: {
       operationId: string;
       batchId: string;
-      policy?: import('@tracechain/shared').IngredientRequestPolicy;
+      policy?: EvidenceRequestInput['policy'];
       claims: string[];
       requiredClaims: string[];
       reason: string;
