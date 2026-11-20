@@ -90,6 +90,18 @@ describe('Supplier ingredient-batch API', () => {
   let service: IngredientBatchService;
   let dependencies: ConstructorParameters<typeof IngredientBatchService>[0];
 
+  it('reports an unavailable authorization read as 503 before accessing batches', async () => {
+    vi.spyOn(dependencies.authService, 'requireSession').mockResolvedValueOnce({
+      address: getAddress(SUPPLIER),
+      onChainAuthorization: { checkedAt: NOW, status: 'UNAVAILABLE' },
+    } as any);
+    await expect(service.list('session')).rejects.toMatchObject({
+      status: 503,
+      code: 'BLOCKCHAIN_AUTHORIZATION_UNAVAILABLE',
+    });
+    expect(gateway.listBatchIds).not.toHaveBeenCalled();
+  });
+
   beforeAll(async () => {
     directory = await mkdtemp(join(tmpdir(), 'tracechain-ingredient-api-'));
     agent = await createTraceChainAgent({

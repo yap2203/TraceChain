@@ -1,3 +1,5 @@
+import { blockchainProvider } from '../blockchain/rpc-provider.js';
+import { queryContractEvents } from '../blockchain/contract-events.js';
 import { readFileSync } from 'node:fs';
 import { Contract, Interface, JsonRpcProvider } from 'ethers';
 import type { PreparedTransaction } from '../blockchain/blockchain-gateway.service.js';
@@ -70,7 +72,7 @@ export class EthersOrdersGateway implements OrdersGateway {
     rpc: string,
     private addresses: Record<string, string>,
   ) {
-    this.provider = new JsonRpcProvider(rpc, chainId, { staticNetwork: true });
+    this.provider = blockchainProvider(rpc, chainId);
   }
   private async contract(name: string) {
     let contract = this.contracts.get(name);
@@ -117,7 +119,7 @@ export class EthersOrdersGateway implements OrdersGateway {
   }
   async events(name: string, event: string) {
     const contract = await this.contract(name);
-    const logs = await contract.queryFilter(contract.getEvent(event)());
+    const logs = await queryContractEvents(contract, contract.getEvent(event)());
     return logs
       .filter((log) => 'args' in log)
       .map((log) => {

@@ -1,3 +1,5 @@
+import { blockchainProvider } from '../blockchain/rpc-provider.js';
+import { queryContractEvents } from '../blockchain/contract-events.js';
 import { Contract, Interface, JsonRpcProvider, getAddress } from 'ethers';
 
 import type {
@@ -67,7 +69,7 @@ export class EthersCustodyTransferGateway implements CustodyTransferGateway {
   private readonly contract: Contract;
 
   constructor(chainId: number, rpcUrl: string, contractAddress: string) {
-    this.provider = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    this.provider = blockchainProvider(rpcUrl, chainId);
     this.contract = new Contract(contractAddress, custodyTransferAbi, this.provider);
   }
 
@@ -93,7 +95,8 @@ export class EthersCustodyTransferGateway implements CustodyTransferGateway {
   }
 
   async getReceiptEvidenceReference(transferId: string) {
-    const events = await this.contract.queryFilter(
+    const events = await queryContractEvents(
+      this.contract,
       this.contract.filters.ReceiptConfirmed(transferId),
     );
     const event = events.at(-1);
@@ -103,7 +106,8 @@ export class EthersCustodyTransferGateway implements CustodyTransferGateway {
   }
 
   async getRejectionEvidenceReference(transferId: string) {
-    const events = await this.contract.queryFilter(
+    const events = await queryContractEvents(
+      this.contract,
       this.contract.filters.TransferStatusChanged(transferId),
     );
     const event = [...events].reverse().find((candidate) => {
@@ -116,7 +120,8 @@ export class EthersCustodyTransferGateway implements CustodyTransferGateway {
   }
 
   async getDiscrepancy(transferId: string): Promise<CustodyDiscrepancyRecord | null> {
-    const events = await this.contract.queryFilter(
+    const events = await queryContractEvents(
+      this.contract,
       this.contract.filters.DiscrepancyReported(transferId),
     );
     const event = events.at(-1);
@@ -137,7 +142,10 @@ export class EthersCustodyTransferGateway implements CustodyTransferGateway {
   }
 
   async listDiscrepancies() {
-    const events = await this.contract.queryFilter(this.contract.filters.DiscrepancyReported());
+    const events = await queryContractEvents(
+      this.contract,
+      this.contract.filters.DiscrepancyReported(),
+    );
     const transferIds = [
       ...new Set(
         events.map((event) =>

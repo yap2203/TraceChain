@@ -1,3 +1,5 @@
+import { blockchainProvider } from './rpc-provider.js';
+import { queryContractEvents } from './contract-events.js';
 import { Contract, Interface, JsonRpcProvider } from 'ethers';
 
 const stakeholderRegistryAbi = [
@@ -175,6 +177,7 @@ export interface OperationalData {
 }
 
 export class BlockchainGatewayService implements BlockchainGateway {
+  private readonly pendingOperations = new Map<string, Promise<OperationalData>>();
   private readonly provider: JsonRpcProvider;
   private readonly registry: Contract;
   private readonly credentialRegistry: Contract;
@@ -193,7 +196,7 @@ export class BlockchainGatewayService implements BlockchainGateway {
     custodyTransferAddress: string,
     evidenceRegistryAddress: string,
   ) {
-    this.provider = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    this.provider = blockchainProvider(rpcUrl, chainId);
     this.registry = new Contract(registryAddress, stakeholderRegistryAbi, this.provider);
     this.credentialRegistry = new Contract(
       credentialRegistryAddress,
@@ -211,12 +214,25 @@ export class BlockchainGatewayService implements BlockchainGateway {
   }
 
   async listOperationalData(account: string): Promise<OperationalData> {
+    const key = account.toLowerCase();
+    const pending = this.pendingOperations.get(key);
+    if (pending) return pending;
+    const operation = this.readOperationalData(account);
+    this.pendingOperations.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      this.pendingOperations.delete(key);
+    }
+  }
+
+  private async readOperationalData(account: string): Promise<OperationalData> {
     const normalized = account.toLowerCase();
     const [ingredientEvents, productEvents, transferEvents, evidenceEvents] = await Promise.all([
-      this.ingredients.queryFilter(this.ingredients.filters.IngredientBatchRegistered()),
-      this.products.queryFilter(this.products.filters.ProductCreated()),
-      this.custody.queryFilter(this.custody.filters.TransferCreated()),
-      this.evidence.queryFilter(this.evidence.filters.EvidenceRequested()),
+      queryContractEvents(this.ingredients, this.ingredients.filters.IngredientBatchRegistered()),
+      queryContractEvents(this.products, this.products.filters.ProductCreated()),
+      queryContractEvents(this.custody, this.custody.filters.TransferCreated()),
+      queryContractEvents(this.evidence, this.evidence.filters.EvidenceRequested()),
     ]);
     const eventArg = (event: unknown, name: string) =>
       String((event as { args?: Record<string, unknown> }).args?.[name] ?? '');

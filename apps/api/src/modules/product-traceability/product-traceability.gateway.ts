@@ -1,3 +1,5 @@
+import { blockchainProvider } from '../blockchain/rpc-provider.js';
+import { queryContractEvents } from '../blockchain/contract-events.js';
 import { Contract, Interface, JsonRpcProvider, getAddress } from 'ethers';
 
 import type {
@@ -52,7 +54,7 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
     rpcUrl: string,
     addresses: { product: string; ingredient: string; credential: string; custody: string },
   ) {
-    this.provider = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    this.provider = blockchainProvider(rpcUrl, chainId);
     this.products = new Contract(addresses.product, productAbi, this.provider);
     this.ingredients = new Contract(addresses.ingredient, ingredientAbi, this.provider);
     this.credentials = new Contract(addresses.credential, credentialAbi, this.provider);
@@ -113,7 +115,8 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
   }
 
   async listTransfers(batchId: string) {
-    const events = await this.custody.queryFilter(
+    const events = await queryContractEvents(
+      this.custody,
       this.custody.filters.TransferCreated(null, batchId),
     );
     return Promise.all(
@@ -121,7 +124,8 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
         const args = (event as unknown as { args: { transferId: string } }).args;
         const transferId = String(args.transferId);
         const record = await this.custody.getTransfer(transferId);
-        const receiptEvents = await this.custody.queryFilter(
+        const receiptEvents = await queryContractEvents(
+          this.custody,
           this.custody.filters.ReceiptConfirmed(transferId),
         );
         const receiptEvent = receiptEvents.at(-1);
@@ -129,8 +133,8 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
           ? await this.provider.getBlock(receiptEvent.blockNumber)
           : undefined;
         const [discrepancyEvents, statusEvents] = await Promise.all([
-          this.custody.queryFilter(this.custody.filters.DiscrepancyReported(transferId)),
-          this.custody.queryFilter(this.custody.filters.TransferStatusChanged(transferId)),
+          queryContractEvents(this.custody, this.custody.filters.DiscrepancyReported(transferId)),
+          queryContractEvents(this.custody, this.custody.filters.TransferStatusChanged(transferId)),
         ]);
         const lifecycleEvents = await Promise.all([
           ...discrepancyEvents.map(async (lifecycleEvent) => {

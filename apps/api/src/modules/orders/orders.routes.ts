@@ -53,7 +53,9 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     };
   router.get(
     '/',
-    action((service, session) => service.state(session)),
+    action((service, session, request) =>
+      service.state(session, z.enum(['supplier-inventory']).optional().parse(request.query.scope)),
+    ),
   );
   const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
   router.get(

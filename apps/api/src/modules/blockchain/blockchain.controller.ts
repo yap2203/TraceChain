@@ -5,7 +5,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { z, ZodError } from 'zod';
 import { getAddress, id, verifyMessage } from 'ethers';
 
-import type { AuthService } from '../auth/auth.service.js';
+import { assertAuthorizationAvailable, AuthError, type AuthService } from '../auth/auth.service.js';
 import type { BlockchainGateway } from './blockchain-gateway.service.js';
 import {
   ApplicationMetadataConflictError,
@@ -295,7 +295,19 @@ export class BlockchainController {
           'Operational blockchain reads are unavailable.',
           503,
         );
-      const data = await this.gateway.listOperationalData(session.address);
+      const data = await this.gateway
+        .listOperationalData(session.address)
+        .catch((error: unknown) => {
+          const rateLimited =
+            error instanceof Error && /too many requests|rate.?limit|429/i.test(error.message);
+          throw new BlockchainApiError(
+            rateLimited ? 'BLOCKCHAIN_RATE_LIMITED' : 'OPERATIONAL_READS_UNAVAILABLE',
+            rateLimited
+              ? 'The blockchain provider is busy. Wait a moment, then refresh your data.'
+              : 'Blockchain data is temporarily unavailable. Please retry shortly.',
+            503,
+          );
+        });
       const same = (value: unknown) =>
         typeof value === 'string' && value.toLowerCase() === session.address.toLowerCase();
       const transfers = data.transfers.filter(
@@ -579,6 +591,7 @@ export class BlockchainController {
   private async requireAdministrator(request: Request) {
     const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
     const session = await this.authService.getSession(sessionId);
+    assertAuthorizationAvailable(session);
     if (
       !session.authenticated ||
       !session.authorizationReady ||
@@ -595,6 +608,7 @@ export class BlockchainController {
   private async requireAuthorizedStakeholder(request: Request) {
     const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
     const session = await this.authService.getSession(sessionId);
+    assertAuthorizationAvailable(session);
     if (!session.authenticated || !session.authorizationReady || !session.address) {
       throw new BlockchainApiError(
         'STAKEHOLDER_AUTHORIZATION_REQUIRED',
@@ -615,7 +629,7 @@ export class BlockchainController {
       });
       return;
     }
-    if (error instanceof BlockchainApiError) {
+    if (error instanceof BlockchainApiError || error instanceof AuthError) {
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
       return;
     }

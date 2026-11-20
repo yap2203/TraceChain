@@ -24,7 +24,7 @@ import {
 import { CompanyRole } from '@tracechain/shared';
 import { decodeBytes32String, getAddress, id } from 'ethers';
 
-import type { AuthService } from '../auth/auth.service.js';
+import { assertAuthorizationAvailable, type AuthService } from '../auth/auth.service.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { TraceChainAgentProvider } from '../ssi/ssi.service.js';
 import type { IngredientBatchGateway } from './ingredient-batch.gateway.js';
@@ -635,6 +635,7 @@ export class IngredientBatchService {
 
   private async requireSupplier(sessionId: string | undefined) {
     const session = await this.dependencies.authService.requireSession(sessionId);
+    assertAuthorizationAvailable(session);
     const authorization = session.onChainAuthorization;
     if (
       authorization?.status !== 'AUTHORIZED' ||

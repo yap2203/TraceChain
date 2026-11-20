@@ -60,6 +60,32 @@ function gateway() {
   } satisfies OrdersGateway;
 }
 describe('on-chain warehouse views', () => {
+  it('keeps Supplier custody quantities in the inventory scope without shipment/product reads', async () => {
+    const f = gateway();
+    const result = await readLogistics(f, supplier, false, false, false, true);
+    expect(result.positions).toEqual([
+      expect.objectContaining({
+        quantity: '70',
+        reserved: '30',
+        available: '40',
+        warehouseName: 'Actual warehouse',
+      }),
+    ]);
+    expect(f.events.mock.calls.map(([, event]) => event)).toEqual([
+      'WarehouseRegistered',
+      'CustodyPositionCreated',
+    ]);
+    expect(
+      f.read.mock.calls.some(([, method]) =>
+        ['getRoadShipment', 'getProduct', 'getTransfer'].includes(method),
+      ),
+    ).toBe(false);
+  });
+  it('excludes another Supplier custody position from the inventory scope', async () => {
+    const f = gateway();
+    const result = await readLogistics(f, manufacturer, false, false, false, true);
+    expect(result.positions).toEqual([]);
+  });
   it.each([
     { initialized: false, expectedAvailable: '123' },
     { initialized: true, expectedAvailable: '0' },

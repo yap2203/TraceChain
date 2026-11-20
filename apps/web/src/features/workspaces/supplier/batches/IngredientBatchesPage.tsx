@@ -86,7 +86,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
     if (withLoading) setLoading(true);
     setError('');
     try {
-      setData(await getOrders());
+      setData(await getOrders('supplier-inventory'));
     } catch (cause) {
       setError(message(cause, 'The ingredient batch service is unavailable.'));
     } finally {

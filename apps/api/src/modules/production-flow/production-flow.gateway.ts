@@ -1,3 +1,5 @@
+import { blockchainProvider } from '../blockchain/rpc-provider.js';
+import { queryContractEvents } from '../blockchain/contract-events.js';
 import { Contract, Interface, JsonRpcProvider, encodeBytes32String, getAddress, id } from 'ethers';
 
 import type { PreparedTransaction } from '../blockchain/blockchain-gateway.service.js';
@@ -213,7 +215,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
       custody: string;
     },
   ) {
-    this.provider = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    this.provider = blockchainProvider(rpcUrl, chainId);
     this.stakeholders = new Contract(addresses.stakeholder, stakeholderAbi, this.provider);
     this.credentials = new Contract(addresses.credential, credentialAbi, this.provider);
     this.ingredients = new Contract(addresses.ingredient, ingredientAbi, this.provider);
@@ -322,7 +324,8 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
   }
 
   async listIngredients() {
-    const logs = await this.ingredients.queryFilter(
+    const logs = await queryContractEvents(
+      this.ingredients,
       this.ingredients.filters.IngredientBatchRegistered(),
     );
     const ids = [
@@ -346,7 +349,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
       role === 2
         ? this.evidence.filters.EvidenceRequested(null, null, wallet)
         : this.evidence.filters.EvidenceRequested(null, wallet);
-    const logs = await this.evidence.queryFilter(filter);
+    const logs = await queryContractEvents(this.evidence, filter);
     return [
       ...new Set(
         logs.map((log) =>
@@ -389,7 +392,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
   async getInventory(batchId: string, holder: string) {
     const [r, events] = await Promise.all([
       this.custody.getInventory(batchId, holder),
-      this.custody.queryFilter(this.custody.filters.InventoryInitialized(batchId)),
+      queryContractEvents(this.custody, this.custody.filters.InventoryInitialized(batchId)),
     ]);
     const available = BigInt(r.available);
     const reserved = BigInt(r.reserved);
@@ -435,7 +438,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
 
   async listReceivedProductBatchIds(holder: string) {
     const recipient = getAddress(holder);
-    const logs = await this.custody.queryFilter(this.custody.filters.TransferCreated());
+    const logs = await queryContractEvents(this.custody, this.custody.filters.TransferCreated());
     return [
       ...new Set(
         logs
@@ -453,7 +456,8 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
   }
 
   private async listActiveStakeholders(role: number) {
-    const logs = await this.stakeholders.queryFilter(
+    const logs = await queryContractEvents(
+      this.stakeholders,
       this.stakeholders.filters.StakeholderRegistered(null, role),
     );
     const accounts = [

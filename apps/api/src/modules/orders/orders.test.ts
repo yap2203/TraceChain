@@ -919,8 +919,83 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
     '/api/orders',
     createOrdersRouter(() => service, 'session'),
   );
-  return { app, gateway, service, store, repository };
+  return { app, gateway, service, store, repository, auth };
 }
+describe('Supplier inventory read scope', () => {
+  it('returns service-unavailable for a failed authorization read on inventory and branding', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    f.auth.getSession.mockResolvedValue({
+      authenticated: true,
+      authorizationReady: false,
+      authorizationStatus: 'UNAVAILABLE',
+      address: seller,
+    } as any);
+    for (const path of [
+      '/api/orders',
+      '/api/orders?scope=supplier-inventory',
+      '/api/orders/branding/me',
+    ]) {
+      const response = await request(f.app).get(path).expect(503);
+      expect(response.body.error.code).toBe('BLOCKCHAIN_AUTHORIZATION_UNAVAILABLE');
+    }
+    expect(f.gateway.events).not.toHaveBeenCalled();
+  });
+  function inventory() {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    const events = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, name) => {
+      const records = await events(contract, name);
+      return records.map((entry) => ({ ...entry, seller }));
+    });
+    return f;
+  }
+  it('preserves own inventory and remaining-stock calculations with fewer reads', async () => {
+    const full = inventory();
+    const scoped = inventory();
+    const expected = await full.service.state('session');
+    const actual = await scoped.service.state('session', 'supplier-inventory');
+    expect(actual.supplierStock).toEqual(expected.supplierStock);
+    expect(actual.catalogue.map((item) => item.itemId)).toEqual(
+      expected.catalogue.map((item) => item.itemId),
+    );
+    expect(scoped.gateway.read.mock.calls.length).toBeLessThan(full.gateway.read.mock.calls.length);
+    expect(
+      scoped.gateway.events.mock.calls.some(([, event]) =>
+        [
+          'ProductCreated',
+          'ShipmentDispatched',
+          'LocationRegistered',
+          'OrderTransferLinked',
+        ].includes(event),
+      ),
+    ).toBe(false);
+  });
+  it('rejects other roles and unauthenticated callers', async () => {
+    await request(fixture(buyer).app).get('/api/orders?scope=supplier-inventory').expect(403);
+    await request(fixture(seller, false, CompanyRole.SUPPLIER).app)
+      .get('/api/orders?scope=supplier-inventory')
+      .expect(403);
+  });
+  it('skips foreign listings and orders before loading their details', async () => {
+    const f = inventory();
+    f.gateway.events.mockImplementation(async (_contract, event) =>
+      event === 'ItemListed'
+        ? [{ itemId: id('foreign-item'), batchId, seller: outsider }]
+        : event === 'OrderRequested'
+          ? [{ orderId: id('foreign-order'), seller: outsider }]
+          : [],
+    );
+    const result = await f.service.state('session', 'supplier-inventory');
+    expect(result.catalogue).toEqual([]);
+    expect(
+      f.gateway.read.mock.calls.some(([, method]) => ['getItem', 'getOrder'].includes(method)),
+    ).toBe(false);
+  });
+  it('validates the scope parameter', async () => {
+    await request(inventory().app).get('/api/orders?scope=invalid').expect(400);
+  });
+});
+
 describe('order API and private metadata', () => {
   it('publishes real product availability, recorded origin and traceability status to Retailers', async () => {
     const f = fixture(buyer, true, CompanyRole.RETAILER);

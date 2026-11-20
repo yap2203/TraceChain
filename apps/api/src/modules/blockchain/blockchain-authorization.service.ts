@@ -1,3 +1,4 @@
+import { blockchainProvider } from './rpc-provider.js';
 import { CompanyRole } from '@tracechain/shared';
 import { Contract, getAddress, JsonRpcProvider } from 'ethers';
 
@@ -42,7 +43,7 @@ export class EthersBlockchainAuthorizationService implements BlockchainAuthoriza
     credentialRegistryAddress: string,
     chainId: number,
   ) {
-    this.provider = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    this.provider = blockchainProvider(rpcUrl, chainId);
     this.registry = new Contract(registryAddress, stakeholderRegistryAbi, this.provider);
     this.credentialRegistry = new Contract(
       credentialRegistryAddress,

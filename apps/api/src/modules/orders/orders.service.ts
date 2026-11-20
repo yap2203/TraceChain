@@ -16,7 +16,7 @@ import {
   decodeShipmentQr,
   encodeShipmentQr,
 } from '@tracechain/shared';
-import type { AuthService } from '../auth/auth.service.js';
+import { assertAuthorizationAvailable, type AuthService } from '../auth/auth.service.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { ProductionFlowRepository } from '../production-flow/production-flow.repository.js';
 import type { OrdersGateway, ChainRecord } from './orders.gateway.js';
@@ -1585,6 +1585,7 @@ export class OrdersService {
   }
   private async authorizedSession(sessionId?: string) {
     const session = await this.auth.getSession(sessionId);
+    assertAuthorizationAvailable(session);
     if (!session.authenticated || !session.authorizationReady || !session.address)
       throw new OrdersError(
         'AUTHORIZATION_REQUIRED',
@@ -1872,8 +1873,15 @@ export class OrdersService {
     const image = pending || stored?.image ? stored.image : stored;
     return decodeStoredCatalogueImage(image);
   }
-  async state(sessionId?: string) {
+  async state(sessionId?: string, scope?: 'supplier-inventory') {
     const session = await this.session(sessionId);
+    const inventoryOnly = scope === 'supplier-inventory';
+    if (inventoryOnly && session.role !== CompanyRole.SUPPLIER)
+      throw new OrdersError(
+        'SUPPLIER_REQUIRED',
+        'Only Suppliers can view their ingredient inventory.',
+        403,
+      );
     const [
       listings,
       orderEvents,
@@ -1884,14 +1892,22 @@ export class OrdersService {
     ] = await Promise.all([
       this.gateway.events('orders', 'ItemListed'),
       this.gateway.events('orders', 'OrderRequested'),
-      this.gateway.events('orders', 'LocationRegistered'),
-      this.gateway.events('orders', 'ShipmentDispatched'),
-      this.gateway.events('custody', 'OrderTransferLinked'),
-      this.gateway.events('custody', 'InventoryInitialized'),
+      inventoryOnly ? [] : this.gateway.events('orders', 'LocationRegistered'),
+      inventoryOnly ? [] : this.gateway.events('orders', 'ShipmentDispatched'),
+      inventoryOnly ? [] : this.gateway.events('custody', 'OrderTransferLinked'),
+      inventoryOnly ? [] : this.gateway.events('custody', 'InventoryInitialized'),
     ]);
-    const catalogue = await Promise.all(
-      [...new Set(listings.map((entry) => entry.itemId))].map(async (itemId) => {
+    const listedCatalogue = await Promise.all(
+      [
+        ...new Set(
+          listings
+            .filter((entry) => !inventoryOnly || same(entry.seller, session.address))
+            .map((entry) => entry.itemId),
+        ),
+      ].map(async (itemId) => {
         const item = await this.gateway.read('orders', 'getItem', [itemId]);
+        if (inventoryOnly && (Number(item.kind) !== 1 || !same(item.seller, session.address)))
+          return null;
         const batches = [
           ...new Set(
             listings.filter((entry) => entry.itemId === itemId).map((entry) => entry.batchId),
@@ -1941,15 +1957,18 @@ export class OrdersService {
         return { ...item, itemId, unit: decodeBytes32String(item.unit), batches, batchDetails };
       }),
     );
-    for (const kind of [1, 2]) {
+    const catalogue = listedCatalogue.filter((item) => item !== null);
+    for (const kind of inventoryOnly ? [1] : [1, 2]) {
       const events = await this.gateway.events(
         kind === 1 ? 'ingredients' : 'products',
         kind === 1 ? 'IngredientBatchRegistered' : 'ProductCreated',
       );
       for (const event of events) {
+        if (inventoryOnly && !same(event.supplier, session.address)) continue;
         const batchId = event.batchId ?? event.productBatchId;
         if (!batchId) continue;
         const batch = await this.catalogueBatch(kind, batchId);
+        if (inventoryOnly && !same(batch.supplier, session.address)) continue;
         const summary = await this.discoverBatch(kind, batchId, batch);
         const existing = catalogue.find((entry) => entry.batches.includes(batchId));
         if (existing) {
@@ -2027,11 +2046,15 @@ export class OrdersService {
       ingredientDeliverySupported &&
       Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1;
     const shipmentReviewSupported =
-      warehouseSupported && Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1;
+      !inventoryOnly &&
+      warehouseSupported &&
+      Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1;
     const fulfilmentSupported =
-      warehouseSupported && Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) === 2;
+      !inventoryOnly &&
+      warehouseSupported &&
+      Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) === 2;
     const productDeliverySupported =
-      Number(await this.optionalRead('custody', 'productDeliveryPolicy')) === 1;
+      !inventoryOnly && Number(await this.optionalRead('custody', 'productDeliveryPolicy')) === 1;
     const logistics = warehouseSupported
       ? await readLogistics(
           this.gateway,
@@ -2039,8 +2062,70 @@ export class OrdersService {
           session.role === CompanyRole.SYSTEM_ADMIN,
           shipmentReviewSupported,
           productDeliverySupported,
+          inventoryOnly,
         )
       : undefined;
+    if (inventoryOnly) {
+      const actor = session.address;
+      const stockOrders: ChainRecord[] = [];
+      for (const event of orderEvents) {
+        if (!same(event.seller, actor)) continue;
+        const order = await this.gateway.read('orders', 'getOrder', [event.orderId]);
+        if (!same(order.seller, actor)) continue;
+        const custody = warehouseSupported
+          ? await this.gateway.read('delivery', 'custodyOrders', [event.orderId])
+          : undefined;
+        stockOrders.push({
+          ...order,
+          orderId: event.orderId,
+          isRequestOnly: await this.optionalRead('orders', 'requestOnly', [event.orderId]),
+          requestedBatch: approvedReceiptsSupported
+            ? await this.gateway.read('orders', 'requestedBatch', [event.orderId])
+            : undefined,
+          approvedReceivedQuantity: approvedReceiptsSupported
+            ? await this.gateway.read('orders', 'approvedReceivedQuantity', [event.orderId])
+            : undefined,
+          decision: await this.optionalRead('orders', 'requestDecision', [event.orderId]),
+          delivery: ingredientDeliverySupported
+            ? await this.gateway.read('delivery', 'get', [event.orderId])
+            : undefined,
+          custodyOrder:
+            custody &&
+            logistics?.positions.some((position) => same(position.positionId, custody.positionId))
+              ? true
+              : undefined,
+        });
+      }
+      const positions =
+        logistics?.positions.filter((position) => same(position.supplier, actor)) ?? [];
+      const identities =
+        (await this.directory?.resolveMany([
+          ...new Set([actor, ...positions.map((position) => position.distributor)]),
+        ])) ?? [];
+      const companyName = (wallet: string) =>
+        identities.find((identity) => same(identity.walletAddress, wallet))?.companyName;
+      return {
+        actor,
+        role: session.role,
+        chainId: this.gateway.chainId,
+        ordersAddress: this.gateway.address,
+        catalogue: catalogue.map((item) => ({
+          ...item,
+          sellerName: companyName(actor),
+          custodyPositions: positions
+            .filter((position) => item.batches.includes(position.batchId))
+            .map((position) => ({
+              ...position,
+              distributorName: companyName(position.distributor),
+              supplierName: companyName(actor),
+            })),
+        })),
+        supplierStock: supplierStock(actor, catalogue, stockOrders, Math.floor(Date.now() / 1000)),
+        orders: [],
+        shipments: [],
+        locations: [],
+      };
+    }
     const orders: ChainRecord[] = [];
     const shipments: ChainRecord[] = [];
     const actor = session.address;

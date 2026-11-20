@@ -1,5 +1,94 @@
 # Project Progress
 
+## 2026-11-20 - Share RPC transport and distinguish authorization outages
+
+- Replaced seven independent API gateway providers with one provider per configured
+  RPC/network. Added public-network request pacing, disabled JSON-RPC batches, coalesced
+  identical in-flight reads with per-request response IDs, and bounded throttling retries
+  to two backoffs (1 s, 2 s). Never retries/deduplicates transaction submissions; local
+  chain 31337 retains ordinary transport. No completed stock/authorization cache added
+  beyond ethers' existing short request cache.
+- Coalesced concurrent authorization refreshes per wallet without sharing sessions or
+  persisting a prior grant as fallback. A later fresh request still sees suspension or
+  revocation. Orders/branding, ingredient authorization guards and blockchain operations
+  now distinguish UNAVAILABLE (503) from denied authorization (403). Kept wallet-only
+  session inspection and offline credential verification working independently.
+- Live read-only Sepolia check ran authorization, operations, ingredient deployment/list
+  and order deployment together: all succeeded in 7.1 s without RPC errors. This is a
+  verification sample, not a guaranteed page latency; throughput still depends on the
+  provider's service/quota and current request volume. No public transaction was sent.
+- Added transport retry/deduplication/no-write-retry tests, concurrent authorization /
+  fresh suspension coverage and affected endpoint 503 regression checks. All 424 API
+  tests across 37 files, API type check and API production build passed.
+
+## 2026-11-20 - Reduce Supplier ingredient-grid loading work
+
+- Found the ingredient grid was requesting the full orders state, which also loaded
+  all products, shipments, location details, logistics histories and company branding.
+- Added a validated Supplier-only inventory scope on the existing orders endpoint and
+  switched the grid to it. Filters foreign event owners before detail reads and checks
+  current item/batch ownership; excludes unrelated product/shipment/location event scans.
+  Reuses real batch metadata, credential states and the existing remaining-stock logic.
+- Added positions-only logistics reads to retain owned custody quantities/warehouse
+  labels without shipment or product histories. Resolves only relevant company names;
+  avoids full directory/branding reads. Scope-specific frontend request coalescing keeps
+  inventory responses separate from the full orders workspace. No stock/authorization
+  caching or permission changes were introduced.
+- Verified stock parity with full state, fewer gateway calls, foreign-owner/role denial,
+  scope validation, custody quantity preservation and frontend inventory requests.
+  All 172 orders API tests and 49 relevant frontend tests passed. API/web type checks
+  and production builds passed; existing Vite chunk/directive warnings remain. Actual
+  page latency still depends on RPC performance and the number of owned batches/orders.
+
+## 2026-11-20 - Avoid RPC throttling on operational data reads
+
+- Reproduced operations failure against Sepolia: parallel historical deployment-block
+  discovery caused Infura Too Many Requests / ethers BAD_DATA responses. The previous
+  paginated log fix alone did not prevent this initial discovery workload.
+- Added CHAIN_EVENT_START_BLOCK support. configure:sepolia now verifies the first
+  registry's creation receipt against its deployed address and saves that block with
+  the verified suite configuration. Verification checks run sequentially without RPC
+  batching to avoid a verification-time burst. Successfully updated the active .env;
+  confirmed creation block is 12174274. No secrets or public transactions changed.
+- Event pagination uses that lower bound instead of historical code searches; empty
+  configuration retains discovery and local 31337 retains reset-safe genesis reads.
+- Coalesced in-flight operations reads per wallet, without caching completed/error
+  results or sharing company-scoped data across wallets. Operations RPC failures now
+  return safe readable 503 responses, including a specific busy-provider message.
+- Verified two simultaneous live read-only Sepolia operations calls succeed. All 344
+  relevant API tests, API build and API/contracts type checks passed, including new
+  configured-block validation, duplicate-read isolation/retry and error-response tests.
+
+## 2026-11-20 - Make event history reads compatible with Sepolia RPC limits
+
+- Reproduced ingredient-list 503 with the active RPC: deployed contract getters/code
+  were valid, but the genesis-to-head log request exceeded the provider's 10,000-block
+  range limit. No address or contract-version mismatch was found in those checks.
+- Added a shared event reader that discovers immutable registry creation blocks using
+  historical code reads, caches successful lower-bound lookups per provider/address,
+  and reads complete event histories in inclusive, non-overlapping 5,000-block pages.
+  Failed discovery is retryable; failed pages propagate errors. Chain 31337 bypasses
+  creation caching and scans from zero to support local resets.
+- Replaced all direct API gateway queryFilter calls in ingredient batches, operational
+  blockchain data, orders, production/evidence, custody and product traceability.
+  Preserved exact event filters, wallet restrictions and chronological event order.
+- Verified a real read-only Sepolia ingredient scan succeeds (zero registered events
+  in the configured registry at verification time). Added six regression tests for
+  pagination boundaries, new events, failures/retry, missing contracts and local resets.
+  All 334 relevant API tests, API type check and API build passed. No contract changes,
+  redeployment, public transactions or environment/secret changes were required.
+
+## 2026-11-20 - Initialize authority in the isolated Sepolia runtime directory
+
+- Confirmed the configured authority alias, valid KMS secret format and Admin wallet
+  were present, but the new active Sepolia Veramo directory had no authority identity.
+- Ran the existing SSI bootstrap for the configured directory. Created its encrypted
+  issuer key store and local encrypted Admin credential; preserved the old local runtime
+  directory and existing secrets. No blockchain transaction or IPFS upload was sent.
+- Documented per-directory initialization and the current encrypted storage paths.
+- Verified a second bootstrap reused the same DID, credential ID and hash with
+  authorityDidCreated=false and credentialIssued=false; no duplicate was issued.
+
 ## 2026-11-20 - Refresh API workspace dependencies before development startup
 
 - Diagnosed the missing visibleIngredientClaims runtime export as stale shared dist

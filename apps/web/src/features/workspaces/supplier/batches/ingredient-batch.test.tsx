@@ -299,7 +299,7 @@ describe('Supplier ingredient batch workflow', () => {
     expect(await screen.findByText('Cocoa Powder')).toBeTruthy();
     expect(screen.getByText(/COCOA-2026-001/)).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining('/api/orders'),
+      expect.stringContaining('/api/orders?scope=supplier-inventory'),
       expect.objectContaining({ credentials: 'include' }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));

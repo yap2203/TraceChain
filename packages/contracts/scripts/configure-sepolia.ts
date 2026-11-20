@@ -10,6 +10,9 @@ const environmentPath = fileURLToPath(new URL('.env', root));
 const addressesPath = fileURLToPath(
   new URL('../ignition/deployments/tracechain-sepolia/deployed_addresses.json', import.meta.url),
 );
+const journalPath = fileURLToPath(
+  new URL('../ignition/deployments/tracechain-sepolia/journal.jsonl', import.meta.url),
+);
 const contracts = {
   StakeholderRegistry: 'STAKEHOLDER_REGISTRY_ADDRESS',
   CredentialRegistry: 'CREDENTIAL_REGISTRY_ADDRESS',
@@ -44,7 +47,7 @@ async function main() {
     if (addresses[name] === ZeroAddress)
       throw new ConfigurationError(`${name} cannot use the zero address.`);
   }
-  const provider = new JsonRpcProvider(rpc, undefined, { cacheTimeout: -1 });
+  const provider = new JsonRpcProvider(rpc, undefined, { cacheTimeout: -1, batchMaxCount: 1 });
   try {
     if ((await provider.getNetwork()).chainId !== 11155111n)
       throw new ConfigurationError('The RPC is not Ethereum Sepolia (11155111).');
@@ -66,28 +69,29 @@ async function main() {
           `The ${from}.${getter} reference does not match this deployment.`,
         );
     };
-    await Promise.all([
-      check('StakeholderRegistry', 'credentialRegistry', 'CredentialRegistry'),
-      check('CredentialRegistry', 'stakeholderRegistry', 'StakeholderRegistry'),
-      check('EvidenceRegistry', 'stakeholders', 'StakeholderRegistry'),
-      check('EvidenceRegistry', 'credentials', 'CredentialRegistry'),
-      check('EvidenceRegistry', 'ingredients', 'IngredientRegistry'),
-      check('IngredientRegistry', 'stakeholders', 'StakeholderRegistry'),
-      check('IngredientRegistry', 'credentials', 'CredentialRegistry'),
-      check('IngredientRegistry', 'productRegistry', 'ProductRegistry'),
-      check('IngredientRegistry', 'supplyOrders', 'SupplyChainOrders'),
-      check('ProductRegistry', 'stakeholders', 'StakeholderRegistry'),
-      check('ProductRegistry', 'ingredients', 'IngredientRegistry'),
-      check('ProductRegistry', 'evidence', 'EvidenceRegistry'),
-      check('CustodyTransfer', 'stakeholders', 'StakeholderRegistry'),
-      check('CustodyTransfer', 'products', 'ProductRegistry'),
-      check('CustodyTransfer', 'supplyOrders', 'SupplyChainOrders'),
-      check('SupplyChainOrders', 'stakeholders', 'StakeholderRegistry'),
-      check('SupplyChainOrders', 'ingredients', 'IngredientRegistry'),
-      check('SupplyChainOrders', 'products', 'ProductRegistry'),
-      check('SupplyChainOrders', 'evidence', 'EvidenceRegistry'),
-      check('SupplyChainOrders', 'custody', 'CustodyTransfer'),
-    ]);
+    const checks = [
+      () => check('StakeholderRegistry', 'credentialRegistry', 'CredentialRegistry'),
+      () => check('CredentialRegistry', 'stakeholderRegistry', 'StakeholderRegistry'),
+      () => check('EvidenceRegistry', 'stakeholders', 'StakeholderRegistry'),
+      () => check('EvidenceRegistry', 'credentials', 'CredentialRegistry'),
+      () => check('EvidenceRegistry', 'ingredients', 'IngredientRegistry'),
+      () => check('IngredientRegistry', 'stakeholders', 'StakeholderRegistry'),
+      () => check('IngredientRegistry', 'credentials', 'CredentialRegistry'),
+      () => check('IngredientRegistry', 'productRegistry', 'ProductRegistry'),
+      () => check('IngredientRegistry', 'supplyOrders', 'SupplyChainOrders'),
+      () => check('ProductRegistry', 'stakeholders', 'StakeholderRegistry'),
+      () => check('ProductRegistry', 'ingredients', 'IngredientRegistry'),
+      () => check('ProductRegistry', 'evidence', 'EvidenceRegistry'),
+      () => check('CustodyTransfer', 'stakeholders', 'StakeholderRegistry'),
+      () => check('CustodyTransfer', 'products', 'ProductRegistry'),
+      () => check('CustodyTransfer', 'supplyOrders', 'SupplyChainOrders'),
+      () => check('SupplyChainOrders', 'stakeholders', 'StakeholderRegistry'),
+      () => check('SupplyChainOrders', 'ingredients', 'IngredientRegistry'),
+      () => check('SupplyChainOrders', 'products', 'ProductRegistry'),
+      () => check('SupplyChainOrders', 'evidence', 'EvidenceRegistry'),
+      () => check('SupplyChainOrders', 'custody', 'CustodyTransfer'),
+    ];
+    for (const verify of checks) await verify();
     const registry = new Contract(
       addresses.StakeholderRegistry,
       ['function administrator() view returns (address)'],
@@ -96,11 +100,32 @@ async function main() {
     const administrator = getAddress(await registry.administrator());
     if (administrator === ZeroAddress)
       throw new ConfigurationError('The deployed registry has no administrator.');
+    const journal = (await readFile(journalPath, 'utf8'))
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line));
+    const creation = journal.findLast(
+      (entry) =>
+        entry.type === 'TRANSACTION_CONFIRM' &&
+        entry.futureId === 'TraceChain#StakeholderRegistry' &&
+        entry.receipt?.contractAddress?.toLowerCase() ===
+          addresses.StakeholderRegistry.toLowerCase(),
+    );
+    const receipt = creation?.hash ? await provider.getTransactionReceipt(creation.hash) : null;
+    if (
+      !receipt ||
+      receipt.status !== 1 ||
+      receipt.contractAddress?.toLowerCase() !== addresses.StakeholderRegistry.toLowerCase()
+    )
+      throw new ConfigurationError(
+        'Cannot verify the registry creation block from the Ignition journal.',
+      );
     const updates: Record<string, string> = {
       CHAIN_ID: '11155111',
       CHAIN_NAME: 'Sepolia',
       CHAIN_RPC_URL: rpc,
       CHAIN_CURRENCY_SYMBOL: 'ETH',
+      CHAIN_EVENT_START_BLOCK: String(receipt.blockNumber),
       TRACECHAIN_DATA_DIR: '.tracechain/sepolia',
       BOOTSTRAP_ADMIN_WALLET: administrator,
     };

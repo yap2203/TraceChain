@@ -16,14 +16,15 @@ export async function readLogistics(
   admin = false,
   reviewSupported = false,
   productDeliverySupported = false,
+  positionsOnly = false,
 ) {
   const [warehouseEvents, positionEvents, shipmentEvents, productEvents, inventoryEvents] =
     await Promise.all([
       gateway.events('delivery', 'WarehouseRegistered'),
       gateway.events('delivery', 'CustodyPositionCreated'),
-      gateway.events('delivery', 'RoadShipmentDispatched'),
-      gateway.events('custody', 'TransferCreated'),
-      gateway.events('custody', 'InventoryInitialized'),
+      positionsOnly ? [] : gateway.events('delivery', 'RoadShipmentDispatched'),
+      positionsOnly ? [] : gateway.events('custody', 'TransferCreated'),
+      positionsOnly ? [] : gateway.events('custody', 'InventoryInitialized'),
     ]);
   const warehouses: ChainRecord[] = await Promise.all(
     warehouseEvents.map(async (entry) => ({
@@ -31,9 +32,10 @@ export async function readLogistics(
       location: entry.location,
     })),
   );
-  const positions = await Promise.all(
+  const positionRecords = await Promise.all(
     positionEvents.map(async (entry) => {
       const result = await gateway.read('delivery', 'getPosition', [entry.positionId]);
+      if (positionsOnly && !same(result.position.supplier, actor)) return null;
       return {
         ...result.position,
         positionId: entry.positionId,
@@ -51,6 +53,9 @@ export async function readLogistics(
       };
     }),
   );
+  const positions = positionRecords.filter((position) => position !== null);
+  if (positionsOnly)
+    return { warehouses, positions, shipments: [], productStock: [], productPositions: [] };
   const shipments: ChainRecord[] = [];
   const qr = (shipmentId: `0x${string}`, kind: 'ingredient' | 'product') => {
     try {

@@ -528,6 +528,39 @@ Starting the API separately also rebuilds shared and SSI dependencies before its
 watcher starts. Restart the API after changing those packages to refresh their compiled
 exports; this prevents startup errors such as a missing `visibleIngredientClaims` export.
 
+Public-network event reads use `CHAIN_EVENT_START_BLOCK`, written by `configure:sepolia`
+from the verified StakeholderRegistry creation receipt (the first contract in this
+module). They query the suite's complete history in pages of at most 5,000 blocks.
+Never set this block later than the suite's first deployment: doing so omits history.
+If unset, the reader discovers each contract's creation block. This avoids Sepolia RPC range
+limits affecting ingredient lists, operational data, orders, evidence, custody and
+traceability. Only creation-block lookups are cached in memory; events are read again
+on refresh. Local chain 31337 starts at block zero and avoids creation-block caching
+so node resets remain supported. Discovery requires historical `eth_getCode` support;
+RPC failures remain errors, rather than being shown as an empty inventory. Setting the
+verified start block avoids repeated historical code searches and their RPC cost.
+Duplicate in-flight operations reads share work only for the same wallet; results are
+read again after completion. Provider throttling returns a readable 503 response.
+
+The Supplier ingredient grid uses `GET /api/orders?scope=supplier-inventory` instead
+of loading the full orders workspace. This Supplier-only view reads owned ingredient
+batches, current credentials, request demand and custody quantities without reading
+product/shipment histories or the full company directory. It retains the same remaining
+stock calculation and does not cache authorization or available stock. Full order and
+shipment pages keep the existing unscoped endpoint; frontend in-flight requests are
+coalesced separately per scope.
+
+API contract gateways share one RPC provider per URL/network. Public-network requests
+are paced (200 ms between ordinary starts, 650 ms after a log query), JSON-RPC batching
+is disabled, and identical pending reads share their result. Throttled read requests
+retry at most twice with 1 s / 2 s backoff. Transaction submissions are never retried
+or deduplicated by this transport. Local chain 31337 keeps the ordinary transport.
+Concurrent session checks for the same wallet share only the current in-flight
+authorization check; the next check re-reads the chain. No prior authorization grant
+is reused after an RPC failure. Orders, branding, ingredient inventory and operations
+return a readable 503 when authorization is unavailable; actual role/lifecycle denials
+remain 403. SIWE session inspection and offline credential verification remain separate.
+
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:3000`
 - Health check: `GET http://localhost:3000/api/health`
@@ -754,7 +787,7 @@ controls remain removed. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md
 
 ## SSI and System Admin bootstrap
 
-`@tracechain/ssi` configures Veramo 7 with did:ethr on Sepolia, JWT credentials, DID/credential/message metadata in a public JSON store, and SecretBox-encrypted private issuer keys in a separate JSON store. Runtime files are written under `.tracechain/veramo/` and ignored by Git. The beta `@veramo/data-store-json` package is accepted for this FYP prototype, not presented as an automatic production recommendation.
+`@tracechain/ssi` configures Veramo 7 with did:ethr on Sepolia, JWT credentials, public DID/key metadata and encrypted credential/message storage. Private issuer keys use a separate SecretBox-encrypted store. Runtime files are written under `<TRACECHAIN_DATA_DIR>/veramo/` (default `.tracechain/veramo/`, active Sepolia `.tracechain/sepolia/veramo/`) and ignored by Git. The beta `@veramo/data-store-json` package is accepted for this FYP prototype, not presented as an automatic production recommendation.
 
 Generate a 32-byte hexadecimal development KMS secret without placing it in source code:
 
@@ -768,6 +801,13 @@ Put that value, a real Sepolia RPC URL, the authority alias, and the public Admi
 npm run ssi:bootstrap-admin
 npm run ssi:export-admin-credential
 ```
+
+When selecting a fresh `TRACECHAIN_DATA_DIR`, run `npm run ssi:bootstrap-admin`
+once for that directory, then restart the API. Merely setting the authority alias
+does not create its DID/key record. `The TraceChain authority identity is not
+configured` can mean bootstrap has not been run in the active directory. Existing
+directories should retain their issuer files and KMS secret; do not replace an
+existing issuer to repair a storage or decryption failure.
 
 Do not run these commands with `.env.example` placeholders. The bootstrap command creates or reuses the server-managed Product Traceability Authority DID, derives the Admin subject DID from the public wallet address, and issues at most one active bootstrap `SYSTEM_ADMIN` Company Role Credential. The export command copies that verified credential to `.tracechain/holder/admin-company-role-credential.json` for development-only holder delivery. It will not silently overwrite a different credential. CLI output contains safe identifiers and status only. The credential and encrypted issuer key remain off-chain; MetaMask continues to control the Admin wallet key.
 

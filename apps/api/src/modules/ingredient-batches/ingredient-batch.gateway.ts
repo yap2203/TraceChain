@@ -1,3 +1,5 @@
+import { blockchainProvider } from '../blockchain/rpc-provider.js';
+import { queryContractEvents } from '../blockchain/contract-events.js';
 import { Contract, Interface, JsonRpcProvider, encodeBytes32String, getAddress, id } from 'ethers';
 
 import type { PreparedTransaction } from '../blockchain/blockchain-gateway.service.js';
@@ -95,7 +97,7 @@ export class EthersIngredientBatchGateway implements IngredientBatchGateway {
     private readonly credentialAddress: string,
     private readonly ingredientAddress: string,
   ) {
-    this.provider = new JsonRpcProvider(rpcUrl, chainId, { staticNetwork: true });
+    this.provider = blockchainProvider(rpcUrl, chainId);
     this.stakeholders = new Contract(stakeholderAddress, stakeholderAbi, this.provider);
     this.credentials = new Contract(credentialAddress, credentialAbi, this.provider);
     this.ingredients = new Contract(ingredientAddress, ingredientAbi, this.provider);
@@ -185,7 +187,7 @@ export class EthersIngredientBatchGateway implements IngredientBatchGateway {
 
   async listBatchIds(supplierWallet: string) {
     const filter = this.ingredients.filters.IngredientBatchRegistered(null, supplierWallet);
-    const logs = await this.ingredients.queryFilter(filter, 0, 'latest');
+    const logs = await queryContractEvents(this.ingredients, filter);
     return logs.map((log) =>
       String((log as unknown as { args: { batchId: string } }).args.batchId),
     );

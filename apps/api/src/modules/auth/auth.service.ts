@@ -14,6 +14,7 @@ import type {
   NonceRecord,
   SessionRecord,
   SessionResponse,
+  OnChainAuthorizationSummary,
 } from './auth.types.js';
 
 const AUTHORIZED_MESSAGE =
@@ -28,6 +29,21 @@ export class AuthError extends Error {
   ) {
     super(message);
   }
+}
+
+export function assertAuthorizationAvailable(session: SessionRecord | SessionResponse) {
+  const status =
+    'authorizationStatus' in session
+      ? session.authorizationStatus
+      : 'onChainAuthorization' in session
+        ? session.onChainAuthorization?.status
+        : undefined;
+  if (status === 'UNAVAILABLE')
+    throw new AuthError(
+      'BLOCKCHAIN_AUTHORIZATION_UNAVAILABLE',
+      'The blockchain provider is temporarily unavailable or busy. Wait a moment and retry; your wallet session is still signed in.',
+      503,
+    );
 }
 
 interface AuthServiceDependencies {
@@ -47,6 +63,7 @@ export class AuthService {
   private readonly authorizationResolver?: LoginAuthorizationResolver;
   private readonly stakeholderDirectory?: Pick<StakeholderDirectory, 'resolve'>;
   private readonly attempts = new Map<string, number[]>();
+  private readonly pendingAuthorizations = new Map<string, Promise<OnChainAuthorizationSummary>>();
 
   constructor({
     authorizationResolver,
@@ -263,6 +280,20 @@ export class AuthService {
   }
 
   private async refreshAuthorization(session: SessionRecord): Promise<SessionRecord> {
+    const key = session.address.toLowerCase();
+    let pending = this.pendingAuthorizations.get(key);
+    if (!pending) {
+      pending = this.resolveAuthorization(session);
+      this.pendingAuthorizations.set(key, pending);
+    }
+    try {
+      return { ...session, onChainAuthorization: await pending };
+    } finally {
+      if (this.pendingAuthorizations.get(key) === pending) this.pendingAuthorizations.delete(key);
+    }
+  }
+
+  private async resolveAuthorization(session: SessionRecord): Promise<OnChainAuthorizationSummary> {
     let onChainAuthorization = this.authorizationResolver
       ? await this.authorizationResolver.resolve(session.address)
       : (session.onChainAuthorization ?? {
@@ -285,7 +316,7 @@ export class AuthService {
         // Presentation metadata must not alter an otherwise valid authorization decision.
       }
     }
-    return { ...session, onChainAuthorization };
+    return onChainAuthorization;
   }
 
   private checkRateLimit(key: string, limit: number) {

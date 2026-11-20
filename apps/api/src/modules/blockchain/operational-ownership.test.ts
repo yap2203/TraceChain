@@ -10,7 +10,7 @@ import type { CompanyRoleIssuanceRepository } from '../ssi/issuance.repository.j
 
 const actor = '0x1000000000000000000000000000000000000001';
 const other = '0x2000000000000000000000000000000000000002';
-function fixture(role: CompanyRole, authorized = true) {
+function fixture(role: CompanyRole, authorized = true, authorizationStatus?: string) {
   const data = {
     ingredientBatches: [
       { batchId: 'own-ingredient', supplier: actor },
@@ -34,14 +34,13 @@ function fixture(role: CompanyRole, authorized = true) {
   const controller = new BlockchainController(
     gateway as unknown as BlockchainGateway,
     {
-      getSession: vi
-        .fn()
-        .mockResolvedValue({
-          authenticated: authorized,
-          authorizationReady: authorized,
-          address: actor,
-          role,
-        }),
+      getSession: vi.fn().mockResolvedValue({
+        authenticated: authorized,
+        authorizationReady: authorized && authorizationStatus !== 'UNAVAILABLE',
+        authorizationStatus,
+        address: actor,
+        role,
+      }),
     } as unknown as AuthService,
     'session',
     {} as ApplicationMetadataRepository,
@@ -52,6 +51,12 @@ function fixture(role: CompanyRole, authorized = true) {
   return { app, gateway };
 }
 describe('operational resource ownership', () => {
+  it('returns 503 rather than 403 when current authorization cannot be read', async () => {
+    const f = fixture(CompanyRole.SUPPLIER, true, 'UNAVAILABLE');
+    const response = await request(f.app).get('/operational').expect(503);
+    expect(response.body.error.code).toBe('BLOCKCHAIN_AUTHORIZATION_UNAVAILABLE');
+    expect(f.gateway.listOperationalData).not.toHaveBeenCalled();
+  });
   it.each([CompanyRole.MANUFACTURER, CompanyRole.SUPPLIER])(
     'filters mixed gateway records before returning company management data: %s',
     async (role) => {
@@ -87,5 +92,21 @@ describe('operational resource ownership', () => {
     const f = fixture(CompanyRole.MANUFACTURER, false);
     await request(f.app).get('/operational').expect(403);
     expect(f.gateway.listOperationalData).not.toHaveBeenCalled();
+  });
+  it('returns a readable 503 for RPC rate limits without exposing provider details', async () => {
+    const f = fixture(CompanyRole.MANUFACTURER);
+    f.gateway.listOperationalData.mockRejectedValueOnce(
+      new Error('Too Many Requests: private-provider-details'),
+    );
+    const response = await request(f.app).get('/operational').expect(503);
+    expect(response.body.error.code).toBe('BLOCKCHAIN_RATE_LIMITED');
+    expect(response.body.error.message).toContain('Wait a moment');
+    expect(JSON.stringify(response.body)).not.toContain('private-provider-details');
+  });
+  it('returns a readable 503 for unavailable operational reads', async () => {
+    const f = fixture(CompanyRole.MANUFACTURER);
+    f.gateway.listOperationalData.mockRejectedValueOnce(new Error('RPC unavailable'));
+    const response = await request(f.app).get('/operational').expect(503);
+    expect(response.body.error.code).toBe('OPERATIONAL_READS_UNAVAILABLE');
   });
 });

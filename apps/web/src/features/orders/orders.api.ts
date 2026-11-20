@@ -62,13 +62,15 @@ async function request<T>(
   }
   return response.json();
 }
-let ordersRequest: Promise<OrdersState> | undefined;
-export const getOrders = () => {
-  if (ordersRequest) return ordersRequest;
-  const pending = request<OrdersState>('');
-  ordersRequest = pending;
+const ordersRequests = new Map<string, Promise<OrdersState>>();
+export const getOrders = (scope?: 'supplier-inventory') => {
+  const path = scope ? `?scope=${scope}` : '';
+  const existing = ordersRequests.get(path);
+  if (existing) return existing;
+  const pending = request<OrdersState>(path);
+  ordersRequests.set(path, pending);
   const clear = () => {
-    if (ordersRequest === pending) ordersRequest = undefined;
+    if (ordersRequests.get(path) === pending) ordersRequests.delete(path);
   };
   void pending.then(clear, clear);
   return pending;
