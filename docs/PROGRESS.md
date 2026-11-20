@@ -1,5 +1,23 @@
 # Project Progress
 
+## 2026-11-20 - Cross-device encrypted company application manifests
+
+- Replaced new registration `local://` profile references with a canonical version-1 application
+  manifest encrypted through the existing AES-256-GCM IPFS content store. Separate encrypted
+  attachment references bind file kind, name, MIME type, size and exact byte hash.
+- Added two applicant-wallet signatures: complete content authorization before storage and final
+  application/chain/registry/role/CID/hash binding before unsigned transaction preparation. Admin
+  review treats on-chain fields as authoritative and validates manifest context and integrity.
+- Made local metadata/document/logo records legacy caches rather than normal discovery sources.
+  Authorized Admin review, approved stakeholder branding, current company identity and credential
+  discovery can resolve through chain references and encrypted content on a fresh backend configured
+  with the same addresses, gateway and encryption key.
+- Added stable same-form retry behavior, explicit upload/signature/transaction/confirmation states,
+  duplicate blocking after broadcast, manifest retrieval/error handling, bounded attachment reads,
+  and a read-only `applications:assess-legacy` command. Existing journals are preserved.
+- Added focused manifest integrity/context/fresh-backend/retry tests and remote stakeholder-directory
+  coverage. No contract, deployment, chain record or environment value was changed.
+
 ## 2026-11-20 - Optimize RPC, event indexing and operational dashboards
 
 - Replaced the serialized fixed-delay API RPC queue with configurable bounded concurrency,

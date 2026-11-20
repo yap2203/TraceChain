@@ -10,6 +10,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   prepare: vi.fn(),
+  prepareManifest: vi.fn(),
   send: vi.fn(),
   wait: vi.fn(),
 }));
@@ -28,6 +29,12 @@ vi.mock('../auth/useWalletAuthentication', () => ({
 }));
 vi.mock('./WorkspaceScreen', () => ({ WorkspaceScreen: () => <p>Authorized workspace screen</p> }));
 vi.mock('../blockchain/blockchain.api', () => ({
+  getApplicationManifestConfiguration: vi.fn(async () => ({
+    chainId: 31337,
+    declarationVersion: 'tracechain-company-registration-v1',
+    registryAddress: '0x1000000000000000000000000000000000000001',
+  })),
+  prepareApplicationManifest: mocks.prepareManifest,
   prepareCompanyApplication: mocks.prepare,
   sendPreparedTransaction: mocks.send,
 }));
@@ -52,8 +59,20 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.logout.mockResolvedValue(undefined);
   mocks.prepare.mockResolvedValue({ chainId: 31337 });
+  mocks.prepareManifest.mockImplementation(async (input) => ({
+    applicationId: input.applicationId,
+    applicantWallet: input.applicantWallet,
+    bindingMessage: 'Bind the encrypted manifest',
+    companyName: input.companyName,
+    companyRegistrationNumber: input.companyRegistrationNumber,
+    registrationCountry: input.registrationCountry,
+    encryptedProfileCid: `ipfs://b${'a'.repeat(50)}`,
+    previousApplicationId: input.previousApplicationId,
+    profileHash: `0x${'22'.repeat(32)}`,
+    requestedRole: input.requestedRole,
+  }));
   mocks.wait.mockResolvedValue({ status: 1, hash: '0x-public-test-reference' });
-  mocks.send.mockResolvedValue({ wait: mocks.wait });
+  mocks.send.mockResolvedValue({ hash: '0x-public-test-reference', wait: mocks.wait });
   window.ethereum = {} as NonNullable<Window['ethereum']>;
 });
 afterEach(cleanup);
@@ -102,6 +121,11 @@ it('returns to Login only after company application confirmation and announces s
   expect(screen.queryByText('Confirm the declaration before submitting.')).toBeNull();
   expect(mocks.prepare).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('checkbox'));
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: 'Submit application' }) as HTMLButtonElement).disabled,
+    ).toBe(false),
+  );
   fireEvent.submit(document.querySelector('form')!);
   expect(mocks.prepare).not.toHaveBeenCalled();
   let confirm: ((receipt: unknown) => void) | undefined;
@@ -111,7 +135,8 @@ it('returns to Login only after company application confirmation and announces s
     }),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Submit application' }));
-  await waitFor(() => expect(mocks.wait).toHaveBeenCalledOnce());
+  await waitFor(() => expect(mocks.prepareManifest).toHaveBeenCalledOnce(), { timeout: 10_000 });
+  await waitFor(() => expect(mocks.wait).toHaveBeenCalledOnce(), { timeout: 10_000 });
   const application = mocks.prepare.mock.calls[0]![0];
   expect(application).not.toHaveProperty('initialLocationName');
   expect(application).not.toHaveProperty('initialLocationAddress');
@@ -119,4 +144,4 @@ it('returns to Login only after company application confirmation and announces s
   confirm?.({ status: 1, hash: '0x-public-test-reference' });
   await screen.findByRole('heading', { name: 'Wallet login destination' });
   expect(screen.getByText(/Application submitted successfully/)).toBeTruthy();
-});
+}, 15_000);

@@ -320,11 +320,12 @@ Suppliers can upload one optional PNG/JPEG/WebP catalogue image per owned ingred
 verified company can upload or replace its own optional logo, each limited to 2 MB. Company
 registration also accepts an optional logo separately from supporting documents. Every application,
 including one without a logo, requires an applicant-wallet signature over the exact application ID
-and all submitted metadata. When present, the same proof includes the validated logo digest. The API
-validates the complete proof and actual image bytes before persisting either record, rejects
-conflicting application-ID retries and keeps identical retries idempotent. It stores pending logos
-encrypted off-chain. They are visible only to an authorized Admin during review and become available
-through authenticated stakeholder branding
+and all submitted metadata. When present, the same proof includes validated document and logo
+digests. New applications are stored as a canonical, versioned, AES-256-GCM encrypted manifest in
+the configured IPFS store. `StakeholderRegistry` records that manifest's real `ipfs://` reference
+and exact canonical hash; it no longer records `local://` for new registrations. Pending logos and
+documents resolve through the manifest, not an originating machine's JSON lookup. They are visible
+only to an authorized Admin during review and become available through authenticated stakeholder branding
 routes only after that exact application is active. Rejected and still-pending logos are not exposed
 to other stakeholders. Catalogue responses expose authenticated media routes rather than storage
 CIDs or ciphertext. Images and prices are presentation data, not credential claims or independent
@@ -601,7 +602,12 @@ Distributor's SSI credential.
 
 MetaMask can add the configured local network automatically. Hardhat account 0 is the deployed System Admin; use a different generated account to test a new company application because an active administrator cannot submit a stakeholder application. Hardhat development private keys are public test keys and must never be funded or reused on a public network.
 
-The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction locally. Before retaining metadata, the API verifies an applicant-wallet signature bound to every submitted registration field. An optional company logo is included in that proof, byte-validated and encrypted; it is not part of the supporting-document bundle or an on-chain credential claim. Application metadata uses atomic, concurrency-safe JSON persistence so simultaneous registrations do not overwrite one another. Supporting files are now encrypted and pinned before the transaction is prepared, with an encrypted local review cache. Their exact contents are bound into the applicant signature. The existing on-chain profile reference remains unchanged; the document CID and encrypted cache are maintained off-chain, without a contract change.
+The registration review screen submits a real `StakeholderRegistry.submitApplication` transaction. The applicant first signs the complete content authorization, including company/contact/representative fields and exact document/logo byte digests. The API validates that signature and file bytes, encrypts each attachment, creates a canonical version-1 manifest with recursively sorted object keys and preserved array order, hashes the exact UTF-8 canonical JSON with Ethereum `keccak256`, and encrypts/pins the manifest. A second applicant signature binds its resulting CID/hash, application ID, wallet, role, previous application, chain and registry before unsigned transaction preparation. Local application JSON is only a best-effort legacy cache; normal review and credential discovery read the registry reference and encrypted manifest. No contract change is required.
+
+The browser keeps the same application ID and prepared manifest for recoverable retries while the
+form remains open. Once MetaMask returns a transaction hash, the page disables another submission;
+if confirmation readback is delayed it tells the applicant to sign in and check status rather than
+creating a duplicate.
 
 ### Environment variables
 
@@ -783,11 +789,26 @@ Allowed formats are PDF, PNG and JPEG, up to 10 MB each; all three required docu
 present. Preview is sandboxed, with Download available if the browser blocks inline PDF rendering.
 Reviewing an uploaded file does not cryptographically verify its claims or certify its contents.
 
-The backend stores AES-256-GCM encrypted IPFS copies and an encrypted review cache at ignored
-`.tracechain/applications/documents.encrypted.json`. Original bytes are decrypted only for an
-authorized request. No files, private keys or decryption keys are placed on-chain or in browser
-localStorage. Keep the encrypted cache backed up with existing operator state. Browser key-backup
-controls remain removed. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
+The backend stores AES-256-GCM encrypted IPFS attachments referenced by the signed manifest.
+`.tracechain/applications/documents.encrypted.json` remains only for legacy applications and optional
+compatibility reads. Original bytes are decrypted only for an authorized request. No files, private
+keys or decryption keys are placed on-chain or in browser localStorage. Browser key-backup controls
+remain removed. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
+
+### Legacy application assessment
+
+Run the read-only assessment against the configured chain and data directory:
+
+```bash
+npm run applications:assess-legacy
+```
+
+It reports only shortened application IDs, lifecycle state, recoverable local
+metadata/document/logo sources, missing manifest fields and the contract-permitted migration path.
+It neither decrypts nor prints private records and performs no writes. A pending record has no direct
+update method; an Admin must first request additional evidence and the applicant must sign the
+resubmission. Approved, rejected and withdrawn historical records cannot be silently rewritten by
+the current contract.
 
 ## SSI and System Admin bootstrap
 

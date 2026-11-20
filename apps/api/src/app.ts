@@ -1,4 +1,5 @@
 import { dataFile } from './config/data-directory.js';
+import { CompanyRole } from '@tracechain/shared';
 import {
   ApplicationDocuments,
   applicationDocumentsRouter,
@@ -27,6 +28,10 @@ import {
   JsonApplicationMetadataRepository,
   type ApplicationMetadataRepository,
 } from './modules/blockchain/application-metadata.repository.js';
+import {
+  ApplicationManifestError,
+  ApplicationManifestService,
+} from './modules/blockchain/application-manifest.js';
 import {
   BlockchainGatewayService,
   type BlockchainGateway,
@@ -155,9 +160,22 @@ export function createApp({
       return issuanceRepository.save(record);
     },
   };
+  let listManifestApplicationIdentities:
+    | (() => Promise<
+        Array<{
+          applicationId: string;
+          companyName: string;
+          role: CompanyRole;
+          walletAddress: string;
+        }>
+      >)
+    | undefined;
   const stakeholderDirectory = new VerifiedStakeholderDirectory(
     lazyIssuanceRepository,
     authorizationResolver,
+    {
+      list: () => listManifestApplicationIdentities?.() ?? Promise.resolve([]),
+    },
   );
   const resolvedAuthService =
     authService ??
@@ -308,10 +326,72 @@ export function createApp({
   const companyApplicationMetadata =
     applicationMetadataRepository ??
     new JsonApplicationMetadataRepository(dataFile('applications/company-metadata.json'));
+  const lazyCredentialContentStore: CredentialContentStore = {
+    retrieveAndDecrypt: async (cid) => {
+      credentialContentStore ??= createIssuanceDependencies().contentStore;
+      return credentialContentStore.retrieveAndDecrypt!(cid);
+    },
+    decrypt: async (payload) => {
+      credentialContentStore ??= createIssuanceDependencies().contentStore;
+      return credentialContentStore.decrypt(payload);
+    },
+    encryptAndStore: async (serialized, credentialId) => {
+      credentialContentStore ??= createIssuanceDependencies().contentStore;
+      return credentialContentStore.encryptAndStore(serialized, credentialId);
+    },
+  };
+  const registryReferences = lazyGateway.getRegistryReferences?.() ?? {
+    credentialRegistry: '',
+    stakeholderRegistry: '',
+  };
+  const applicationManifests = new ApplicationManifestService(
+    { chainId: env.CHAIN_ID, registryAddress: registryReferences.stakeholderRegistry },
+    lazyCredentialContentStore,
+    lazyGateway,
+  );
+  listManifestApplicationIdentities = async () => {
+    const applications = await lazyGateway.listApplications();
+    const values = await Promise.all(
+      applications
+        .filter(
+          (application) =>
+            application.status === 'approved' &&
+            !application.encryptedProfileCid.startsWith('local://'),
+        )
+        .map(async (application) => {
+          try {
+            const { manifest } = await applicationManifests.resolve(application);
+            const role = (
+              {
+                Supplier: CompanyRole.SUPPLIER,
+                Manufacturer: CompanyRole.MANUFACTURER,
+                Distributor: CompanyRole.DISTRIBUTOR,
+                Retailer: CompanyRole.RETAILER,
+              } as const
+            )[
+              application.requestedRole as 'Supplier' | 'Manufacturer' | 'Distributor' | 'Retailer'
+            ];
+            return role
+              ? {
+                  applicationId: application.id,
+                  companyName: manifest.company.companyName,
+                  role,
+                  walletAddress: application.applicant,
+                }
+              : null;
+          } catch {
+            return null;
+          }
+        }),
+    );
+    return values.filter((value): value is NonNullable<typeof value> => value !== null);
+  };
   let resolveOrders!: () => OrdersService;
   const applicationDocuments = new ApplicationDocuments(
     dataFile('applications/documents.encrypted.json'),
     () => lazyCredentialContentStore,
+    applicationManifests,
+    lazyGateway,
   );
   const blockchainController = new BlockchainController(
     lazyGateway,
@@ -330,21 +410,8 @@ export function createApp({
     },
     applicationDocuments,
     () => lazyCredentialContentStore,
+    applicationManifests,
   );
-  const lazyCredentialContentStore: CredentialContentStore = {
-    retrieveAndDecrypt: async (cid) => {
-      credentialContentStore ??= createIssuanceDependencies().contentStore;
-      return credentialContentStore.retrieveAndDecrypt!(cid);
-    },
-    decrypt: async (payload) => {
-      credentialContentStore ??= createIssuanceDependencies().contentStore;
-      return credentialContentStore.decrypt(payload);
-    },
-    encryptAndStore: async (serialized, credentialId) => {
-      credentialContentStore ??= createIssuanceDependencies().contentStore;
-      return credentialContentStore.encryptAndStore(serialized, credentialId);
-    },
-  };
   const custodyTransferController = new CustodyTransferController(
     custodyTransferService ??
       createDefaultCustodyTransferService(
@@ -383,6 +450,31 @@ export function createApp({
           loadCredentialStorageEnvironment().ingredientWorkflowStorePath,
         ),
         companyApplicationMetadata,
+        {
+          read: async (applicationId, applicantWallet) => {
+            const application = (await lazyGateway.listApplications()).find(
+              (record) =>
+                record.id.toLowerCase() === applicationId.toLowerCase() &&
+                record.applicant.toLowerCase() === applicantWallet.toLowerCase() &&
+                record.status === 'approved' &&
+                !record.encryptedProfileCid.startsWith('local://'),
+            );
+            if (!application) return undefined;
+            try {
+              const logo = await applicationManifests.readLogo(application);
+              return {
+                bytes: logo.bytes,
+                contentHash: logo.contentHash,
+                fileName: logo.fileName,
+                mimeType: logo.mimeType,
+              };
+            } catch (error) {
+              if (error instanceof ApplicationManifestError && error.code === 'MEDIA_NOT_FOUND')
+                return undefined;
+              throw error;
+            }
+          },
+        },
       );
     }
     return ordersService;
@@ -399,6 +491,24 @@ export function createApp({
       clock: 'clock' in defaultSsi ? defaultSsi.clock : undefined,
       credentialContentStore: lazyCredentialContentStore,
       issuanceRepository: lazyIssuanceRepository,
+      applicationProfile: async (applicationId) => {
+        const application = (await lazyGateway.listApplications()).find(
+          (record) => record.id.toLowerCase() === applicationId.toLowerCase(),
+        );
+        if (!application) return undefined;
+        if (!application.encryptedProfileCid.startsWith('local://')) {
+          const { manifest } = await applicationManifests.resolve(application);
+          return manifest.company;
+        }
+        const metadata = await companyApplicationMetadata.find(applicationId);
+        return metadata
+          ? {
+              companyName: metadata.companyName,
+              companyRegistrationNumber: metadata.companyRegistrationNumber,
+              registrationCountry: metadata.registrationCountry,
+            }
+          : undefined;
+      },
     }),
     env.AUTH_COOKIE_NAME,
   );

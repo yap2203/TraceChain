@@ -5,7 +5,7 @@ import { RegistrationCountrySelect } from './RegistrationCountrySelect';
 import PhoneInput, { isValidPhoneNumber } from 'react-phone-number-input/max';
 import flags from 'react-phone-number-input/flags';
 import 'react-phone-number-input/style.css';
-import { companyApplicationBindingMessage } from '@tracechain/shared';
+import { companyApplicationContentAuthorizationMessage } from '@tracechain/shared';
 import { BrowserProvider, ZeroHash, hexlify, id, isAddress, randomBytes } from 'ethers';
 import {
   Building2,
@@ -30,7 +30,13 @@ import { notify, readableError } from '../../components/ui/feedback';
 import { Brand } from '../../components/brand/Brand';
 import { Button, Card, Input, Modal, Select, StatusBadge } from '../../components/ui';
 import { chainConfig, targetChainId } from '../../config/chain';
-import { prepareCompanyApplication, sendPreparedTransaction } from '../blockchain/blockchain.api';
+import {
+  getApplicationManifestConfiguration,
+  prepareApplicationManifest,
+  prepareCompanyApplication,
+  sendPreparedTransaction,
+  type PreparedApplicationManifest,
+} from '../blockchain/blockchain.api';
 import { imageFilePayload } from '../orders/orders.api';
 import { textError, uploadError } from '../validation/form-validation';
 
@@ -191,7 +197,20 @@ export function RegisterCompanyPage() {
   const connectionPending = useRef(false);
   const [walletFeedback, setWalletFeedback] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [transaction, setTransaction] = useState<{ applicationId: string; hash: string }>();
+  const [submissionStage, setSubmissionStage] = useState('');
+  const [transaction, setTransaction] = useState<{
+    applicationId: string;
+    hash: string;
+    status: 'pending' | 'confirmed';
+  }>();
+  const applicationOperation = useRef<
+    | {
+        applicationId: string;
+        submissionTime: string;
+      }
+    | undefined
+  >(undefined);
+  const preparedManifest = useRef<PreparedApplicationManifest | undefined>(undefined);
   const requiredDocumentCount = requiredDocumentNames.filter((name) => documents[name]).length;
   useEffect(() => {
     if (error) notify(error, 'error');
@@ -207,6 +226,8 @@ export function RegisterCompanyPage() {
   }, [logo]);
   const update = (field: keyof RegistrationData, value: string | boolean) => {
     setData((current) => ({ ...current, [field]: value }));
+    applicationOperation.current = undefined;
+    preparedManifest.current = undefined;
     setError('');
   };
   const informationError = (currentStep?: number) => {
@@ -340,6 +361,8 @@ export function RegisterCompanyPage() {
     }
     const name = event.target.name;
     setDocuments((current) => ({ ...current, [name]: file }));
+    applicationOperation.current = undefined;
+    preparedManifest.current = undefined;
     setData((current) => ({ ...current, declaration: false }));
     setDocumentErrors((current) => {
       const updated = { ...current };
@@ -364,6 +387,8 @@ export function RegisterCompanyPage() {
       return;
     }
     setLogo(file);
+    applicationOperation.current = undefined;
+    preparedManifest.current = undefined;
     setError('');
   };
 
@@ -391,6 +416,7 @@ export function RegisterCompanyPage() {
     }
     setSubmitting(true);
     setError('');
+    let broadcastTransaction: { applicationId: string; hash: string } | undefined;
     try {
       const provider = new BrowserProvider(window.ethereum);
       const network = await provider.getNetwork();
@@ -401,77 +427,130 @@ export function RegisterCompanyPage() {
         throw new Error(
           'The active MetaMask account does not match the connected application wallet.',
         );
-      const applicationId = id(`tracechain-application:${data.wallet}:${hexlify(randomBytes(16))}`);
-      const profileHash = id(
-        JSON.stringify({
-          ...data,
-          declaration: undefined,
-          documents: Object.entries(documents).map(([kind, file]) => ({
-            kind,
-            name: file.name,
-            size: file.size,
-            type: file.type,
-          })),
-          logo: logo ? { name: logo.name, size: logo.size, type: logo.type } : undefined,
-        }),
-      );
+      applicationOperation.current ??= createApplicationOperation(data.wallet);
+      const { applicationId, submissionTime } = applicationOperation.current;
       const documentPayloads = await Promise.all(
         Object.entries(documents).map(async ([kind, file]) => ({
           kind,
           fileName: file.name,
           mimeType: file.type,
-          data: await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result).split(',')[1]!);
-            reader.onerror = () => reject(new Error('The document could not be read.'));
-            reader.readAsDataURL(file);
-          }),
+          ...(await readFilePayload(file)),
         })),
       );
       const logoPayload = logo ? await imageFilePayload(logo) : undefined;
-      const localContentReference = `local://${profileHash}`;
-      const applicationInput = {
-        applicationId,
-        applicantWallet: data.wallet,
-        companyName: data.companyName.trim(),
-        companyRegistrationNumber: data.registrationNumber.trim(),
-        ...(data.registrationCountry ? { registrationCountry: data.registrationCountry } : {}),
-        encryptedProfileCid: localContentReference,
-        previousApplicationId: ZeroHash,
-        profileHash,
-        requestedRole: roleValues[data.requestedRole],
-        documents: documentPayloads,
-        ...(logoPayload ? { logo: logoPayload } : {}),
-      };
-      const applicantSignature = await signer.signMessage(
-        companyApplicationBindingMessage({
-          ...applicationInput,
-          documentsDigest: id(JSON.stringify(documentPayloads)),
-          logoDigest: logoPayload ? id(`${logoPayload.mimeType}:${logoPayload.data}`) : undefined,
-          logoFileName: logoPayload?.fileName,
-          logoMimeType: logoPayload?.mimeType,
-        }),
-      );
+      let manifest = preparedManifest.current;
+      if (!manifest) {
+        setSubmissionStage('Preparing encrypted application content...');
+        const configuration = await getApplicationManifestConfiguration();
+        if (BigInt(configuration.chainId) !== targetChainId)
+          throw new Error('The application storage service targets a different chain.');
+        const descriptors = documentPayloads.map((file) => ({
+          contentHash: file.contentHash,
+          fileName: file.fileName,
+          kind: file.kind,
+          mimeType: file.mimeType,
+          size: file.size,
+        }));
+        const logoDescriptor = logoPayload
+          ? {
+              contentHash: await hashBase64File(logoPayload.data, logoPayload.fileName),
+              fileName: logoPayload.fileName,
+              kind: 'companyLogo',
+              mimeType: logoPayload.mimeType,
+              size: base64ByteLength(logoPayload.data, logoPayload.fileName),
+            }
+          : undefined;
+        const contentAuthorization = {
+          applicationId,
+          applicantWallet: data.wallet,
+          businessAddress: data.address.trim(),
+          chainId: configuration.chainId,
+          ...(data.companyDid.trim() ? { companyDid: data.companyDid.trim() } : {}),
+          companyEmail: data.companyEmail.trim(),
+          companyName: data.companyName.trim(),
+          companyRegistrationNumber: data.registrationNumber.trim(),
+          contactNumber: data.contactNumber,
+          declarationAcceptedAt: submissionTime,
+          declarationVersion: configuration.declarationVersion,
+          documents: descriptors,
+          ...(logoDescriptor ? { logo: logoDescriptor } : {}),
+          previousApplicationId: ZeroHash,
+          registryAddress: configuration.registryAddress,
+          ...(data.registrationCountry ? { registrationCountry: data.registrationCountry } : {}),
+          representativeName: data.representativeName.trim(),
+          representativePosition: data.representativePosition.trim(),
+          requestedRole: roleValues[data.requestedRole],
+          submissionTime,
+        };
+        setSubmissionStage('Confirm application content in MetaMask...');
+        const contentAuthorizationSignature = await signer.signMessage(
+          companyApplicationContentAuthorizationMessage(contentAuthorization),
+        );
+        setSubmissionStage('Encrypting and uploading application content...');
+        manifest = await prepareApplicationManifest({
+          applicationId,
+          applicantWallet: data.wallet,
+          businessAddress: data.address.trim(),
+          ...(data.companyDid.trim() ? { companyDid: data.companyDid.trim() } : {}),
+          companyEmail: data.companyEmail.trim(),
+          companyName: data.companyName.trim(),
+          companyRegistrationNumber: data.registrationNumber.trim(),
+          contactNumber: data.contactNumber,
+          contentAuthorizationSignature,
+          declarationAcceptedAt: submissionTime,
+          declarationVersion: configuration.declarationVersion,
+          documents: documentPayloads.map(({ contentHash: _hash, size: _size, ...file }) => file),
+          ...(logoPayload ? { logo: logoPayload } : {}),
+          previousApplicationId: ZeroHash,
+          ...(data.registrationCountry ? { registrationCountry: data.registrationCountry } : {}),
+          representativeName: data.representativeName.trim(),
+          representativePosition: data.representativePosition.trim(),
+          requestedRole: roleValues[data.requestedRole],
+          submissionTime,
+        });
+        preparedManifest.current = manifest;
+      }
+      setSubmissionStage('Confirm the on-chain application reference in MetaMask...');
+      const applicantSignature = await signer.signMessage(manifest.bindingMessage);
       const prepared = await prepareCompanyApplication({
-        ...applicationInput,
+        applicationId: manifest.applicationId,
+        applicantWallet: manifest.applicantWallet,
         applicantSignature,
+        companyName: manifest.companyName,
+        companyRegistrationNumber: manifest.companyRegistrationNumber,
+        ...(manifest.registrationCountry
+          ? { registrationCountry: manifest.registrationCountry }
+          : {}),
+        encryptedProfileCid: manifest.encryptedProfileCid,
+        previousApplicationId: manifest.previousApplicationId,
+        profileHash: manifest.profileHash,
+        requestedRole: manifest.requestedRole,
       });
       if (BigInt(prepared.chainId) !== targetChainId)
         throw new Error('The API transaction targets a different chain.');
+      setSubmissionStage('Submit the application transaction in MetaMask...');
       const pending = await sendPreparedTransaction(signer, prepared);
+      broadcastTransaction = { applicationId, hash: pending.hash };
+      setTransaction({ ...broadcastTransaction, status: 'pending' });
+      setSubmissionStage('Waiting for blockchain confirmation...');
       const receipt = await pending.wait();
       if (!receipt || receipt.status !== 1)
         throw new Error('The application transaction was not confirmed successfully.');
-      setTransaction({ applicationId, hash: receipt.hash });
+      setTransaction({ applicationId, hash: receipt.hash, status: 'confirmed' });
       notify(
         'Application submitted successfully. Sign in to check its approval status.',
         'success',
       );
       navigate('/login', { replace: true });
     } catch (cause) {
-      setError(readableError(cause, 'The application could not be submitted. Please try again.'));
+      setError(
+        broadcastTransaction
+          ? 'The transaction was submitted, but TraceChain could not confirm the registry readback. Do not submit it again. Sign in with this wallet to check the application status.'
+          : readableError(cause, 'The application could not be submitted. Please try again.'),
+      );
     } finally {
       setSubmitting(false);
+      setSubmissionStage('');
     }
   };
 
@@ -923,7 +1002,11 @@ export function RegisterCompanyPage() {
             )}
             {transaction && (
               <p aria-live="polite" className="registration-success">
-                <strong>Application submitted on {chainConfig.name}.</strong>
+                <strong>
+                  {transaction.status === 'confirmed'
+                    ? `Application submitted on ${chainConfig.name}.`
+                    : 'Application transaction submitted; confirmation is still being checked.'}
+                </strong>
                 <span>Transaction: {transaction.hash}</span>
                 <span>Application ID: {transaction.applicationId}</span>
               </p>
@@ -931,6 +1014,11 @@ export function RegisterCompanyPage() {
             {error && (
               <p aria-live="polite" className="registration-error">
                 {error}
+              </p>
+            )}
+            {submitting && submissionStage && (
+              <p aria-live="polite" className="registration-status">
+                {submissionStage}
               </p>
             )}
             <footer className="registration-actions">
@@ -1017,6 +1105,65 @@ export function RegisterCompanyPage() {
       </main>
     </div>
   );
+}
+
+function readFilePayload(file: File) {
+  return new Promise<{ contentHash: string; data: string; size: number }>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      if (!(reader.result instanceof ArrayBuffer)) {
+        reject(new Error('The document could not be read.'));
+        return;
+      }
+      try {
+        const bytes = new Uint8Array(reader.result);
+        let binary = '';
+        for (const byte of bytes) binary += String.fromCharCode(byte);
+        resolve({ contentHash: await sha256Bytes(bytes), data: btoa(binary), size: bytes.length });
+      } catch {
+        reject(new Error('The document could not be fingerprinted. Select it again.'));
+      }
+    };
+    reader.onerror = () => reject(new Error('The document could not be read.'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function createApplicationOperation(wallet: string) {
+  try {
+    return {
+      applicationId: id(`tracechain-application:${wallet}:${hexlify(randomBytes(16))}`),
+      submissionTime: new Date().toISOString(),
+    };
+  } catch {
+    throw new Error('The browser could not create a secure application identifier. Please retry.');
+  }
+}
+
+async function hashBase64File(data: string, fileName: string) {
+  try {
+    const binary = atob(data);
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    return await sha256Bytes(bytes);
+  } catch {
+    throw new Error(`The selected file ${fileName} could not be fingerprinted. Select it again.`);
+  }
+}
+
+async function sha256Bytes(bytes: Uint8Array) {
+  if (!globalThis.crypto?.subtle) throw new Error('Secure browser hashing is unavailable.');
+  const input = new Uint8Array(bytes.length);
+  input.set(bytes);
+  const digest = new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', input.buffer));
+  return `0x${Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function base64ByteLength(data: string, fileName: string) {
+  try {
+    return atob(data).length;
+  } catch {
+    throw new Error(`The selected file ${fileName} could not be read. Select it again.`);
+  }
 }
 
 function companyInitials(name: string) {

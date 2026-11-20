@@ -134,6 +134,19 @@ export function AppDetail({
     ['Encrypted profile reference', app.encryptedProfileCid],
     ['Previous application', app.previousApplicationId],
   ];
+  const profileRows = [
+    ['Registered company name', app.companyName],
+    ['Registration number', app.companyRegistrationNumber],
+    ['Registration country', app.registrationCountry],
+    ['Business address', app.businessAddress],
+    ['Company email', app.companyEmail],
+    ['Contact number', app.contactNumber],
+    ['Authorised representative', app.representativeName],
+    ['Representative position', app.representativePosition],
+    ['Company DID', app.companyDid],
+    ['Initial location', app.initialLocationName],
+    ['Initial location address', app.initialLocationAddress],
+  ].filter((row): row is [string, string] => Boolean(row[1]));
 
   return (
     <div>
@@ -184,10 +197,27 @@ export function AppDetail({
       </Card>
       <div style={{ marginTop: 14 }}>
         <Alert
-          type="info"
-          message="Plaintext company information and documents are not stored on Ethereum. The encrypted content reference must be resolved through the authorized content service."
+          type={app.contentStatus === 'unavailable' ? 'error' : 'info'}
+          message={
+            app.contentStatus === 'unavailable'
+              ? (app.contentError ?? 'The encrypted application content is unavailable.')
+              : app.contentStatus === 'legacy-local'
+                ? 'Legacy application details are available from this backend cache only. They are not portable to another backend.'
+                : 'Private company information is decrypted from the on-chain encrypted manifest reference for this authorized review.'
+          }
         />
       </div>
+      {profileRows.length > 0 && (
+        <Card>
+          <h3>Applicant-provided company information</h3>
+          {profileRows.map(([label, value]) => (
+            <div className="workspace-detail-row" key={label}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </Card>
+      )}
       <ApplicationDocumentsPanel applicationId={app.id} readOnly />
       {error && <div style={{ marginTop: 12, color: T.red, fontSize: 12 }}>{error}</div>}
       {(app.status === 'pending' || app.status === 'approved') && (
@@ -197,7 +227,7 @@ export function AppDetail({
               Reject on-chain
             </Btn>
           )}
-          <Btn onClick={() => setApproving(true)}>
+          <Btn disabled={app.contentStatus === 'unavailable'} onClick={() => setApproving(true)}>
             {app.status === 'pending'
               ? 'Issue credential & approve'
               : 'Complete credential activation'}
@@ -244,7 +274,9 @@ export function AppDetail({
               label="Registration country (verified by Admin)"
               required
               value={registrationCountry}
-              onChange={setRegistrationCountry}
+              onChange={
+                app.contentStatus === 'available' ? () => undefined : setRegistrationCountry
+              }
             />
             {!registrationCountry && (
               <p>
@@ -264,6 +296,7 @@ export function AppDetail({
               </Btn>
               <Btn
                 disabled={
+                  app.contentStatus === 'unavailable' ||
                   !companyId.trim() ||
                   !companyName.trim() ||
                   !expirationDate ||

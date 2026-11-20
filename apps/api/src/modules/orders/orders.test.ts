@@ -781,7 +781,12 @@ describe('warehouse-first transport preparation', () => {
     ).toBe(503);
   });
 });
-function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTURER) {
+function fixture(
+  actor = buyer,
+  authorized = true,
+  role = CompanyRole.MANUFACTURER,
+  applicationLogos?: ConstructorParameters<typeof OrdersService>[9],
+) {
   const auth = {
     getSession: vi.fn().mockResolvedValue({
       authenticated: authorized,
@@ -892,6 +897,7 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
     {
       resolve: vi.fn(async (walletAddress: string) => ({
         active: true,
+        applicationId: id(`application:${walletAddress.toLowerCase()}`),
         companyName:
           walletAddress.toLowerCase() === seller.toLowerCase()
             ? 'Verified Supplier'
@@ -902,6 +908,7 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
       resolveMany: vi.fn(async (wallets: string[]) =>
         wallets.map((walletAddress) => ({
           active: true as const,
+          applicationId: id(`application:${walletAddress.toLowerCase()}`),
           companyName:
             walletAddress.toLowerCase() === seller.toLowerCase()
               ? 'Verified Supplier'
@@ -912,6 +919,9 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
       ),
       list: vi.fn(async () => []),
     } as unknown as StakeholderDirectory,
+    undefined,
+    undefined,
+    applicationLogos,
   );
   const app = express();
   app.use(express.json({ limit: '4mb' }));
@@ -922,6 +932,23 @@ function fixture(actor = buyer, authorized = true, role = CompanyRole.MANUFACTUR
   return { app, gateway, service, store, repository, auth };
 }
 describe('Supplier inventory read scope', () => {
+  it('serves an approved company logo from the encrypted application source without a local media record', async () => {
+    const remoteLogo = {
+      bytes: Buffer.from('remote approved logo'),
+      contentHash: id('remote approved logo'),
+      fileName: 'company-logo.png',
+      mimeType: 'image/png',
+    };
+    const read = vi.fn(async () => remoteLogo);
+    const f = fixture(seller, true, CompanyRole.SUPPLIER, { read });
+
+    const branding = await request(f.app).get('/api/orders/branding/me').expect(200);
+    expect(branding.body.branding.logoPath).toBe(`/branding/${seller}/logo`);
+    const media = await request(f.app).get(`/api/orders/branding/${seller}/logo`).expect(200);
+    expect(media.body).toEqual(remoteLogo.bytes);
+    expect(read).toHaveBeenCalledWith(id(`application:${seller.toLowerCase()}`), seller);
+  });
+
   it('returns service-unavailable for a failed authorization read on inventory and branding', async () => {
     const f = fixture(seller, true, CompanyRole.SUPPLIER);
     f.auth.getSession.mockResolvedValue({

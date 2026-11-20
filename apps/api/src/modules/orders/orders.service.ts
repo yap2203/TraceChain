@@ -50,6 +50,21 @@ export class OrdersError extends Error {
     super(message);
   }
 }
+
+export interface ApplicationLogoSource {
+  read(
+    applicationId: string,
+    applicantWallet: string,
+  ): Promise<
+    | {
+        bytes: Buffer;
+        contentHash: string;
+        fileName: string;
+        mimeType: string;
+      }
+    | undefined
+  >;
+}
 const same = (a: string, b: string) => a?.toLowerCase() === b?.toLowerCase();
 export class OrdersService {
   private custodyOfferService?: CustodyOffers;
@@ -975,6 +990,7 @@ export class OrdersService {
     private directory?: StakeholderDirectory,
     private ingredientRecords?: IngredientBatchWorkflowRepository,
     private applicationMetadata?: ApplicationMetadataRepository,
+    private applicationLogos?: ApplicationLogoSource,
   ) {}
   async traceability(
     sessionId: string | undefined,
@@ -1002,7 +1018,7 @@ export class OrdersService {
                   identity.walletAddress.toLowerCase(),
                   {
                     companyName: identity.companyName,
-                    logoPath: (await this.companyLogoRecord(
+                    logoPath: (await this.hasCompanyLogo(
                       identity.walletAddress,
                       identity.applicationId,
                     ))
@@ -1785,7 +1801,7 @@ export class OrdersService {
         'A current verified company identity is required.',
         403,
       );
-    const logo = await this.companyLogoRecord(session.address, identity.applicationId);
+    const logo = await this.hasCompanyLogo(session.address, identity.applicationId);
     return {
       branding: {
         companyName: identity.companyName,
@@ -1807,18 +1823,14 @@ export class OrdersService {
       const identity = await this.directory?.resolve(owner);
       if (!identity)
         throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
-      const record = await this.companyLogoRecord(owner, identity.applicationId);
-      if (!record) throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+      const logo = await this.readCompanyLogo(owner, identity.applicationId);
+      if (!logo) throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
       try {
-        const stored = await this.decodeCompanyLogo(
-          record,
-          record.id !== mediaKey('company', owner),
-        );
         return {
-          bytes: stored.bytes,
-          contentHash: record.contentHash,
-          fileName: `${kind}-${createHash('sha256').update(reference.toLowerCase()).digest('hex').slice(0, 16)}.${extensionFor(stored.mimeType)}`,
-          mimeType: stored.mimeType,
+          bytes: logo.bytes,
+          contentHash: logo.contentHash,
+          fileName: logo.fileName,
+          mimeType: logo.mimeType,
         };
       } catch (error) {
         if (error instanceof OrdersError) throw error;
@@ -1862,6 +1874,27 @@ export class OrdersService {
     const active = await this.repository.findPrivate('products', mediaKey('company', wallet));
     if (active && same(active.owner, wallet)) return active;
     return applicationId ? this.pendingCompanyLogoRecord(applicationId, wallet) : undefined;
+  }
+
+  private async readCompanyLogo(wallet: string, applicationId?: string) {
+    const record = await this.companyLogoRecord(wallet, applicationId);
+    if (record) {
+      const stored = await this.decodeCompanyLogo(
+        record,
+        record.id !== mediaKey('company', wallet),
+      );
+      return {
+        bytes: stored.bytes,
+        contentHash: record.contentHash,
+        fileName: `company-${createHash('sha256').update(wallet.toLowerCase()).digest('hex').slice(0, 16)}.${extensionFor(stored.mimeType)}`,
+        mimeType: stored.mimeType,
+      };
+    }
+    return applicationId ? this.applicationLogos?.read(applicationId, wallet) : undefined;
+  }
+
+  private async hasCompanyLogo(wallet: string, applicationId?: string) {
+    return Boolean(await this.readCompanyLogo(wallet, applicationId));
   }
 
   private async decodeCompanyLogo(
@@ -2387,7 +2420,7 @@ export class OrdersService {
     const logoWallets = new Set<string>();
     await Promise.all(
       identities.map(async (identity) => {
-        const logo = await this.companyLogoRecord(identity.walletAddress, identity.applicationId);
+        const logo = await this.hasCompanyLogo(identity.walletAddress, identity.applicationId);
         if (logo) logoWallets.add(identity.walletAddress.toLowerCase());
       }),
     );

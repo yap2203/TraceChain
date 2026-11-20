@@ -6,6 +6,10 @@ import { z, ZodError } from 'zod';
 import { CompanyRole } from '@tracechain/shared';
 import type { AuthService } from '../auth/auth.service.js';
 import type { BlockchainGateway } from './blockchain-gateway.service.js';
+import {
+  ApplicationManifestError,
+  type ApplicationManifestService,
+} from './application-manifest.js';
 import type {
   CredentialContentStore,
   EncryptedCredentialPayload,
@@ -95,6 +99,8 @@ export class ApplicationDocuments {
   constructor(
     private readonly path: string,
     private readonly content: () => CredentialContentStore,
+    private readonly manifests?: ApplicationManifestService,
+    private readonly gateway?: Pick<BlockchainGateway, 'listApplications'>,
   ) {}
   private async records(): Promise<Record<string, StoredDocuments>> {
     try {
@@ -133,6 +139,21 @@ export class ApplicationDocuments {
     return operation;
   }
   async read(applicationId: string, wallet: string) {
+    if (this.manifests && this.gateway) {
+      const application = (await this.gateway.listApplications()).find(
+        (record) => record.id.toLowerCase() === applicationId.toLowerCase(),
+      );
+      if (application && !application.encryptedProfileCid.startsWith('local://')) {
+        if (application.applicant.toLowerCase() !== wallet.toLowerCase())
+          throw new DocumentError(403, 'These documents belong to another company.');
+        return (await this.manifests.readDocuments(application)).map((file) => ({
+          data: file.data,
+          fileName: file.fileName,
+          kind: file.kind as Documents[number]['kind'],
+          mimeType: file.mimeType as Documents[number]['mimeType'],
+        }));
+      }
+    }
     const record = (await this.records())[applicationId.toLowerCase()];
     if (!record) return [];
     if (record.wallet.toLowerCase() !== wallet.toLowerCase())
@@ -169,24 +190,24 @@ export function applicationDocumentsRouter(
           ? 400
           : error instanceof DocumentError
             ? error.status
-            : (error as any).code === 'AUTHENTICATION_REQUIRED'
-              ? 401
-              : 503;
-      res
-        .status(status)
-        .json({
-          error: {
-            code: 'APPLICATION_DOCUMENT_ERROR',
-            message:
-              error instanceof DocumentError
-                ? error.message
-                : status === 400
-                  ? 'Check your document types and sizes. Include all three required documents.'
-                  : status === 401
-                    ? 'Sign in with your company wallet to review documents.'
-                    : 'Application documents are unavailable. Please retry or contact the administrator.',
-          },
-        });
+            : error instanceof ApplicationManifestError
+              ? error.status
+              : (error as any).code === 'AUTHENTICATION_REQUIRED'
+                ? 401
+                : 503;
+      res.status(status).json({
+        error: {
+          code: 'APPLICATION_DOCUMENT_ERROR',
+          message:
+            error instanceof DocumentError || error instanceof ApplicationManifestError
+              ? error.message
+              : status === 400
+                ? 'Check your document types and sizes. Include all three required documents.'
+                : status === 401
+                  ? 'Sign in with your company wallet to review documents.'
+                  : 'Application documents are unavailable. Please retry or contact the administrator.',
+        },
+      });
     }
   };
   router.get(

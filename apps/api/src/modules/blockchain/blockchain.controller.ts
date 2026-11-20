@@ -16,6 +16,10 @@ import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-
 import { OrdersError } from '../orders/orders.service.js';
 import type { CatalogueImageInput, StoredCatalogueImage } from '../orders/catalogue-media.js';
 import {
+  ApplicationManifestError,
+  type ApplicationManifestService,
+} from './application-manifest.js';
+import {
   applicationTransactionSchema,
   credentialLifecycleTransactionSchema,
   rejectionTransactionSchema,
@@ -120,7 +124,40 @@ export class BlockchainController {
     },
     private readonly applicationDocuments?: ApplicationDocuments,
     private readonly applicationContent?: () => CredentialContentStore,
+    private readonly applicationManifests?: ApplicationManifestService,
   ) {}
+
+  getApplicationManifestConfiguration = async (
+    _request: Request,
+    response: Response,
+    next: NextFunction,
+  ) => {
+    try {
+      if (!this.applicationManifests)
+        throw new BlockchainApiError(
+          'APPLICATION_STORAGE_UNAVAILABLE',
+          'Encrypted application storage is unavailable.',
+          503,
+        );
+      response.json(this.applicationManifests.publicConfiguration());
+    } catch (error) {
+      this.handleError(error, response, next);
+    }
+  };
+
+  prepareApplicationManifest = async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      if (!this.applicationManifests)
+        throw new BlockchainApiError(
+          'APPLICATION_STORAGE_UNAVAILABLE',
+          'Encrypted application storage is unavailable.',
+          503,
+        );
+      response.json(await this.applicationManifests.create(request.body));
+    } catch (error) {
+      this.handleError(error, response, next);
+    }
+  };
 
   listApplications = async (request: Request, response: Response, next: NextFunction) => {
     try {
@@ -129,18 +166,68 @@ export class BlockchainController {
       response.json({
         applications: await Promise.all(
           applications.map(async (application) => {
-            const metadata = await this.applicationMetadata.find(application.id);
+            let metadata = await this.applicationMetadata.find(application.id);
+            let contentStatus: 'available' | 'legacy-local' | 'unavailable' = metadata
+              ? 'legacy-local'
+              : 'unavailable';
+            let contentError: string | undefined;
+            let manifestDetails: Record<string, string | undefined> = {};
+            if (
+              this.applicationManifests &&
+              !application.encryptedProfileCid.startsWith('local://')
+            ) {
+              try {
+                const { manifest } = await this.applicationManifests.resolve(application);
+                metadata = {
+                  applicationId: application.id,
+                  applicantWallet: manifest.applicantWallet,
+                  companyName: manifest.company.companyName,
+                  companyRegistrationNumber: manifest.company.companyRegistrationNumber,
+                  registrationCountry: manifest.company.registrationCountry,
+                  profileHash: application.profileHash,
+                  initialLocationName: manifest.initialLocation?.name,
+                };
+                manifestDetails = {
+                  businessAddress: manifest.company.businessAddress,
+                  companyDid: manifest.company.companyDid,
+                  companyEmail: manifest.contact.companyEmail,
+                  contactNumber: manifest.contact.contactNumber,
+                  initialLocationAddress: manifest.initialLocation?.address,
+                  representativeName: manifest.representative.name,
+                  representativePosition: manifest.representative.position,
+                };
+                contentStatus = 'available';
+              } catch (error) {
+                contentStatus = 'unavailable';
+                contentError =
+                  error instanceof ApplicationManifestError
+                    ? error.message
+                    : 'Encrypted application content is unavailable.';
+              }
+            } else if (application.encryptedProfileCid.startsWith('local://')) {
+              contentStatus = metadata ? 'legacy-local' : 'unavailable';
+              if (!metadata)
+                contentError =
+                  'This legacy application can only be resolved by its original backend storage.';
+            }
             const hasPendingLogo = Boolean(
-              metadata?.applicantWallet &&
-              application.applicant.toLowerCase() === metadata.applicantWallet.toLowerCase() &&
-              (await this.applicationBranding?.hasPendingCompanyLogo(
-                application.id,
-                application.applicant,
-              )),
+              contentStatus === 'available'
+                ? (await this.applicationManifests!.resolve(application)).manifest.logo
+                : application.encryptedProfileCid.startsWith('local://') &&
+                    metadata?.applicantWallet &&
+                    application.applicant.toLowerCase() ===
+                      metadata.applicantWallet.toLowerCase() &&
+                    (await this.applicationBranding?.hasPendingCompanyLogo(
+                      application.id,
+                      application.applicant,
+                    )),
             );
             return {
               ...application,
               ...metadata,
+              ...manifestDetails,
+              contentStatus,
+              contentError,
               pendingLogoPath: hasPendingLogo
                 ? `/api/blockchain/applications/${application.id}/logo`
                 : undefined,
@@ -176,6 +263,7 @@ export class BlockchainController {
             applicationId: issuance.applicationId,
             companyName: issuance.companyName,
             companyRegistrationNumber: issuance.companyRegistrationNumber,
+            registrationCountry: issuance.registrationCountry,
             credentialHash: chain.credentialHash,
             credentialId: issuance.credentialId,
             encryptedCredentialCid: chain.encryptedCid,
@@ -194,6 +282,74 @@ export class BlockchainController {
         }),
       );
       const credentials = credentialResults.filter((credential) => credential !== null);
+      const knownCredentialIds = new Set(
+        credentials.map((credential) => credential.credentialId.toLowerCase()),
+      );
+      const applications = await this.gateway.listApplications();
+      for (const application of applications) {
+        if (application.status !== 'approved') continue;
+        try {
+          const stakeholder = await this.gateway.getStakeholder(application.applicant);
+          if (/^0x0{64}$/i.test(stakeholder.credentialHash)) continue;
+          const state = await this.gateway.getCredentialState(stakeholder.credentialHash);
+          if (
+            /^0x0{64}$/i.test(state.credentialId) ||
+            knownCredentialIds.has(state.credentialId.toLowerCase())
+          )
+            continue;
+          const chain = await this.gateway.getCredential(state.credentialId);
+          if (
+            chain.credentialType !== 1 ||
+            chain.subject.toLowerCase() !== application.applicant.toLowerCase()
+          )
+            continue;
+          let companyName: string | undefined;
+          let companyRegistrationNumber: string | undefined;
+          let registrationCountry: string | undefined;
+          if (
+            this.applicationManifests &&
+            !application.encryptedProfileCid.startsWith('local://')
+          ) {
+            const { manifest } = await this.applicationManifests.resolve(application);
+            companyName = manifest.company.companyName;
+            companyRegistrationNumber = manifest.company.companyRegistrationNumber;
+            registrationCountry = manifest.company.registrationCountry;
+          } else {
+            const metadata = await this.applicationMetadata.find(application.id);
+            companyName = metadata?.companyName;
+            companyRegistrationNumber = metadata?.companyRegistrationNumber;
+            registrationCountry = metadata?.registrationCountry;
+          }
+          const expired = chain.expiresAt * 1_000 <= Date.now();
+          credentials.push({
+            applicationId: application.id,
+            companyName: companyName ?? 'Company name unavailable',
+            companyRegistrationNumber: companyRegistrationNumber ?? 'Unavailable',
+            registrationCountry,
+            credentialHash: chain.credentialHash,
+            credentialId: state.credentialId,
+            encryptedCredentialCid: chain.encryptedCid,
+            expiresAt: chain.expiresAt,
+            issuedAt: chain.issuedAt,
+            issuer: chain.issuer,
+            role: roleFromApplication(application.requestedRole),
+            status:
+              expired && chain.status === 1
+                ? 'expired'
+                : (({ 1: 'active', 2: 'suspended', 3: 'revoked' } as const)[chain.status] ??
+                  'unknown'),
+            stakeholderStatus:
+              ({ 1: 'active', 2: 'suspended', 3: 'revoked' } as const)[stakeholder.status] ??
+              'unknown',
+            subject: chain.subject,
+            stakeholderUpdatedAt: stakeholder.updatedAt,
+            updatedAt: chain.updatedAt,
+          });
+          knownCredentialIds.add(state.credentialId.toLowerCase());
+        } catch {
+          // One unavailable legacy/private record must not hide other confirmed credentials.
+        }
+      }
       response.json({ credentials });
     } catch (error) {
       this.handleError(error, response, next);
@@ -225,12 +381,33 @@ export class BlockchainController {
           record.applicantWallet.toLowerCase() === session.address.toLowerCase() &&
           record.credentialHash.toLowerCase() === credential.credentialHash.toLowerCase(),
       );
+      let applicationProfile:
+        | { companyName?: string; companyRegistrationNumber?: string; registrationCountry?: string }
+        | undefined;
+      if (!issuance) {
+        const applications = await this.gateway.listApplications();
+        const application = applications.find(
+          (record) =>
+            record.status === 'approved' &&
+            record.applicant.toLowerCase() === session.address.toLowerCase(),
+        );
+        if (
+          application &&
+          this.applicationManifests &&
+          !application.encryptedProfileCid.startsWith('local://')
+        ) {
+          const { manifest } = await this.applicationManifests.resolve(application);
+          applicationProfile = manifest.company;
+        }
+      }
       const expired = credential.expiresAt * 1_000 <= Date.now();
       response.json({
         credential: {
-          companyName: issuance?.companyName,
-          companyRegistrationNumber: issuance?.companyRegistrationNumber,
-          registrationCountry: issuance?.registrationCountry,
+          companyName: issuance?.companyName ?? applicationProfile?.companyName,
+          companyRegistrationNumber:
+            issuance?.companyRegistrationNumber ?? applicationProfile?.companyRegistrationNumber,
+          registrationCountry:
+            issuance?.registrationCountry ?? applicationProfile?.registrationCountry,
           credentialHash: credential.credentialHash,
           credentialId: state.credentialId,
           encryptedCredentialCid: credential.encryptedCid,
@@ -421,6 +598,49 @@ export class BlockchainController {
   prepareApplication = async (request: Request, response: Response, next: NextFunction) => {
     try {
       const input = applicationTransactionSchema.parse(request.body);
+      if (input.encryptedProfileCid.startsWith('ipfs://')) {
+        if (!this.applicationManifests)
+          throw new BlockchainApiError(
+            'APPLICATION_STORAGE_UNAVAILABLE',
+            'Encrypted application storage is unavailable.',
+            503,
+          );
+        const manifest = await this.applicationManifests.validatePreparedApplication(input);
+        if (
+          manifest.company.companyName !== input.companyName ||
+          manifest.company.companyRegistrationNumber !== input.companyRegistrationNumber ||
+          manifest.company.registrationCountry !== input.registrationCountry
+        )
+          throw new BlockchainApiError(
+            'APPLICATION_CONTEXT_MISMATCH',
+            'The submitted company summary differs from the signed encrypted manifest.',
+            409,
+          );
+        // Remote manifests are authoritative. This local record is a legacy-compatible cache and
+        // must never make a valid cross-device registration depend on one backend's filesystem.
+        await this.applicationMetadata
+          .save({
+            applicationId: input.applicationId,
+            applicantWallet: input.applicantWallet,
+            companyName: manifest.company.companyName,
+            companyRegistrationNumber: manifest.company.companyRegistrationNumber,
+            registrationCountry: manifest.company.registrationCountry,
+            initialLocationName: manifest.initialLocation?.name,
+            profileHash: input.profileHash,
+            submissionDigest: manifest.authorization.contentDigest,
+          })
+          .catch(() => undefined);
+        response.json(
+          this.gateway.prepareApplication({
+            applicationId: input.applicationId,
+            encryptedProfileCid: input.encryptedProfileCid,
+            previousApplicationId: input.previousApplicationId,
+            profileHash: input.profileHash,
+            requestedRole: input.requestedRole,
+          }),
+        );
+        return;
+      }
       if (input.logo && !this.applicationBranding)
         throw new BlockchainApiError(
           'COMPANY_BRANDING_UNAVAILABLE',
@@ -533,12 +753,6 @@ export class BlockchainController {
   getApplicationLogo = async (request: Request, response: Response, next: NextFunction) => {
     try {
       await this.requireAdministrator(request);
-      if (!this.applicationBranding)
-        throw new BlockchainApiError(
-          'COMPANY_BRANDING_UNAVAILABLE',
-          'Company logo storage is unavailable.',
-          503,
-        );
       const applicationId = z
         .string()
         .regex(/^0x[0-9a-fA-F]{64}$/)
@@ -547,16 +761,20 @@ export class BlockchainController {
         (record) => record.id.toLowerCase() === applicationId.toLowerCase(),
       );
       const metadata = await this.applicationMetadata.find(applicationId);
+      if (!application)
+        throw new BlockchainApiError('MEDIA_NOT_FOUND', 'Company logo was not found.', 404);
+      const remote =
+        this.applicationManifests && !application.encryptedProfileCid.startsWith('local://');
       if (
-        !application ||
-        !metadata?.applicantWallet ||
-        application.applicant.toLowerCase() !== metadata.applicantWallet.toLowerCase()
+        !remote &&
+        (!this.applicationBranding ||
+          !metadata?.applicantWallet ||
+          application.applicant.toLowerCase() !== metadata.applicantWallet.toLowerCase())
       )
         throw new BlockchainApiError('MEDIA_NOT_FOUND', 'Company logo was not found.', 404);
-      const logo = await this.applicationBranding.pendingCompanyLogo(
-        applicationId,
-        application.applicant,
-      );
+      const logo = remote
+        ? await this.applicationManifests.readLogo(application)
+        : await this.applicationBranding!.pendingCompanyLogo(applicationId, application.applicant);
       response.setHeader('Cache-Control', 'private, no-store');
       response.setHeader('Content-Type', logo.mimeType);
       response.setHeader('Content-Disposition', `inline; filename="${logo.fileName}"`);
@@ -631,7 +849,11 @@ export class BlockchainController {
       });
       return;
     }
-    if (error instanceof BlockchainApiError || error instanceof AuthError) {
+    if (
+      error instanceof BlockchainApiError ||
+      error instanceof AuthError ||
+      error instanceof ApplicationManifestError
+    ) {
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
       return;
     }
@@ -698,6 +920,17 @@ async function enrichOperationalData(
       supplierName: name(record.supplier),
     })),
   };
+}
+
+function roleFromApplication(role: string) {
+  return (
+    {
+      Supplier: CompanyRole.SUPPLIER,
+      Manufacturer: CompanyRole.MANUFACTURER,
+      Distributor: CompanyRole.DISTRIBUTOR,
+      Retailer: CompanyRole.RETAILER,
+    } as const
+  )[role as 'Supplier' | 'Manufacturer' | 'Distributor' | 'Retailer'];
 }
 
 class BlockchainApiError extends Error {

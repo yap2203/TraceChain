@@ -55,6 +55,14 @@ export interface CompanyRoleSsiServiceDependencies {
   clock?: () => Date;
   credentialContentStore?: CredentialContentStore;
   issuanceRepository?: CompanyRoleIssuanceRepository;
+  applicationProfile?: (applicationId: string) => Promise<
+    | {
+        companyName: string;
+        companyRegistrationNumber: string;
+        registrationCountry?: string;
+      }
+    | undefined
+  >;
 }
 
 export class CompanyRoleSsiService {
@@ -479,6 +487,22 @@ export class CompanyRoleSsiService {
       );
     }
     const role = roleFromContract(application.requestedRole);
+    const signedProfile = await this.dependencies.applicationProfile?.(input.applicationId);
+    if (
+      signedProfile &&
+      (signedProfile.companyName !== input.companyName ||
+        signedProfile.companyRegistrationNumber !== input.companyRegistrationNumber ||
+        signedProfile.registrationCountry !== input.registrationCountry)
+    )
+      throw new SsiApiError(
+        'APPLICATION_PROFILE_MISMATCH',
+        'Credential details must match the applicant-signed encrypted application manifest.',
+        409,
+      );
+    const companyName = signedProfile?.companyName ?? input.companyName;
+    const companyRegistrationNumber =
+      signedProfile?.companyRegistrationNumber ?? input.companyRegistrationNumber;
+    const registrationCountry = signedProfile?.registrationCountry ?? input.registrationCountry;
     const agent = await this.dependencies.agentProvider();
     const authorityDid = await this.authorityDid(agent);
     const existing = await repository.find(input.applicationId);
@@ -486,8 +510,8 @@ export class CompanyRoleSsiService {
       if (
         getAddress(existing.applicantWallet) !== getAddress(application.applicant) ||
         existing.role !== role ||
-        existing.companyName !== input.companyName ||
-        existing.companyRegistrationNumber !== input.companyRegistrationNumber ||
+        existing.companyName !== companyName ||
+        existing.companyRegistrationNumber !== companyRegistrationNumber ||
         existing.expiresAt !== Math.floor(input.expirationDate.getTime() / 1_000)
       ) {
         throw new SsiApiError(
@@ -499,7 +523,7 @@ export class CompanyRoleSsiService {
       const credential = companyRoleCredentialSchema.parse(
         JSON.parse(await contentStore.decrypt(existing.encryptedPayload)),
       );
-      if (credential.credentialSubject.registrationCountry !== input.registrationCountry)
+      if (credential.credentialSubject.registrationCountry !== registrationCountry)
         throw new SsiApiError(
           'ISSUANCE_CONFLICT',
           'Registration country differs from the persisted credential.',
@@ -522,7 +546,7 @@ export class CompanyRoleSsiService {
       );
     }
 
-    if (!input.registrationCountry)
+    if (!registrationCountry)
       throw new SsiApiError(
         'REGISTRATION_COUNTRY_REQUIRED',
         'Select and verify the company registration country before issuing a new credential.',
@@ -531,10 +555,10 @@ export class CompanyRoleSsiService {
     const issued = await issueCompanyRoleCredential(agent, {
       // New issuance must carry an authority-signed country; existing workflows above retain v1 compatibility.
       applicationReference: input.applicationId,
-      companyId: `urn:tracechain:company:${input.companyRegistrationNumber}`,
-      companyName: input.companyName,
-      companyRegistrationNumber: input.companyRegistrationNumber,
-      registrationCountry: input.registrationCountry,
+      companyId: `urn:tracechain:company:${companyRegistrationNumber}`,
+      companyName,
+      companyRegistrationNumber,
+      registrationCountry,
       expirationDate: input.expirationDate,
       issuanceDate: this.clock(),
       issuerDid: authorityDid,
@@ -561,9 +585,9 @@ export class CompanyRoleSsiService {
     const record: CompanyRoleIssuanceRecord = {
       applicantWallet: application.applicant,
       applicationId: input.applicationId,
-      companyName: input.companyName,
-      companyRegistrationNumber: input.companyRegistrationNumber,
-      registrationCountry: input.registrationCountry,
+      companyName,
+      companyRegistrationNumber,
+      registrationCountry,
       credentialHash,
       credentialId,
       encryptedCredentialCid: stored.cid,

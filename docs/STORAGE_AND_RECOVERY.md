@@ -6,7 +6,8 @@ Updated 2026-11-16. Backend-key backup controls and their dedicated HTTP endpoin
 
 | Data                                                                                     | Storage and protection                                                                                                                                                                                                                                         |
 | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Roles, permissions, applications, credential status/expiry                               | Deployed registries: IDs, hashes, references and status.                                                                                                                                                                                                       |
+| Roles, permissions, applications, credential status/expiry                               | Deployed registries: IDs, hashes, encrypted content references and status. New application references point to a complete encrypted manifest rather than a server-local path.                                                                                  |
+| Company application profile, contacts, representative, documents and optional logo       | Canonical versioned manifest plus independently encrypted attachments in the configured IPFS store. The applicant signs the full content digests and final manifest CID/hash. Local application JSON is only a legacy/cache source.                            |
 | Batches, ingredient links, quantities/units, orders, physical custody and receipt events | Blockchain. Contract state and events remain visible to chain readers.                                                                                                                                                                                         |
 | Company and Ingredient VCs; private evidence and metadata                                | AES-256-GCM envelopes pinned to IPFS. `IPFS_ENCRYPTION_KEY` decrypts them. The API authorizes access; it can decrypt this server-managed content.                                                                                                              |
 | Veramo issuer/DID metadata                                                               | `.tracechain/veramo/public-data.json` contains DID/public-key metadata only.                                                                                                                                                                                   |
@@ -42,6 +43,11 @@ Existing operator backup procedures remain independent of the browser applicatio
 A key backup is not a data backup. Preserve encrypted issuer-key files, encrypted SSI cache,
 necessary workflow journals and deployment references separately. Preserve the existing IPFS/KMS
 secrets securely outside the repository; never rotate them merely to resolve a login problem.
+
+Different browsers can use one shared API deployment without sharing browser storage. Separate API
+machines can read the same application only when they use the same chain ID, registry addresses,
+IPFS gateway/pins and authorized `IPFS_ENCRYPTION_KEY`. Keep that key and all pinning credentials in
+protected backend configuration; they are never placed in the manifest, frontend code or Ethereum.
 
 ## Company: retrieve the same VC in a fresh browser
 
@@ -84,7 +90,17 @@ in docs/PROGRESS.md.
   hidden-required-claim and tampering checks still reject it. Retrieving credential bytes alone is insufficient.
 - Live retrieval results above are historical read-only checks, separate from automated tests.
 
+The read-only `npm run applications:assess-legacy` command identifies legacy `local://` applications,
+recoverable local sources and missing fields without decrypting or modifying them. Additional-evidence
+records can use the existing applicant-signed resubmission method. Pending applications require an
+Admin evidence request first. Approved, rejected and withdrawn records cannot be rewritten under the
+current contract; changing that historical-reference policy requires a new contract design and
+redeployment, not applicant impersonation.
+
 This stage does not change contracts or rewrite historical chain data. Vehicle numbers already stored
 on-chain remain visible; moving them off-chain requires a separate contract/data migration. Catalogue
 media remains encrypted under the existing authenticated media flow; public unencrypted media/video
-publishing is not newly implemented by this change. Registration supporting documents now use encrypted IPFS plus an encrypted local review cache; only the confirmed applicant or current authorized Admin can list/download them. Old filename-only registrations require applicant reattachment; the original on-chain application hash is preserved.
+publishing is not newly implemented by this change. New registration documents resolve through the
+signed encrypted manifest; the local index remains a legacy source. Only the confirmed applicant or
+current authorized Admin can list/download them. Old filename-only registrations require applicant
+reattachment; the original on-chain application hash is preserved.

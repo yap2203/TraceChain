@@ -244,6 +244,38 @@ export function prepareCompanyApplication(input: {
   });
 }
 
+export interface ApplicationManifestConfiguration {
+  chainId: number;
+  declarationVersion: 'tracechain-company-registration-v1';
+  registryAddress: string;
+}
+
+export interface PreparedApplicationManifest {
+  applicationId: string;
+  applicantWallet: string;
+  bindingMessage: string;
+  companyName: string;
+  companyRegistrationNumber: string;
+  registrationCountry?: string;
+  encryptedProfileCid: string;
+  previousApplicationId: string;
+  profileHash: string;
+  requestedRole: number;
+}
+
+export function getApplicationManifestConfiguration() {
+  return blockchainRequest<ApplicationManifestConfiguration>(
+    '/applications/manifest-configuration',
+  );
+}
+
+export function prepareApplicationManifest(input: Record<string, unknown>) {
+  return blockchainRequest<PreparedApplicationManifest>('/applications/manifest', {
+    body: JSON.stringify(input),
+    method: 'POST',
+  });
+}
+
 export function prepareApplicationRejection(input: { applicationId: string; reasonHash: string }) {
   return blockchainRequest<PreparedTransaction>('/transactions/application-rejection', {
     body: JSON.stringify(input),

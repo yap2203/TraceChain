@@ -448,13 +448,24 @@ credential, stakeholder, batch or inventory state.
   the safe image bytes. Catalogue responses expose only this authenticated route, never encrypted
   storage identifiers.
 
+`GET /api/blockchain/applications/manifest-configuration` returns the public chain, registry and
+declaration-version context used for applicant content authorization. `POST
+/api/blockchain/applications/manifest` accepts the complete registration and selected files only
+after verifying the applicant's content signature. It validates actual bytes, encrypts attachments,
+creates and encrypts the canonical version-1 manifest, and returns its `ipfs://` reference, exact
+profile hash and second human-readable binding message. It never returns encryption keys or stored
+ciphertext.
+
 `POST /api/blockchain/transactions/company-application` requires `applicantWallet` and
 `applicantSignature` for every request, including applications without a logo. The signature covers
 the exact application ID, wallet, company metadata, profile reference/hash, prior application, role
 and initial location. When a company-logo envelope is present, the same signed message includes its
 validated image digest. The server validates the signature and actual PNG/JPEG/WebP bytes (maximum
 2 MB) before persisting metadata or media. Identical retries are idempotent; reusing an application
-ID with any changed signed value returns a conflict even when the profile hash is unchanged.
+ID with any changed signed value returns a conflict even when the profile hash is unchanged. For new
+`ipfs://` registrations the endpoint reloads and validates the manifest context and first signature,
+then verifies the second CID/hash binding before returning unsigned calldata. Local metadata writes
+are best-effort legacy caches and are not required for the transaction.
 
 Authorized System Admin application responses include `pendingLogoPath` when a pending logo belongs
 to the exact on-chain applicant. `GET /api/blockchain/applications/:applicationId/logo` is Admin-only
@@ -473,7 +484,7 @@ SIWE proves control of a wallet address only. Workspace authorization comes from
 
 ### Blockchain gateway
 
-- `GET /api/blockchain/applications` returns authoritative application records and requires an authorized System Admin session.
+- `GET /api/blockchain/applications` returns authoritative application records enriched from validated encrypted manifests and requires an authorized System Admin session. It does not download attachments for the list.
 - `GET /api/blockchain/credentials` returns safe Company Role Credential metadata merged with authoritative registry lifecycle state and requires an authorized System Admin session.
 - `GET /api/blockchain/credentials/me` returns the authenticated stakeholder's current linked Company Role credential and stakeholder lifecycle data. It never accepts a wallet parameter and does not expose or decrypt the complete VC.
 - `GET /api/ssi/company-role/me` returns selected signed Company Role VC claims for the authenticated wallet together with current registry lifecycle state. The API decrypts its server-managed encrypted issuance record but never returns raw VC JSON.
@@ -540,7 +551,7 @@ separate and never run automatically during production.
 - POST /api/blockchain/applications/:applicationId/documents accepts {documents} for applicant-only legacy reattachment. An existing set cannot be overwritten.
 - Company-application preparation accepts optional documents with kind, fileName, mimeType and base64 data; the document digest is included in the applicant's signed binding. Current registration UI requires three supporting files. The 58 MB JSON ceiling accommodates four 10 MB files encoded as base64 plus the optional logo; per-file type/signature and 10 MB limits are checked separately.
 
-Review requires SIWE ownership of the confirmed application or current authorized on-chain Admin; pending applicants can review their own files without operational role access. Storage uses encrypted IPFS and an encrypted local review cache. Download does not establish authenticity of applicant-provided claims. No contract changes are needed.
+Review requires SIWE ownership of the confirmed application or current authorized on-chain Admin; pending applicants can review their own files without operational role access. New applications resolve documents on demand through the signed encrypted manifest. The local document index remains a legacy source only. Download does not establish authenticity of applicant-provided claims. No contract changes are needed.
 
 ### Physical location details
 

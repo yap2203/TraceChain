@@ -99,4 +99,21 @@ describe('verified stakeholder directory', () => {
       'Shared Name Sdn. Bhd. (0x2000...0002)',
     ]);
   });
+
+  it('discovers an approved company identity when the local issuance journal is empty', async () => {
+    const application = {
+      applicationId: `0x${'44'.repeat(32)}`,
+      companyName: 'Remote Manifest Company',
+      role: CompanyRole.DISTRIBUTOR,
+      walletAddress: WALLETS[2],
+    };
+    const directory = new VerifiedStakeholderDirectory(repository([]), resolver(), {
+      list: async () => [application],
+    });
+
+    await expect(directory.resolve(WALLETS[2])).resolves.toEqual({
+      active: true,
+      ...application,
+    });
+  });
 });

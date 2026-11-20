@@ -25,33 +25,63 @@ export interface StakeholderDirectory {
   resolveMany(walletAddresses: string[]): Promise<StakeholderIdentity[]>;
 }
 
+export interface ApplicationIdentitySource {
+  list(): Promise<
+    Array<{
+      applicationId: string;
+      companyName: string;
+      role: CompanyRole;
+      walletAddress: string;
+    }>
+  >;
+}
+
 export class VerifiedStakeholderDirectory implements StakeholderDirectory {
   constructor(
     private readonly issuanceRepository: CompanyRoleIssuanceRepository,
     private readonly authorizationResolver: LoginAuthorizationResolver,
+    private readonly applicationIdentities?: ApplicationIdentitySource,
   ) {}
 
   async list() {
     const records = await this.issuanceRepository.list();
-    return this.resolveCandidates(uniqueWallets(records), records);
+    const applications = await this.applicationIdentities?.list().catch(() => []);
+    return this.resolveCandidates(
+      uniqueAddresses([
+        ...uniqueWallets(records),
+        ...(applications ?? []).map((item) => item.walletAddress),
+      ]),
+      records,
+      new Map(),
+      applications ?? [],
+    );
   }
 
   async resolve(walletAddress: string, authorization?: OnChainAuthorizationSummary) {
     const address = getAddress(walletAddress);
     const records = await this.issuanceRepository.list();
+    const applications = await this.applicationIdentities?.list().catch(() => []);
     const wallets = uniqueWallets(records);
     if (!wallets.some((wallet) => sameAddress(wallet, address))) wallets.push(address);
     const authorizations = new Map<string, OnChainAuthorizationSummary>();
     if (authorization) authorizations.set(address.toLowerCase(), authorization);
-    const identities = await this.resolveCandidates(wallets, records, authorizations);
+    const identities = await this.resolveCandidates(
+      wallets,
+      records,
+      authorizations,
+      applications ?? [],
+    );
     return identities.find((identity) => sameAddress(identity.walletAddress, address)) ?? null;
   }
 
   async resolveMany(walletAddresses: string[]) {
     const records = await this.issuanceRepository.list();
+    const applications = await this.applicationIdentities?.list().catch(() => []);
     return this.resolveCandidates(
       [...new Set(walletAddresses.map((wallet) => getAddress(wallet)))],
       records,
+      new Map(),
+      applications ?? [],
     );
   }
 
@@ -59,6 +89,7 @@ export class VerifiedStakeholderDirectory implements StakeholderDirectory {
     wallets: string[],
     records: CompanyRoleIssuanceRecord[],
     knownAuthorizations = new Map<string, OnChainAuthorizationSummary>(),
+    applications: Awaited<ReturnType<ApplicationIdentitySource['list']>> = [],
   ): Promise<StakeholderIdentity[]> {
     const candidates = (
       await Promise.all(
@@ -71,10 +102,19 @@ export class VerifiedStakeholderDirectory implements StakeholderDirectory {
             if (authorization.status !== 'AUTHORIZED' || !authorization.role) return null;
 
             const record = currentRecord(records, address, authorization);
-            const companyName = cleanName(record?.companyName) ?? fallbackName(authorization.role);
+            const application = applications.find(
+              (item) =>
+                sameAddress(item.walletAddress, address) && item.role === authorization.role,
+            );
+            const companyName =
+              cleanName(application?.companyName) ??
+              cleanName(record?.companyName) ??
+              fallbackName(authorization.role);
             return {
               active: true as const,
-              ...(record?.applicationId ? { applicationId: record.applicationId } : {}),
+              ...(application?.applicationId || record?.applicationId
+                ? { applicationId: application?.applicationId ?? record!.applicationId }
+                : {}),
               companyName,
               role: authorization.role,
               walletAddress: address,
@@ -100,6 +140,19 @@ export class VerifiedStakeholderDirectory implements StakeholderDirectory {
         : candidate,
     );
   }
+}
+
+function uniqueAddresses(values: string[]) {
+  const result = new Map<string, string>();
+  for (const value of values) {
+    try {
+      const address = getAddress(value);
+      result.set(address.toLowerCase(), address);
+    } catch {
+      // Invalid records are ignored.
+    }
+  }
+  return [...result.values()];
 }
 
 function currentRecord(
