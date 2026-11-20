@@ -1,5 +1,16 @@
 # Project Progress
 
+## 2026-11-20 - Refresh API workspace dependencies before development startup
+
+- Diagnosed the missing visibleIngredientClaims runtime export as stale shared dist
+  output: the source exported the function while Node's package import did not.
+- Rebuilt shared/SSI and added API predev dependency builds so both root dev:api and
+  direct API workspace development refresh compiled exports before starting tsx.
+  Documented restarting the API after shared/SSI source changes.
+- Verified the real Node package import resolves the function, shared disclosure-policy
+  tests pass (six tests), 16 API ingredient-batch tests pass, and shared/SSI builds
+  plus API type check/build pass.
+
 ## 2026-11-20 - Recover interrupted IngredientRegistry deployment journal
 
 - Investigated HHE10410: the earlier RPC rejection left a TRANSACTION_PREPARE_SEND

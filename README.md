@@ -524,6 +524,10 @@ npm run dev:web
 npm run dev:api
 ```
 
+Starting the API separately also rebuilds shared and SSI dependencies before its
+watcher starts. Restart the API after changing those packages to refresh their compiled
+exports; this prevents startup errors such as a missing `visibleIngredientClaims` export.
+
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:3000`
 - Health check: `GET http://localhost:3000/api/health`
