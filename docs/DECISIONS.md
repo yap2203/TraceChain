@@ -2,6 +2,11 @@
 
 ## Repository and implementation
 
+- Switch the active configuration to Sepolia for deployment (user-requested 2026-11-20).
+  Use 11155111 and the existing Sepolia RPC, leave unavailable public contract/Admin
+  addresses unconfigured until verified, and preserve local state in place. Sepolia uses
+  a separate runtime data directory; keep test fixtures/local-only migration guards on 31337. Deployment keys stay in the existing Hardhat keystore workflow.
+
 - Simplify ingredient creation and new request choices by removing processing fields,
   the date-type selector, quality/laboratory evidence and internal quality remarks
   (user-requested 2026-11-19). New batches use production dates. Retain schema/storage

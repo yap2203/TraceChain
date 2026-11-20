@@ -1,11 +1,11 @@
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 
 import { SEPOLIA_CHAIN_ID, SEPOLIA_NETWORK_NAME, type TraceChainSsiConfig } from '@tracechain/ssi';
 import { ZeroAddress, getAddress } from 'ethers';
 import { z } from 'zod';
 
 import './load-env.js';
+import { dataDirectory } from './data-directory.js';
 
 const ssiEnvironmentSchema = z.object({
   SEPOLIA_RPC_URL: z.string().url(),
@@ -35,9 +35,13 @@ export interface TraceChainSsiEnvironment {
 export function loadTraceChainSsiEnvironment(
   environment: NodeJS.ProcessEnv = process.env,
 ): TraceChainSsiEnvironment {
-  const parsed = ssiEnvironmentSchema.parse(environment);
-  const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
-  const storageDirectory = resolve(repositoryRoot, '.tracechain/veramo');
+  const parsed = ssiEnvironmentSchema.parse({
+    ...environment,
+    SEPOLIA_RPC_URL:
+      environment.SEPOLIA_RPC_URL ||
+      (environment.CHAIN_ID === '11155111' ? environment.CHAIN_RPC_URL : undefined),
+  });
+  const storageDirectory = resolve(dataDirectory(environment), 'veramo');
 
   return {
     authorityDidAlias: parsed.TRACECHAIN_AUTHORITY_DID_ALIAS,
@@ -54,7 +58,12 @@ export function loadTraceChainSsiEnvironment(
 }
 
 export function loadSsiBootstrapEnvironment(environment: NodeJS.ProcessEnv = process.env) {
-  const parsed = ssiBootstrapEnvironmentSchema.parse(environment);
+  const parsed = ssiBootstrapEnvironmentSchema.parse({
+    ...environment,
+    SEPOLIA_RPC_URL:
+      environment.SEPOLIA_RPC_URL ||
+      (environment.CHAIN_ID === '11155111' ? environment.CHAIN_RPC_URL : undefined),
+  });
   return {
     ...loadTraceChainSsiEnvironment(environment),
     adminWalletAddress: getAddress(parsed.BOOTSTRAP_ADMIN_WALLET),

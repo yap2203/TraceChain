@@ -1,5 +1,60 @@
 # Project Progress
 
+## 2026-11-20 - Recover interrupted IngredientRegistry deployment journal
+
+- Investigated HHE10410: the earlier RPC rejection left a TRANSACTION_PREPARE_SEND
+  for IngredientRegistry nonce 65 without a TRANSACTION_SEND/hash. Read-only Sepolia
+  checks returned chain 11155111 and latest/pending wallet nonce 65, confirming that
+  nonce was unused at recovery time.
+- Backed up the existing journal inside the ignored deployment directory, then used
+  the supported Ignition wipe command for only TraceChain#IngredientRegistry.
+  Verified the journal retains the exact earlier content plus the single WIPE_APPLY
+  event and that deployed addresses remain present. No contracts, keys or other
+  future records were removed; no public transaction was submitted.
+- Deployment can now resume with the existing tracechain-sepolia ID and the transaction
+  queue. No runtime code changed in this recovery; build/test results above remain
+  those from the preceding transaction-queue implementation.
+
+## 2026-11-20 - Serialize Sepolia delegated-account deployment transactions
+
+- Added a Sepolia-only Hardhat network hook that queues transaction submissions,
+  waits for the previous receipt and checks the sender's latest/pending nonce before
+  sending. Supports ordinary and locally signed raw transactions. Returns submitted
+  hashes immediately so Ignition can journal them; stops after five minutes waiting
+  without automatically replacing or resending a pending transaction.
+- Preserved the TraceChain module graph, future IDs, deployment journal, existing
+  addresses and keystore. This avoids incompatible dependency changes to already
+  initialized futures in the interrupted deployment. Other networks and read requests
+  retain their existing behavior. No public transaction was submitted by this change.
+- Added regression coverage for mining gates, pending transactions from a prior run,
+  signed raw transactions, RPC rejection/retry and network/read bypass behavior.
+- Validation: Hardhat build, contracts TypeScript check and 22 Mocha tests passed
+  (four queue tests plus 18 existing TraceChain integration tests).
+
+## 2026-11-20 - Prepare active Sepolia deployment configuration
+
+- Switched root `.env`/example to Sepolia 11155111 and reused the configured Sepolia RPC;
+  a read-only provider check returned HTTP 200 / chain 11155111. Removed active local
+  contract/Admin values pending verified deployment. App URLs remain localhost because
+  this changes the contract network, not web hosting. Existing encryption/Pinata secrets
+  and all local records/keys/journals remain intact.
+- Hardhat loads root `.env`, shares the active Sepolia RPC and explicitly checks chain ID.
+  SSI reuses that RPC on Sepolia, while local contract testing still requires a separate
+  Sepolia DID-resolution RPC. Frontend defaults target Sepolia; isolated tests remain local.
+- Added `TRACECHAIN_DATA_DIR` and routed issuer, workflow, receipt, application-document and
+  backend DIDComm files through it. Active Sepolia uses `.tracechain/sepolia`; the default
+  still preserves existing `.tracechain` paths when no directory is selected. No files
+  are moved/deleted and no local chain records are migrated.
+- Added root/workspace `deploy:sepolia` and `configure:sepolia` commands. Successful complete
+  Ignition deployment triggers read-only chain/code/wiring verification, then an atomic
+  seven-address/Admin update. Incomplete deployment fails without changing configuration.
+- Verified existing local Hardhat build and contract type checks, all-workspace type checks,
+  and 389 API tests including new RPC-fallback/data-isolation coverage. All workspace
+  production builds and 36 frontend configuration/authentication tests passed. The address command
+  correctly refused a missing Sepolia manifest. No production Hardhat keystore was found,
+  so no public deployment or transaction was attempted. A funded Sepolia wallet must be
+  configured in Hardhat before running the documented deployment command.
+
 ## 2026-11-19 - Simplify ingredient processing and quality inputs
 
 - Removed processing country/location, date-type selection, laboratory/quality evidence

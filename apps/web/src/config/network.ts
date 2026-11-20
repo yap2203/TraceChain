@@ -7,10 +7,10 @@ function positiveInteger(value: string | undefined, fallback: number) {
 }
 
 export const chainConfig = {
-  chainId: positiveInteger(import.meta.env.VITE_CHAIN_ID, 31_337),
+  chainId: positiveInteger(import.meta.env.VITE_CHAIN_ID, 11_155_111),
   currencySymbol: import.meta.env.VITE_CHAIN_CURRENCY_SYMBOL ?? 'ETH',
-  name: import.meta.env.VITE_CHAIN_NAME ?? 'TraceChain Local',
-  rpcUrl: import.meta.env.VITE_CHAIN_RPC_URL ?? 'http://127.0.0.1:8545',
+  name: import.meta.env.VITE_CHAIN_NAME ?? 'Sepolia',
+  rpcUrl: import.meta.env.VITE_CHAIN_RPC_URL ?? '',
 } as const;
 
 export const targetChainId = BigInt(chainConfig.chainId);

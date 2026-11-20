@@ -1,5 +1,50 @@
 # TraceChain
 
+**Sepolia deployment:** the active root `.env` now targets chain `11155111`. API SIWE,
+MetaMask, QR chain references, SSI and Hardhat use the Sepolia configuration; the active
+`CHAIN_RPC_URL` is shared with SSI and Hardhat. Local-only test fixtures remain on 31337.
+Contract addresses and Admin wallet stay empty until a completed deployment is verified.
+
+From the repository root, configure a funded Sepolia deployment wallet in Hardhat's
+encrypted keystore, then deploy:
+
+```powershell
+npm exec --workspace @tracechain/contracts -- hardhat keystore set SEPOLIA_PRIVATE_KEY
+npm run deploy:sepolia
+```
+
+Enter the key only in Hardhat's terminal prompt. The deployment command resumes the
+`tracechain-sepolia` Ignition journal and then checks Sepolia chain ID, all seven deployed
+contracts and their wiring before updating root `.env`, including the actual on-chain
+administrator as `BOOTSTRAP_ADMIN_WALLET`. If the chain verification temporarily fails,
+run `npm run configure:sepolia` after deployment completes, then restart `npm run dev`.
+No key is exposed to the frontend. Use a dedicated deployment wallet, not the published
+Hardhat development accounts.
+
+Sepolia submissions are queued until the preceding transaction is mined, because
+delegated deployment accounts can reject multiple in-flight transactions. This also
+waits for pending wallet transactions when resuming after an interruption. If the RPC
+reports `in-flight transaction limit reached for delegated accounts`, rerun
+`npm run deploy:sepolia` with the same journal; do not use `--reset` or delete the
+deployment directory. A transaction still pending after five minutes stops the next
+submission; resolve/wait for that transaction and resume. Do not run another deployment
+or send other transactions from the same wallet concurrently. Ignition may still display
+several futures in one batch; their actual transaction submissions are serialized.
+
+If resuming instead reports `HHE10410`, an earlier send attempt reserved a nonce in
+the journal without recording a hash. Check that wallet's confirmed and pending
+nonces first. If the transaction exists, use Ignition's suggested `track-tx` command
+with its verified hash. Only when the nonce is confirmed unused, back up the journal
+and use `ignition wipe <deploymentId> <futureId>` for that single unsent future.
+Do not clear completed contracts or reset the whole deployment.
+
+`TRACECHAIN_DATA_DIR=.tracechain/sepolia` isolates workflows, issuer files, application
+documents and DIDComm state from existing local `.tracechain` records. No local data,
+keys or backups are moved/deleted, and local on-chain records are not copied to Sepolia.
+Use a different directory for a separate fresh deployment; keep it unchanged when resuming
+the same deployment. The app/API URLs may remain localhost while contracts run on Sepolia;
+set a reachable HTTPS `VITE_PUBLIC_APP_URL` when sharing QR links with other devices.
+
 **Selective-disclosure policy v2:** Company proofs always include company name and
 wallet/role/DID binding; registration number and signed ISO registration country are
 selected together. Ingredient requests offer Basic traceability, Food suitability,
@@ -860,7 +905,7 @@ The contract suite contains stakeholder/application and reviewed role-change man
 npx hardhat ignition deploy ignition/modules/TraceChain.ts --network sepolia
 ```
 
-Resume the same Ignition deployment after a provider interruption; do not deploy contracts individually. Sepolia settings use Hardhat configuration variables named `SEPOLIA_RPC_URL` and `SEPOLIA_PRIVATE_KEY`; never commit their real values.
+Resume the same Ignition deployment after a provider interruption; do not deploy contracts individually. Hardhat loads the root `.env` and uses `CHAIN_RPC_URL` when `CHAIN_ID=11155111`, with `SEPOLIA_RPC_URL` retained as a legacy fallback. `SEPOLIA_PRIVATE_KEY` can be supplied through the Hardhat keystore. Never commit private values. Prefer the root `npm run deploy:sepolia` command above so the fixed deployment ID and verified address update are applied.
 
 Private company documents and evidence are encrypted before being sent to a configured pinning provider. Only their CID and integrity hash belong on-chain. `IPFS_ENCRYPTION_KEY` must decode to exactly 32 bytes and must be backed up outside the repository; losing it makes encrypted content unrecoverable.
 

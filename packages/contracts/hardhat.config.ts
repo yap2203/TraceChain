@@ -1,8 +1,20 @@
 import hardhatToolboxMochaEthersPlugin from '@nomicfoundation/hardhat-toolbox-mocha-ethers';
 import { configVariable, defineConfig } from 'hardhat/config';
+import { definePlugin } from 'hardhat/plugins';
+import { config as loadEnvironment } from 'dotenv';
+import { fileURLToPath } from 'node:url';
+
+loadEnvironment({
+  path: fileURLToPath(new URL('../../.env', import.meta.url)),
+  override: false,
+  quiet: true,
+});
 
 export default defineConfig({
-  plugins: [hardhatToolboxMochaEthersPlugin],
+  plugins: [hardhatToolboxMochaEthersPlugin, definePlugin({
+    id: 'tracechain-sepolia-transactions',
+    hookHandlers: { network: () => import('./plugins/sepolia-transactions.js') },
+  })],
   solidity: {
     profiles: {
       default: {
@@ -49,7 +61,11 @@ export default defineConfig({
     sepolia: {
       type: 'http',
       chainType: 'l1',
-      url: configVariable('SEPOLIA_RPC_URL'),
+      chainId: 11155111,
+      url:
+        process.env.CHAIN_ID === '11155111' && process.env.CHAIN_RPC_URL
+          ? process.env.CHAIN_RPC_URL
+          : configVariable('SEPOLIA_RPC_URL'),
       accounts: [configVariable('SEPOLIA_PRIVATE_KEY')],
     },
   },

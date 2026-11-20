@@ -1,3 +1,4 @@
+import { dataFile } from './config/data-directory.js';
 import {
   ApplicationDocuments,
   applicationDocumentsRouter,
@@ -5,7 +6,6 @@ import {
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
-import { fileURLToPath } from 'node:url';
 
 import { env } from './config/env.js';
 import { loadBlockchainEnvironment } from './config/blockchain-env.js';
@@ -180,12 +180,10 @@ export function createApp({
     sessionTtlMs,
   });
   const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
-  const didCommRepository = new JsonDidCommRepository(
-    fileURLToPath(new URL('../../../.tracechain/didcomm/state.json', import.meta.url)),
-  );
+  const didCommRepository = new JsonDidCommRepository(dataFile('didcomm/state.json'));
   const didCommStorage = loadCredentialStorageEnvironment();
   const backendDidCommAgents = new BackendDidCommAgentService(
-    fileURLToPath(new URL('../../../.tracechain/didcomm/backend-agents.json', import.meta.url)),
+    dataFile('didcomm/backend-agents.json'),
     didCommStorage.encryptionKey,
   );
   let blockchainService: BlockchainAuthorizationService | undefined;
@@ -309,16 +307,10 @@ export function createApp({
   };
   const companyApplicationMetadata =
     applicationMetadataRepository ??
-    new JsonApplicationMetadataRepository(
-      fileURLToPath(
-        new URL('../../../.tracechain/applications/company-metadata.json', import.meta.url),
-      ),
-    );
+    new JsonApplicationMetadataRepository(dataFile('applications/company-metadata.json'));
   let resolveOrders!: () => OrdersService;
   const applicationDocuments = new ApplicationDocuments(
-    fileURLToPath(
-      new URL('../../../.tracechain/applications/documents.encrypted.json', import.meta.url),
-    ),
+    dataFile('applications/documents.encrypted.json'),
     () => lazyCredentialContentStore,
   );
   const blockchainController = new BlockchainController(
@@ -638,14 +630,9 @@ function createDefaultProductTraceabilityService(
     });
     return gateway;
   };
-  const repositoryRoot = new URL('../../../.tracechain/issuance/', import.meta.url);
   const metadata = new RepositoryTraceabilityMetadataReader(
-    new JsonProductionFlowRepository(
-      fileURLToPath(new URL('production-flow.json', repositoryRoot)),
-    ),
-    new JsonIngredientBatchWorkflowRepository(
-      fileURLToPath(new URL('ingredient-batches.json', repositoryRoot)),
-    ),
+    new JsonProductionFlowRepository(dataFile('issuance/production-flow.json')),
+    new JsonIngredientBatchWorkflowRepository(dataFile('issuance/ingredient-batches.json')),
     contentStore,
   );
   return new ProductTraceabilityService({
@@ -764,14 +751,9 @@ function createDefaultCustodyTransferService(
     },
   };
 
-  const repositoryRoot = new URL('../../../.tracechain/issuance/', import.meta.url);
   const productMetadata = new RepositoryTraceabilityMetadataReader(
-    new JsonProductionFlowRepository(
-      fileURLToPath(new URL('production-flow.json', repositoryRoot)),
-    ),
-    new JsonIngredientBatchWorkflowRepository(
-      fileURLToPath(new URL('ingredient-batches.json', repositoryRoot)),
-    ),
+    new JsonProductionFlowRepository(dataFile('issuance/production-flow.json')),
+    new JsonIngredientBatchWorkflowRepository(dataFile('issuance/ingredient-batches.json')),
     contentStore,
   );
 
@@ -786,7 +768,7 @@ function createDefaultCustodyTransferService(
     },
     productMetadata,
     receiptRepository: new JsonReceiptWorkflowRepository(
-      fileURLToPath(new URL('custody-receipts.json', repositoryRoot)),
+      dataFile('issuance/custody-receipts.json'),
     ),
     stakeholderDirectory,
   });

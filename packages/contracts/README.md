@@ -1,5 +1,28 @@
 # TraceChain smart contracts
 
+## Sepolia setup from the repository root
+
+The root `.env` selects `CHAIN_ID=11155111`, `CHAIN_NAME=Sepolia` and a configured
+Sepolia `CHAIN_RPC_URL`. Hardhat explicitly checks chain 11155111 and reads this same
+RPC; use its encrypted production keystore for the deployment key:
+
+```powershell
+npm exec --workspace @tracechain/contracts -- hardhat keystore set SEPOLIA_PRIVATE_KEY
+npm run deploy:sepolia
+```
+
+The command deploys/resumes the complete `TraceChain` module under deployment ID
+`tracechain-sepolia`. Its post-deploy step reads the completed address manifest,
+checks all seven contracts and their references on Sepolia, then atomically writes
+their addresses and the actual registry administrator to root `.env`. It does not
+register test stakeholders or transfer local records. An incomplete deployment or
+wrong RPC leaves `.env` unchanged. Rerun `npm run configure:sepolia` if verification
+must be retried after a completed deployment. Restart the API/Vite processes afterward.
+
+No public deployment is performed by compilation, tests or `configure:sepolia`.
+`TRACECHAIN_DATA_DIR=.tracechain/sepolia` keeps Sepolia application data separate from
+local history without deleting existing issuer keys, recovery records or workflow files.
+
 Registered ingredient/product batches now support direct `SupplyChainOrders.requestBatch` requests.
 The buyer transaction resolves the trusted source seller/unit; there is no separate seller publishing
 step in the application. Existing list/request methods remain for compatibility. This source change
@@ -26,14 +49,14 @@ Sensitive content must be encrypted before IPFS upload. A CID is an integrity/lo
 
 ## Contract map
 
-| Contract              | Responsibility                                                                                                       |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `StakeholderRegistry` | Company applications, wallet roles, stakeholder lifecycle, role changes, wallet recovery, and administrator transfer |
-| `CredentialRegistry`  | Credential hash/CID references, type, issuer, subject, expiry, suspension, reactivation, and revocation              |
-| `EvidenceRegistry`    | Ingredient-evidence requests, challenge consumption, supplier presentations, and requester acceptance                |
-| `IngredientRegistry`  | Supplier ingredient batches, credential references, quantities, lifecycle, and ingredient consumption                |
-| `ProductRegistry`     | Manufacturer product batches and immutable product-to-ingredient quantity links                                      |
-| `CustodyTransfer`     | Manufacturer/distributor/retailer inventory, intended transfers, receipts, rejection, and discrepancies              |
+| Contract              | Responsibility                                                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `StakeholderRegistry` | Company applications, wallet roles, stakeholder lifecycle, role changes, wallet recovery, and administrator transfer                                |
+| `CredentialRegistry`  | Credential hash/CID references, type, issuer, subject, expiry, suspension, reactivation, and revocation                                             |
+| `EvidenceRegistry`    | Ingredient-evidence requests, challenge consumption, supplier presentations, and requester acceptance                                               |
+| `IngredientRegistry`  | Supplier ingredient batches, credential references, quantities, lifecycle, and ingredient consumption                                               |
+| `ProductRegistry`     | Manufacturer product batches and immutable product-to-ingredient quantity links                                                                     |
+| `CustodyTransfer`     | Manufacturer/distributor/retailer inventory, intended transfers, receipts, rejection, and discrepancies                                             |
 | `SupplyChainOrders`   | Catalogue, versioned batch proposals, per-order reservations, ingredient dispatch/receipts, private-location references and append-only corrections |
 
 All role-restricted contracts ask `StakeholderRegistry` for the caller's current authorized role. A role becomes ineffective when the stakeholder or required credential is inactive or expired.

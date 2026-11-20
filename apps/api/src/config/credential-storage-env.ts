@@ -1,5 +1,4 @@
-import { resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { dataFile } from './data-directory.js';
 
 import { z } from 'zod';
 
@@ -16,20 +15,13 @@ const schema = z.object({
 
 export function loadCredentialStorageEnvironment() {
   const parsed = schema.parse(process.env);
-  const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url));
   return {
     encryptionKey: Buffer.from(parsed.IPFS_ENCRYPTION_KEY, 'hex'),
     pinningApiUrl: parsed.IPFS_PINNING_API_URL,
     pinningToken: parsed.IPFS_PINNING_TOKEN,
     gatewayUrl: parsed.IPFS_GATEWAY_URL,
-    ingredientWorkflowStorePath: resolve(
-      repositoryRoot,
-      '.tracechain/issuance/ingredient-batches.json',
-    ),
-    productionWorkflowStorePath: resolve(
-      repositoryRoot,
-      '.tracechain/issuance/production-flow.json',
-    ),
-    workflowStorePath: resolve(repositoryRoot, '.tracechain/issuance/company-role.json'),
+    ingredientWorkflowStorePath: dataFile('issuance/ingredient-batches.json'),
+    productionWorkflowStorePath: dataFile('issuance/production-flow.json'),
+    workflowStorePath: dataFile('issuance/company-role.json'),
   };
 }

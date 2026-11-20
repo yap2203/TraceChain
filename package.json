@@ -33,7 +33,9 @@
     "test:qr": "npm run test --workspace @tracechain/shared",
     "typecheck": "npm run build --workspace @tracechain/shared && npm run build --workspace @tracechain/ssi && npm run typecheck --workspace @tracechain/api && npm run typecheck --workspace @tracechain/web && npm run typecheck --workspace @tracechain/shared && npm run typecheck --workspace @tracechain/ssi && npm run typecheck --workspace @tracechain/contracts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "deploy:sepolia": "npm run deploy:sepolia --workspace @tracechain/contracts",
+    "configure:sepolia": "npm run configure:sepolia --workspace @tracechain/contracts"
   },
   "engines": {
     "node": ">=22.0.0",

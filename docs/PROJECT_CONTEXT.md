@@ -43,6 +43,13 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
 
 ## Current implementation
 
+- The active environment targets Sepolia (11155111), with one active RPC shared by the
+  API/frontend/SSI/Hardhat. Deployment uses a fixed Ignition journal and verifies the
+  completed seven-contract wiring before setting addresses and the actual Admin wallet.
+  `TRACECHAIN_DATA_DIR=.tracechain/sepolia` isolates its workflows, application documents,
+  DIDComm and issuer files from preserved local data. Local test fixtures and restricted
+  migration/seed scripts remain on 31337. No cross-chain migration occurs automatically.
+
 - Registration collects legal business details, contact details, wallet identity and supporting documents without requiring a physical dispatch/receiving location. Companies add named physical locations in Profile when needed for orders, shipments or production. Existing signed application location drafts remain supported; registered addresses and edits use encrypted location presentation records. Stable on-chain IDs, stock/history and authorized-only address visibility remain unchanged.
 
 - Registration now sends actual supporting document bytes, bound into the applicant signature and encrypted before IPFS upload. An encrypted local cache supports Admin application review and owner-only Profile/pending-login review. Legacy filename-only applications allow applicant-only supplemental attachment, without rewriting the original on-chain hash. No document bytes or decryption keys are exposed on-chain; no contract change is required.

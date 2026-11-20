@@ -10,7 +10,10 @@
     "build": "hardhat build",
     "test": "hardhat test",
     "typecheck": "tsc --noEmit",
-    "dev:seed-custody-transfer": "tsx scripts/seed-custody-transfer.ts"
+    "dev:seed-custody-transfer": "tsx scripts/seed-custody-transfer.ts",
+    "deploy:sepolia": "hardhat ignition deploy ignition/modules/TraceChain.ts --network sepolia --deployment-id tracechain-sepolia",
+    "postdeploy:sepolia": "tsx scripts/configure-sepolia.ts",
+    "configure:sepolia": "tsx scripts/configure-sepolia.ts"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^4.2.1",
