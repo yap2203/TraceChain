@@ -165,6 +165,16 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 | `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID              |
 | `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name                   |
 | `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads            |
+| `CHAIN_EVENT_CONFIRMATIONS`      | `2`                      | Confirmations before events enter the index    |
+| `CHAIN_EVENT_PAGE_SIZE`          | `5000`                   | Blocks per incremental event query             |
+| `RPC_READ_CONCURRENCY`           | `8`                      | Concurrent RPC transport ceiling               |
+| `RPC_BULK_READ_CONCURRENCY`      | `6`                      | Bulk-log ceiling reserving normal capacity     |
+| `RPC_BATCH_MAX_COUNT`            | `20`                     | Safe JSON-RPC read batch size                  |
+| `RPC_BATCH_STALL_TIME_MS`        | `10`                     | Read-batch collection window                   |
+| `RPC_MIN_REQUEST_INTERVAL_MS`    | `10`                     | Delay between transport starts                 |
+| `RPC_READ_MAX_RETRIES`           | `2`                      | Idempotent read retry count                    |
+| `RPC_RETRY_BASE_DELAY_MS`        | `1000`                   | Initial rate-limit backoff                     |
+| `OPERATIONAL_READ_CONCURRENCY`   | `8`                      | Dashboard record worker count                  |
 | `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol            |
 | `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry                  |
 | `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry                   |

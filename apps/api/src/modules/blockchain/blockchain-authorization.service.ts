@@ -54,34 +54,45 @@ export class EthersBlockchainAuthorizationService implements BlockchainAuthoriza
 
   async authorize(input: BlockchainAuthorizationInput): Promise<boolean> {
     try {
-      if ((await this.provider.getCode(await this.registry.getAddress())) === '0x') {
+      const walletAddress = getAddress(input.walletAddress);
+      const expectedRole = roleValues[input.role];
+      const registryAddress = await this.registry.getAddress();
+
+      if (input.role === CompanyRole.SYSTEM_ADMIN) {
+        const [code, administrator] = await Promise.all([
+          this.provider.getCode(registryAddress),
+          this.registry.administrator(),
+        ]);
+        if (code === '0x')
+          throw new BlockchainAuthorizationUnavailableError(
+            'No StakeholderRegistry contract is deployed at the configured address.',
+          );
+        return getAddress(administrator) === walletAddress;
+      }
+
+      const credentialHash = `0x${input.credentialHash.replace(/^0x/, '')}`.toLowerCase();
+      const [code, stakeholder, effectiveRole, credentialIdValue] = await Promise.all([
+        this.provider.getCode(registryAddress),
+        this.registry.getStakeholder(walletAddress),
+        this.registry.roleOf(walletAddress),
+        this.credentialRegistry.credentialIdByHash(credentialHash),
+      ]);
+      if (code === '0x') {
         throw new BlockchainAuthorizationUnavailableError(
           'No StakeholderRegistry contract is deployed at the configured address.',
         );
       }
-
-      const walletAddress = getAddress(input.walletAddress);
-      const expectedRole = roleValues[input.role];
-
-      if (input.role === CompanyRole.SYSTEM_ADMIN) {
-        return getAddress(await this.registry.administrator()) === walletAddress;
-      }
-
-      const stakeholder = await this.registry.getStakeholder(walletAddress);
       const onChainHash = String(stakeholder.credentialHash).toLowerCase();
-      const credentialHash = `0x${input.credentialHash.replace(/^0x/, '')}`.toLowerCase();
-
-      const credentialId = String(await this.credentialRegistry.credentialIdByHash(credentialHash));
-      const credentialActive =
-        !/^0x0{64}$/i.test(credentialId) &&
-        Number(await this.credentialRegistry.effectiveStatus(credentialId)) === 1;
-      return (
-        Number(stakeholder.status) === 1 &&
-        Number(stakeholder.role) === expectedRole &&
-        onChainHash === credentialHash &&
-        Number(await this.registry.roleOf(walletAddress)) === expectedRole &&
-        credentialActive
-      );
+      const credentialId = String(credentialIdValue);
+      if (
+        Number(stakeholder.status) !== 1 ||
+        Number(stakeholder.role) !== expectedRole ||
+        onChainHash !== credentialHash ||
+        Number(effectiveRole) !== expectedRole ||
+        /^0x0{64}$/i.test(credentialId)
+      )
+        return false;
+      return Number(await this.credentialRegistry.effectiveStatus(credentialId)) === 1;
     } catch (error) {
       if (error instanceof BlockchainAuthorizationUnavailableError) throw error;
       throw new BlockchainAuthorizationUnavailableError(

@@ -3,6 +3,7 @@ import { queryContractEvents } from './contract-events.js';
 import { Contract, Interface, JsonRpcProvider } from 'ethers';
 
 const stakeholderRegistryAbi = [
+  'event ApplicationSubmitted(bytes32 indexed applicationId,address indexed applicant,uint8 indexed role,bytes32 profileHash,string encryptedProfileCid,bytes32 previousApplicationId)',
   'function administrator() view returns (address)',
   'function applicationCount() view returns (uint256)',
   'function getApplicationIds(uint256 offset, uint256 limit) view returns (bytes32[])',
@@ -94,7 +95,10 @@ export interface BlockchainGateway {
     setting: number;
   }): PreparedTransaction;
   getRegistryReferences?(): { credentialRegistry: string; stakeholderRegistry: string };
-  listOperationalData?(account: string): Promise<OperationalData>;
+  listOperationalData?(
+    account: string,
+    options?: { administrator?: boolean },
+  ): Promise<OperationalData>;
   getAdministrator(): Promise<string>;
   getApplicationForIssuance(applicationId: string): Promise<{
     applicant: string;
@@ -124,6 +128,7 @@ export interface BlockchainGateway {
   getEffectiveRole(account: string): Promise<number>;
   getRolePermission(role: number, permission: string): Promise<boolean>;
   listApplications(): Promise<ChainApplicationRecord[]>;
+  listApplicationsForApplicant?(applicant: string): Promise<ChainApplicationRecord[]>;
   prepareApplication(input: {
     applicationId: string;
     encryptedProfileCid: string;
@@ -213,11 +218,14 @@ export class BlockchainGatewayService implements BlockchainGateway {
     this.evidence = new Contract(evidenceRegistryAddress, evidenceRegistryAbi, this.provider);
   }
 
-  async listOperationalData(account: string): Promise<OperationalData> {
-    const key = account.toLowerCase();
+  async listOperationalData(
+    account: string,
+    options: { administrator?: boolean } = {},
+  ): Promise<OperationalData> {
+    const key = `${account.toLowerCase()}:${Boolean(options.administrator)}`;
     const pending = this.pendingOperations.get(key);
     if (pending) return pending;
-    const operation = this.readOperationalData(account);
+    const operation = this.readOperationalData(account, options.administrator === true);
     this.pendingOperations.set(key, operation);
     try {
       return await operation;
@@ -226,124 +234,169 @@ export class BlockchainGatewayService implements BlockchainGateway {
     }
   }
 
-  private async readOperationalData(account: string): Promise<OperationalData> {
+  private async readOperationalData(
+    account: string,
+    administrator = false,
+  ): Promise<OperationalData> {
     const normalized = account.toLowerCase();
-    const [ingredientEvents, productEvents, transferEvents, evidenceEvents] = await Promise.all([
-      queryContractEvents(this.ingredients, this.ingredients.filters.IngredientBatchRegistered()),
-      queryContractEvents(this.products, this.products.filters.ProductCreated()),
-      queryContractEvents(this.custody, this.custody.filters.TransferCreated()),
-      queryContractEvents(this.evidence, this.evidence.filters.EvidenceRequested()),
-    ]);
+    const [ingredientEvents, productEvents, transferEvents, requestedEvidence, suppliedEvidence] =
+      await Promise.all([
+        queryContractEvents(
+          this.ingredients,
+          administrator
+            ? this.ingredients.filters.IngredientBatchRegistered()
+            : this.ingredients.filters.IngredientBatchRegistered(null, account),
+        ),
+        queryContractEvents(
+          this.products,
+          administrator
+            ? this.products.filters.ProductCreated()
+            : this.products.filters.ProductCreated(null, account),
+        ),
+        queryContractEvents(this.custody, this.custody.filters.TransferCreated()),
+        queryContractEvents(
+          this.evidence,
+          administrator
+            ? this.evidence.filters.EvidenceRequested()
+            : this.evidence.filters.EvidenceRequested(null, account),
+        ),
+        administrator
+          ? Promise.resolve([])
+          : queryContractEvents(
+              this.evidence,
+              this.evidence.filters.EvidenceRequested(null, null, account),
+            ),
+      ]);
     const eventArg = (event: unknown, name: string) =>
       String((event as { args?: Record<string, unknown> }).args?.[name] ?? '');
-    const ingredientIds = [...new Set(ingredientEvents.map((event) => eventArg(event, 'batchId')))];
-    const productIds = [...new Set(productEvents.map((event) => eventArg(event, 'batchId')))];
-    const transferIds = [...new Set(transferEvents.map((event) => eventArg(event, 'transferId')))];
-    const requestIds = [...new Set(evidenceEvents.map((event) => eventArg(event, 'requestId')))];
-    const allIngredients = await Promise.all(
-      ingredientIds.map(async (batchId) => {
-        const r = await this.ingredients.getBatch(batchId);
-        return {
-          batchId,
-          supplier: String(r.supplier),
-          metadataHash: String(r.metadataHash),
-          encryptedCid: String(r.encryptedCid),
-          credentialId: String(r.credentialId),
-          totalQuantity: String(r.totalQuantity),
-          availableQuantity: String(r.availableQuantity),
-          unit: String(r.unit),
-          producedAt: Number(r.producedAt),
-          expiresAt: Number(r.expiresAt),
-          status: Number(r.status),
-        };
-      }),
+    const relevantTransferEvents = administrator
+      ? transferEvents
+      : transferEvents.filter((event) => {
+          const sender = eventArg(event, 'sender').toLowerCase();
+          const recipient = eventArg(event, 'recipient').toLowerCase();
+          return sender === normalized || recipient === normalized;
+        });
+    const ingredientIds = uniqueEventArguments(ingredientEvents, 'batchId', eventArg);
+    const productIds = [
+      ...new Set([
+        ...uniqueEventArguments(productEvents, 'batchId', eventArg),
+        ...relevantTransferEvents.map((event) => eventArg(event, 'productBatchId')),
+      ]),
+    ].filter(Boolean);
+    const transferIds = uniqueEventArguments(relevantTransferEvents, 'transferId', eventArg);
+    const requestIds = uniqueEventArguments(
+      [...requestedEvidence, ...suppliedEvidence],
+      'requestId',
+      eventArg,
     );
-    const allProducts = await Promise.all(
-      productIds.map(async (batchId) => {
-        const [r, links] = await Promise.all([
-          this.products.getProduct(batchId),
-          this.products.getIngredientLinks(batchId),
-        ]);
-        return {
-          batchId,
-          manufacturer: String(r.manufacturer),
-          metadataHash: String(r.metadataHash),
-          publicCid: String(r.publicCid),
-          totalQuantity: String(r.totalQuantity),
-          unit: String(r.unit),
-          producedAt: Number(r.producedAt),
-          expiresAt: Number(r.expiresAt),
-          status: Number(r.status),
-          ingredients: Array.from(links as ArrayLike<{ batchId: string; quantity: bigint }>).map(
-            (link) => ({ batchId: String(link.batchId), quantity: String(link.quantity) }),
-          ),
-        };
-      }),
-    );
-    const allTransfers = await Promise.all(
-      transferIds.map(async (transferId) => {
-        const r = await this.custody.getTransfer(transferId);
-        const inventory = await this.custody.getInventory(String(r.productBatchId), account);
-        return {
-          transferId,
-          productBatchId: String(r.productBatchId),
-          sender: String(r.sender),
-          recipient: String(r.recipient),
-          quantity: String(r.quantity),
-          shipmentHash: String(r.shipmentHash),
-          shipmentCid: String(r.shipmentCid),
-          dispatchedAt: Number(r.dispatchedAt),
-          expectedAt: Number(r.expectedAt),
-          status: Number(r.status),
-          usable: String(r.usable),
-          damaged: String(r.damaged),
-          rejected: String(r.rejected),
-          inventory: {
-            available: String(inventory.available),
-            reserved: String(inventory.reserved),
-            damaged: String(inventory.damaged),
-            rejected: String(inventory.rejected),
-          },
-        };
-      }),
-    );
+    const concurrency = operationalReadConcurrency();
+    const allIngredients = await mapBounded(ingredientIds, concurrency, async (batchId) => {
+      const r = await this.ingredients.getBatch(batchId);
+      return {
+        batchId,
+        supplier: String(r.supplier),
+        metadataHash: String(r.metadataHash),
+        encryptedCid: String(r.encryptedCid),
+        credentialId: String(r.credentialId),
+        totalQuantity: String(r.totalQuantity),
+        availableQuantity: String(r.availableQuantity),
+        unit: String(r.unit),
+        producedAt: Number(r.producedAt),
+        expiresAt: Number(r.expiresAt),
+        status: Number(r.status),
+      };
+    });
+    const allProducts = await mapBounded(productIds, concurrency, async (batchId) => {
+      const [r, links] = await Promise.all([
+        this.products.getProduct(batchId),
+        this.products.getIngredientLinks(batchId),
+      ]);
+      return {
+        batchId,
+        manufacturer: String(r.manufacturer),
+        metadataHash: String(r.metadataHash),
+        publicCid: String(r.publicCid),
+        totalQuantity: String(r.totalQuantity),
+        unit: String(r.unit),
+        producedAt: Number(r.producedAt),
+        expiresAt: Number(r.expiresAt),
+        status: Number(r.status),
+        ingredients: Array.from(links as ArrayLike<{ batchId: string; quantity: bigint }>).map(
+          (link) => ({ batchId: String(link.batchId), quantity: String(link.quantity) }),
+        ),
+      };
+    });
+    const allTransfers = await mapBounded(transferIds, concurrency, async (transferId) => {
+      const r = await this.custody.getTransfer(transferId);
+      const inventory = await this.custody.getInventory(String(r.productBatchId), account);
+      return {
+        transferId,
+        productBatchId: String(r.productBatchId),
+        sender: String(r.sender),
+        recipient: String(r.recipient),
+        quantity: String(r.quantity),
+        shipmentHash: String(r.shipmentHash),
+        shipmentCid: String(r.shipmentCid),
+        dispatchedAt: Number(r.dispatchedAt),
+        expectedAt: Number(r.expectedAt),
+        status: Number(r.status),
+        usable: String(r.usable),
+        damaged: String(r.damaged),
+        rejected: String(r.rejected),
+        inventory: {
+          available: String(inventory.available),
+          reserved: String(inventory.reserved),
+          damaged: String(inventory.damaged),
+          rejected: String(inventory.rejected),
+        },
+      };
+    });
     const relevantTransfers = allTransfers
       .filter(
-        (r) => r.sender.toLowerCase() === normalized || r.recipient.toLowerCase() === normalized,
+        (r) =>
+          administrator ||
+          r.sender.toLowerCase() === normalized ||
+          r.recipient.toLowerCase() === normalized,
       )
       .map((r) => ({
         ...r,
         direction: r.recipient.toLowerCase() === normalized ? 'incoming' : 'outgoing',
       }));
     const relevantProductIds = new Set(relevantTransfers.map((r) => r.productBatchId));
-    const evidenceRequests = await Promise.all(
-      requestIds.map(async (requestId) => {
-        const r = await this.evidence.getRequest(requestId);
-        return {
-          requestId,
-          requester: String(r.requester),
-          supplier: String(r.supplier),
-          ingredientBatchId: String(r.ingredientBatchId),
-          claimsHash: String(r.claimsHash),
-          challengeHash: String(r.challengeHash),
-          requestCid: String(r.requestCid),
-          presentationCid: String(r.presentationCid),
-          presentationHash: String(r.presentationHash),
-          status: Number(r.status),
-          dueAt: Number(r.dueAt),
-          presentationExpiresAt: Number(r.presentationExpiresAt),
-          updatedAt: Number(r.updatedAt),
-        };
-      }),
-    );
+    const evidenceRequests = await mapBounded(requestIds, concurrency, async (requestId) => {
+      const r = await this.evidence.getRequest(requestId);
+      return {
+        requestId,
+        requester: String(r.requester),
+        supplier: String(r.supplier),
+        ingredientBatchId: String(r.ingredientBatchId),
+        claimsHash: String(r.claimsHash),
+        challengeHash: String(r.challengeHash),
+        requestCid: String(r.requestCid),
+        presentationCid: String(r.presentationCid),
+        presentationHash: String(r.presentationHash),
+        status: Number(r.status),
+        dueAt: Number(r.dueAt),
+        presentationExpiresAt: Number(r.presentationExpiresAt),
+        updatedAt: Number(r.updatedAt),
+      };
+    });
     return {
-      ingredientBatches: allIngredients.filter((r) => r.supplier.toLowerCase() === normalized),
+      ingredientBatches: allIngredients.filter(
+        (r) => administrator || r.supplier.toLowerCase() === normalized,
+      ),
       productBatches: allProducts.filter(
-        (r) => r.manufacturer.toLowerCase() === normalized || relevantProductIds.has(r.batchId),
+        (r) =>
+          administrator ||
+          r.manufacturer.toLowerCase() === normalized ||
+          relevantProductIds.has(r.batchId),
       ),
       transfers: relevantTransfers,
       evidenceRequests: evidenceRequests.filter(
-        (r) => r.requester.toLowerCase() === normalized || r.supplier.toLowerCase() === normalized,
+        (r) =>
+          administrator ||
+          r.requester.toLowerCase() === normalized ||
+          r.supplier.toLowerCase() === normalized,
       ),
     };
   }
@@ -416,23 +469,40 @@ export class BlockchainGatewayService implements BlockchainGateway {
     await this.requireDeployment();
     const count = Number(await this.registry.applicationCount());
     const ids = (await this.registry.getApplicationIds(0, count)) as string[];
-    const applications = await Promise.all(
-      ids.map(async (applicationId) => {
-        const record = await this.registry.getApplication(applicationId);
-        return {
-          applicant: String(record.applicant),
-          encryptedProfileCid: String(record.encryptedProfileCid),
-          id: applicationId,
-          previousApplicationId: String(record.previousApplicationId),
-          profileHash: String(record.profileHash),
-          requestedRole: roles[Number(record.requestedRole)] ?? 'Unknown',
-          status: statuses[Number(record.status)] ?? 'none',
-          submittedAt: Number(record.submittedAt),
-          updatedAt: Number(record.updatedAt),
-        };
-      }),
+    return (await this.applicationRecords(ids)).reverse();
+  }
+
+  async listApplicationsForApplicant(applicant: string) {
+    await this.requireDeployment();
+    const events = await queryContractEvents(
+      this.registry,
+      this.registry.filters.ApplicationSubmitted(null, applicant),
     );
-    return applications.reverse();
+    const ids = [
+      ...new Set(
+        events.map((event) =>
+          String((event as { args?: { applicationId?: unknown } }).args?.applicationId ?? ''),
+        ),
+      ),
+    ].filter(Boolean);
+    return (await this.applicationRecords(ids)).reverse();
+  }
+
+  private applicationRecords(ids: string[]) {
+    return mapBounded(ids, operationalReadConcurrency(), async (applicationId) => {
+      const record = await this.registry.getApplication(applicationId);
+      return {
+        applicant: String(record.applicant),
+        encryptedProfileCid: String(record.encryptedProfileCid),
+        id: applicationId,
+        previousApplicationId: String(record.previousApplicationId),
+        profileHash: String(record.profileHash),
+        requestedRole: roles[Number(record.requestedRole)] ?? 'Unknown',
+        status: statuses[Number(record.status)] ?? 'none',
+        submittedAt: Number(record.submittedAt),
+        updatedAt: Number(record.updatedAt),
+      };
+    });
   }
 
   prepareApplication(input: {
@@ -584,4 +654,40 @@ export class BlockchainGatewayService implements BlockchainGateway {
       throw new Error('The configured StakeholderRegistry is not deployed.');
     }
   }
+}
+
+function uniqueEventArguments(
+  events: unknown[],
+  name: string,
+  read: (event: unknown, name: string) => string,
+) {
+  return [...new Set(events.map((event) => read(event, name)))].filter(Boolean);
+}
+
+async function mapBounded<T, R>(
+  values: readonly T[],
+  concurrency: number,
+  mapper: (value: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      while (true) {
+        const index = next++;
+        if (index >= values.length) return;
+        results[index] = await mapper(values[index], index);
+      }
+    }),
+  );
+  return results;
+}
+
+function operationalReadConcurrency() {
+  const raw = process.env.OPERATIONAL_READ_CONCURRENCY?.trim();
+  if (!raw) return 8;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 1 || value > 64)
+    throw new Error('OPERATIONAL_READ_CONCURRENCY must be an integer from 1 to 64.');
+  return value;
 }

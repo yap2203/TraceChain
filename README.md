@@ -530,17 +530,19 @@ exports; this prevents startup errors such as a missing `visibleIngredientClaims
 
 Public-network event reads use `CHAIN_EVENT_START_BLOCK`, written by `configure:sepolia`
 from the verified StakeholderRegistry creation receipt (the first contract in this
-module). They query the suite's complete history in pages of at most 5,000 blocks.
+module). They build an incremental in-memory index per chain, contract and exact event
+filter, then query only newly confirmed blocks in pages of at most 5,000 blocks.
 Never set this block later than the suite's first deployment: doing so omits history.
 If unset, the reader discovers each contract's creation block. This avoids Sepolia RPC range
 limits affecting ingredient lists, operational data, orders, evidence, custody and
-traceability. Only creation-block lookups are cached in memory; events are read again
-on refresh. Local chain 31337 starts at block zero and avoids creation-block caching
-so node resets remain supported. Discovery requires historical `eth_getCode` support;
+traceability. A server restart safely rebuilds the process-local index. Confirmed checkpoint
+hashes detect reorgs, while a lower head or changed hash resets the index for Hardhat resets.
+Local chain 31337 starts at block zero with zero confirmations by default. Discovery requires historical `eth_getCode` support;
 RPC failures remain errors, rather than being shown as an empty inventory. Setting the
 verified start block avoids repeated historical code searches and their RPC cost.
-Duplicate in-flight operations reads share work only for the same wallet; results are
-read again after completion. Provider throttling returns a readable 503 response.
+Operational reads use indexed stakeholder event arguments before fetching records, bound
+record concurrency, and retain complete Admin/cross-company visibility where authorized.
+Provider throttling returns a readable 503 response.
 
 The Supplier ingredient grid uses `GET /api/orders?scope=supplier-inventory` instead
 of loading the full orders workspace. This Supplier-only view reads owned ingredient
@@ -550,11 +552,13 @@ stock calculation and does not cache authorization or available stock. Full orde
 shipment pages keep the existing unscoped endpoint; frontend in-flight requests are
 coalesced separately per scope.
 
-API contract gateways share one RPC provider per URL/network. Public-network requests
-are paced (200 ms between ordinary starts, 650 ms after a log query), JSON-RPC batching
-is disabled, and identical pending reads share their result. Throttled read requests
-retry at most twice with 1 s / 2 s backoff. Transaction submissions are never retried
-or deduplicated by this transport. Local chain 31337 keeps the ordinary transport.
+API contract gateways share one RPC provider per URL/network. Configurable bounded concurrency,
+safe ethers JSON-RPC read batching and identical in-flight read coalescing replace the former
+global 200/650 ms serialized queue. Bulk log reads have a lower concurrency ceiling, reserving
+capacity for authentication and ordinary reads. Queue wait, request duration, transport, batch,
+retry and rate-limit counters are measured in process for regression tests. Throttled reads retry
+with configurable exponential backoff. Transaction submissions are never batched, automatically
+retried or coalesced by this transport.
 Concurrent session checks for the same wallet share only the current in-flight
 authorization check; the next check re-reads the chain. No prior authorization grant
 is reused after an RPC failure. Orders, branding, ingredient inventory and operations

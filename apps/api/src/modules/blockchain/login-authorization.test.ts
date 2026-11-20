@@ -41,6 +41,39 @@ function gateway(overrides: Record<string, unknown> = {}) {
 }
 
 describe('direct on-chain login authorization', () => {
+  it('starts independent administrator and stakeholder reads together', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const started: string[] = [];
+    const pending = new GatewayLoginAuthorizationResolver(
+      gateway({
+        getAdministrator: vi.fn(async () => {
+          started.push('administrator');
+          await gate;
+          return ADMIN;
+        }),
+        getStakeholder: vi.fn(async () => {
+          started.push('stakeholder');
+          await gate;
+          return {
+            credentialCid: 'bafy-company-role',
+            credentialExpiresAt: Math.floor(NOW.getTime() / 1_000) + 3600,
+            credentialHash: HASH,
+            role: 2,
+            status: 1,
+            updatedAt: 1,
+          };
+        }),
+      }),
+      () => NOW,
+    ).resolve(WALLET);
+    await vi.waitFor(() => expect(started).toEqual(['administrator', 'stakeholder']));
+    release();
+    await expect(pending).resolves.toMatchObject({ status: 'AUTHORIZED' });
+  });
+
   it('authorizes the current constructor administrator without a credential', async () => {
     const result = await new GatewayLoginAuthorizationResolver(gateway(), () => NOW).resolve(ADMIN);
     expect(result).toMatchObject({ role: CompanyRole.SYSTEM_ADMIN, status: 'AUTHORIZED' });
@@ -239,5 +272,42 @@ describe('direct on-chain login authorization', () => {
     await expect(
       new GatewayLoginAuthorizationResolver(unavailable, () => NOW).resolve(WALLET),
     ).resolves.toMatchObject({ status: 'UNAVAILABLE' });
+  });
+
+  it('uses the applicant-indexed lookup instead of scanning every application', async () => {
+    const listApplications = vi.fn(async () => {
+      throw new Error('full scan should not run');
+    });
+    const listApplicationsForApplicant = vi.fn(async () => [
+      {
+        applicant: WALLET,
+        encryptedProfileCid: 'cid',
+        id: HASH,
+        previousApplicationId: `0x${'0'.repeat(64)}`,
+        profileHash: HASH,
+        requestedRole: 'Supplier',
+        status: 'pending',
+        submittedAt: 1,
+        updatedAt: 2,
+      },
+    ]);
+    const result = await new GatewayLoginAuthorizationResolver(
+      gateway({
+        getStakeholder: vi.fn(async () => ({
+          credentialCid: '',
+          credentialExpiresAt: 0,
+          credentialHash: `0x${'0'.repeat(64)}`,
+          role: 0,
+          status: 0,
+          updatedAt: 0,
+        })),
+        listApplications,
+        listApplicationsForApplicant,
+      }),
+      () => NOW,
+    ).resolve(WALLET);
+    expect(result).toMatchObject({ applicationId: HASH, status: 'APPLICATION_PENDING' });
+    expect(listApplicationsForApplicant).toHaveBeenCalledWith(WALLET);
+    expect(listApplications).not.toHaveBeenCalled();
   });
 });

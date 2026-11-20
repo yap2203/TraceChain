@@ -220,11 +220,11 @@ export function createApp({
         }
       );
     },
-    listOperationalData: async (account) => {
+    listOperationalData: async (account, options) => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();
       if (!resolvedGateway.listOperationalData)
         throw new Error('Operational blockchain reads are unavailable.');
-      return resolvedGateway.listOperationalData(account);
+      return resolvedGateway.listOperationalData(account, options);
     },
     getAdministrator: async () => {
       if (!resolvedGateway) resolvedGateway = createDefaultBlockchainGateway();

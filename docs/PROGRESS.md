@@ -1,5 +1,28 @@
 # Project Progress
 
+## 2026-11-20 - Optimize RPC, event indexing and operational dashboards
+
+- Replaced the serialized fixed-delay API RPC queue with configurable bounded concurrency,
+  safe read batching, in-flight deduplication, measured queue/duration/rate-limit counters and
+  a separate bulk-log ceiling that retains capacity for authentication reads. Transactions remain
+  unbatched, non-retried and protected from duplicate frontend submission.
+- Added confirmed-block incremental in-memory event indexes per provider/chain/contract/filter.
+  Refreshes fetch only new blocks; checkpoint hashes rebuild after reorgs, lower heads rebuild after
+  Hardhat resets, and process restarts safely reconstruct complete history.
+- Scoped operational event filters by Supplier/Manufacturer/evidence participant before record
+  reads, filtered transfer events before getters, bounded record workers and retained explicit Admin
+  visibility. Login application status now uses the indexed applicant event instead of scanning all
+  applications.
+- Parallelized independent login and blockchain authorization reads without caching grants or
+  credential lifecycle results. Fresh role, subject, expiry and effective credential status checks
+  remain mandatory.
+- Added a wallet/network-isolated frontend operational query cache with request coalescing, a short
+  five-second data reuse window, refresh invalidation after existing confirmed transaction flows and
+  cache clearing at logout.
+- Added RPC batching/priority/metric, confirmed-block/reorg/reset/filter-index, applicant lookup,
+  stakeholder filtering and frontend cache-isolation/coalescing regression coverage. No Solidity
+  contracts or deployment addresses changed.
+
 ## 2026-11-20 - Share RPC transport and distinguish authorization outages
 
 - Replaced seven independent API gateway providers with one provider per configured
@@ -154,6 +177,7 @@
   correctly refused a missing Sepolia manifest. No production Hardhat keystore was found,
   so no public deployment or transaction was attempted. A funded Sepolia wallet must be
   configured in Hardhat before running the documented deployment command.
+
 ## 2026-11-20 - Complete ingredient processing/quality field removal
 
 - Removed retired processing/date-context and laboratory-quality fields from the

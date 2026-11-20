@@ -15,7 +15,7 @@ import { shortChainId } from '../../shared/operational-format';
 import { textError, quantityError, futureDateError } from '../../../validation/form-validation';
 
 export function TransferToDistributor({ onBack }: { onBack: () => void }) {
-  const { data, error: readError } = useOperationalData();
+  const { data, error: readError, reload } = useOperationalData();
   const [distributors, setDistributors] = useState<StakeholderRecipient[]>([]);
   const [productBatchId, setProductBatchId] = useState('');
   const [recipient, setRecipient] = useState('');
@@ -61,6 +61,7 @@ export function TransferToDistributor({ onBack }: { onBack: () => void }) {
       setTransferId(
         'transferId' in result && typeof result.transferId === 'string' ? result.transferId : '',
       );
+      await reload();
     } catch (cause) {
       setError(reportError(cause, 'Transfer creation failed.'));
     } finally {

@@ -296,7 +296,9 @@ export class BlockchainController {
           503,
         );
       const data = await this.gateway
-        .listOperationalData(session.address)
+        .listOperationalData(session.address, {
+          administrator: session.role === CompanyRole.SYSTEM_ADMIN,
+        })
         .catch((error: unknown) => {
           const rateLimited =
             error instanceof Error && /too many requests|rate.?limit|429/i.test(error.message);

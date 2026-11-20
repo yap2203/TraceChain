@@ -17,6 +17,10 @@ import {
   selectCompanyBranding,
   useCompanyBrandingState,
 } from './shared/company-branding.state';
+import {
+  clearOperationalDataCache,
+  OperationalDataScopeProvider,
+} from '../blockchain/useOperationalData';
 
 const WorkspaceScreen = lazy(() =>
   import('./WorkspaceScreen').then((module) => ({ default: module.WorkspaceScreen })),
@@ -103,6 +107,7 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
               setSigningOut(true);
               try {
                 await authentication.logout();
+                clearOperationalDataCache();
                 notify('You have signed out.', 'success');
                 navigate('/login', { replace: true });
               } catch (cause) {
@@ -126,7 +131,9 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
         </section>
       ) : (
         <WorkspaceAccessGate state={state} role={role}>
-          {content}
+          <OperationalDataScopeProvider walletAddress={state.address}>
+            {content}
+          </OperationalDataScopeProvider>
         </WorkspaceAccessGate>
       )}
     </WorkspaceLayout>

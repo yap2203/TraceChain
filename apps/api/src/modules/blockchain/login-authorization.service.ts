@@ -26,9 +26,12 @@ export class GatewayLoginAuthorizationResolver implements LoginAuthorizationReso
     const checkedAt = this.clock();
     const address = getAddress(walletAddress);
     try {
-      const administrator = getAddress(await this.gateway.getAdministrator());
+      const [administratorValue, stakeholder] = await Promise.all([
+        this.gateway.getAdministrator(),
+        this.gateway.getStakeholder(address),
+      ]);
+      const administrator = getAddress(administratorValue);
       if (administrator === address) {
-        const stakeholder = await this.gateway.getStakeholder(address);
         if (!/^0x0{64}$/i.test(stakeholder.credentialHash) && stakeholder.credentialCid) {
           const credentialState = await this.gateway.getCredentialState(stakeholder.credentialHash);
           if (!/^0x0{64}$/i.test(credentialState.credentialId)) {
@@ -61,7 +64,6 @@ export class GatewayLoginAuthorizationResolver implements LoginAuthorizationReso
         };
       }
 
-      const stakeholder = await this.gateway.getStakeholder(address);
       if (stakeholder.status === 0) return this.applicationStatus(address, checkedAt);
       if (stakeholder.status === 2) return { checkedAt, status: 'SUSPENDED' };
       if (stakeholder.status === 3) return { checkedAt, status: 'REVOKED' };
@@ -81,8 +83,10 @@ export class GatewayLoginAuthorizationResolver implements LoginAuthorizationReso
       if (credentialState.status === 3) return { checkedAt, role, status: 'REVOKED' };
       if (credentialState.status !== 1) return { checkedAt, role, status: 'UNAUTHORIZED' };
 
-      const credential = await this.gateway.getCredential(credentialState.credentialId);
-      const effectiveRole = await this.gateway.getEffectiveRole(address);
+      const [credential, effectiveRole] = await Promise.all([
+        this.gateway.getCredential(credentialState.credentialId),
+        this.gateway.getEffectiveRole(address),
+      ]);
       if (credential.expiresAt * 1_000 <= checkedAt.getTime())
         return { checkedAt, role, status: 'EXPIRED' };
       if (
@@ -111,9 +115,11 @@ export class GatewayLoginAuthorizationResolver implements LoginAuthorizationReso
     address: string,
     checkedAt: Date,
   ): Promise<OnChainAuthorizationSummary> {
-    const walletApplications = (await this.gateway.listApplications()).filter(
-      (record) => getAddress(record.applicant) === address,
-    );
+    const walletApplications = this.gateway.listApplicationsForApplicant
+      ? await this.gateway.listApplicationsForApplicant(address)
+      : (await this.gateway.listApplications()).filter(
+          (record) => getAddress(record.applicant) === address,
+        );
     const supersededIds = new Set(
       walletApplications
         .map((record) => record.previousApplicationId.toLowerCase())
