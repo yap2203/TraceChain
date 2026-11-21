@@ -19,6 +19,7 @@ import {
   ApplicationManifestError,
   type ApplicationManifestService,
 } from './application-manifest.js';
+import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 import {
   applicationTransactionSchema,
   credentialLifecycleTransactionSchema,
@@ -852,7 +853,8 @@ export class BlockchainController {
     if (
       error instanceof BlockchainApiError ||
       error instanceof AuthError ||
-      error instanceof ApplicationManifestError
+      error instanceof ApplicationManifestError ||
+      error instanceof AdminKeystoreError
     ) {
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
       return;

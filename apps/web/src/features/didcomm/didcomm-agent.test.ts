@@ -11,11 +11,14 @@ import {
 } from 'did-jwt';
 import { getResolver } from 'key-did-resolver';
 import {
+  clearActiveMessagingAgent,
   createBindingProof,
   createSelectiveIngredientPresentation,
   createMessagingAgent,
   exportRecoveryKit,
+  getActiveMessagingAgent,
   importRecoveryKit,
+  setActiveMessagingAgent,
 } from './didcomm-agent';
 
 describe('browser-held presentation signing key', () => {
@@ -23,11 +26,39 @@ describe('browser-held presentation signing key', () => {
     const holder = await createMessagingAgent();
     const kit = await exportRecoveryKit(holder, 'correct horse battery staple');
     expect(kit).not.toContain(btoa(String.fromCharCode(...holder.privateKey)));
+    expect(kit).not.toContain(holder.did);
+    expect(JSON.parse(kit)).toMatchObject({
+      format: 'tracechain-presentation-keystore',
+      version: 1,
+      kdf: { name: 'scrypt', cost: 16_384 },
+      cipher: { name: 'aes-256-gcm' },
+    });
     await expect(importRecoveryKit(kit, 'wrong password')).rejects.toThrow(
-      'The backup password is incorrect or the encrypted signing-key backup is damaged.',
+      'Incorrect password or invalid presentation keystore file.',
     );
     const restored = await importRecoveryKit(kit, 'correct horse battery staple');
     expect(restored.did).toBe(holder.did);
+  });
+
+  it('rejects tampered presentation keystores and remains a separate bundle format', async () => {
+    const holder = await createMessagingAgent();
+    const serialized = await exportRecoveryKit(holder, 'company-presentation-password');
+    const kit = JSON.parse(serialized);
+    expect(kit.format).not.toBe('tracechain-admin-keystore');
+    kit.cipher.authTag = `${kit.cipher.authTag[0] === 'A' ? 'B' : 'A'}${kit.cipher.authTag.slice(1)}`;
+    await expect(
+      importRecoveryKit(JSON.stringify(kit), 'company-presentation-password'),
+    ).rejects.toThrow('Incorrect password or invalid presentation keystore file.');
+  });
+
+  it('removes the in-memory company key on sign-out cleanup', async () => {
+    const holder = setActiveMessagingAgent(await createMessagingAgent());
+    expect(getActiveMessagingAgent()?.did).toBe(holder.did);
+
+    clearActiveMessagingAgent();
+
+    expect(getActiveMessagingAgent()).toBeUndefined();
+    expect(holder.privateKey.every((value) => value === 0)).toBe(true);
   });
 
   it('creates a verifiable wallet, domain, purpose, chain and nonce-bound key proof', async () => {
@@ -100,8 +131,8 @@ describe('browser-held presentation signing key', () => {
       },
       { _sd: ['countryOfOrigin', 'internalQualityRemarks'] } as never,
     );
-    const backup=await exportRecoveryKit(holder,'separate-holder-kit-password');
-    const recoveredHolder=await importRecoveryKit(backup,'separate-holder-kit-password');
+    const backup = await exportRecoveryKit(holder, 'separate-holder-kit-password');
+    const recoveredHolder = await importRecoveryKit(backup, 'separate-holder-kit-password');
     expect(recoveredHolder.did).toBe(holder.did);
     const originOnly = await createSelectiveIngredientPresentation(recoveredHolder, credential, {
       audience: '0x3000000000000000000000000000000000000003',

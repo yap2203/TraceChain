@@ -11,6 +11,7 @@ import { KeyManager, MemoryKeyStore, MemoryPrivateKeyStore } from '@veramo/key-m
 import { KeyManagementSystem } from '@veramo/kms-local';
 import { Resolver } from 'did-resolver';
 import { getResolver } from 'key-did-resolver';
+import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 
 export interface BackendMessagingIdentity {
   companyName: string;
@@ -45,11 +46,15 @@ export class BackendDidCommAgentService {
 
   constructor(
     private readonly path: string,
-    private readonly encryptionKey: Buffer,
+    private readonly encryptionKey: Buffer | (() => Buffer),
     private readonly clock = () => new Date(),
   ) {
-    if (encryptionKey.length !== 32)
+    if (Buffer.isBuffer(encryptionKey) && encryptionKey.length !== 32)
       throw new Error('The DIDComm key-encryption key must contain exactly 32 bytes.');
+  }
+
+  clearMemory() {
+    this.agents.clear();
   }
 
   async ensureIdentity(input: { companyName: string; role: string; wallet: string }) {
@@ -162,33 +167,52 @@ export class BackendDidCommAgentService {
   }
 
   private encrypt(privateKey: Buffer) {
-    const iv = randomBytes(12);
-    const cipher = createCipheriv('aes-256-gcm', this.encryptionKey, iv);
-    const ciphertext = Buffer.concat([cipher.update(privateKey), cipher.final()]);
-    return {
-      ciphertext: ciphertext.toString('base64'),
-      iv: iv.toString('base64'),
-      tag: cipher.getAuthTag().toString('base64'),
-    };
+    const encryptionKey = this.resolveEncryptionKey();
+    try {
+      const iv = randomBytes(12);
+      const cipher = createCipheriv('aes-256-gcm', encryptionKey, iv);
+      const ciphertext = Buffer.concat([cipher.update(privateKey), cipher.final()]);
+      return {
+        ciphertext: ciphertext.toString('base64'),
+        iv: iv.toString('base64'),
+        tag: cipher.getAuthTag().toString('base64'),
+      };
+    } finally {
+      if (typeof this.encryptionKey === 'function') encryptionKey.fill(0);
+    }
   }
 
   private decrypt(record: StoredIdentity) {
     try {
-      const decipher = createDecipheriv(
-        'aes-256-gcm',
-        this.encryptionKey,
-        Buffer.from(record.iv, 'base64'),
-      );
-      decipher.setAuthTag(Buffer.from(record.tag, 'base64'));
-      const key = Buffer.concat([
-        decipher.update(Buffer.from(record.ciphertext, 'base64')),
-        decipher.final(),
-      ]);
-      if (key.length !== 32) throw new Error('invalid length');
-      return key;
-    } catch {
+      const encryptionKey = this.resolveEncryptionKey();
+      try {
+        const decipher = createDecipheriv(
+          'aes-256-gcm',
+          encryptionKey,
+          Buffer.from(record.iv, 'base64'),
+        );
+        decipher.setAuthTag(Buffer.from(record.tag, 'base64'));
+        const key = Buffer.concat([
+          decipher.update(Buffer.from(record.ciphertext, 'base64')),
+          decipher.final(),
+        ]);
+        if (key.length !== 32) throw new Error('invalid length');
+        return key;
+      } finally {
+        if (typeof this.encryptionKey === 'function') encryptionKey.fill(0);
+      }
+    } catch (error) {
+      if (error instanceof AdminKeystoreError) throw error;
       throw new Error('The protected backend messaging key cannot be decrypted.');
     }
+  }
+
+  private resolveEncryptionKey() {
+    const key =
+      typeof this.encryptionKey === 'function' ? this.encryptionKey() : this.encryptionKey;
+    if (key.length !== 32)
+      throw new Error('The DIDComm key-encryption key must contain exactly 32 bytes.');
+    return key;
   }
 
   private publicIdentity(record: StoredIdentity): BackendMessagingIdentity {

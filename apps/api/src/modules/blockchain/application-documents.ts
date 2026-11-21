@@ -10,6 +10,7 @@ import {
   ApplicationManifestError,
   type ApplicationManifestService,
 } from './application-manifest.js';
+import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 import type {
   CredentialContentStore,
   EncryptedCredentialPayload,
@@ -186,20 +187,24 @@ export function applicationDocumentsRouter(
       await run(req, res);
     } catch (error) {
       const status =
-        error instanceof ZodError
-          ? 400
-          : error instanceof DocumentError
-            ? error.status
-            : error instanceof ApplicationManifestError
+        error instanceof AdminKeystoreError
+          ? error.status
+          : error instanceof ZodError
+            ? 400
+            : error instanceof DocumentError
               ? error.status
-              : (error as any).code === 'AUTHENTICATION_REQUIRED'
-                ? 401
-                : 503;
+              : error instanceof ApplicationManifestError
+                ? error.status
+                : (error as any).code === 'AUTHENTICATION_REQUIRED'
+                  ? 401
+                  : 503;
       res.status(status).json({
         error: {
-          code: 'APPLICATION_DOCUMENT_ERROR',
+          code: error instanceof AdminKeystoreError ? error.code : 'APPLICATION_DOCUMENT_ERROR',
           message:
-            error instanceof DocumentError || error instanceof ApplicationManifestError
+            error instanceof AdminKeystoreError ||
+            error instanceof DocumentError ||
+            error instanceof ApplicationManifestError
               ? error.message
               : status === 400
                 ? 'Check your document types and sizes. Include all three required documents.'

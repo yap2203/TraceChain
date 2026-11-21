@@ -13,7 +13,12 @@ import { CompanyRole } from '@tracechain/shared';
 import { id } from 'ethers';
 import { getAddress } from 'ethers';
 
-import { loadTraceChainSsiEnvironment } from '../../config/ssi-env.js';
+import {
+  loadTraceChainSsiEnvironment,
+  loadTraceChainSsiRuntimeEnvironment,
+} from '../../config/ssi-env.js';
+import type { VeramoJsonStore } from '@veramo/data-store-json';
+import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 import type { AuthService } from '../auth/auth.service.js';
 import type { CredentialVerificationSummary } from '../auth/auth.types.js';
 import {
@@ -98,7 +103,8 @@ export class CompanyRoleSsiService {
     let stakeholder;
     try {
       stakeholder = await gateway.getStakeholder(session.address);
-    } catch {
+    } catch (error) {
+      if (error instanceof AdminKeystoreError) throw error;
       throw new SsiApiError(
         'BLOCKCHAIN_UNAVAILABLE',
         'The stakeholder registry could not be read.',
@@ -138,7 +144,8 @@ export class CompanyRoleSsiService {
             : await contentStore.decrypt(issuance!.encryptedPayload),
         ),
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof AdminKeystoreError) throw error;
       throw new SsiApiError(
         'CREDENTIAL_RETRIEVAL_FAILED',
         'The encrypted credential could not be retrieved or decoded.',
@@ -825,13 +832,44 @@ function expirationStatusFrom(reasons: readonly string[]): CredentialExpirationS
 export function createDefaultTraceChainAgentProvider(): {
   agentProvider: TraceChainAgentProvider;
   authorityDidAlias: () => string;
+};
+export function createDefaultTraceChainAgentProvider(keys: {
+  createVeramoPrivateKeyStore(): VeramoJsonStore;
+  currentGeneration(): number;
+  subscribe(listener: () => void): () => void;
+  veramoKmsSecretKey(): string;
+}): {
+  agentProvider: TraceChainAgentProvider;
+  authorityDidAlias: () => string;
+};
+export function createDefaultTraceChainAgentProvider(keys?: {
+  createVeramoPrivateKeyStore(): VeramoJsonStore;
+  currentGeneration(): number;
+  subscribe(listener: () => void): () => void;
+  veramoKmsSecretKey(): string;
+}): {
+  agentProvider: TraceChainAgentProvider;
+  authorityDidAlias: () => string;
 } {
   let agentPromise: Promise<TraceChainAgent> | undefined;
+  let generation = -1;
+  keys?.subscribe(() => {
+    agentPromise = undefined;
+    generation = -1;
+  });
 
   return {
     agentProvider: async () => {
+      const nextGeneration = keys?.currentGeneration() ?? 0;
+      if (nextGeneration !== generation) agentPromise = undefined;
       if (!agentPromise) {
-        const environment = loadTraceChainSsiEnvironment();
+        const environment = keys
+          ? loadTraceChainSsiRuntimeEnvironment(
+              keys.veramoKmsSecretKey(),
+              keys.createVeramoPrivateKeyStore(),
+            )
+          : loadTraceChainSsiEnvironment();
+        generation = nextGeneration;
         agentPromise = createTraceChainAgent(environment.config).catch((error: unknown) => {
           agentPromise = undefined;
           throw error;
@@ -839,6 +877,12 @@ export function createDefaultTraceChainAgentProvider(): {
       }
       return agentPromise;
     },
-    authorityDidAlias: () => loadTraceChainSsiEnvironment().authorityDidAlias,
+    authorityDidAlias: () =>
+      keys
+        ? loadTraceChainSsiRuntimeEnvironment(
+            keys.veramoKmsSecretKey(),
+            keys.createVeramoPrivateKeyStore(),
+          ).authorityDidAlias
+        : loadTraceChainSsiEnvironment().authorityDidAlias,
   };
 }

@@ -8,6 +8,7 @@ import { KeyManagementSystem } from '@veramo/kms-local';
 import { Resolver } from 'did-resolver';
 import { createJWT, EdDSASigner } from 'did-jwt';
 import { getResolver } from 'key-did-resolver';
+import { scryptAsync } from '@noble/hashes/scrypt';
 
 type MessagingAgent = ReturnType<typeof createAgent<IResolver & IKeyManager & IDIDManager>>;
 export interface HolderMessagingAgent {
@@ -22,6 +23,10 @@ export function getActiveMessagingAgent() {
 export function setActiveMessagingAgent(holder: HolderMessagingAgent) {
   activeHolder = holder;
   return holder;
+}
+export function clearActiveMessagingAgent() {
+  if (activeHolder) activeHolder.privateKey.fill(0);
+  activeHolder = undefined;
 }
 
 export async function createMessagingAgent(
@@ -162,71 +167,186 @@ export async function readSelectiveIngredientClaims(credential: string) {
 }
 export const createSelectiveCompanyIdentityPresentation = createSelectiveIngredientPresentation;
 export async function exportRecoveryKit(holder: HolderMessagingAgent, password: string) {
-  if (password.length < 10) throw new Error('Use a recovery password of at least 10 characters.');
+  if (password.length < 12) throw new Error('Use a recovery password of at least 12 characters.');
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await recoveryKey(password, salt, ['encrypt']);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: owned(iv) },
-    key,
-    owned(holder.privateKey),
-  );
+  const keyBytes = await portableRecoveryKey(password, salt);
+  let encrypted: Uint8Array;
+  try {
+    const key = await crypto.subtle.importKey('raw', owned(keyBytes), 'AES-GCM', false, [
+      'encrypt',
+    ]);
+    encrypted = new Uint8Array(
+      await crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: owned(iv), additionalData: owned(presentationAad()) },
+        key,
+        new TextEncoder().encode(
+          JSON.stringify({
+            createdAt: new Date().toISOString(),
+            did: holder.did,
+            keyBundleVersion: 1,
+            privateKey: base64(holder.privateKey),
+          }),
+        ),
+      ),
+    );
+  } finally {
+    keyBytes.fill(0);
+  }
+  const ciphertext = encrypted.slice(0, -16);
+  const authTag = encrypted.slice(-16);
   return JSON.stringify(
     {
+      format: 'tracechain-presentation-keystore',
       version: 1,
-      did: holder.did,
-      salt: base64(salt),
-      iv: base64(iv),
-      ciphertext: base64(new Uint8Array(ciphertext)),
-      warning:
-        'TraceChain holder presentation signing-key backup. Keep private and separate from the password.',
+      kdf: {
+        name: 'scrypt',
+        salt: base64(salt),
+        cost: 16_384,
+        blockSize: 8,
+        parallelization: 1,
+      },
+      cipher: {
+        name: 'aes-256-gcm',
+        iv: base64(iv),
+        authTag: base64(authTag),
+      },
+      ciphertext: base64(ciphertext),
     },
     null,
     2,
   );
 }
 export async function importRecoveryKit(serialized: string, password: string) {
-  let kit: {
-    version: number;
-    did: string;
-    salt: string;
-    iv: string;
-    ciphertext: string;
-  };
+  let kit: any;
   try {
-    kit = JSON.parse(serialized) as typeof kit;
+    if (new TextEncoder().encode(serialized).length > 1024 * 1024) throw new Error('oversized');
+    kit = JSON.parse(serialized) as unknown;
   } catch {
     throw new Error('The selected file is not a valid TraceChain recovery-kit JSON file.');
   }
+  if (kit?.format === 'tracechain-presentation-keystore')
+    return importPortablePresentationKeystore(kit, password);
+  return importLegacyRecoveryKit(kit, password);
+}
+
+async function importPortablePresentationKeystore(kit: any, password: string) {
   if (
+    kit.format !== 'tracechain-presentation-keystore' ||
     kit.version !== 1 ||
+    kit.kdf?.name !== 'scrypt' ||
+    kit.kdf?.cost !== 16_384 ||
+    kit.kdf?.blockSize !== 8 ||
+    kit.kdf?.parallelization !== 1 ||
+    kit.cipher?.name !== 'aes-256-gcm' ||
+    typeof kit.kdf?.salt !== 'string' ||
+    typeof kit.cipher?.iv !== 'string' ||
+    typeof kit.cipher?.authTag !== 'string' ||
+    typeof kit.ciphertext !== 'string'
+  )
+    throw new Error('Unsupported presentation signing-key backup.');
+  try {
+    const salt = exactBytes(kit.kdf.salt, 16);
+    const iv = exactBytes(kit.cipher.iv, 12);
+    const authTag = exactBytes(kit.cipher.authTag, 16);
+    const ciphertext = exactBytes(kit.ciphertext);
+    const keyBytes = await portableRecoveryKey(password, salt);
+    let decrypted: Uint8Array;
+    try {
+      const key = await crypto.subtle.importKey('raw', owned(keyBytes), 'AES-GCM', false, [
+        'decrypt',
+      ]);
+      decrypted = new Uint8Array(
+        await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: owned(iv), additionalData: owned(presentationAad()) },
+          key,
+          owned(concat(ciphertext, authTag)),
+        ),
+      );
+    } finally {
+      keyBytes.fill(0);
+    }
+    const payload = JSON.parse(new TextDecoder().decode(decrypted)) as {
+      createdAt: string;
+      did: string;
+      keyBundleVersion: number;
+      privateKey: string;
+    };
+    if (
+      payload.keyBundleVersion !== 1 ||
+      !payload.did?.startsWith('did:key:') ||
+      Number.isNaN(Date.parse(payload.createdAt))
+    )
+      throw new Error('invalid payload');
+    return verifyRecoveredHolder(payload.did, exactBytes(payload.privateKey, 32));
+  } catch {
+    throw new Error('Incorrect password or invalid presentation keystore file.');
+  }
+}
+
+async function importLegacyRecoveryKit(kit: any, password: string) {
+  if (
+    kit?.version !== 1 ||
     !kit.did?.startsWith('did:key:') ||
     typeof kit.salt !== 'string' ||
     typeof kit.iv !== 'string' ||
     typeof kit.ciphertext !== 'string'
   )
     throw new Error('Unsupported presentation signing-key backup.');
-  let privateKey: Uint8Array;
   try {
     const key = await recoveryKey(password, unbase64(kit.salt), ['decrypt']);
-    privateKey = new Uint8Array(
+    const privateKey = new Uint8Array(
       await crypto.subtle.decrypt(
         { name: 'AES-GCM', iv: owned(unbase64(kit.iv)) },
         key,
         owned(unbase64(kit.ciphertext)),
       ),
     );
+    return verifyRecoveredHolder(kit.did, privateKey);
   } catch {
-    throw new Error(
-      'The backup password is incorrect or the encrypted signing-key backup is damaged. Use the exact password entered when it was downloaded.',
-    );
+    throw new Error('Incorrect password or invalid presentation keystore file.');
   }
-  if (privateKey.length !== 32)
-    throw new Error('The backup contains an invalid presentation private key.');
+}
+
+async function verifyRecoveredHolder(did: string, privateKey: Uint8Array) {
+  if (privateKey.length !== 32) throw new Error('invalid private key');
   const holder = await createMessagingAgent(Uint8Array.from(privateKey));
-  if (holder.did !== kit.did)
-    throw new Error('Presentation-key backup DID does not match its key.');
+  if (holder.did !== did) throw new Error('DID mismatch');
   return holder;
+}
+
+async function portableRecoveryKey(password: string, salt: Uint8Array) {
+  if (password.length < 12) throw new Error('invalid password');
+  return scryptAsync(new TextEncoder().encode(password), salt, {
+    N: 16_384,
+    r: 8,
+    p: 1,
+    dkLen: 32,
+  });
+}
+
+function presentationAad() {
+  return new TextEncoder().encode(
+    JSON.stringify({
+      format: 'tracechain-presentation-keystore',
+      version: 1,
+      purpose: 'TraceChain company presentation signing key',
+    }),
+  );
+}
+
+function exactBytes(value: string, length?: number) {
+  const bytes = unbase64(value);
+  if (base64(bytes) !== value || (length !== undefined && bytes.length !== length))
+    throw new Error('invalid base64');
+  return bytes;
+}
+
+function concat(left: Uint8Array, right: Uint8Array) {
+  const value = new Uint8Array(left.length + right.length);
+  value.set(left);
+  value.set(right, left.length);
+  return value;
 }
 async function recoveryKey(password: string, salt: Uint8Array, usages: KeyUsage[]) {
   const material = await crypto.subtle.importKey(

@@ -43,6 +43,16 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
 
 ## Current implementation
 
+- Normal API runtime starts with its protected content/issuer key material locked. A versioned,
+  scrypt-derived AES-256-GCM administrator keystore carries the existing IPFS encryption key,
+  Veramo KMS secret and encrypted issuer private-key store between API machines. Only the current
+  on-chain System Admin may initialize, import, export or lock it after SIWE authorization; decrypted
+  material exists only in API memory and is lost on restart. Existing installations use the
+  non-destructive interactive migration command before archiving legacy key sources. Company
+  presentation signing uses separate per-company encrypted portable keystores. Phase 1 deliberately
+  retains application caches, issuance/production journals, DIDComm state/backend agent keys, public
+  Veramo metadata and development exports. See `docs/STORAGE_AND_RECOVERY.md`.
+
 - The active environment targets Sepolia (11155111), with one active RPC shared by the
   API/frontend/SSI/Hardhat. Deployment uses a fixed Ignition journal and verifies the
   completed seven-contract wiring before setting addresses and the actual Admin wallet.
@@ -54,7 +64,7 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
 
 - New registration stores a canonical versioned application manifest plus separately encrypted supporting documents and optional logo in the existing AES-256-GCM IPFS store. Applicant signatures bind the complete company/contact/representative content, file digests, application/wallet/role, chain/registry and final manifest CID/hash. `StakeholderRegistry` records the real encrypted manifest reference and exact hash; local application JSON is only a legacy/cache source. Authorized Admin review, approved branding, credential discovery and company-directory enrichment can resolve from chain plus encrypted content on a fresh backend with the same configuration/key. Legacy `local://` records remain read-only compatible and can be assessed with `npm run applications:assess-legacy`; no historical record is silently rewritten. No contract change is required for new registrations.
 
-- SSI data storage now separates public DID/key metadata from an AES-GCM encrypted VC/VP/claim/message cache. Legacy public-store contents migrate after encrypted write/read-back, preserving bootstrap/export compatibility. The company identity feature retrieves its authenticated wallet's current registry CID from encrypted IPFS. Backend encryption-key backup and restore checks are not exposed through the web app or HTTP API. Existing operator backups and holder presentation-signing recovery remain separate and preserved. See `docs/STORAGE_AND_RECOVERY.md`.
+- SSI data storage separates public DID/key metadata from an AES-GCM encrypted VC/VP/claim/message cache. Legacy public-store contents migrate after encrypted write/read-back, preserving bootstrap/export compatibility. The company identity feature retrieves its authenticated wallet's current registry CID from encrypted IPFS. The retired raw backend-key backup endpoint remains unavailable; the authorized Admin keystore route exports only a password-encrypted portable bundle. Company presentation-signing recovery remains separate. See `docs/STORAGE_AND_RECOVERY.md`.
 
 - Product orders now mirror two-mode ingredient fulfilment: Retailer requests, Manufacturer approves/rejects and selects an assigned direct carrier or sufficient received Distributor custody, Distributor dispatches, and Retailer scans/settles receipt. ProductDelivery is automatically deployed by CustodyTransfer, keeps owner/receiver/carrier roles separate and reuses product inventory, road QR/receipt services and Manufacturer company-proof verification. Manufacturer has Custody inventory; Retailer has Shipments. The running local suite remains unchanged because its newly completed ingredient delivery cannot be replayed safely by the existing restricted migration helper. See `docs/testing/PRODUCT_DISTRIBUTOR_RETAILER_FLOW.md`.
 

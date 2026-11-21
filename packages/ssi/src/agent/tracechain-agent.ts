@@ -51,7 +51,9 @@ export async function createTraceChainAgent(config: TraceChainSsiConfig): Promis
 
   const [stores, privateKeyStore] = await Promise.all([
     createPrivateDataStores(config.publicStorePath, config.kmsSecretKey),
-    createAtomicJsonStore(config.privateKeyStorePath),
+    config.privateKeyStore
+      ? Promise.resolve(config.privateKeyStore)
+      : createAtomicJsonStore(config.privateKeyStorePath!),
   ]);
   const publicStore = stores.metadata;
 

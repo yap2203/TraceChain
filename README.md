@@ -634,12 +634,14 @@ DEV_DISTRIBUTOR_WALLET=0x...
 AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
 SEPOLIA_RPC_URL=https://example.invalid
-VERAMO_KMS_SECRET_KEY=replace-with-a-64-character-hexadecimal-key
+# Existing-installation migration only; normal runtime uses the uploaded Admin keystore.
+# VERAMO_KMS_SECRET_KEY=replace-with-a-64-character-hexadecimal-key
 TRACECHAIN_AUTHORITY_DID_ALIAS=tracechain-authority
 BOOTSTRAP_ADMIN_WALLET=0x0000000000000000000000000000000000000000
 IPFS_PINNING_API_URL=https://example.invalid/pinning/pinFileToIPFS
 IPFS_PINNING_TOKEN=replace-with-a-scoped-pinning-token
-IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
+# Existing-installation migration only; normal runtime uses the uploaded Admin keystore.
+# IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
 IPFS_GATEWAY_URL=https://gateway.pinata.cloud/ipfs
 
 VITE_API_BASE_URL=http://localhost:3000
@@ -668,9 +670,34 @@ return HTTP 403 even when it is reachable; check its Pinata access configuration
 is not automatically sent to the gateway. Network failures and denied retrieval do not establish
 credential tampering. Restart the API after changing gateway configuration.
 
-Backend IPFS/KMS key backup controls and `POST /api/ssi/storage-key-backup` have been removed;
-the retired route returns 404. Existing encrypted stores and operator backup files remain intact.
-The holder presentation-signing recovery kit is separate and remains available.
+Normal API runtime no longer reads the IPFS encryption key, Veramo KMS secret, or issuer private-key
+store from environment/local files. It starts **Locked** after every restart. The current on-chain
+System Admin signs in with SIWE, opens `/admin/keystore`, uploads
+`tracechain-admin-keystore.json`, and enters its separate password. The backend decrypts the bundle
+only in memory; it never returns the password or raw keys. Authentication and the unlock page remain
+available while locked, while protected operations return `KEYSTORE_LOCKED`.
+
+For an existing installation, keep the current environment and `.tracechain/veramo/private-keys.json`
+in place and run this once in an interactive terminal:
+
+```powershell
+npm run keystore:migrate -- --output=C:\secure\tracechain-admin-keystore.json
+```
+
+Choose a path outside the repository. The command asks for a hidden password, imports the two legacy
+environment keys and existing encrypted Veramo key store, verifies its own encrypted output, and
+does not modify or delete the originals. Restart the API, unlock with that file, verify retrieval of
+known encrypted IPFS content and issuer signing, export a fresh bundle, restart again, and verify the
+fresh export unlocks successfully. Only then may the old `IPFS_ENCRYPTION_KEY`,
+`VERAMO_KMS_SECRET_KEY`, and `.tracechain/veramo/private-keys.json` be archived manually. Never
+rotate these keys as part of migration. A fresh export is also required after issuer-key material is
+created or changed in memory.
+
+The former `POST /api/ssi/storage-key-backup` route remains removed. Company presentation signing
+uses a separate per-company `tracechain-presentation-keystore.json` protected by its own password;
+it is never combined with the System Admin bundle. See
+[Storage and recovery](docs/STORAGE_AND_RECOVERY.md) for the recovery checklist and Phase 1 local
+files that intentionally remain.
 
 Contract addresses and ABIs are backend configuration. For writes, the API validates the requested operation and returns an unsigned transaction containing the chain ID, destination, calldata, and value. MetaMask signs and broadcasts that transaction so the authenticated stakeholder remains the contract `msg.sender`; private wallet keys never reach the API.
 
@@ -977,7 +1004,10 @@ npx hardhat ignition deploy ignition/modules/TraceChain.ts --network sepolia
 
 Resume the same Ignition deployment after a provider interruption; do not deploy contracts individually. Hardhat loads the root `.env` and uses `CHAIN_RPC_URL` when `CHAIN_ID=11155111`, with `SEPOLIA_RPC_URL` retained as a legacy fallback. `SEPOLIA_PRIVATE_KEY` can be supplied through the Hardhat keystore. Never commit private values. Prefer the root `npm run deploy:sepolia` command above so the fixed deployment ID and verified address update are applied.
 
-Private company documents and evidence are encrypted before being sent to a configured pinning provider. Only their CID and integrity hash belong on-chain. `IPFS_ENCRYPTION_KEY` must decode to exactly 32 bytes and must be backed up outside the repository; losing it makes encrypted content unrecoverable.
+Private company documents and evidence are encrypted before being sent to a configured pinning
+provider. Only their CID and integrity hash belong on-chain. The corresponding 32-byte IPFS key is
+inside the portable Admin keystore during normal runtime; losing every verified keystore export (or
+its password) makes that encrypted content unrecoverable.
 
 ## Custody-transfer QR locator
 

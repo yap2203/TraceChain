@@ -32,6 +32,8 @@ coverage/
 
 # Veramo and local databases
 .tracechain/
+tracechain-admin-keystore*.json
+tracechain-presentation-keystore*.json
 *.sqlite
 *.sqlite3
 *.sqlite-journal

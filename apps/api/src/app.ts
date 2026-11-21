@@ -10,7 +10,18 @@ import express from 'express';
 
 import { env } from './config/env.js';
 import { loadBlockchainEnvironment } from './config/blockchain-env.js';
-import { loadCredentialStorageEnvironment } from './config/credential-storage-env.js';
+import {
+  loadCredentialStoragePaths,
+  loadCredentialStoragePublicEnvironment,
+} from './config/credential-storage-env.js';
+import {
+  AdminKeystoreError,
+  AdminKeystoreManager,
+} from './modules/admin-keystore/admin-keystore.js';
+import {
+  createAdminKeystoreRouter,
+  KeystoreInitializationGuard,
+} from './modules/admin-keystore/admin-keystore.routes.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import {
   InMemoryNonceRepository,
@@ -109,6 +120,7 @@ import {
 } from './modules/stakeholder-directory/stakeholder-directory.service.js';
 
 interface CreateAppOptions {
+  adminKeystore?: AdminKeystoreManager;
   applicationMetadataRepository?: ApplicationMetadataRepository;
   authService?: AuthService;
   blockchainGateway?: BlockchainGateway;
@@ -125,6 +137,7 @@ interface CreateAppOptions {
 }
 
 export function createApp({
+  adminKeystore,
   applicationMetadataRepository,
   authService,
   blockchainGateway,
@@ -136,6 +149,7 @@ export function createApp({
   ssi,
 }: CreateAppOptions = {}) {
   const app = express();
+  const keystore = adminKeystore ?? new AdminKeystoreManager();
   const sessionTtlMs = env.AUTH_SESSION_TTL_SECONDS * 1_000;
   let resolvedGateway = blockchainGateway;
   const authorizationResolver = {
@@ -145,7 +159,6 @@ export function createApp({
     },
   };
   let issuanceRepository: CompanyRoleIssuanceRepository | undefined;
-  let credentialContentStore: CredentialContentStore | undefined;
   const lazyIssuanceRepository: CompanyRoleIssuanceRepository = {
     find: async (applicationId) => {
       issuanceRepository ??= createIssuanceDependencies().repository;
@@ -197,13 +210,14 @@ export function createApp({
     cookieSecure: env.NODE_ENV === 'production',
     sessionTtlMs,
   });
-  const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
+  const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider(keystore);
   const didCommRepository = new JsonDidCommRepository(dataFile('didcomm/state.json'));
-  const didCommStorage = loadCredentialStorageEnvironment();
+  const didCommStorage = loadCredentialStoragePaths();
   const backendDidCommAgents = new BackendDidCommAgentService(
     dataFile('didcomm/backend-agents.json'),
-    didCommStorage.encryptionKey,
+    () => keystore.ipfsEncryptionKey(),
   );
+  keystore.subscribe(() => backendDidCommAgents.clearMemory());
   let blockchainService: BlockchainAuthorizationService | undefined;
   const blockchainAuthorization: BlockchainAuthorizationService | undefined = ssi
     ? undefined
@@ -328,16 +342,15 @@ export function createApp({
     new JsonApplicationMetadataRepository(dataFile('applications/company-metadata.json'));
   const lazyCredentialContentStore: CredentialContentStore = {
     retrieveAndDecrypt: async (cid) => {
-      credentialContentStore ??= createIssuanceDependencies().contentStore;
-      return credentialContentStore.retrieveAndDecrypt!(cid);
+      return withCredentialContentStore(keystore, (store) => store.retrieveAndDecrypt!(cid));
     },
     decrypt: async (payload) => {
-      credentialContentStore ??= createIssuanceDependencies().contentStore;
-      return credentialContentStore.decrypt(payload);
+      return withCredentialContentStore(keystore, (store) => store.decrypt(payload));
     },
     encryptAndStore: async (serialized, credentialId) => {
-      credentialContentStore ??= createIssuanceDependencies().contentStore;
-      return credentialContentStore.encryptAndStore(serialized, credentialId);
+      return withCredentialContentStore(keystore, (store) =>
+        store.encryptAndStore(serialized, credentialId),
+      );
     },
   };
   const registryReferences = lazyGateway.getRegistryReferences?.() ?? {
@@ -447,7 +460,7 @@ export function createApp({
         didCommService,
         stakeholderDirectory,
         new JsonIngredientBatchWorkflowRepository(
-          loadCredentialStorageEnvironment().ingredientWorkflowStorePath,
+          loadCredentialStoragePaths().ingredientWorkflowStorePath,
         ),
         companyApplicationMetadata,
         {
@@ -616,6 +629,30 @@ export function createApp({
 
   app.use('/api/auth', express.json({ limit: '10kb' }), createAuthRouter(authController));
   app.use(
+    '/api/admin/keystore',
+    express.json({ limit: '2100kb' }),
+    createAdminKeystoreRouter({
+      authService: resolvedAuthService,
+      cookieName: env.AUTH_COOKIE_NAME,
+      gateway: lazyGateway,
+      initialization: new KeystoreInitializationGuard(
+        dataFile('keystore/initialized.json'),
+        [
+          dataFile('veramo/private-keys.json'),
+          dataFile('veramo/public-data.credentials.encrypted.json'),
+          dataFile('didcomm/backend-agents.json'),
+          dataFile('applications/company-metadata.json'),
+          dataFile('issuance/company-role.json'),
+          dataFile('issuance/ingredient-batches.json'),
+          dataFile('issuance/production-flow.json'),
+          dataFile('applications/documents.encrypted.json'),
+        ],
+        async () => (await lazyGateway.listApplications()).length > 0,
+      ),
+      manager: keystore,
+    }),
+  );
+  app.use(
     '/api/didcomm',
     express.json({ limit: '300kb' }),
     createDidCommRouter(didCommService, env.AUTH_COOKIE_NAME),
@@ -672,6 +709,10 @@ export function createApp({
       response: express.Response,
       _next: express.NextFunction,
     ) => {
+      if (error instanceof AdminKeystoreError) {
+        response.status(error.status).json({ error: { code: error.code, message: error.message } });
+        return;
+      }
       if (error.type === 'entity.too.large') {
         response.status(413).json({
           error: { code: 'PAYLOAD_TOO_LARGE', message: 'The request is too large.' },
@@ -918,7 +959,7 @@ function createDefaultIngredientBatchService(
   };
   const resolveRepository = () => {
     repository ??= new JsonIngredientBatchWorkflowRepository(
-      loadCredentialStorageEnvironment().ingredientWorkflowStorePath,
+      loadCredentialStoragePaths().ingredientWorkflowStorePath,
     );
     return repository;
   };
@@ -953,7 +994,7 @@ function createDefaultProductionFlowService(
   let gateway: ProductionFlowGateway | undefined;
   let repository: ProductionFlowRepository | undefined;
   let ingredientRepository: IngredientBatchWorkflowRepository | undefined;
-  const storage = () => loadCredentialStorageEnvironment();
+  const storage = () => loadCredentialStoragePaths();
   const resolveGateway = () => {
     if (!gateway) {
       const blockchain = loadBlockchainEnvironment();
@@ -1035,16 +1076,31 @@ function createDefaultProductionFlowService(
 }
 
 function createIssuanceDependencies() {
-  const storage = loadCredentialStorageEnvironment();
   return {
-    contentStore: new IpfsEncryptedCredentialStore(
-      storage.encryptionKey,
-      storage.pinningApiUrl,
-      storage.pinningToken,
-      storage.gatewayUrl,
+    repository: new JsonCompanyRoleIssuanceRepository(
+      loadCredentialStoragePaths().workflowStorePath,
     ),
-    repository: new JsonCompanyRoleIssuanceRepository(storage.workflowStorePath),
   };
+}
+
+async function withCredentialContentStore<T>(
+  keystore: AdminKeystoreManager,
+  operation: (store: CredentialContentStore) => Promise<T>,
+) {
+  const key = keystore.ipfsEncryptionKey();
+  try {
+    const storage = loadCredentialStoragePublicEnvironment();
+    return await operation(
+      new IpfsEncryptedCredentialStore(
+        key,
+        storage.pinningApiUrl,
+        storage.pinningToken,
+        storage.gatewayUrl,
+      ),
+    );
+  } finally {
+    key.fill(0);
+  }
 }
 
 export const app = createApp();

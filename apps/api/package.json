@@ -12,6 +12,7 @@
     "ssi:bootstrap-admin": "tsx src/scripts/bootstrap-admin.ts",
     "ssi:export-admin-credential": "tsx src/scripts/export-admin-credential.ts",
     "applications:assess-legacy": "tsx src/scripts/assess-legacy-applications.ts",
+    "keystore:migrate": "tsx src/scripts/migrate-admin-keystore.ts",
     "start": "node dist/server.js",
     "test:auth": "vitest run src/modules/auth/auth.test.ts",
     "test:blockchain": "vitest run src/modules/blockchain",

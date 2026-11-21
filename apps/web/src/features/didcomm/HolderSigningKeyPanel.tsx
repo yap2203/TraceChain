@@ -29,7 +29,10 @@ export function PresentationSigningSettingsLink({ role }: { role: WorkspaceRole 
  * backend now owns separate messaging keys. Existing recovery files remain compatible.
  */
 export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string }) {
-  const [ready, setReady] = useState(() => !!getActiveMessagingAgent());
+  const [ready, setReady] = useState(() => {
+    const active = getActiveMessagingAgent();
+    return !!active && (!expectedDid || active.did === expectedDid);
+  });
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const file = useRef<HTMLInputElement>(null);
@@ -52,12 +55,13 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
       const invalid = uploadError(selected, 1 * 1024 * 1024, /\.json$/i, ['application/json']);
       if (invalid) throw new Error(invalid);
       if (password.length < 10)
-        throw new Error('Enter the original backup password (at least 10 characters).');
+        throw new Error('Enter the original presentation-keystore password.');
       const holder = await importRecoveryKit(await selected.text(), password);
       if (expectedDid && holder.did !== expectedDid)
         throw new Error('This backup is not the presentation key bound to the credential.');
       setActiveMessagingAgent(holder);
       setReady(true);
+      setPassword('');
     } catch (cause) {
       setError(reportError(cause, 'Could not restore the presentation key.'));
     } finally {
@@ -72,9 +76,10 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
       const content = await exportRecoveryKit(holder, password);
       const link = document.createElement('a');
       link.href = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
-      link.download = 'tracechain-presentation-key-backup.json';
+      link.download = 'tracechain-presentation-keystore.json';
       link.click();
       URL.revokeObjectURL(link.href);
+      setPassword('');
     } catch (cause) {
       setError(reportError(cause, 'Could not create the encrypted backup.'));
     }
@@ -84,8 +89,9 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
       <div style={{ display: 'grid', gap: 8 }}>
         <b>Presentation signature settings</b>
         <div style={{ fontSize: 12 }}>
-          Create or restore the key used to sign approved credential presentations. This signing key
-          stays in your browser. Keep an encrypted backup so you can restore it after a refresh.
+          Create or restore the company key used to sign approved credential presentations. The
+          decrypted key stays only in browser memory. Keep the encrypted keystore separate from its
+          password so the company administrator can restore it on another device.
         </div>
         {error && <Alert type="error" message={error} />}
         <input
@@ -93,7 +99,7 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
           type="password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          placeholder="Backup password (10+ characters)"
+          placeholder="Keystore password (12+ characters)"
         />
         <input
           ref={file}
@@ -106,7 +112,7 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
           {!ready && !expectedDid && <Btn onClick={() => void create()}>Create signing key</Btn>}
           {ready && (
             <Btn variant="outline" onClick={() => void backup()}>
-              Download encrypted signing-key backup
+              Download encrypted presentation keystore
             </Btn>
           )}
         </div>

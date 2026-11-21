@@ -1,22 +1,23 @@
 # Storage and recovery
 
-Updated 2026-11-16. Backend-key backup controls and their dedicated HTTP endpoint have been removed.
+Updated 2026-11-21. Normal API runtime uses a portable encrypted administrator keystore and starts
+locked after every restart. The former raw backend-key endpoint remains removed.
 
 ## Current storage boundaries
 
-| Data                                                                                     | Storage and protection                                                                                                                                                                                                                                         |
-| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Roles, permissions, applications, credential status/expiry                               | Deployed registries: IDs, hashes, encrypted content references and status. New application references point to a complete encrypted manifest rather than a server-local path.                                                                                  |
-| Company application profile, contacts, representative, documents and optional logo       | Canonical versioned manifest plus independently encrypted attachments in the configured IPFS store. The applicant signs the full content digests and final manifest CID/hash. Local application JSON is only a legacy/cache source.                            |
-| Batches, ingredient links, quantities/units, orders, physical custody and receipt events | Blockchain. Contract state and events remain visible to chain readers.                                                                                                                                                                                         |
-| Company and Ingredient VCs; private evidence and metadata                                | AES-256-GCM envelopes pinned to IPFS. `IPFS_ENCRYPTION_KEY` decrypts them. The API authorizes access; it can decrypt this server-managed content.                                                                                                              |
-| Veramo issuer/DID metadata                                                               | `.tracechain/veramo/public-data.json` contains DID/public-key metadata only.                                                                                                                                                                                   |
-| Veramo VC/VP/claim/message cache                                                         | `.tracechain/veramo/public-data.credentials.encrypted.json`, authenticated encryption using a domain-separated key derived from `VERAMO_KMS_SECRET_KEY`. This preserves Admin bootstrap/export lookups without readable VC copies in the public metadata tree. |
-| Issuer private keys                                                                      | Separate existing `private-keys.json`, protected with Veramo SecretBox/KMS.                                                                                                                                                                                    |
-| Workflow journals and DIDComm delivery                                                   | Existing local JSON repositories, with sensitive payloads encrypted. They remain necessary off-chain state; there is no SQL business database.                                                                                                                 |
-| Company-agent messaging keys                                                             | Backend encrypted key store; backend DIDComm encryption/decryption stays server-managed.                                                                                                                                                                       |
-| SIWE sessions/nonces                                                                     | Backend memory and an HttpOnly session-ID cookie. API restart requires signing in again.                                                                                                                                                                       |
-| Holder presentation-signing key                                                          | Browser memory while active; password-encrypted holder recovery-kit download for persistence. This is separate from backend storage keys and MetaMask's Ethereum key.                                                                                          |
+| Data                                                                                     | Storage and protection                                                                                                                                                                                                              |
+| ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Roles, permissions, applications, credential status/expiry                               | Deployed registries: IDs, hashes, encrypted content references and status. New application references point to a complete encrypted manifest rather than a server-local path.                                                       |
+| Company application profile, contacts, representative, documents and optional logo       | Canonical versioned manifest plus independently encrypted attachments in the configured IPFS store. The applicant signs the full content digests and final manifest CID/hash. Local application JSON is only a legacy/cache source. |
+| Batches, ingredient links, quantities/units, orders, physical custody and receipt events | Blockchain. Contract state and events remain visible to chain readers.                                                                                                                                                              |
+| Company and Ingredient VCs; private evidence and metadata                                | AES-256-GCM envelopes pinned to IPFS. The encryption key comes from the unlocked administrator keystore. The API still authorizes every content operation.                                                                          |
+| Veramo issuer/DID metadata                                                               | `.tracechain/veramo/public-data.json` contains DID/public-key metadata only.                                                                                                                                                        |
+| Veramo VC/VP/claim/message cache                                                         | `.tracechain/veramo/public-data.credentials.encrypted.json`, authenticated encryption using a domain-separated key derived from the unlocked bundle's Veramo KMS secret.                                                            |
+| Issuer private keys                                                                      | The unlocked Admin bundle supplies an in-memory Veramo JSON private-key store. The legacy `.tracechain/veramo/private-keys.json` is read only by migration/legacy operator commands and can be archived after verification.         |
+| Workflow journals and DIDComm delivery                                                   | Existing local JSON repositories, with sensitive payloads encrypted. They remain necessary off-chain state; there is no SQL business database.                                                                                      |
+| Company-agent messaging keys                                                             | Backend encrypted key store; backend DIDComm encryption/decryption stays server-managed.                                                                                                                                            |
+| SIWE sessions/nonces                                                                     | Backend memory and an HttpOnly session-ID cookie. API restart requires signing in again.                                                                                                                                            |
+| Holder presentation-signing key                                                          | Browser memory while active; separate per-company scrypt/AES-256-GCM `tracechain-presentation-keystore.json` for portable recovery. The password is not stored. Existing encrypted recovery kits remain import-compatible.          |
 
 ### Legacy Veramo migration
 
@@ -29,25 +30,73 @@ metadata and the separate issuer-key store are preserved. Do not change the KMS 
 Explicit historical holder exports are separate files; this migration does not silently delete them.
 Restart an API still running older code so it cannot write through an old in-memory store.
 
-## Server-operator backups
+## Administrator keystore and existing-installation migration
 
-Backend IPFS/KMS key export and restore checks are not exposed in the Admin workspace or HTTP API.
-The former POST /api/ssi/storage-key-backup endpoint is removed, including export and verification.
-Existing passwords, keys, encrypted key files and already downloaded backups are unchanged.
+`tracechain-admin-keystore.json` is a version-1, password-encrypted portable bundle containing the
+existing IPFS encryption key, Veramo KMS secret and Veramo issuer private-key store. It uses scrypt
+(N=16384, r=8, p=1), AES-256-GCM, a fresh salt/IV per export and authenticated
+format/version/purpose metadata. The visible file contains no raw keys, password or password
+verifier. Keep the file and password in separate protected locations.
 
-The server-only key-backup.ts encryption/decryption helpers and credential-pin-check.ts validation
-helper are retained for existing operator procedures and compatibility with encrypted backups.
-They are not wired into application routes or services. No new operator CLI is introduced.
-Existing operator backup procedures remain independent of the browser application.
+The API does not load this file automatically. It starts **Locked**. Health, SIWE and the authorized
+System Admin keystore page stay available; protected content/signing work returns `KEYSTORE_LOCKED`.
+After the current on-chain System Admin uploads the file and enters the password, decrypted material
+exists only in that API process. Manual lock or restart discards it. Export after any issuer-key
+creation/change so the portable bundle contains the newest in-memory Veramo private store.
 
-A key backup is not a data backup. Preserve encrypted issuer-key files, encrypted SSI cache,
-necessary workflow journals and deployment references separately. Preserve the existing IPFS/KMS
-secrets securely outside the repository; never rotate them merely to resolve a login problem.
+For an existing installation, leave the original keys in place and run from the repository root:
 
-Different browsers can use one shared API deployment without sharing browser storage. Separate API
-machines can read the same application only when they use the same chain ID, registry addresses,
-IPFS gateway/pins and authorized `IPFS_ENCRYPTION_KEY`. Keep that key and all pinning credentials in
-protected backend configuration; they are never placed in the manifest, frontend code or Ethereum.
+```powershell
+npm run keystore:migrate -- --output=C:\secure\tracechain-admin-keystore.json
+```
+
+The destination must not already exist. The interactive command hides the new password, imports
+`IPFS_ENCRYPTION_KEY`, `VERAMO_KMS_SECRET_KEY` and the active data directory's
+`veramo/private-keys.json`, decrypt-verifies the resulting bundle, then writes it with restrictive
+permissions where supported. It does not delete or modify the source keys/files.
+
+Verification checklist before archiving anything:
+
+1. Back up the three original key sources separately and do not rotate them.
+2. Restart the API, sign in as the current on-chain System Admin and open **Administrator keystore**.
+3. Upload the migrated JSON, enter its password, and confirm the status changes to **Unlocked**.
+4. Retrieve/decrypt a known existing IPFS-backed company credential or application document.
+5. In a safe development workflow, confirm the restored authority DID can still sign and verify a
+   credential. Do not reissue or replace production credentials merely for this check.
+6. Download a fresh encrypted export, restart the API, and prove that fresh export unlocks and can
+   repeat the content/signing checks.
+7. Only then archive/remove the legacy environment entries and archive
+   `.tracechain/veramo/private-keys.json`. Keep the portable file and password separately.
+
+The former `POST /api/ssi/storage-key-backup` endpoint remains removed. A keystore is not a full data
+backup: preserve encrypted IPFS pins, public Veramo metadata, workflow journals and deployment
+references. Separate API machines can read the same encrypted records only with the same portable
+bundle, chain/contract configuration, gateway/pins and pinning access. Pinning tokens remain protected
+deployment configuration and are not included in this Phase 1 bundle.
+
+## Local dependencies intentionally retained after Phase 1
+
+This phase removes normal runtime dependency on local **secret key sources**, not all local state.
+The active `TRACECHAIN_DATA_DIR` still contains or may create:
+
+- `applications/company-metadata.json` and `applications/documents.encrypted.json`: legacy/cache
+  application records and legacy encrypted attachments.
+- `issuance/company-role.json`: Company Role issuance/activation journal.
+- `issuance/ingredient-batches.json`: ingredient registration, media and related workflow journal.
+- `issuance/production-flow.json`: product production, presentation metadata and workflow journal.
+- `issuance/custody-receipts.json`: receipt evidence/reconciliation journal when that flow is used.
+- `didcomm/state.json`: DIDComm requests, responses and delivery state.
+- `didcomm/backend-agents.json`: backend DIDComm agent identities and encrypted messaging keys. These
+  are not yet moved into the portable Admin keystore.
+- `veramo/public-data.json`: public DID/key metadata.
+- `veramo/public-data.credentials.encrypted.json`: encrypted Veramo credential/presentation cache.
+- `holder/*.json`: explicit development/operator credential exports, including the bootstrap Admin
+  credential when generated.
+- `keystore/initialized.json`: non-secret guard preventing accidental fresh-key generation.
+
+Tests and development scripts may create additional temporary/export JSON files. Deployment journals,
+contract artifacts and the Hardhat encrypted deployment keystore remain separate contract-tooling
+state. Do not delete or move any of these as part of the Admin-keystore migration.
 
 ## Company: retrieve the same VC in a fresh browser
 
@@ -70,7 +119,8 @@ credential, then preview and explicitly approve a new challenge/recipient-bound 
 
 A newly generated unrelated key cannot replace the bound key merely because the same wallet logged
 in. A wrong kit password, wrong holder, changed recipient/challenge, or revoked credential must fail.
-The backend-key backup file and holder-signing kit are intentionally not interchangeable.
+The System Admin keystore and company presentation-signing keystore are intentionally different
+formats and are not interchangeable.
 
 ## Scope and verification
 

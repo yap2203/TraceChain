@@ -1,5 +1,24 @@
 # Project Progress
 
+## 2026-11-21 - Portable administrator and company presentation keystores
+
+- Added a strict version-1 System Admin JSON keystore using scrypt (N=16384, r=8, p=1) and
+  AES-256-GCM with fresh salt/IV plus authenticated format/version/purpose. It contains the existing
+  IPFS encryption key, Veramo KMS secret and encrypted Veramo issuer store without exposing raw key
+  material or adding a separate password verifier.
+- The API now boots locked, leaves SIWE/health/Admin unlock available and returns `KEYSTORE_LOCKED`
+  for protected operations. Correctly unlocked material is retained only in the running process;
+  manual lock and restart clear it. Only the SIWE-authenticated current on-chain System Admin may
+  initialize, import, export or lock, and failed unlock attempts are rate-limited.
+- Added the Admin keystore workspace, no-store upload/download endpoints and a non-destructive,
+  interactive `keystore:migrate` command. It imports current environment keys and the legacy Veramo
+  private store, verifies the encrypted output, and deletes or rewrites nothing.
+- Upgraded company presentation-signing recovery to a separate per-company portable scrypt/AES-GCM
+  keystore while retaining import compatibility for existing encrypted recovery kits.
+- Added crypto tampering/size/access/restart tests, existing IPFS decryption and issuer-signing
+  migration coverage, locked API coverage, Admin UI coverage and simulated cross-device company-key
+  restoration. No contract, address, chain record, environment value or workflow journal was changed.
+
 ## 2026-11-20 - Cross-device encrypted company application manifests
 
 - Replaced new registration `local://` profile references with a canonical version-1 application

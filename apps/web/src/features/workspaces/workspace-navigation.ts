@@ -16,6 +16,7 @@
   MapPin,
   Route,
   Send,
+  KeyRound,
   type LucideIcon,
 } from 'lucide-react';
 import type { WorkspaceKey } from './workspace-config';
@@ -30,6 +31,7 @@ export const workspaceNavigation = {
     ['matrix', 'Permission matrix', Layers],
     // ['discrepancies', 'Receipt discrepancies', AlertTriangle],
     ['audit', 'Audit reports', ChartNoAxesCombined],
+    ['keystore', 'Administrator keystore', KeyRound],
   ],
   supplier: [
     ['overview', 'Overview', LayoutDashboard],
@@ -102,7 +104,7 @@ export function workspaceNavigationGroups(role: WorkspaceRole) {
           ['Workspace', ['overview']],
           ['Company administration', ['applications', 'credentials']],
           ['Permissions', ['roles', 'matrix']],
-          ['Review & records', ['discrepancies', 'audit']],
+          ['Review & records', ['discrepancies', 'audit', 'keystore']],
         ]
       : [
           ['Workspace', ['overview']],

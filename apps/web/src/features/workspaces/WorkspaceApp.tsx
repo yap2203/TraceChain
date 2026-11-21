@@ -21,6 +21,7 @@ import {
   clearOperationalDataCache,
   OperationalDataScopeProvider,
 } from '../blockchain/useOperationalData';
+import { clearActiveMessagingAgent } from '../didcomm/didcomm-agent';
 
 const WorkspaceScreen = lazy(() =>
   import('./WorkspaceScreen').then((module) => ({ default: module.WorkspaceScreen })),
@@ -107,6 +108,7 @@ export default function WorkspaceApp({ role }: { role: WorkspaceRole }) {
               setSigningOut(true);
               try {
                 await authentication.logout();
+                clearActiveMessagingAgent();
                 clearOperationalDataCache();
                 notify('You have signed out.', 'success');
                 navigate('/login', { replace: true });

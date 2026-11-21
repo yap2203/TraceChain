@@ -155,43 +155,43 @@ Company registration numbers, raw credentials, encrypted payloads, private profi
 
 Copy the repository-root `.env.example` to the repository-root `.env`. The API loads this file using a repository-relative absolute path, independent of the terminal working directory. Available API values are:
 
-| Variable                         | Default example          | Purpose                                        |
-| -------------------------------- | ------------------------ | ---------------------------------------------- |
-| `PORT`                           | `3000`                   | HTTP port                                      |
-| `FRONTEND_URL`                   | `http://localhost:5173`  | Exact CORS origin                              |
-| `NODE_ENV`                       | `development`            | Controls production cookie security            |
-| `SIWE_DOMAIN`                    | `localhost:5173`         | Expected ERC-4361 domain                       |
-| `SIWE_URI`                       | `http://localhost:5173`  | Expected ERC-4361 URI                          |
-| `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID              |
-| `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name                   |
-| `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads            |
-| `CHAIN_EVENT_CONFIRMATIONS`      | `2`                      | Confirmations before events enter the index    |
-| `CHAIN_EVENT_PAGE_SIZE`          | `5000`                   | Blocks per incremental event query             |
-| `RPC_READ_CONCURRENCY`           | `8`                      | Concurrent RPC transport ceiling               |
-| `RPC_BULK_READ_CONCURRENCY`      | `6`                      | Bulk-log ceiling reserving normal capacity     |
-| `RPC_BATCH_MAX_COUNT`            | `20`                     | Safe JSON-RPC read batch size                  |
-| `RPC_BATCH_STALL_TIME_MS`        | `10`                     | Read-batch collection window                   |
-| `RPC_MIN_REQUEST_INTERVAL_MS`    | `10`                     | Delay between transport starts                 |
-| `RPC_READ_MAX_RETRIES`           | `2`                      | Idempotent read retry count                    |
-| `RPC_RETRY_BASE_DELAY_MS`        | `1000`                   | Initial rate-limit backoff                     |
-| `OPERATIONAL_READ_CONCURRENCY`   | `8`                      | Dashboard record worker count                  |
-| `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol            |
-| `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry                  |
-| `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry                   |
-| `INGREDIENT_REGISTRY_ADDRESS`    | Address placeholder      | Deployed ingredient registry                   |
-| `EVIDENCE_REGISTRY_ADDRESS`      | Address placeholder      | Deployed evidence registry                     |
-| `PRODUCT_REGISTRY_ADDRESS`       | Address placeholder      | Deployed product registry                      |
-| `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract             |
-| `VITE_PUBLIC_APP_URL`            | `http://localhost:5173`  | Canonical public product and receipt-QR origin |
-| `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                            |
-| `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds                    |
-| `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider             |
-| `VERAMO_KMS_SECRET_KEY`          | Placeholder only         | 32-byte hex SecretBox encryption key           |
-| `TRACECHAIN_AUTHORITY_DID_ALIAS` | `tracechain-authority`   | Authority DID lookup alias                     |
-| `BOOTSTRAP_ADMIN_WALLET`         | Zero-address placeholder | Public Admin wallet address                    |
-| `IPFS_PINNING_API_URL`           | Placeholder URL          | Encrypted credential pinning endpoint          |
-| `IPFS_PINNING_TOKEN`             | Placeholder only         | Scoped server-side pinning token               |
-| `IPFS_ENCRYPTION_KEY`            | Placeholder only         | 32-byte hex credential encryption key          |
+| Variable                         | Default example          | Purpose                                           |
+| -------------------------------- | ------------------------ | ------------------------------------------------- |
+| `PORT`                           | `3000`                   | HTTP port                                         |
+| `FRONTEND_URL`                   | `http://localhost:5173`  | Exact CORS origin                                 |
+| `NODE_ENV`                       | `development`            | Controls production cookie security               |
+| `SIWE_DOMAIN`                    | `localhost:5173`         | Expected ERC-4361 domain                          |
+| `SIWE_URI`                       | `http://localhost:5173`  | Expected ERC-4361 URI                             |
+| `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID                 |
+| `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name                      |
+| `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads               |
+| `CHAIN_EVENT_CONFIRMATIONS`      | `2`                      | Confirmations before events enter the index       |
+| `CHAIN_EVENT_PAGE_SIZE`          | `5000`                   | Blocks per incremental event query                |
+| `RPC_READ_CONCURRENCY`           | `8`                      | Concurrent RPC transport ceiling                  |
+| `RPC_BULK_READ_CONCURRENCY`      | `6`                      | Bulk-log ceiling reserving normal capacity        |
+| `RPC_BATCH_MAX_COUNT`            | `20`                     | Safe JSON-RPC read batch size                     |
+| `RPC_BATCH_STALL_TIME_MS`        | `10`                     | Read-batch collection window                      |
+| `RPC_MIN_REQUEST_INTERVAL_MS`    | `10`                     | Delay between transport starts                    |
+| `RPC_READ_MAX_RETRIES`           | `2`                      | Idempotent read retry count                       |
+| `RPC_RETRY_BASE_DELAY_MS`        | `1000`                   | Initial rate-limit backoff                        |
+| `OPERATIONAL_READ_CONCURRENCY`   | `8`                      | Dashboard record worker count                     |
+| `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol               |
+| `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry                     |
+| `CREDENTIAL_REGISTRY_ADDRESS`    | Zero-address placeholder | Deployed credential registry                      |
+| `INGREDIENT_REGISTRY_ADDRESS`    | Address placeholder      | Deployed ingredient registry                      |
+| `EVIDENCE_REGISTRY_ADDRESS`      | Address placeholder      | Deployed evidence registry                        |
+| `PRODUCT_REGISTRY_ADDRESS`       | Address placeholder      | Deployed product registry                         |
+| `CUSTODY_TRANSFER_ADDRESS`       | Address placeholder      | Deployed custody-transfer contract                |
+| `VITE_PUBLIC_APP_URL`            | `http://localhost:5173`  | Canonical public product and receipt-QR origin    |
+| `AUTH_COOKIE_NAME`               | `tracechain_session`     | Session-cookie name                               |
+| `AUTH_SESSION_TTL_SECONDS`       | `28800`                  | Session lifetime in seconds                       |
+| `SEPOLIA_RPC_URL`                | Placeholder URL          | did:ethr Sepolia resolver/provider                |
+| `VERAMO_KMS_SECRET_KEY`          | Migration only           | Legacy 32-byte key imported by `keystore:migrate` |
+| `TRACECHAIN_AUTHORITY_DID_ALIAS` | `tracechain-authority`   | Authority DID lookup alias                        |
+| `BOOTSTRAP_ADMIN_WALLET`         | Zero-address placeholder | Public Admin wallet address                       |
+| `IPFS_PINNING_API_URL`           | Placeholder URL          | Encrypted credential pinning endpoint             |
+| `IPFS_PINNING_TOKEN`             | Placeholder only         | Scoped server-side pinning token                  |
+| `IPFS_ENCRYPTION_KEY`            | Migration only           | Legacy 32-byte key imported by `keystore:migrate` |
 
 `FRONTEND_URL`, `SIWE_DOMAIN`, and `SIWE_URI` must match the frontend origin used in the browser.
 
@@ -201,7 +201,12 @@ public unlocked Hardhat address consumed by the CLI, not an API runtime secret.
 For deployed product and receipt labels, `VITE_PUBLIC_APP_URL` must be the externally reachable HTTPS
 application origin. Its URL parameters never choose the API's RPC endpoint.
 
-SSI variables are loaded lazily when an SSI operation needs them. Blockchain RPC and registry configuration are required for direct login authorization, although injected SIWE unit tests do not require a live chain. The API and frontend both use `CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. The example KMS value and zero addresses intentionally fail SSI operations or command validation. Never provide or store the Admin wallet private key.
+Normal API runtime obtains the IPFS and Veramo secrets from the uploaded administrator keystore, not
+these two legacy environment variables. They remain documented only for the one-time existing-installation
+migration. Blockchain RPC and registry configuration are required for direct login authorization,
+although injected SIWE unit tests do not require a live chain. The API and frontend both use
+`CHAIN_ID`; replace the RPC and registry placeholders with values from that same network. Never
+provide or store the Admin wallet private key.
 
 ## Endpoints
 
@@ -212,6 +217,25 @@ Returns API availability:
 ```json
 { "status": "ok", "service": "tracechain-api" }
 ```
+
+### Administrator keystore
+
+All keystore responses use `Cache-Control: no-store`. Every route requires an authorized SIWE
+session whose wallet equals the current administrator returned by the stakeholder registry.
+
+- `GET /api/admin/keystore/status` returns only `Locked`/`Unlocked` and whether a genuinely fresh
+  installation may initialize. It never returns key metadata.
+- `POST /api/admin/keystore/unlock` accepts the encrypted JSON as a string plus its password.
+- `POST /api/admin/keystore/initialize` creates an initial bundle only when no legacy key/workflow
+  material or initialization marker exists.
+- `POST /api/admin/keystore/export` re-encrypts the current in-memory bundle using the supplied new
+  download password and returns `tracechain-admin-keystore.json` as an attachment.
+- `POST /api/admin/keystore/lock` removes the current in-memory bundle.
+
+Wrong passwords, invalid files and authenticated metadata/ciphertext changes all return the same
+safe `INVALID_KEYSTORE` response. Five failed unlocks per Admin wallet in fifteen minutes are
+rate-limited. Protected content/signing operations return HTTP 423 with `KEYSTORE_LOCKED` while the
+API remains otherwise available.
 
 ### `POST /api/auth/nonce`
 
@@ -500,9 +524,10 @@ Prepared transactions contain `chainId`, `to`, `data`, and `value`. The frontend
 
 ## Storage and production limitations
 
-Backend IPFS/KMS key export and restore checks have no HTTP endpoint. The former
-`POST /api/ssi/storage-key-backup` route is removed and returns 404. Credential issuance,
-authenticated IPFS retrieval/verification and holder-signing recovery remain available.
+The former raw backend-key `POST /api/ssi/storage-key-backup` route is removed and returns 404.
+Its replacement exports only the encrypted portable Admin bundle through the authorization rules
+above. Credential issuance and authenticated IPFS retrieval/verification require an unlocked
+bundle. Company presentation-signing recovery uses a different per-company keystore.
 See [storage and recovery](../STORAGE_AND_RECOVERY.md).
 
 ### Role workflows (2026-11-16)

@@ -13,6 +13,30 @@ const schema = z.object({
   IPFS_GATEWAY_URL: z.string().url().default('https://gateway.pinata.cloud/ipfs'),
 });
 
+const publicSchema = z.object({
+  IPFS_PINNING_API_URL: z.string().url(),
+  IPFS_PINNING_TOKEN: z.string().min(1),
+  IPFS_GATEWAY_URL: z.string().url().default('https://gateway.pinata.cloud/ipfs'),
+});
+
+export function loadCredentialStoragePaths() {
+  return {
+    ingredientWorkflowStorePath: dataFile('issuance/ingredient-batches.json'),
+    productionWorkflowStorePath: dataFile('issuance/production-flow.json'),
+    workflowStorePath: dataFile('issuance/company-role.json'),
+  };
+}
+
+export function loadCredentialStoragePublicEnvironment() {
+  const parsed = publicSchema.parse(process.env);
+  return {
+    pinningApiUrl: parsed.IPFS_PINNING_API_URL,
+    pinningToken: parsed.IPFS_PINNING_TOKEN,
+    gatewayUrl: parsed.IPFS_GATEWAY_URL,
+    ...loadCredentialStoragePaths(),
+  };
+}
+
 export function loadCredentialStorageEnvironment() {
   const parsed = schema.parse(process.env);
   return {
@@ -20,8 +44,6 @@ export function loadCredentialStorageEnvironment() {
     pinningApiUrl: parsed.IPFS_PINNING_API_URL,
     pinningToken: parsed.IPFS_PINNING_TOKEN,
     gatewayUrl: parsed.IPFS_GATEWAY_URL,
-    ingredientWorkflowStorePath: dataFile('issuance/ingredient-batches.json'),
-    productionWorkflowStorePath: dataFile('issuance/production-flow.json'),
-    workflowStorePath: dataFile('issuance/company-role.json'),
+    ...loadCredentialStoragePaths(),
   };
 }

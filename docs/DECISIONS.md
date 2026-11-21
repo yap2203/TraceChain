@@ -2,6 +2,16 @@
 
 ## Repository and implementation
 
+- Protect the API's IPFS encryption key, Veramo KMS secret and issuer private-key store in one
+  administrator-controlled portable JSON keystore (user-confirmed 2026-11-21). Derive its AES-256-GCM
+  key with scrypt (N=16384, r=8, p=1), authenticate format/version/purpose, start every API process
+  locked and permit import/export/manual lock only to the current SIWE-authenticated on-chain System
+  Admin. Existing installations migrate without key rotation or automatic deletion. Keep company
+  presentation-signing keys in separate per-company password-encrypted portable keystores. This does
+  not move workflow journals, DIDComm state, public Veramo metadata or development exports in Phase 1.
+  This supersedes retaining the obsolete server-only two-key backup-format helper from the 2026-11-16
+  raw-backup-tool removal; already downloaded historical backups remain untouched.
+
 - Switch the active configuration to Sepolia for deployment (user-requested 2026-11-20).
   Use 11155111 and the existing Sepolia RPC, leave unavailable public contract/Admin
   addresses unconfigured until verified, and preserve local state in place. Sepolia uses

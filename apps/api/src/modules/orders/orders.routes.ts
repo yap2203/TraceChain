@@ -8,6 +8,7 @@ import { DidCommError } from '../didcomm/didcomm.service.js';
 import { evidenceRequestSchema } from '../production-flow/production-flow.schema.js';
 import { logisticsActionSchema } from './logistics.schema.js';
 import { CustodyOfferError } from './custody-offers.js';
+import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
   const router = Router();
@@ -36,7 +37,8 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
           error instanceof AuthError ||
           error instanceof ProductionFlowApiError ||
           error instanceof DidCommError ||
-          error instanceof CustodyOfferError
+          error instanceof CustodyOfferError ||
+          error instanceof AdminKeystoreError
         )
           return response
             .status(error.status)
