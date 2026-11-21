@@ -49,7 +49,9 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
   on-chain System Admin may initialize, import, export or lock it after SIWE authorization; decrypted
   material exists only in API memory and is lost on restart. Existing installations use the
   non-destructive interactive migration command before archiving legacy key sources. Company
-  presentation signing uses separate per-company encrypted portable keystores. Phase 1 deliberately
+  presentation signing uses separate per-company encrypted portable keystores that must be downloaded
+  and confirmed before a new key is bound. Admin exports require password confirmation, and changed
+  issuer keys block manual lock until a current backup is exported. Phase 1 deliberately
   retains application caches, issuance/production journals, DIDComm state/backend agent keys, public
   Veramo metadata and development exports. See `docs/STORAGE_AND_RECOVERY.md`.
 

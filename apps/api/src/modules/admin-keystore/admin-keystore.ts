@@ -140,8 +140,10 @@ export function parseAdminKeystoreJson(serialized: string) {
 
 export class AdminKeystoreManager {
   private bundle?: AdminKeyBundle;
+  private exportedPrivateStoreRevision = 0;
   private generation = 0;
   private readonly listeners = new Set<() => void>();
+  private privateStoreRevision = 0;
 
   status() {
     return this.bundle ? ('Unlocked' as const) : ('Locked' as const);
@@ -149,6 +151,12 @@ export class AdminKeystoreManager {
 
   currentGeneration() {
     return this.generation;
+  }
+
+  backupRequired() {
+    return (
+      this.bundle !== undefined && this.privateStoreRevision !== this.exportedPrivateStoreRevision
+    );
   }
 
   subscribe(listener: () => void) {
@@ -173,13 +181,24 @@ export class AdminKeystoreManager {
   }
 
   async export(password: string) {
-    return encryptAdminKeystore(this.requireBundle(), password);
+    const revision = this.privateStoreRevision;
+    const keystore = await encryptAdminKeystore(this.requireBundle(), password);
+    this.exportedPrivateStoreRevision = revision;
+    return keystore;
   }
 
   lock() {
+    if (this.backupRequired())
+      throw new AdminKeystoreError(
+        'KEYSTORE_BACKUP_REQUIRED',
+        'Download an updated administrator keystore before locking this API session.',
+        409,
+      );
     this.clearBundle();
     this.bundle = undefined;
+    this.exportedPrivateStoreRevision = 0;
     this.generation += 1;
+    this.privateStoreRevision = 0;
     this.notify();
   }
 
@@ -199,7 +218,10 @@ export class AdminKeystoreManager {
       notifyUpdate: async (_oldState, newState) => {
         const bundle = this.requireBundle();
         if (generation !== this.generation) throw new KeystoreLockedError();
-        bundle.veramoPrivateKeyStore = serializableSnapshot(newState);
+        const next = serializableSnapshot(newState);
+        if (JSON.stringify(next) === JSON.stringify(bundle.veramoPrivateKeyStore)) return;
+        bundle.veramoPrivateKeyStore = next;
+        this.privateStoreRevision += 1;
       },
     } as VeramoJsonStore;
   }
@@ -212,7 +234,9 @@ export class AdminKeystoreManager {
   private replace(bundle: AdminKeyBundle) {
     this.clearBundle();
     this.bundle = payloadSchema.parse(structuredClone(bundle));
+    this.exportedPrivateStoreRevision = 0;
     this.generation += 1;
+    this.privateStoreRevision = 0;
     this.notify();
   }
 

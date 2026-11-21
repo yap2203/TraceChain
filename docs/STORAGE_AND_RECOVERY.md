@@ -42,7 +42,10 @@ The API does not load this file automatically. It starts **Locked**. Health, SIW
 System Admin keystore page stay available; protected content/signing work returns `KEYSTORE_LOCKED`.
 After the current on-chain System Admin uploads the file and enters the password, decrypted material
 exists only in that API process. Manual lock or restart discards it. Export after any issuer-key
-creation/change so the portable bundle contains the newest in-memory Veramo private store.
+creation/change so the portable bundle contains the newest in-memory Veramo private store. Initial
+creation and export require matching password and confirmation fields. Issuer-store changes set
+**Backup required**; the API rejects manual lock until a fresh export succeeds. A process restart
+cannot be prevented, so do not restart while this warning is present.
 
 For an existing installation, leave the original keys in place and run from the repository root:
 
@@ -116,6 +119,11 @@ Retrieving a VC restores access to the credential; it does **not** restore the c
 presentation-signing key. In **My company identity → presentation signing**, import the separate
 holder-signing recovery kit with its own password. Confirm its DID matches the key bound to the
 credential, then preview and explicitly approve a new challenge/recipient-bound presentation.
+
+For a new presentation key, enter and confirm the backup password, download the encrypted keystore,
+confirm that the file and password were stored separately, and only then bind the key to the company.
+Closing or refreshing before binding loses only an unbound key; it cannot leave a credential bound to
+an unbacked key.
 
 A newly generated unrelated key cannot replace the bound key merely because the same wallet logged
 in. A wrong kit password, wrong holder, changed recipient/challenge, or revoked credential must fail.

@@ -23,7 +23,9 @@ const unlockSchema = z
       .max(2 * 1024 * 1024),
   })
   .strict();
-const passwordBodySchema = z.object({ password: passwordSchema }).strict();
+const passwordBodySchema = z
+  .object({ password: passwordSchema, confirmPassword: passwordSchema })
+  .strict();
 
 export class KeystoreInitializationGuard {
   constructor(
@@ -78,6 +80,7 @@ export function createAdminKeystoreRouter(dependencies: {
       await administrator(request);
       response.json({
         status: dependencies.manager.status(),
+        backupRequired: dependencies.manager.backupRequired(),
         initializationAllowed: await dependencies.initialization.allowed(),
       });
     } catch (error) {
@@ -92,7 +95,7 @@ export function createAdminKeystoreRouter(dependencies: {
       const input = unlockSchema.parse(request.body);
       await dependencies.manager.unlock(parseAdminKeystoreJson(input.keystore), input.password);
       failures.delete(address);
-      response.json({ status: dependencies.manager.status() });
+      response.json(status());
     } catch (error) {
       if (error instanceof AdminKeystoreError && error.code === 'INVALID_KEYSTORE') {
         const session = await safeSessionAddress(request);
@@ -120,7 +123,8 @@ export function createAdminKeystoreRouter(dependencies: {
           'Existing key material was detected. Use the one-time migration command instead.',
           409,
         );
-      const { password } = passwordBodySchema.parse(request.body);
+      const { password, confirmPassword } = passwordBodySchema.parse(request.body);
+      assertPasswordConfirmation(password, confirmPassword);
       const keystore = await dependencies.manager.initialize(password);
       await dependencies.initialization.markInitialized();
       download(response, keystore);
@@ -134,7 +138,8 @@ export function createAdminKeystoreRouter(dependencies: {
   router.post('/export', async (request, response) => {
     try {
       await administrator(request);
-      const { password } = passwordBodySchema.parse(request.body);
+      const { password, confirmPassword } = passwordBodySchema.parse(request.body);
+      assertPasswordConfirmation(password, confirmPassword);
       download(response, await dependencies.manager.export(password));
     } catch (error) {
       sendError(error, response);
@@ -145,7 +150,7 @@ export function createAdminKeystoreRouter(dependencies: {
     try {
       await administrator(request);
       dependencies.manager.lock();
-      response.json({ status: dependencies.manager.status() });
+      response.json(status());
     } catch (error) {
       sendError(error, response);
     }
@@ -198,7 +203,23 @@ export function createAdminKeystoreRouter(dependencies: {
     failures.set(address, [...(failures.get(address) ?? []), Date.now()]);
   }
 
+  function status() {
+    return {
+      backupRequired: dependencies.manager.backupRequired(),
+      status: dependencies.manager.status(),
+    };
+  }
+
   return router;
+}
+
+function assertPasswordConfirmation(password: string, confirmPassword: string) {
+  if (password !== confirmPassword)
+    throw new AdminKeystoreError(
+      'PASSWORD_CONFIRMATION_MISMATCH',
+      'The password confirmation does not match.',
+      400,
+    );
 }
 
 function download(response: Response, value: unknown) {

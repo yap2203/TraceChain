@@ -15,6 +15,9 @@
   private store, verifies the encrypted output, and deletes or rewrites nothing.
 - Upgraded company presentation-signing recovery to a separate per-company portable scrypt/AES-GCM
   keystore while retaining import compatibility for existing encrypted recovery kits.
+- Added password confirmation to Admin and presentation-keystore downloads. New presentation keys
+  are now downloaded and explicitly confirmed before company binding. Veramo issuer-store changes
+  expose **Backup required** and prevent manual Admin lock until an updated export succeeds.
 - Added crypto tampering/size/access/restart tests, existing IPFS decryption and issuer-signing
   migration coverage, locked API coverage, Admin UI coverage and simulated cross-device company-key
   restoration. No contract, address, chain record, environment value or workflow journal was changed.

@@ -223,14 +223,16 @@ Returns API availability:
 All keystore responses use `Cache-Control: no-store`. Every route requires an authorized SIWE
 session whose wallet equals the current administrator returned by the stakeholder registry.
 
-- `GET /api/admin/keystore/status` returns only `Locked`/`Unlocked` and whether a genuinely fresh
-  installation may initialize. It never returns key metadata.
+- `GET /api/admin/keystore/status` returns `Locked`/`Unlocked`, `initializationAllowed` and the
+  boolean `backupRequired`. It never returns key metadata.
 - `POST /api/admin/keystore/unlock` accepts the encrypted JSON as a string plus its password.
 - `POST /api/admin/keystore/initialize` creates an initial bundle only when no legacy key/workflow
-  material or initialization marker exists.
+  material or initialization marker exists. Its body requires matching `password` and
+  `confirmPassword` fields.
 - `POST /api/admin/keystore/export` re-encrypts the current in-memory bundle using the supplied new
-  download password and returns `tracechain-admin-keystore.json` as an attachment.
-- `POST /api/admin/keystore/lock` removes the current in-memory bundle.
+  download password and confirmation, then returns `tracechain-admin-keystore.json` as an attachment.
+- `POST /api/admin/keystore/lock` removes the current in-memory bundle. It returns
+  `KEYSTORE_BACKUP_REQUIRED` when issuer key changes have not yet been exported.
 
 Wrong passwords, invalid files and authenticated metadata/ciphertext changes all return the same
 safe `INVALID_KEYSTORE` response. Five failed unlocks per Admin wallet in fifteen minutes are

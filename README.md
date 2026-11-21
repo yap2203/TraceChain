@@ -676,6 +676,10 @@ System Admin signs in with SIWE, opens `/admin/keystore`, uploads
 `tracechain-admin-keystore.json`, and enters its separate password. The backend decrypts the bundle
 only in memory; it never returns the password or raw keys. Authentication and the unlock page remain
 available while locked, while protected operations return `KEYSTORE_LOCKED`.
+Initial creation and every encrypted export require the Admin to enter the new download password
+twice. When issuer key material changes, the page shows **Backup required** and prevents manual lock
+until the Admin downloads an updated encrypted keystore. A process restart cannot be blocked, so
+export before restarting whenever this warning is present.
 
 For an existing installation, keep the current environment and `.tracechain/veramo/private-keys.json`
 in place and run this once in an interactive terminal:
@@ -695,7 +699,8 @@ created or changed in memory.
 
 The former `POST /api/ssi/storage-key-backup` route remains removed. Company presentation signing
 uses a separate per-company `tracechain-presentation-keystore.json` protected by its own password;
-it is never combined with the System Admin bundle. See
+it is never combined with the System Admin bundle. A new presentation key is downloaded with a
+confirmed password before the user confirms the backup and binds that key to the company. See
 [Storage and recovery](docs/STORAGE_AND_RECOVERY.md) for the recovery checklist and Phase 1 local
 files that intentionally remain.
 

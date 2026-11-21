@@ -84,9 +84,15 @@ describe('portable administrator keystore', () => {
     expect(manager.status()).toBe('Locked');
     expect(() => manager.ipfsEncryptionKey()).toThrow('locked');
     await manager.unlock(encrypted, PASSWORD);
+    expect(manager.backupRequired()).toBe(false);
     const store = manager.createVeramoPrivateKeyStore();
     await store.notifyUpdate?.(store, { ...store, privateKeys: [{ kid: 'new-key' }] });
+    expect(manager.backupRequired()).toBe(true);
+    expect(() => manager.lock()).toThrowError(
+      expect.objectContaining({ code: 'KEYSTORE_BACKUP_REQUIRED' }),
+    );
     const exported = await manager.export(PASSWORD);
+    expect(manager.backupRequired()).toBe(false);
     expect((await decryptAdminKeystore(exported, PASSWORD)).veramoPrivateKeyStore).toMatchObject({
       privateKeys: [{ kid: 'new-key' }],
     });
@@ -225,6 +231,43 @@ describe('administrator keystore API access', () => {
     );
   });
 
+  it('requires matching passwords before creating an initial keystore', async () => {
+    vi.stubEnv('IPFS_ENCRYPTION_KEY', '');
+    vi.stubEnv('VERAMO_KMS_SECRET_KEY', '');
+    const directory = await mkdtemp(join(tmpdir(), 'tracechain-initialize-keystore-'));
+    directories.push(directory);
+    const manager = new AdminKeystoreManager();
+    const app = express()
+      .use(express.json())
+      .use(
+        createAdminKeystoreRouter({
+          authService: session(ADMIN, CompanyRole.SYSTEM_ADMIN),
+          cookieName: 'session',
+          gateway: { getAdministrator: async () => ADMIN },
+          initialization: new KeystoreInitializationGuard(join(directory, 'state.json'), []),
+          manager,
+        }),
+      );
+
+    await request(app)
+      .post('/initialize')
+      .send({ password: PASSWORD, confirmPassword: `${PASSWORD}-mistyped` })
+      .expect(400, {
+        error: {
+          code: 'PASSWORD_CONFIRMATION_MISMATCH',
+          message: 'The password confirmation does not match.',
+        },
+      });
+    expect(manager.status()).toBe('Locked');
+
+    const response = await request(app)
+      .post('/initialize')
+      .send({ password: PASSWORD, confirmPassword: PASSWORD })
+      .expect(200);
+    expect(response.headers['content-disposition']).toContain('tracechain-admin-keystore.json');
+    expect(manager.status()).toBe('Unlocked');
+  });
+
   it('allows only the on-chain System Admin to import and export', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'tracechain-keystore-'));
     directories.push(directory);
@@ -259,26 +302,59 @@ describe('administrator keystore API access', () => {
         }),
       );
     await request(adminApp).get('/status').expect(200, {
+      backupRequired: false,
       status: 'Locked',
       initializationAllowed: false,
     });
     await request(adminApp)
       .post('/unlock')
       .send({ password: PASSWORD, keystore: JSON.stringify(encrypted) })
-      .expect(200, { status: 'Unlocked' });
+      .expect(200, { backupRequired: false, status: 'Unlocked' });
+    const store = manager.createVeramoPrivateKeyStore();
+    await store.notifyUpdate?.(store, { ...store, privateKeys: [{ kid: 'new-issuer-key' }] });
+    await request(adminApp).get('/status').expect(200, {
+      backupRequired: true,
+      status: 'Unlocked',
+      initializationAllowed: false,
+    });
+    await request(adminApp)
+      .post('/lock')
+      .expect(409, {
+        error: {
+          code: 'KEYSTORE_BACKUP_REQUIRED',
+          message: 'Download an updated administrator keystore before locking this API session.',
+        },
+      });
+    await request(adminApp)
+      .post('/export')
+      .send({
+        password: 'a-different-export-password',
+        confirmPassword: 'a-mistyped-export-password',
+      })
+      .expect(400, {
+        error: {
+          code: 'PASSWORD_CONFIRMATION_MISMATCH',
+          message: 'The password confirmation does not match.',
+        },
+      });
+    expect(manager.backupRequired()).toBe(true);
     const downloaded = await request(adminApp)
       .post('/export')
-      .send({ password: 'a-different-export-password' })
+      .send({
+        password: 'a-different-export-password',
+        confirmPassword: 'a-different-export-password',
+      })
       .expect(200);
     expect(downloaded.headers['cache-control']).toBe('no-store');
     expect(downloaded.headers['content-disposition']).toContain('tracechain-admin-keystore.json');
     await expect(
       decryptAdminKeystore(downloaded.body, 'a-different-export-password'),
     ).resolves.toMatchObject({ ipfsEncryptionKey: bundle.ipfsEncryptionKey });
-    await request(adminApp).post('/lock').expect(200, { status: 'Locked' });
+    expect(manager.backupRequired()).toBe(false);
+    await request(adminApp).post('/lock').expect(200, { backupRequired: false, status: 'Locked' });
     await request(adminApp)
       .post('/export')
-      .send({ password: PASSWORD })
+      .send({ password: PASSWORD, confirmPassword: PASSWORD })
       .expect(423, {
         error: {
           code: 'KEYSTORE_LOCKED',

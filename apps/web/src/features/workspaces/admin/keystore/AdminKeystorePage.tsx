@@ -16,7 +16,9 @@ const MAX_FILE_SIZE = 2 * 1024 * 1024;
 
 export default function AdminKeystorePage() {
   const [status, setStatus] = useState<AdminKeystoreStatus>();
-  const [password, setPassword] = useState('');
+  const [unlockPassword, setUnlockPassword] = useState('');
+  const [downloadPassword, setDownloadPassword] = useState('');
+  const [confirmDownloadPassword, setConfirmDownloadPassword] = useState('');
   const [selected, setSelected] = useState<File>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
@@ -39,12 +41,13 @@ export default function AdminKeystorePage() {
     if (!selected) return setError('Select the encrypted administrator keystore JSON file.');
     if (selected.size > MAX_FILE_SIZE)
       return setError('The keystore file must be 2 MB or smaller.');
-    if (password.length < 12) return setError('Enter the keystore password (12+ characters).');
+    if (unlockPassword.length < 12)
+      return setError('Enter the keystore password (12+ characters).');
     setBusy('unlock');
     setError('');
     try {
-      await unlockAdminKeystore(await selected.text(), password);
-      setPassword('');
+      await unlockAdminKeystore(await selected.text(), unlockPassword);
+      setUnlockPassword('');
       setSelected(undefined);
       if (fileInput.current) fileInput.current.value = '';
       await refresh();
@@ -56,18 +59,22 @@ export default function AdminKeystorePage() {
   };
 
   const download = async (action: 'export' | 'initialize') => {
-    if (password.length < 12) return setError('Enter a new download password (12+ characters).');
+    if (downloadPassword.length < 12)
+      return setError('Enter a new download password (12+ characters).');
+    if (downloadPassword !== confirmDownloadPassword)
+      return setError('The password confirmation does not match.');
     setBusy(action);
     setError('');
     try {
-      const blob = await downloadAdminKeystore(action, password);
+      const blob = await downloadAdminKeystore(action, downloadPassword, confirmDownloadPassword);
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = 'tracechain-admin-keystore.json';
       link.click();
       URL.revokeObjectURL(url);
-      setPassword('');
+      setDownloadPassword('');
+      setConfirmDownloadPassword('');
       await refresh();
     } catch (cause) {
       setError(reportError(cause, 'Could not create the encrypted keystore download.'));
@@ -97,16 +104,26 @@ export default function AdminKeystorePage() {
                 </p>
               </div>
             </div>
-            <Badge
-              variant={status?.status === 'Unlocked' ? 'active' : 'pending'}
-              label={status?.status ?? 'Unavailable'}
-            />
+            <div className="flex flex-wrap items-center gap-[8px]">
+              {status?.backupRequired && <Badge variant="pending" label="Backup required" />}
+              <Badge
+                variant={status?.status === 'Unlocked' ? 'active' : 'pending'}
+                label={status?.status ?? 'Unavailable'}
+              />
+            </div>
           </div>
 
           <Alert
             type="warning"
             message="TraceChain never stores this password. Losing both the keystore file and its password makes the protected keys unrecoverable."
           />
+
+          {status?.backupRequired && (
+            <Alert
+              type="warning"
+              message="Issuer key material changed in this API session. Download an updated encrypted keystore before locking or restarting the API."
+            />
+          )}
 
           {status?.status === 'Locked' && (
             <div className="grid gap-[12px]">
@@ -125,20 +142,51 @@ export default function AdminKeystorePage() {
               {selected && (
                 <span className="text-[12px] text-ws-muted">Selected: {selected.name}</span>
               )}
+              <label className="grid gap-[6px] text-[13px] font-semibold">
+                Unlock password
+                <input
+                  aria-label="Administrator keystore unlock password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={unlockPassword}
+                  onChange={(event) => setUnlockPassword(event.target.value)}
+                  placeholder="At least 12 characters"
+                />
+              </label>
             </div>
           )}
 
-          <label className="grid gap-[6px] text-[13px] font-semibold">
-            {status?.status === 'Locked' ? 'Keystore password' : 'New download password'}
-            <input
-              aria-label="Administrator keystore password"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="At least 12 characters"
-            />
-          </label>
+          {(status?.status === 'Unlocked' || status?.initializationAllowed) && (
+            <div className="grid gap-[12px]">
+              <strong>
+                {status.status === 'Unlocked'
+                  ? 'Download updated keystore'
+                  : 'Create initial keystore'}
+              </strong>
+              <label className="grid gap-[6px] text-[13px] font-semibold">
+                New download password
+                <input
+                  aria-label="Administrator keystore download password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={downloadPassword}
+                  onChange={(event) => setDownloadPassword(event.target.value)}
+                  placeholder="At least 12 characters"
+                />
+              </label>
+              <label className="grid gap-[6px] text-[13px] font-semibold">
+                Confirm password
+                <input
+                  aria-label="Confirm administrator keystore download password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmDownloadPassword}
+                  onChange={(event) => setConfirmDownloadPassword(event.target.value)}
+                  placeholder="Repeat the download password"
+                />
+              </label>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-[10px]">
             {status?.status === 'Locked' && (
@@ -161,13 +209,14 @@ export default function AdminKeystorePage() {
                 </Btn>
                 <Btn
                   variant="outline"
-                  disabled={Boolean(busy)}
+                  disabled={Boolean(busy) || status.backupRequired}
                   onClick={async () => {
                     setBusy('lock');
                     setError('');
                     try {
                       await lockAdminKeystore();
-                      setPassword('');
+                      setDownloadPassword('');
+                      setConfirmDownloadPassword('');
                       await refresh();
                     } catch (cause) {
                       setError(reportError(cause, 'Could not lock the keystore.'));

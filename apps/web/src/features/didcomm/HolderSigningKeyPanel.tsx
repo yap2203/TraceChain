@@ -9,6 +9,7 @@ import {
   getActiveMessagingAgent,
   importRecoveryKit,
   setActiveMessagingAgent,
+  type HolderMessagingAgent,
 } from './didcomm-agent';
 import { didCommApi } from './didcomm.api';
 import { Alert, Btn, Card } from '../workspaces/shared/ui';
@@ -33,57 +34,123 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
     const active = getActiveMessagingAgent();
     return !!active && (!expectedDid || active.did === expectedDid);
   });
-  const [password, setPassword] = useState('');
+  const [backupPassword, setBackupPassword] = useState('');
+  const [confirmBackupPassword, setConfirmBackupPassword] = useState('');
+  const [restorePassword, setRestorePassword] = useState('');
+  const [pendingHolder, setPendingHolder] = useState<HolderMessagingAgent>();
+  const [backupConfirmed, setBackupConfirmed] = useState(false);
+  const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const file = useRef<HTMLInputElement>(null);
 
-  const create = async () => {
+  const validateBackupPassword = () => {
+    if (backupPassword.length < 12)
+      throw new Error('Use a presentation-keystore password of at least 12 characters.');
+    if (backupPassword !== confirmBackupPassword)
+      throw new Error('The password confirmation does not match.');
+  };
+
+  const download = async (holder: HolderMessagingAgent) => {
+    validateBackupPassword();
+    const content = await exportRecoveryKit(holder, backupPassword);
+    const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
+    try {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'tracechain-presentation-keystore.json';
+      link.click();
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+    setBackupPassword('');
+    setConfirmBackupPassword('');
+  };
+
+  const createAndDownload = async () => {
+    setBusy('create');
     setError('');
     try {
-      const holder = setActiveMessagingAgent(await createMessagingAgent());
-      const challenge = await didCommApi.challenge();
-      await didCommApi.bind(await createBindingProof(holder, challenge));
-      setReady(true);
+      validateBackupPassword();
+      const holder = await createMessagingAgent();
+      await download(holder);
+      setPendingHolder(holder);
+      setBackupConfirmed(false);
     } catch (cause) {
-      setError(reportError(cause, 'Could not create the presentation key.'));
+      setError(reportError(cause, 'Could not create and download the presentation keystore.'));
+    } finally {
+      setBusy('');
     }
   };
+
+  const bind = async () => {
+    if (!pendingHolder || !backupConfirmed) return;
+    setBusy('bind');
+    setError('');
+    try {
+      const challenge = await didCommApi.challenge();
+      await didCommApi.bind(await createBindingProof(pendingHolder, challenge));
+      setActiveMessagingAgent(pendingHolder);
+      setPendingHolder(undefined);
+      setBackupConfirmed(false);
+      setReady(true);
+    } catch (cause) {
+      setError(reportError(cause, 'Could not bind the backed-up presentation key.'));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const restore = async (selected?: File) => {
     if (!selected) return;
+    setBusy('restore');
     setError('');
     try {
       const invalid = uploadError(selected, 1 * 1024 * 1024, /\.json$/i, ['application/json']);
       if (invalid) throw new Error(invalid);
-      if (password.length < 10)
-        throw new Error('Enter the original presentation-keystore password.');
-      const holder = await importRecoveryKit(await selected.text(), password);
+      if (restorePassword.length < 12)
+        throw new Error('Enter the original presentation-keystore password (12+ characters).');
+      const holder = await importRecoveryKit(await selected.text(), restorePassword);
       if (expectedDid && holder.did !== expectedDid)
         throw new Error('This backup is not the presentation key bound to the credential.');
       setActiveMessagingAgent(holder);
       setReady(true);
-      setPassword('');
+      setRestorePassword('');
     } catch (cause) {
       setError(reportError(cause, 'Could not restore the presentation key.'));
     } finally {
+      setBusy('');
       if (file.current) file.current.value = '';
     }
   };
+
   const backup = async () => {
+    setBusy('backup');
     setError('');
     try {
       const holder = getActiveMessagingAgent();
       if (!holder) throw new Error('Create or restore the presentation key first.');
-      const content = await exportRecoveryKit(holder, password);
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
-      link.download = 'tracechain-presentation-keystore.json';
-      link.click();
-      URL.revokeObjectURL(link.href);
-      setPassword('');
+      await download(holder);
     } catch (cause) {
       setError(reportError(cause, 'Could not create the encrypted backup.'));
+    } finally {
+      setBusy('');
     }
   };
+
+  const downloadPendingAgain = async () => {
+    if (!pendingHolder) return;
+    setBusy('backup');
+    setError('');
+    try {
+      await download(pendingHolder);
+      setBackupConfirmed(false);
+    } catch (cause) {
+      setError(reportError(cause, 'Could not create the encrypted backup.'));
+    } finally {
+      setBusy('');
+    }
+  };
+
   return (
     <Card>
       <div style={{ display: 'grid', gap: 8 }}>
@@ -94,28 +161,121 @@ export function HolderSigningKeyPanel({ expectedDid }: { expectedDid?: string })
           password so the company administrator can restore it on another device.
         </div>
         {error && <Alert type="error" message={error} />}
-        <input
-          aria-label="Presentation key backup password"
-          type="password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder="Keystore password (12+ characters)"
-        />
-        <input
-          ref={file}
-          type="file"
-          accept="application/json,.json"
-          aria-label="Restore presentation key backup"
-          onChange={(event) => void restore(event.target.files?.[0])}
-        />
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {!ready && !expectedDid && <Btn onClick={() => void create()}>Create signing key</Btn>}
-          {ready && (
-            <Btn variant="outline" onClick={() => void backup()}>
-              Download encrypted presentation keystore
+
+        {!pendingHolder && (ready || !expectedDid) && (
+          <>
+            <input
+              aria-label="Presentation key backup password"
+              type="password"
+              autoComplete="new-password"
+              value={backupPassword}
+              onChange={(event) => setBackupPassword(event.target.value)}
+              placeholder="New backup password (12+ characters)"
+            />
+            <input
+              aria-label="Confirm presentation key backup password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmBackupPassword}
+              onChange={(event) => setConfirmBackupPassword(event.target.value)}
+              placeholder="Confirm backup password"
+            />
+          </>
+        )}
+
+        {!ready && !pendingHolder && (
+          <>
+            {!expectedDid && (
+              <Btn disabled={Boolean(busy)} onClick={() => void createAndDownload()}>
+                {busy === 'create' ? 'Preparing...' : 'Generate and download keystore'}
+              </Btn>
+            )}
+            <div className="text-[12px] text-ws-muted">Or restore an existing bound key:</div>
+            <input
+              aria-label="Presentation key restore password"
+              type="password"
+              autoComplete="current-password"
+              value={restorePassword}
+              onChange={(event) => setRestorePassword(event.target.value)}
+              placeholder="Original backup password"
+            />
+            <input
+              ref={file}
+              type="file"
+              accept="application/json,.json"
+              aria-label="Restore presentation key backup"
+              disabled={Boolean(busy)}
+              onChange={(event) => void restore(event.target.files?.[0])}
+            />
+          </>
+        )}
+
+        {pendingHolder && (
+          <div className="grid gap-[10px]">
+            <Alert
+              type="success"
+              message="Encrypted presentation keystore downloaded. The key is not bound to the company yet."
+            />
+            <label className="flex items-start gap-[8px] text-[13px]">
+              <input
+                type="checkbox"
+                checked={backupConfirmed}
+                onChange={(event) => setBackupConfirmed(event.target.checked)}
+              />
+              I saved the encrypted presentation keystore and its password separately.
+            </label>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Btn disabled={!backupConfirmed || Boolean(busy)} onClick={() => void bind()}>
+                {busy === 'bind' ? 'Binding...' : 'Bind key to company'}
+              </Btn>
+              <Btn
+                variant="outline"
+                disabled={Boolean(busy)}
+                onClick={() => {
+                  pendingHolder.privateKey.fill(0);
+                  setPendingHolder(undefined);
+                  setBackupConfirmed(false);
+                  setBackupPassword('');
+                  setConfirmBackupPassword('');
+                }}
+              >
+                Discard unbound key
+              </Btn>
+            </div>
+            <div className="text-[12px] text-ws-muted">
+              To download this same unbound key again, enter and confirm a new backup password.
+            </div>
+            <input
+              aria-label="Presentation key backup password"
+              type="password"
+              autoComplete="new-password"
+              value={backupPassword}
+              onChange={(event) => setBackupPassword(event.target.value)}
+              placeholder="New backup password (12+ characters)"
+            />
+            <input
+              aria-label="Confirm presentation key backup password"
+              type="password"
+              autoComplete="new-password"
+              value={confirmBackupPassword}
+              onChange={(event) => setConfirmBackupPassword(event.target.value)}
+              placeholder="Confirm backup password"
+            />
+            <Btn
+              variant="outline"
+              disabled={Boolean(busy)}
+              onClick={() => void downloadPendingAgain()}
+            >
+              Download again
             </Btn>
-          )}
-        </div>
+          </div>
+        )}
+
+        {ready && !pendingHolder && (
+          <Btn variant="outline" disabled={Boolean(busy)} onClick={() => void backup()}>
+            {busy === 'backup' ? 'Preparing...' : 'Download encrypted presentation keystore'}
+          </Btn>
+        )}
       </div>
     </Card>
   );

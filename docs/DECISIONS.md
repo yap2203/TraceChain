@@ -7,7 +7,9 @@
   key with scrypt (N=16384, r=8, p=1), authenticate format/version/purpose, start every API process
   locked and permit import/export/manual lock only to the current SIWE-authenticated on-chain System
   Admin. Existing installations migrate without key rotation or automatic deletion. Keep company
-  presentation-signing keys in separate per-company password-encrypted portable keystores. This does
+  presentation-signing keys in separate per-company password-encrypted portable keystores. Require
+  password confirmation for every new download, require a presentation-key backup before company
+  binding, and block manual Admin lock while changed issuer keys still require an export. This does
   not move workflow journals, DIDComm state, public Veramo metadata or development exports in Phase 1.
   This supersedes retaining the obsolete server-only two-key backup-format helper from the 2026-11-16
   raw-backup-tool removal; already downloaded historical backups remain untouched.
