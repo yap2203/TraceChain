@@ -12,7 +12,7 @@ import type { CredentialContentStore } from '../ssi/encrypted-credential.store.j
 import type { CatalogueImageInput } from '../orders/catalogue-media.js';
 import { validateCatalogueImage } from '../orders/catalogue-media.js';
 import type { BlockchainGateway, ChainApplicationRecord } from './blockchain-gateway.service.js';
-import { applicationDocumentsSchema } from './application-documents.js';
+import { applicationDocumentsSchema } from './application-documents.schema.js';
 import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
