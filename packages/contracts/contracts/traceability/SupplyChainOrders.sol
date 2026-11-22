@@ -126,7 +126,7 @@ contract SupplyChainOrders {
     }
     function registerLocation(bytes32 location, bytes32 detailsHash, string calldata detailsCid) external {
         if (stakeholders.roleOf(msg.sender) < 2) revert Unauthorized();
-        if (location == bytes32(0) || detailsHash == bytes32(0) || locationOwner[location] != address(0)) revert InvalidInput();
+        if (location == bytes32(0) || detailsHash == bytes32(0) || bytes(detailsCid).length == 0 || locationOwner[location] != address(0)) revert InvalidInput();
         locationOwner[location] = msg.sender;
         locationDetailsHash[location] = detailsHash; locationDetailsCid[location] = detailsCid;
         emit LocationRegistered(location, msg.sender, detailsHash, detailsCid);
@@ -188,11 +188,11 @@ contract SupplyChainOrders {
     function _createRequest(bytes32 orderId, bytes32 itemId, uint256 quantity, bytes32 unit, bytes32 receivingLocation,
         uint64 expiresAt, bool evidenceRequired, bytes32 detailsHash, string memory detailsCid) private {
         address buyer = msg.sender == address(ingredientDelivery) ? ingredientDelivery.pendingBuyer() : msg.sender;
-        Item memory item = items[itemId];
+        Item storage item = items[itemId];
         uint8 buyerRole = item.kind == 1 ? 3 : 5;
         if (!stakeholders.isAuthorized(buyer, buyerRole) || !stakeholders.isAuthorized(item.seller, item.kind == 1 ? 2 : 3)) revert Unauthorized();
         if (!item.active || orders[orderId].buyer != address(0) || orderId == bytes32(0) || quantity == 0 ||
-            item.unit != unit || expiresAt <= block.timestamp || detailsHash == bytes32(0)) revert InvalidInput();
+            item.unit != unit || expiresAt <= block.timestamp || detailsHash == bytes32(0) || bytes(detailsCid).length == 0) revert InvalidInput();
         Order storage order = orders[orderId];
         order.buyer = buyer; order.seller = item.seller; order.itemId = itemId; order.requested = quantity;
         order.receivingLocation = receivingLocation; order.expiresAt = expiresAt; order.status = 1;
@@ -261,9 +261,9 @@ contract SupplyChainOrders {
     function dispatch(bytes32 orderId, bytes32 shipmentId, uint256 quantity, uint64 occurredAt,
         address distributor, bytes32 transitLocation, uint64 expectedAt, bytes32 shipmentHash, string calldata encryptedCid) external {
         if (requestOnly[orderId]) revert InvalidState();
-        Order storage order = _seller(orderId); Item memory item = items[order.itemId];
+        Order storage order = _seller(orderId); Item storage item = items[order.itemId];
         if (quantity == 0 || quantity > order.allocated - order.dispatched || shipments[shipmentId].status != 0 || shipmentId == bytes32(0) ||
-            occurredAt > block.timestamp || occurredAt == 0 || shipmentHash == bytes32(0)) revert InvalidInput();
+            occurredAt > block.timestamp || occurredAt == 0 || shipmentHash == bytes32(0) || bytes(encryptedCid).length == 0) revert InvalidInput();
         if (!stakeholders.isAuthorized(order.buyer, item.kind == 1 ? 3 : 5)) revert Unauthorized();
         if (order.identityRequired && (order.identityValidUntil <= block.timestamp || order.identityCredentialHash != stakeholders.credentialHashOf(order.buyer))) revert InvalidState();
         if (order.evidenceRequired && orderEvidence[orderId].length == 0) revert InvalidState();

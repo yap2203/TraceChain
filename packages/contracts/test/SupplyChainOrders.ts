@@ -1787,6 +1787,89 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
     );
     return shipmentId;
   }
+  it('requires a non-empty encrypted reference when registering a location', async function () {
+    const system = await networkHelpers.loadFixture(fixture);
+    const location = ethers.id('additional-supplier-location');
+    const detailsHash = ethers.id('additional-supplier-location-details');
+    await expect(
+      signed(system.orders, system.supplier).registerLocation(location, detailsHash, ''),
+    ).to.be.revertedWithCustomError(system.orders, 'InvalidInput');
+
+    await signed(system.orders, system.supplier).registerLocation(
+      location,
+      detailsHash,
+      'ipfs://location-details',
+    );
+    expect(await system.orders.locationDetailsCid(location)).to.equal('ipfs://location-details');
+  });
+  it('requires a non-empty encrypted reference when creating a request', async function () {
+    const system = await networkHelpers.loadFixture(fixture);
+    const requestId = ethers.id('cid-required-request');
+    const detailsHash = ethers.id('cid-required-request-details');
+    await expect(
+      signed(system.orders, system.manufacturer).requestInterest(
+        requestId,
+        1,
+        system.batchId,
+        10,
+        system.expiry - 1,
+        detailsHash,
+        '',
+      ),
+    ).to.be.revertedWithCustomError(system.orders, 'InvalidInput');
+
+    await signed(system.orders, system.manufacturer).requestInterest(
+      requestId,
+      1,
+      system.batchId,
+      10,
+      system.expiry - 1,
+      detailsHash,
+      'ipfs://request-details',
+    );
+    expect((await system.orders.getOrder(requestId)).detailsCid).to.equal('ipfs://request-details');
+  });
+  it('requires a non-empty encrypted reference when dispatching a shipment', async function () {
+    const system = await networkHelpers.loadFixture(fixture);
+    const shipmentId = ethers.id('cid-required-shipment');
+    const shipmentHash = ethers.id('cid-required-shipment-details');
+    await signed(system.orders, system.supplier).allocate(system.orderId, 100000);
+    await expect(
+      signed(system.orders, system.supplier).dispatch(
+        system.orderId,
+        shipmentId,
+        100000,
+        await networkHelpers.time.latest(),
+        ethers.ZeroAddress,
+        ethers.ZeroHash,
+        system.expiry - 1,
+        shipmentHash,
+        '',
+      ),
+    ).to.be.revertedWithCustomError(system.orders, 'InvalidInput');
+
+    await expect(
+      signed(system.orders, system.supplier).dispatch(
+        system.orderId,
+        shipmentId,
+        100000,
+        await networkHelpers.time.latest(),
+        ethers.ZeroAddress,
+        ethers.ZeroHash,
+        system.expiry - 1,
+        shipmentHash,
+        'ipfs://shipment-details',
+      ),
+    )
+      .to.emit(system.orders, 'ShipmentDispatched')
+      .withArgs(
+        shipmentId,
+        system.orderId,
+        system.batchId,
+        shipmentHash,
+        'ipfs://shipment-details',
+      );
+  });
   for (const unit of ['kg', 'litre', 'unit']) {
     it(`preserves ${unit} quantities through listing, ordering, dispatch and receipt`, async function () {
       const system = await networkHelpers.loadFixture(fixture);
