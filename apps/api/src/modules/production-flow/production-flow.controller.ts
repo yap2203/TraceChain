@@ -17,6 +17,7 @@ import {
 import { ProductionFlowApiError, ProductionFlowService } from './production-flow.service.js';
 
 export class ProductionFlowController {
+  prepareCompanyWalletBinding = this.action((request) => this.service.prepareCompanyWalletBinding(this.session(request)));
   certificationDocument = this.action((request) =>
     this.service.certificationDocument(
       this.session(request),

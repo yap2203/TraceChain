@@ -68,6 +68,8 @@ const ingredientInterface = new Interface(ingredientAbi);
 const credentialInterface = new Interface(credentialAbi);
 
 export interface ProductionFlowGateway {
+  companyCredential?(wallet: string): Promise<{ credentialHash: string; credentialCid: string }>;
+  presentationDomain?(): { chainId: number; verifyingContract: string };
   supportsOptionalProductionEvidence?(): Promise<boolean>;
   getProductionRecord?(batchId: string): Promise<{ location: string; recordedAt: number }>;
   listProposedProductBatchIds?(wallet: string): Promise<string[]>;
@@ -81,6 +83,7 @@ export interface ProductionFlowGateway {
   ): Promise<boolean>;
   getAccepted(batchId: string, manufacturer: string): Promise<boolean>;
   getCredential(credentialId: string): Promise<{
+    encryptedCid?: string;
     credentialHash: string;
     credentialType: number;
     expiresAt: number;
@@ -145,6 +148,8 @@ export interface ProductionFlowGateway {
 }
 
 export class EthersProductionFlowGateway implements ProductionFlowGateway {
+  async companyCredential(wallet: string) { const r = await this.stakeholders.getStakeholder(wallet); return { credentialHash: String(r.credentialHash), credentialCid: String(r.credentialCid) }; }
+  presentationDomain() { return { chainId: this.chainId, verifyingContract: this.addresses.evidence }; }
   async supportsOptionalProductionEvidence() {
     try {
       return Number(await this.products.receivedProductionPolicy()) === 1;
@@ -266,6 +271,7 @@ export class EthersProductionFlowGateway implements ProductionFlowGateway {
     try {
       const record = await this.credentials.getCredential(credentialId);
       return {
+        encryptedCid: String(record.encryptedCid),
         credentialHash: String(record.credentialHash),
         credentialType: Number(record.credentialType),
         expiresAt: Number(record.expiresAt),

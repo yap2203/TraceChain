@@ -65,6 +65,10 @@ export async function submitProductionTransaction(
         'The blockchain transaction reverted. You can safely retry this workflow.',
       );
     notify('Blockchain transaction confirmed.', 'success');
+    for (const next of transaction.nextTransactions ?? []) {
+      notify('Confirm the shared proof reference in MetaMask to complete publication.', 'info');
+      await submitProductionTransaction(next, actorWallet);
+    }
   } catch (error) {
     if (error instanceof ProductionTransactionError) throw error;
     const candidate = error as {

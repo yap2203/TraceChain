@@ -1,7 +1,15 @@
+import { getAddress, ZeroHash } from 'ethers';
+import {
+  WALLET_HOLDER_BINDING,
+  parseWalletPresentation,
+  presentationSdJwt,
+  verifyWalletPresentation,
+} from '@tracechain/shared';
 import type { TraceChainAgent } from '../agent/tracechain-agent.js';
 import { COMPANY_ALWAYS_CLAIMS, companyDisclosureGroup } from '@tracechain/shared';
 import { holderPublicJwk, issuerInstance, verifierInstance } from './ingredient-sd-jwt.js';
 
+export const COMPANY_IDENTITY_SD_VCT_V3 = 'urn:tracechain:company-identity-proof:sd-jwt:v3';
 export const COMPANY_IDENTITY_SD_VCT = 'urn:tracechain:company-identity-proof:sd-jwt:v1';
 export const COMPANY_IDENTITY_SD_VCT_V2 = 'urn:tracechain:company-identity-proof:sd-jwt:v2';
 export const COMPANY_IDENTITY_BINDING_CLAIMS = ['id', 'walletAddress', 'role'] as const;
@@ -11,7 +19,8 @@ export async function issueCompanyIdentitySdJwt(
   agent: TraceChainAgent,
   input: {
     issuerDid: string;
-    holderDid: string;
+    holderDid?: string;
+    holderWallet?: string;
     credentialHash: string;
     claims: Record<string, unknown>;
     requestId: string;
@@ -25,6 +34,11 @@ export async function issueCompanyIdentitySdJwt(
     sourceCredentialExpiresAt: string;
   },
 ) {
+  if (
+    input.holderWallet &&
+    getAddress(input.holderWallet) !== getAddress(String(input.claims.walletAddress))
+  )
+    throw new Error('Issuer holder wallet differs from verified company wallet.');
   const issuer = await agent.didManagerGet({ did: input.issuerDid });
   const key = issuer.keys.find((candidate) => candidate.type === 'Secp256k1');
   if (!key) throw new Error('The original Company Role issuer signing key is unavailable.');
@@ -52,9 +66,11 @@ export async function issueCompanyIdentitySdJwt(
   return issuerInstance(agent, key.kid).issue(
     {
       iss: input.issuerDid,
-      vct: COMPANY_IDENTITY_SD_VCT_V2,
+      vct: input.holderWallet ? COMPANY_IDENTITY_SD_VCT_V3 : COMPANY_IDENTITY_SD_VCT_V2,
       policyVersion: 2,
-      cnf: { jwk: await holderPublicJwk(input.holderDid) },
+      cnf: input.holderWallet
+        ? { wallet: getAddress(input.holderWallet), proof: WALLET_HOLDER_BINDING }
+        : { jwk: await holderPublicJwk(input.holderDid!) },
       iat: input.issuedAt,
       exp: input.expiresAt,
       sourceCredentialHash: input.credentialHash,
@@ -79,6 +95,28 @@ export async function issueCompanyIdentitySdJwt(
   );
 }
 
+/** Issuer-only verification of a stored generic wallet attestation, never a holder proof. */
+export async function verifyIssuedCompanyWalletAttestation(
+  agent: TraceChainAgent,
+  credential: string,
+  now: number,
+) {
+  return verifierInstance(agent).verify(credential, {
+    allowedIssuerAlgorithms: ['ES256K'],
+    expectedVct: COMPANY_IDENTITY_SD_VCT_V3,
+    currentDate: now,
+    requiredClaimKeys: [
+      'iss',
+      'cnf',
+      'sourceCredentialHash',
+      'sourceCredentialId',
+      'sourceCredentialIssuedAt',
+      'sourceCredentialExpiresAt',
+      ...COMPANY_ALWAYS_CLAIMS,
+    ],
+  });
+}
+
 export async function verifyCompanyIdentitySdJwt(
   agent: TraceChainAgent,
   presentation: string,
@@ -89,16 +127,25 @@ export async function verifyCompanyIdentitySdJwt(
     purpose: string;
     now: number;
     requiredClaims: string[];
+    walletDomain?: { chainId: number; verifyingContract: string };
+    wallet?: string;
+    batchId?: string;
+    expiresAt?: number;
   },
 ) {
-  const result = await verifierInstance(agent).verify(presentation, {
+  const wallet = parseWalletPresentation(presentation);
+  const result = await verifierInstance(agent).verify(presentationSdJwt(presentation), {
     allowedIssuerAlgorithms: ['ES256K'],
-    allowedKeyBindingAlgorithms: ['EdDSA'],
-    expectedVct: [COMPANY_IDENTITY_SD_VCT, COMPANY_IDENTITY_SD_VCT_V2],
+    ...(!wallet
+      ? {
+          allowedKeyBindingAlgorithms: ['EdDSA'],
+          expectedKeyBindingAudience: input.audience,
+          keyBindingNonce: input.challenge,
+          keyBindingMaxAgeSeconds: 300,
+        }
+      : {}),
+    expectedVct: [COMPANY_IDENTITY_SD_VCT, COMPANY_IDENTITY_SD_VCT_V2, COMPANY_IDENTITY_SD_VCT_V3],
     currentDate: input.now,
-    expectedKeyBindingAudience: input.audience,
-    keyBindingNonce: input.challenge,
-    keyBindingMaxAgeSeconds: 300,
     requiredClaimKeys: [
       'iss',
       'vct',
@@ -109,7 +156,7 @@ export async function verifyCompanyIdentitySdJwt(
     ],
   });
   const p = result.payload;
-  if (p.vct === COMPANY_IDENTITY_SD_VCT_V2) {
+  if ([COMPANY_IDENTITY_SD_VCT_V2, COMPANY_IDENTITY_SD_VCT_V3].includes(String(p.vct))) {
     for (const key of [...COMPANY_ALWAYS_CLAIMS, ...companyDisclosureGroup(input.requiredClaims)])
       if (!p[key])
         throw new Error(
@@ -118,6 +165,32 @@ export async function verifyCompanyIdentitySdJwt(
     if ('companyRegistrationNumber' in p !== 'registrationCountry' in p)
       throw new Error('Registration number and country must be disclosed together.');
   }
+  if (wallet) {
+    const binding = p.cnf as { wallet?: string; proof?: string };
+    if (
+      p.vct !== COMPANY_IDENTITY_SD_VCT_V3 ||
+      binding.proof !== WALLET_HOLDER_BINDING ||
+      !binding.wallet ||
+      !input.wallet ||
+      !input.walletDomain ||
+      getAddress(binding.wallet) !== getAddress(input.wallet) ||
+      getAddress(String(p.walletAddress)) !== getAddress(input.wallet)
+    )
+      throw new Error('The issuer did not authorize this wallet binding.');
+    verifyWalletPresentation(wallet, {
+      ...input.walletDomain,
+      holder: input.wallet,
+      verifier: input.audience,
+      requestId: input.requestId,
+      purpose: input.purpose,
+      challenge: input.challenge,
+      batchId: input.batchId ?? ZeroHash,
+      now: input.now,
+      expiresAt: Math.min(input.expiresAt ?? Number(p.exp), Number(p.exp)),
+    });
+    return result;
+  }
+  if (p.vct === COMPANY_IDENTITY_SD_VCT_V3) throw new Error('A wallet holder proof is required.');
   const expectedJwk = await holderPublicJwk(String(p.holderDid ?? ''));
   const jwk = (p.cnf as { jwk?: { x?: string; crv?: string; kty?: string } } | undefined)?.jwk;
   if (jwk?.x !== expectedJwk.x || jwk?.crv !== expectedJwk.crv || jwk?.kty !== expectedJwk.kty)

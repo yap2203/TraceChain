@@ -4,6 +4,7 @@ export default buildModule('TraceChain', (module) => {
   const administrator = module.getAccount(0);
   const stakeholders = module.contract('StakeholderRegistry', [administrator]);
   const credentials = module.contract('CredentialRegistry', [stakeholders]);
+  const companyProofs = module.contract('CompanyProofRegistry', [stakeholders]);
   module.call(stakeholders, 'configureCredentialRegistry', [credentials]);
   const evidence = module.contract('EvidenceRegistry', [stakeholders, credentials]);
   const ingredients = module.contract('IngredientRegistry', [stakeholders, credentials]);
@@ -20,5 +21,5 @@ export default buildModule('TraceChain', (module) => {
   ]);
   module.call(ingredients, 'configureSupplyOrders', [orders]);
   module.call(custody, 'configureSupplyOrders', [orders]);
-  return { stakeholders, credentials, evidence, ingredients, products, custody, orders };
+  return { stakeholders, credentials, evidence, ingredients, products, custody, orders, companyProofs };
 });

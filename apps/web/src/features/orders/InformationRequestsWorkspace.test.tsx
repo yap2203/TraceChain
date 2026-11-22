@@ -18,9 +18,6 @@ vi.mock('../production-flow/production-flow.api', () => ({
   requestCompanyIdentityProof: api.requestProof,
   getEvidenceDetails: api.details,
 }));
-vi.mock('../production-flow/evidence-didcomm', () => ({
-  sendCompanyIdentityRequestMessage: api.send,
-}));
 vi.mock('./orders.api', () => ({
   getInformationRequests: api.requests,
   getOrders: api.orders,

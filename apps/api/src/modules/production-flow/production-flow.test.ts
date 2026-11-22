@@ -461,15 +461,17 @@ describe('production flow service', () => {
   it('rejects an expired evidence request before preparing a Supplier response', async () => {
     const input = requestInput();
     const result = await service.prepareEvidenceRequest('session', input);
+    const saved = evidence.get(result.requestId!)!;
+    evidence.set(result.requestId!, { ...saved, dueAt: Math.floor(NOW.getTime() / 1000) - 1 });
     vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({
-      challengeHash: `0x${'66'.repeat(32)}`,
-      claimsHash: `0x${'77'.repeat(32)}`,
+      challengeHash: saved.challengeHash,
+      claimsHash: saved.claimsHash,
       dueAt: Math.floor(NOW.getTime() / 1000) - 1,
       ingredientBatchId: BATCH_ID,
       presentationCid: '',
       presentationExpiresAt: 0,
       presentationHash: `0x${'00'.repeat(32)}`,
-      requestCid: 'bafy',
+      requestCid: saved.requestCid,
       requester: MANUFACTURER,
       status: 1,
       supplier: SUPPLIER,

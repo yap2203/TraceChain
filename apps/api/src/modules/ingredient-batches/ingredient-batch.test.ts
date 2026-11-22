@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { ingredientBatchRequestSchema } from './ingredient-batch.schema.js';
 import { certificationClaim, certificationDocumentsClaim } from '@tracechain/shared';
-import { verifyIngredientSdJwtPresentation } from '@tracechain/ssi';
+import { verifyIngredientSdJwtPresentation, readIngredientSdJwtClaims, issueIngredientSdJwt } from '@tracechain/ssi';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -371,15 +371,13 @@ describe('Supplier ingredient-batch API', () => {
       });
       const prepared = await issuer.prepare('session', input);
       const record = await repository.find(prepared.batchId);
-      const credential = JSON.parse(
-        await dependencies.contentStore.decrypt(record!.encryptedPayload),
-      ).credential;
-      expect(credential.credentialSubject.certificationEntries).toHaveLength(count);
-      expect(credential.credentialSubject.originDetails.processingLocation).toBeUndefined();
-      expect(credential.credentialSubject.qualityTests).toBeUndefined();
-      expect(credential.credentialSubject.internalQualityRemarks).toBeUndefined();
-      expect(credential.credentialSubject.productionDateMeaning).toBeUndefined();
-      expect(credential.credentialSubject.certificationEntries[0]?.issueDate).toBeUndefined();
+      const envelope = JSON.parse(await dependencies.contentStore.decrypt(record!.encryptedPayload));
+      const claims = await readIngredientSdJwtClaims(envelope.sdJwt);
+      expect(claims.vct).toBe('urn:tracechain:credential:ingredient:sd-jwt:v3');
+      expect(Object.keys(claims).filter((key) => /^certification_[a-f0-9]{32}$/.test(key))).toHaveLength(count);
+      expect(claims).not.toHaveProperty('processingLocation');
+      expect(claims).not.toHaveProperty('qualityTests');
+      expect(claims).not.toHaveProperty('internalQualityRemarks');
     },
   );
   it('normalizes new decimals while leaving legacy whole litre records unchanged', () => {
@@ -604,6 +602,12 @@ describe('Supplier ingredient-batch API', () => {
         ],
       }),
     ).rejects.toMatchObject({ code: 'DOCUMENT_BINDING_MISMATCH' });
+    // Preserve explicit coverage of the legacy Ed25519 disclosure format.
+    const decoded = await readIngredientSdJwtClaims(envelope.sdJwt);
+    envelope.sdJwt = await issueIngredientSdJwt(agent, {
+      holderDid: holder.did, issuerDid: record.issuerDid, issuedAt: Math.floor(NOW.getTime() / 1000), expiresAt: record.expiresAt,
+      claims: Object.fromEntries(Object.entries(decoded).filter(([key]) => !['iss','sub','vct','cnf','iat','exp'].includes(key))) as any,
+    });
     const audience = 'manufacturer',
       nonce = 'fresh-request';
     const now = Math.floor(Date.now() / 1000);

@@ -19,8 +19,8 @@ import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 
 export function PresentationSigningSettingsLink({ role }: { role: WorkspaceRole }) {
   const inRouter = useInRouterContext();
-  const to = `${workspacePath(role, 'mycredential')}#presentation-signing`;
-  const text = 'Manage presentation signing in My company credential';
+  const to = `${workspacePath(role, 'mycredential')}#legacy-presentation-signing`;
+  const text = 'Manage legacy presentation keys';
   // SPA navigation preserves the in-memory holder key while changing workspace pages.
   return inRouter ? <Link to={to}>{text}</Link> : <a href={to}>{text}</a>;
 }

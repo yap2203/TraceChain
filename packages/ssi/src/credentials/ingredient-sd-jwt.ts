@@ -1,4 +1,11 @@
 import {
+  WALLET_HOLDER_BINDING,
+  parseWalletPresentation,
+  presentationSdJwt,
+  verifyWalletPresentation,
+  type WalletProofContext,
+} from '@tracechain/shared';
+import {
   ingredientCertificationSchema,
   ingredientQualityTestSchema,
   ingredientAllergenSchema,
@@ -9,12 +16,13 @@ import { createHash, createPublicKey, randomBytes, verify as verifySignature } f
 import { SDJwtInstance, type PresentationFrame } from '@sd-jwt/core';
 import { Resolver } from 'did-resolver';
 import { bytesToBase64url, decodeJWT, extractPublicKeyBytes, verifyJWS } from 'did-jwt';
-import { id } from 'ethers';
+import { id, getAddress } from 'ethers';
 import { getResolver } from 'key-did-resolver';
 import { z } from 'zod';
 
 import type { TraceChainAgent } from '../agent/tracechain-agent.js';
 
+export const INGREDIENT_SD_JWT_VCT_V3 = 'urn:tracechain:credential:ingredient:sd-jwt:v3';
 export const INGREDIENT_SD_JWT_VCT_V2 = 'urn:tracechain:credential:ingredient:sd-jwt:v2';
 export const INGREDIENT_SD_JWT_VCT = 'urn:tracechain:credential:ingredient:sd-jwt:v1';
 
@@ -175,7 +183,11 @@ const issuanceInputSchema = z
       }),
     expiresAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
     issuedAt: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-    holderDid: z.string().startsWith('did:key:'),
+    holderDid: z.string().startsWith('did:key:').optional(),
+    holderWallet: z
+      .string()
+      .regex(/^0x[0-9a-fA-F]{40}$/)
+      .optional(),
     issuerDid: z.string().startsWith('did:'),
   })
   .strict()
@@ -201,7 +213,8 @@ export interface IngredientSdJwtClaims {
 export interface IssueIngredientSdJwtInput {
   claims: IngredientSdJwtClaims;
   expiresAt: number;
-  holderDid: string;
+  holderDid?: string;
+  holderWallet?: string;
   issuerDid: string;
   issuedAt: number;
 }
@@ -228,19 +241,30 @@ export async function issueIngredientSdJwt(
   input: IssueIngredientSdJwtInput,
 ) {
   issuanceInputSchema.parse(input);
-  const holderJwk = await holderPublicJwk(input.holderDid);
+  const binding = input.holderWallet
+    ? { wallet: getAddress(input.holderWallet), proof: WALLET_HOLDER_BINDING }
+    : { jwk: await holderPublicJwk(input.holderDid!) };
+  if (
+    input.holderWallet &&
+    getAddress(input.holderWallet) !== getAddress(input.claims.supplierWallet)
+  )
+    throw new Error('Issuer holder wallet must match the Supplier.');
   const issuer = await agent.didManagerGet({ did: input.issuerDid });
   const issuerKey = issuer.keys[0];
   if (!issuerKey) throw new Error('The Supplier issuer DID has no managed signing key.');
   const instance = issuerInstance(agent, issuerKey.kid);
   validateCertificationDisclosure(input.claims, []);
   const payload = {
-    cnf: { jwk: holderJwk },
+    cnf: binding,
     exp: input.expiresAt,
     iat: input.issuedAt,
     iss: input.issuerDid,
     sub: input.claims.supplierWallet.toLowerCase(),
-    vct: input.claims.policyVersion === 2 ? INGREDIENT_SD_JWT_VCT_V2 : INGREDIENT_SD_JWT_VCT,
+    vct: input.holderWallet
+      ? INGREDIENT_SD_JWT_VCT_V3
+      : input.claims.policyVersion === 2
+        ? INGREDIENT_SD_JWT_VCT_V2
+        : INGREDIENT_SD_JWT_VCT,
     ...input.claims,
   };
   const disclosed = Object.keys(payload).filter(
@@ -268,17 +292,23 @@ export async function verifyIngredientSdJwtPresentation(
     requiredClaims: string[];
     supplierWallet: string;
     context?: { requestId: string; purpose: string; expiresAt: number };
+    walletDomain?: { chainId: number; verifyingContract: string };
   },
 ) {
   const instance = verifierInstance(agent);
-  const result = await instance.verify(presentation, {
+  const wallet = parseWalletPresentation(presentation);
+  const result = await instance.verify(presentationSdJwt(presentation), {
     allowedIssuerAlgorithms: ['ES256K', 'ES256K-R'],
-    allowedKeyBindingAlgorithms: ['EdDSA'],
+    ...(!wallet
+      ? {
+          allowedKeyBindingAlgorithms: ['EdDSA'],
+          expectedKeyBindingAudience: input.audience,
+          keyBindingMaxAgeSeconds: 300,
+          keyBindingNonce: input.nonce,
+        }
+      : {}),
     currentDate: input.now,
-    expectedKeyBindingAudience: input.audience,
-    expectedVct: [INGREDIENT_SD_JWT_VCT, INGREDIENT_SD_JWT_VCT_V2],
-    keyBindingMaxAgeSeconds: 300,
-    keyBindingNonce: input.nonce,
+    expectedVct: [INGREDIENT_SD_JWT_VCT, INGREDIENT_SD_JWT_VCT_V2, INGREDIENT_SD_JWT_VCT_V3],
     requiredClaimKeys: [
       'iss',
       'vct',
@@ -298,8 +328,35 @@ export async function verifyIngredientSdJwtPresentation(
       ),
     ],
   });
+  const binding = result.payload.cnf as { wallet?: string; proof?: string };
+  if (wallet) {
+    if (
+      result.payload.vct !== INGREDIENT_SD_JWT_VCT_V3 ||
+      binding.proof !== WALLET_HOLDER_BINDING ||
+      !binding.wallet ||
+      !input.walletDomain ||
+      !input.context
+    )
+      throw new Error(
+        'This credential does not authorize a wallet holder proof. Reissuance is required for legacy keys.',
+      );
+    if (getAddress(binding.wallet) !== getAddress(input.supplierWallet))
+      throw new Error('Issuer-signed holder wallet mismatch.');
+    verifyWalletPresentation(wallet, {
+      ...input.walletDomain,
+      requestId: input.context.requestId,
+      purpose: input.context.purpose,
+      challenge: input.nonce,
+      batchId: input.batchId,
+      holder: binding.wallet,
+      verifier: input.audience,
+      now: input.now,
+      expiresAt: Math.min(input.context.expiresAt, Number(result.payload.exp)),
+    });
+  } else if (result.payload.vct === INGREDIENT_SD_JWT_VCT_V3)
+    throw new Error('A wallet-bound credential requires the TraceChain EIP-712 holder proof.');
   validateCertificationDisclosure(result.payload, input.requiredClaims);
-  if (input.context) {
+  if (input.context && !wallet) {
     const keyBinding = JSON.parse(
       Buffer.from(presentation.split('~').at(-1)!.split('.')[1]!, 'base64url').toString(),
     ) as Record<string, unknown>;
@@ -337,7 +394,7 @@ export async function verifyIssuedIngredientSdJwt(
   const result = await verifierInstance(agent).verify(credential, {
     allowedIssuerAlgorithms: ['ES256K', 'ES256K-R'],
     currentDate: input.now,
-    expectedVct: [INGREDIENT_SD_JWT_VCT, INGREDIENT_SD_JWT_VCT_V2],
+    expectedVct: [INGREDIENT_SD_JWT_VCT, INGREDIENT_SD_JWT_VCT_V2, INGREDIENT_SD_JWT_VCT_V3],
     requiredClaimKeys: [
       'iss',
       'vct',
@@ -361,7 +418,7 @@ export function selectivePresentationFrame(claims: string[]) {
 
 export async function readIngredientSdJwtClaims(presentation: string) {
   return new SDJwtInstance<Record<string, unknown>>({ hashAlg: 'sha-256', hasher }).getClaims(
-    presentation,
+    presentationSdJwt(presentation),
   );
 }
 

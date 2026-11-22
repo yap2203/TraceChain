@@ -2,6 +2,15 @@
 
 ## Repository and implementation
 
+- Use MetaMask EIP-712 holder proofs plus encrypted IPFS/shared on-chain references for new Ingredient
+  and Company Identity presentations (user-confirmed 2026-11-23), including order/delivery company
+  proofs. Keep issuer signatures/disclosure verification independent; no SQL/NoSQL. Add the minimal
+  CompanyProofRegistry companion where shared company request/response references were missing.
+  Preserve SIWE and historical DIDComm/Ed25519 files, keys and verification. Wallet proofs must be
+  authorized by an issuer-signed wallet binding; legacy Ed25519 ingredient credentials require an
+  issuer-authorized wallet-bound replacement, and Company Role VCs can use a source-bound attestation
+  signed by their original issuer. No automatic business acceptance or public deployment.
+
 - Make confirmed TraceChain business content cross-device through blockchain-discoverable immutable
   encrypted IPFS references (user-confirmed 2026-11-22, including complete-suite redeployment). Treat
   blockchain state/events as lifecycle authority, verify retrieved plaintext hashes and record/deployment

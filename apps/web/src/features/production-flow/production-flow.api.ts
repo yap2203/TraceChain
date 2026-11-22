@@ -1,4 +1,4 @@
-import type { IngredientRequestPolicy } from '@tracechain/shared';
+import type { IngredientRequestPolicy, WalletProofContext } from '@tracechain/shared';
 import { apiErrorMessage } from '../../components/ui/feedback';
 import type { CompanyRole } from '@tracechain/shared';
 
@@ -62,6 +62,7 @@ export interface WorkflowResponse {
   batchId?: string;
   requestId?: string;
   holderSigning?: {
+    walletContext?: WalletProofContext;
     audience: string;
     context?: { requestId: string; purpose: string; batchId: string; expiresAt: number };
     claims: string[];
@@ -76,6 +77,7 @@ export interface WorkflowResponse {
   transaction?: PreparedTransaction;
   transferId?: string;
 }
+export const prepareCompanyWalletBinding = () => request<WorkflowResponse>('/company-wallet-binding/prepare', { method: 'POST' });
 
 export const listProductionIngredients = (location?: string, purpose?: 'production') =>
   request<{ batches: ProductionIngredient[] }>(
@@ -192,6 +194,8 @@ export const verifyEvidence = (requestId: string) =>
     method: 'POST',
   });
 export interface CompanyIdentityProofStatus {
+  actorWallet?: string;
+  transaction?: PreparedTransaction;
   requiredClaims?: string[];
   optionalClaims?: string[];
   expiresAt?: number;
@@ -221,6 +225,8 @@ export interface CompanyIdentityProofStatus {
   };
 }
 export interface CompanyIdentityProofMaterial {
+  walletContext?: WalletProofContext;
+  bindingTransaction?: PreparedTransaction;
   binding?: Record<string, string>;
   format?: 'COMPANY_IDENTITY_SD_JWT';
   sdJwt?: string;

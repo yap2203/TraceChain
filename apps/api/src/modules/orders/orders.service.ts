@@ -196,7 +196,14 @@ export class OrdersService {
         503,
       );
     const rows: ChainRecord[] = [];
-    for (const record of await this.repository.listEvidence()) {
+    const sharedRecords = (await this.flow.listSharedCompanyRequests?.(sessionId)) ?? [];
+    const localRecords = await this.repository.listEvidence().catch((error) => {
+      if (!sharedRecords.length) throw error;
+      return [];
+    });
+    const records = new Map(localRecords.map((record) => [record.requestId, record]));
+    for (const record of sharedRecords) records.set(record.requestId, record);
+    for (const record of records.values()) {
       if (
         !record.identityProof ||
         (!same(record.requester, session.address) && !same(record.supplier, session.address))
@@ -239,6 +246,7 @@ export class OrdersService {
       }
       const company = await this.directory?.resolve(counterparty);
       rows.push({
+        sharedReference: record.sharedIdentity === true,
         requestId: record.requestId,
         referenceId: record.deliveryOrderId ?? record.requestId,
         context: record.deliveryOrderId
@@ -255,7 +263,7 @@ export class OrdersService {
         status,
       });
     }
-    return { requests: rows };
+    return { requests: rows, actor: session.address };
   }
   private async prepareWarehouseTransaction(
     actor: string,
@@ -1447,7 +1455,7 @@ export class OrdersService {
     }
     if (!same(order.buyer, session.address) && !same(order.seller, session.address))
       throw new OrdersError('NOT_FOUND', 'Order not found.', 404);
-    if (!this.flow || !this.messaging)
+    if (!this.flow)
       throw new OrdersError(
         'IDENTITY_UNAVAILABLE',
         'The existing company presentation service is unavailable.',
@@ -1497,11 +1505,12 @@ export class OrdersService {
         selectiveDisclosure: true,
       });
       if (
-        deliveryIdentity &&
         same(order.identityChallenge, id(proof.challenge)) &&
-        Number(order.identityValidUntil) >= proof.expiresAt
+        (!deliveryIdentity || Number(order.identityValidUntil) >= proof.expiresAt)
       )
-        return { state: 'COMPLETE', status: 'REQUESTED' };
+        return proof.referenceTransaction
+          ? { transaction: proof.referenceTransaction }
+          : { state: 'COMPLETE', status: 'REQUESTED' };
       const transaction =
         identityContract === 'custody-offer'
           ? undefined
@@ -1528,84 +1537,69 @@ export class OrdersService {
                     !!input.required,
                   ],
             );
-      await this.messaging.send(sessionId, {
-        messageType: 'https://tracechain.local/didcomm/order-identity-request/1.0',
-        recipientWallet: order.buyer,
-        businessReference: orderId,
-        threadId: id(proof.challenge),
-        expiresAt: new Date(proof.expiresAt * 1000).toISOString(),
-        body: {
-          orderId,
-          purpose: input.purpose,
-          requiredClaims: input.requiredClaims,
-          optionalClaims: input.optionalClaims,
-          fullDisclosure: false,
-        },
-      });
-      return { transaction };
+      return {
+        transaction: transaction
+          ? {
+              ...transaction,
+              ...(proof.referenceTransaction
+                ? { nextTransactions: [proof.referenceTransaction] }
+                : {}),
+            }
+          : proof.referenceTransaction,
+      };
     }
     if (input.action === 'material')
       return this.flow.getCompanyIdentityProofMaterial(sessionId, orderId);
     if (input.action === 'status') {
-      if (
-        identityContract === 'custody-offer' &&
-        !(await this.repository.findEvidence(orderId))?.identityProof
-      )
-        return { status: 'NOT_REQUESTED' };
-      return this.flow.getCompanyIdentityProofStatus(sessionId, orderId);
+      try {
+        return await this.flow.getCompanyIdentityProofStatus(sessionId, orderId);
+      } catch (error) {
+        if ((error as { code?: string }).code === 'REQUEST_NOT_FOUND')
+          return { status: 'NOT_REQUESTED' };
+        throw error;
+      }
     }
     if (input.action === 'verify') {
       const proof = await this.flow.orderIdentityAttestation(sessionId, orderId);
-      if (identityContract === 'custody-offer') return { state: 'COMPLETE', checks: proof.checks };
+      if (identityContract === 'custody-offer')
+        return { state: 'COMPLETE', checks: proof.checks, transaction: proof.referenceTransaction };
       if (
         same(order.identityCredentialHash, proof.credentialHash) &&
         same(order.identityChallenge, proof.challengeHash) &&
         Number(order.identityValidUntil) >= proof.expiresAt
       )
-        return { state: 'COMPLETE', checks: proof.checks };
+        return { state: 'COMPLETE', checks: proof.checks, transaction: proof.referenceTransaction };
       return {
         checks: proof.checks,
-        transaction: await this.gateway.prepare(
-          session.address,
-          deliveryIdentity ? identityContract : 'orders',
-          deliveryIdentity ? 'act' : 'attestIdentity',
-          deliveryIdentity
-            ? deliveryArgs(session.address, 5, actualOrderId, {
-                challenge: proof.challengeHash,
-                credentialHash: proof.credentialHash,
-                presentationHash: proof.presentationHash,
-                presentationCid: proof.presentationCid,
-                validUntil: proof.expiresAt,
-              })
-            : [
-                actualOrderId,
-                proof.challengeHash,
-                proof.credentialHash,
-                proof.presentationHash,
-                proof.expiresAt,
-                proof.presentationCid,
-              ],
-        ),
+        transaction: {
+          ...(await this.gateway.prepare(
+            session.address,
+            deliveryIdentity ? identityContract : 'orders',
+            deliveryIdentity ? 'act' : 'attestIdentity',
+            deliveryIdentity
+              ? deliveryArgs(session.address, 5, actualOrderId, {
+                  challenge: proof.challengeHash,
+                  credentialHash: proof.credentialHash,
+                  presentationHash: proof.presentationHash,
+                  presentationCid: proof.presentationCid,
+                  validUntil: proof.expiresAt,
+                })
+              : [
+                  actualOrderId,
+                  proof.challengeHash,
+                  proof.credentialHash,
+                  proof.presentationHash,
+                  proof.expiresAt,
+                  proof.presentationCid,
+                ],
+          )),
+          ...(proof.referenceTransaction ? { nextTransactions: [proof.referenceTransaction] } : {}),
+        },
       };
     }
-    const workflow = await this.repository.findEvidence(orderId);
-    if (!workflow?.identityProof)
-      throw new OrdersError('IDENTITY_REQUEST_MISSING', 'Request company identity first.');
+    await this.flow.getCompanyIdentityProofStatus(sessionId, orderId);
     if (!same(order.buyer, session.address))
       throw new OrdersError('BUYER_REQUIRED', 'Only the buyer may present or decline.', 403);
-    if (input.action === 'present')
-      await this.flow.validateOrderIdentityPresentation(sessionId, orderId, input.presentation!);
-    await this.messaging.send(sessionId, {
-      messageType: `https://tracechain.local/didcomm/order-identity-${input.action === 'present' ? 'presentation' : 'declined'}/1.0`,
-      recipientWallet: order.seller,
-      businessReference: orderId,
-      threadId: id(workflow.identityProof.challenge),
-      expiresAt: new Date(workflow.identityProof.expiresAt * 1000).toISOString(),
-      body: {
-        orderId,
-        ...(input.action === 'present' ? { presentation: input.presentation } : { declined: true }),
-      },
-    });
     return input.action === 'present'
       ? this.flow.presentCompanyIdentityProof(sessionId, orderId, input.presentation!)
       : this.flow.declineCompanyIdentityProof(sessionId, orderId);

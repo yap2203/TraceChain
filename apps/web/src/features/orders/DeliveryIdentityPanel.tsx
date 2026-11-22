@@ -1,3 +1,4 @@
+import { signCompanyPresentation } from '../production-flow/company-presentation';
 import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
 import {
   COMPANY_ALWAYS_CLAIMS,
@@ -18,11 +19,6 @@ import {
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
-import {
-  getActiveMessagingAgent,
-  createCompanyIdentityPresentation,
-  createSelectiveCompanyIdentityPresentation,
-} from '../didcomm/didcomm-agent';
 import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 
@@ -121,7 +117,7 @@ export function DeliveryIdentityPanel({
   const expiryBadge = rawStatus === 'EXPIRED' ? undefined : expiryStatus(expiresAt, expired);
   const declineRequest = () =>
     run(async () => {
-      await deliveryIdentity(order.orderId, { action: 'decline' });
+      await submit(await deliveryIdentity(order.orderId, { action: 'decline' }));
       setMaterial(undefined);
       setReviewOpen(false);
     });
@@ -138,20 +134,9 @@ export function DeliveryIdentityPanel({
     });
   const signAndShare = () =>
     run(async () => {
-      const holder = getActiveMessagingAgent();
-      if (!holder || holder.did !== material.holderDid)
-        throw new Error(
-          'Create or restore the presentation signing key bound to this company in Profile before presenting.',
-        );
-      const presentation =
-        material.format === 'COMPANY_IDENTITY_SD_JWT'
-          ? await createSelectiveCompanyIdentityPresentation(holder, material.sdJwt, {
-              audience: material.audience,
-              nonce: material.challenge,
-              claims: selectedClaims,
-            })
-          : await createCompanyIdentityPresentation(holder, material);
-      await deliveryIdentity(order.orderId, { action: 'present', presentation });
+      const presentation = await signCompanyPresentation(material, selectedClaims);
+      await submit(await deliveryIdentity(order.orderId, { action: 'present', presentation }));
+
       setReviewOpen(false);
       setMaterial(undefined);
       setNotice('Company proof sent securely to the assigned Distributor.');
@@ -245,7 +230,7 @@ export function DeliveryIdentityPanel({
                     }),
                   );
                   setNotice(
-                    `${sellerLabel} evidence requested through encrypted company messaging. If requested, verification is required before pickup or dispatch.`,
+                    `${sellerLabel} evidence requested through encrypted IPFS references. If requested, verification is required before pickup or dispatch.`,
                   );
                 })
               }
@@ -254,7 +239,7 @@ export function DeliveryIdentityPanel({
                 ? 'Complete company evidence request'
                 : `Request ${sellerLabel} Company Role VP`}
             </Btn>
-            {status?.status === 'PRESENTED' && (
+            {['PRESENTED', 'VERIFIED'].includes(status?.status) && (
               <Btn
                 disabled={busy}
                 onClick={() =>
@@ -398,9 +383,10 @@ export function DeliveryIdentityPanel({
             </ul>
             <small>The proof is only valid for this request and expires at the stated time.</small>
           </div>
-          <PresentationSigningSettingsLink
+          {!material.walletContext && <PresentationSigningSettingsLink
             role={order.productDelivery ? 'manufacturer' : 'supplier'}
-          />
+          />}
+          {material.walletContext && <p>Approve the exact selected claims with a MetaMask signature, then confirm the transaction publishing the encrypted response reference. This is separate from login and delivery approval.</p>}
           {material.binding && (
             <TechnicalDetails
               fields={Object.entries(material.binding).map(([label, value]) => ({

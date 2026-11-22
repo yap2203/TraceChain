@@ -1,5 +1,33 @@
 # Project Progress
 
+## 2026-11-23 - MetaMask presentations and shared encrypted IPFS exchange
+
+- New ingredient SD-JWT v3 credentials carry issuer-signed wallet binding. Added versioned EIP-712
+  holder proofs binding exact disclosures, chain/contract, request, verifier, purpose, fresh challenge,
+  batch and expiry. Kept legacy Ed25519 validation and full-credential historical verification.
+- Migrated Ingredient Evidence request/response delivery to existing EvidenceRegistry CID/hash references.
+  Added CompanyProofRegistry for independently discoverable company requests/responses and generic
+  original-issuer-authorized wallet attestations, including order and delivery contexts. Added companion
+  and full-suite Ignition modules plus optional verified Sepolia configuration. No public deployment,
+  root .env modification, key rotation, commit or history deletion was performed.
+- Removed migrated DIDComm send/relay routes and frontend evidence transport adapter. Historical DIDComm
+  files, keys, mailbox and legacy binding/recovery remain intact. New wallet-bound sharing screens use
+  MetaMask preview/signing and separate reference transactions; legacy keys are separately collapsed.
+- Confirmed reads recover from chain/encrypted IPFS without workflow or attachment lookup journals.
+  Enforced request participant checks before decryption, signed attachment allowlists, content hashes,
+  issuer/wallet/context binding, current lifecycle/authorization and idempotent response publication.
+  Shared review remains separate from business acceptance or delivery/order attestation.
+- Tested real issuer/Ethereum signatures and AES-GCM across independent directories, stopping HTTP A,
+  answering through empty HTTP B and verifying on restarted A for ingredient and order/delivery company
+  proofs. Chain/Pinata transports in those HTTP tests are doubles; local EVM tests cover the companion.
+  Live Pinata, full application two-process startup and physical MetaMask acceptance remain manual checks.
+- Updated README and docs/WALLET_PRESENTATIONS.md with deployment compatibility, legacy reissuance,
+  one-time company attestation setup, remaining local dependencies and manual acceptance instructions.
+- Validation passed: 293 scoped API tests, 160 scoped frontend tests (including login), all 29 SSI tests
+  and all 74 local contract tests. Root build and all-workspace typecheck passed. Web retains bundle-size
+  and third-party directive warnings; no physical MetaMask/live Pinata end-to-end run is claimed.
+
+
 ## 2026-11-22 - Cross-device confirmed business records
 
 - Added blockchain-discoverable encrypted content references for company branding, ingredient/product

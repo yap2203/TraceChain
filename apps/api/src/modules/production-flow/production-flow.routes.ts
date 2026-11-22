@@ -9,6 +9,7 @@ export function createProductionFlowRouter(controller: ProductionFlowController)
     next();
   });
   router.get('/ingredients', controller.listIngredients);
+  router.post('/company-wallet-binding/prepare', controller.prepareCompanyWalletBinding);
   router.get('/evidence-requests', controller.listEvidence);
   router.get('/retailer/evidence-options', controller.listRetailerEvidenceOptions);
   router.get('/evidence-requests/:requestId', controller.getEvidenceDetails);

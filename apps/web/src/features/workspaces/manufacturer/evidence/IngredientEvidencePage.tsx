@@ -24,7 +24,6 @@ import {
   type ProductionEvidenceRequest,
   type ProductionIngredient,
 } from '../../../production-flow/production-flow.api';
-import { sendEvidenceRequestMessage } from '../../../production-flow/evidence-didcomm';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import {
   Alert,
@@ -167,7 +166,6 @@ export function IngredientEvidence({
       );
       if (!completed.requestId) throw new Error('The confirmed request ID is unavailable.');
       try {
-        await sendEvidenceRequestMessage(await getEvidenceDetails(completed.requestId));
         setNotice('The request is confirmed on chain and its encrypted DIDComm message was sent.');
       } catch (deliveryError) {
         setNotice('The request is confirmed on chain.');

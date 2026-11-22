@@ -1,3 +1,4 @@
+import { createWalletPresentation, createFullWalletPresentation } from '../../../production-flow/wallet-presentation';
 import {
   INGREDIENT_ALWAYS_CLAIMS,
   expandIngredientRequestedClaims,
@@ -29,7 +30,6 @@ import {
   type EvidenceDetails,
   type ProductionEvidenceRequest,
 } from '../../../production-flow/production-flow.api';
-import { sendEvidencePresentationMessage } from '../../../production-flow/evidence-didcomm';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
 import { Alert, Badge, Btn, Card, T, TechnicalDetails } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
@@ -83,8 +83,11 @@ export function SelectiveDisclosure({
       if (details?.credentialFormat === 'JWT_VC') {
         if (!preview)
           throw new Error('Preview all legacy credential claims before approving full disclosure.');
-        await completePreparedWorkflow(() => prepareEvidenceResponse(request.requestId));
-        await sendEvidencePresentationMessage(await getEvidenceDetails(request.requestId));
+        const signing = await prepareEvidenceResponse(request.requestId);
+        if (signing.holderSigning?.walletContext) {
+          const presentation = await createFullWalletPresentation(signing.holderSigning.credential, signing.holderSigning.walletContext);
+          await completePreparedWorkflow(() => prepareEvidenceResponse(request.requestId, presentation));
+        } else await completePreparedWorkflow(() => prepareEvidenceResponse(request.requestId));
         onBack();
         return;
       }
@@ -96,10 +99,12 @@ export function SelectiveDisclosure({
       if (signing.state !== 'HOLDER_SIGNATURE_REQUIRED' || !signing.holderSigning)
         throw new Error('The API did not return holder-controlled signing material.');
       setHolderDid(signing.holderSigning.holderDid);
-      const holder = getActiveMessagingAgent();
-      if (!holder)
+      const walletContext = signing.holderSigning.walletContext;
+      const walletBound = preview?.vct === 'urn:tracechain:credential:ingredient:sd-jwt:v3';
+      const holder = walletBound ? undefined : getActiveMessagingAgent();
+      if (!walletBound && !holder)
         throw new Error('Restore the holder presentation signing key before responding.');
-      if (holder.did !== signing.holderSigning.holderDid)
+      if (!walletBound && holder!.did !== signing.holderSigning.holderDid)
         throw new Error(
           'The active presentation key is not bound to this credential. Restore the correct signing-key backup.',
         );
@@ -147,8 +152,10 @@ export function SelectiveDisclosure({
         );
         if (failures.length) throw new Error(failures[0]);
       }
-      const presentation = await createSelectiveIngredientPresentation(
-        holder,
+      const presentation = walletBound
+        ? await createWalletPresentation(signing.holderSigning.credential, selected, walletContext!)
+        : await createSelectiveIngredientPresentation(
+        holder!,
         signing.holderSigning.credential,
         {
           audience: signing.holderSigning.audience,
@@ -168,7 +175,6 @@ export function SelectiveDisclosure({
       await completePreparedWorkflow(() =>
         prepareEvidenceResponse(request.requestId, presentation),
       );
-      await sendEvidencePresentationMessage(await getEvidenceDetails(request.requestId));
       onBack();
     } catch (cause) {
       setError(reportError(cause, 'The evidence response failed.'));
@@ -280,7 +286,7 @@ export function SelectiveDisclosure({
             message={
               details?.credentialFormat === 'JWT_VC'
                 ? 'Legacy presentations use the existing issuer-signing flow. The entire credential is shared; this is not selective disclosure.'
-                : 'Your browser creates the key-bound presentation with the participant-controlled key. The API never receives that private key and stores only the resulting presentation.'
+                : 'Review the requester, purpose, selected claims and attachments. Wallet-bound credentials ask MetaMask for a sharing signature, then a separate transaction records the encrypted IPFS reference. Legacy credentials still require their original presentation key.'
             }
           />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -328,7 +334,7 @@ export function SelectiveDisclosure({
           <Btn variant="outline" disabled={busy || !details} onClick={() => void loadPreview()}>
             Preview available claim values
           </Btn>
-          {holderDid && <PresentationSigningSettingsLink role="supplier" />}
+          {holderDid && preview?.vct !== 'urn:tracechain:credential:ingredient:sd-jwt:v3' && <PresentationSigningSettingsLink role="supplier" />}
           {previewExpiresAt && (
             <p>
               Presentation expires: {chainDate(previewExpiresAt)}. Verify it before this time; the

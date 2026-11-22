@@ -16,9 +16,6 @@ vi.mock('../../../production-flow/production-flow.api', async (importOriginal) =
   ...(await importOriginal<typeof import('../../../production-flow/production-flow.api')>()),
   ...mocks,
 }));
-vi.mock('../../../production-flow/evidence-didcomm', () => ({
-  sendEvidenceRequestMessage: vi.fn(),
-}));
 vi.mock('../../../production-flow/CompanyIdentityProofAction', () => ({
   CompanyIdentityProofAction: () => <p>Incoming company proof response</p>,
 }));

@@ -187,6 +187,7 @@ export const prepareCustodyOffer = (
     input,
   );
 export interface CompanyProofRequestRow {
+  sharedReference?: boolean;
   requestId: string;
   referenceId: string;
   context: 'delivery' | 'order' | 'ingredient' | 'custody';
@@ -198,7 +199,7 @@ export interface CompanyProofRequestRow {
   status: string;
 }
 export const getInformationRequests = () =>
-  request<{ requests: CompanyProofRequestRow[] }>('/information-requests');
+  request<{ requests: CompanyProofRequestRow[]; actor?: string }>('/information-requests');
 export const prepareOrder = (input: Record<string, unknown>) =>
   request<{ resultId: string; transaction: PreparedTransaction }>('/prepare', input);
 export const orderIdentity = (orderId: string, input: Record<string, unknown>) =>

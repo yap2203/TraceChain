@@ -9,6 +9,7 @@ import {
   type CompanyIdentityResponse,
 } from '../../auth/auth.api';
 import { CredentialCard } from './CredentialCard';
+import { CompanyWalletSigning } from '../../production-flow/CompanyWalletSigning';
 import { HolderSigningKeyPanel } from '../../didcomm/HolderSigningKeyPanel';
 import { Alert, Badge, Btn, Card, MONO, SectionTitle, T } from './ui';
 import { CompanyBrandingPanel } from './CompanyBrandingPanel';
@@ -245,6 +246,11 @@ export function StakeholderCredentialPage({
         open={typeof window !== 'undefined' && window.location.hash === '#presentation-signing'}
       >
         <summary>Presentation signing settings</summary>
+        <CompanyWalletSigning />
+      </details>
+      <details id="legacy-presentation-signing" className="workspace-profile-settings" open={typeof window !== 'undefined' && window.location.hash === '#legacy-presentation-signing'}>
+        <summary>Legacy Ed25519 presentation keys</summary>
+        <p>Only existing credentials bound to these keys need this recovery flow. New wallet-bound credentials use MetaMask.</p>
         <HolderSigningKeyPanel />
       </details>
       <details

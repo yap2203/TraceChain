@@ -66,6 +66,7 @@ const statuses = [
 ] as const;
 
 export interface PreparedTransaction {
+  nextTransactions?: PreparedTransaction[];
   chainId: number;
   data: string;
   to: string;

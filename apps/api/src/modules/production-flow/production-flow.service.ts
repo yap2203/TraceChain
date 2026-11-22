@@ -13,11 +13,18 @@ import {
   verifyCompanyRoleCredential,
   issueCompanyIdentitySdJwt,
   verifyCompanyIdentitySdJwt,
+  verifyIssuedCompanyWalletAttestation,
   COMPANY_IDENTITY_BINDING_CLAIMS,
   type IngredientCredential,
   type TraceChainAgent,
 } from '@tracechain/ssi';
-import { CompanyRole } from '@tracechain/shared';
+import {
+  CompanyRole,
+  parseWalletPresentation,
+  presentationSdJwt,
+  verifyWalletPresentation,
+  type WalletProofContext,
+} from '@tracechain/shared';
 import { ingredientDetailClaims } from '@tracechain/shared';
 import {
   COMPANY_ALWAYS_CLAIMS,
@@ -29,8 +36,9 @@ import {
 } from '@tracechain/shared';
 import { Resolver } from 'did-resolver';
 import { verifyJWT } from 'did-jwt';
-import { ZeroHash, decodeBytes32String, getAddress, id } from 'ethers';
+import { ZeroHash, decodeBytes32String, encodeBase58, getAddress, id } from 'ethers';
 import { getResolver } from 'key-did-resolver';
+import type { CompanyProofReferences } from './company-proof.gateway.js';
 
 import type { AuthService } from '../auth/auth.service.js';
 import type { SessionRecord } from '../auth/auth.types.js';
@@ -72,6 +80,8 @@ export class ProductionFlowApiError extends Error {
 }
 
 interface Dependencies {
+  walletCompanyExchange?: boolean;
+  companyReferences?: () => CompanyProofReferences;
   validateDeliveryIdentity?: (workflow: EvidenceWorkflowRecord) => Promise<boolean>;
   agentProvider: TraceChainAgentProvider;
   authService: AuthService;
@@ -151,6 +161,12 @@ export class ProductionFlowService {
       selectiveDisclosure?: boolean;
     },
   ) {
+    if (this.dependencies.walletCompanyExchange && !this.dependencies.companyReferences)
+      throw new ProductionFlowApiError(
+        'COMPANY_PROOF_REGISTRY_REQUIRED',
+        'Deploy and configure CompanyProofRegistry before creating shared company requests.',
+        503,
+      );
     const session = context.deliveryOrderId
       ? await this.requireRole(sessionId, CompanyRole.DISTRIBUTOR, 'RECEIVE_TRANSFER')
       : await this.requireEitherRole(sessionId);
@@ -175,7 +191,10 @@ export class ProductionFlowService {
       : (await this.dependencies.gateway.isRoleAuthorized(context.buyer, 3))
         ? CompanyRole.MANUFACTURER
         : CompanyRole.RETAILER;
-    const previous = await this.dependencies.repository.findEvidence(context.orderId);
+    const shared = await this.sharedCompanyReferences()?.get(context.orderId);
+    const previous = shared
+      ? await this.requireWorkflow(context.orderId, session.address)
+      : await this.dependencies.repository.findEvidence(context.orderId);
     if (
       context.deliveryOrderId &&
       currentRole === CompanyRole.MANUFACTURER &&
@@ -200,6 +219,9 @@ export class ProductionFlowService {
           challenge: previous.identityProof.challenge,
           expiresAt: previous.identityProof.expiresAt,
           requestCid: previous.requestCid,
+          referenceTransaction: this.dependencies.companyReferences
+            ? await this.companyReferenceTransaction(previous)
+            : undefined,
         };
       throw new ProductionFlowApiError(
         'IDENTITY_REQUEST_EXISTS',
@@ -239,7 +261,15 @@ export class ProductionFlowService {
       requestPayload: stored.payload,
       identityProof: proof,
     });
-    return { challenge: proof.challenge, expiresAt: proof.expiresAt, requestCid: stored.cid };
+    const saved = (await this.dependencies.repository.findEvidence(context.orderId))!;
+    return {
+      challenge: proof.challenge,
+      expiresAt: proof.expiresAt,
+      requestCid: stored.cid,
+      referenceTransaction: this.dependencies.companyReferences
+        ? await this.companyReferenceTransaction(saved)
+        : undefined,
+    };
   }
 
   async orderIdentityAttestation(sessionId: string | undefined, orderId: string) {
@@ -268,15 +298,319 @@ export class ProductionFlowService {
       credentialHash: `0x${normalizeHash(checked.credentialHash)}`,
       expiresAt: Math.min(
         workflow.identityProof!.expiresAt,
+        parseWalletPresentation(presentation)?.proof.context.expiresAt ?? Number.MAX_SAFE_INTEGER,
         Math.floor(Date.parse(checked.credential.expirationDate) / 1000),
       ),
       checks: result.checks,
+      referenceTransaction: result.transaction,
     };
   }
   private readonly clock: () => Date;
 
   constructor(private readonly dependencies: Dependencies) {
     this.clock = dependencies.clock ?? (() => new Date());
+  }
+
+  private async companySource(wallet: string, expectedHash: string) {
+    const reference = await this.dependencies.gateway.companyCredential?.(wallet);
+    if (reference) {
+      if (normalizeHash(reference.credentialHash) !== normalizeHash(expectedHash))
+        throw this.recordMismatch('The company credential has been replaced.');
+      return companyRoleCredentialSchema.parse(
+        JSON.parse(
+          await this.retrieveEncrypted(reference.credentialCid, 'COMPANY_ROLE_CREDENTIAL'),
+        ),
+      );
+    }
+    const records = await this.dependencies.companyRoleRepository?.list().catch(() => {
+      throw new ProductionFlowApiError(
+        'IDENTITY_SOURCE_UNAVAILABLE',
+        'The source credential storage is unavailable.',
+        503,
+      );
+    });
+    const record = records?.find(
+      (r) =>
+        sameAddress(r.applicantWallet, wallet) &&
+        normalizeHash(r.credentialHash) === normalizeHash(expectedHash),
+    );
+    if (!record) throw this.recordMismatch('The original Company Role Credential is unavailable.');
+    return companyRoleCredentialSchema.parse(
+      JSON.parse(
+        await this.dependencies.contentStore.decrypt(record.encryptedPayload).catch(() => {
+          throw new ProductionFlowApiError(
+            'IDENTITY_SOURCE_UNAVAILABLE',
+            'The source credential could not be retrieved or decrypted.',
+            503,
+          );
+        }),
+      ),
+    );
+  }
+
+  private async companyReferenceTransaction(workflow: EvidenceWorkflowRecord) {
+    const refs = this.sharedCompanyReferences()!;
+    const existing = await refs.get(workflow.requestId);
+    if (existing && existing.challengeHash === id(workflow.identityProof!.challenge))
+      return undefined;
+    const serialized = canonical({
+      version: 1,
+      chainId: refs.domain.chainId,
+      registry: refs.domain.verifyingContract,
+      batchId: workflow.batchId,
+      requestId: workflow.requestId,
+      requester: workflow.requester,
+      supplier: workflow.supplier,
+      challengeHash: workflow.challengeHash,
+      claimsHash: workflow.claimsHash,
+      dueAt: workflow.dueAt,
+      requestCid: workflow.requestCid,
+      orderContext: workflow.orderContext,
+      deliveryOrderId: workflow.deliveryOrderId,
+      identityProof: workflow.identityProof,
+    });
+    const stored = await this.store(serialized, `${workflow.requestId}-company-request`);
+    return refs.prepare('request', [
+      workflow.requestId,
+      workflow.requester,
+      id(workflow.identityProof!.challenge),
+      workflow.identityProof!.expiresAt,
+      sha256(serialized),
+      stored.cid,
+    ]);
+  }
+
+  async listSharedCompanyRequests(sessionId?: string) {
+    if (!this.dependencies.companyReferences) return [];
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    const references = this.sharedCompanyReferences()!;
+    const ids = await references.list(session.address);
+    const records: EvidenceWorkflowRecord[] = [];
+    for (const requestId of ids)
+      records.push(await this.requireWorkflow(requestId, session.address));
+    return records;
+  }
+
+  private async walletCompanyMaterial(session: SessionRecord, workflow: EvidenceWorkflowRecord) {
+    const refs = this.sharedCompanyReferences()!;
+    const proof = workflow.identityProof!;
+    const hash = session.onChainAuthorization!.credentialHash!;
+    const credential = await this.companySource(session.address, hash);
+    const issuerDid =
+      typeof credential.issuer === 'string' ? credential.issuer : credential.issuer.id;
+    const verified = await verifyCompanyRoleCredential(
+      await this.dependencies.agentProvider(),
+      credential,
+      session.address,
+      issuerDid,
+      this.clock(),
+    );
+    if (!verified.verified || normalizeHash(verified.credentialHash!) !== normalizeHash(hash))
+      throw this.recordMismatch('The current Company Role Credential could not be verified.');
+    const binding = await refs.binding(session.address);
+    let sdJwt: string;
+    let bindingTransaction;
+    if (binding.cid && normalizeHash(binding.sourceHash) === normalizeHash(hash)) {
+      sdJwt = await this.retrieveEncrypted(binding.cid, 'COMPANY_WALLET_ATTESTATION');
+      if (sha256(sdJwt).toLowerCase() !== binding.contentHash.toLowerCase())
+        throw this.recordMismatch('Company wallet attestation hash mismatch.');
+    } else {
+      sdJwt = await issueCompanyIdentitySdJwt(await this.dependencies.agentProvider(), {
+        issuerDid,
+        holderWallet: session.address,
+        credentialHash: hash,
+        claims: credential.credentialSubject,
+        sourceCredentialId: credential.id,
+        sourceCredentialIssuedAt: credential.issuanceDate,
+        sourceCredentialExpiresAt: credential.expirationDate,
+        requestId: ZeroHash,
+        purpose: 'Company wallet holder binding',
+        audience: session.address.toLowerCase(),
+        challenge: 'wallet-binding:v1',
+        issuedAt: this.nowSeconds(),
+        expiresAt: Math.floor(Date.parse(credential.expirationDate) / 1000),
+      }).catch(() => {
+        throw new ProductionFlowApiError(
+          'COMPANY_WALLET_BINDING_REQUIRED',
+          'The original issuer must authorize and publish a wallet attestation once before this credential can be shared from an API without issuer keys.',
+          409,
+        );
+      });
+      const stored = await this.store(sdJwt, `${credential.id}-wallet-attestation`);
+      bindingTransaction = refs.prepare('registerBinding', [
+        `0x${normalizeHash(hash)}`,
+        sha256(sdJwt),
+        stored.cid,
+      ]);
+    }
+    const attestation = (
+      await verifyIssuedCompanyWalletAttestation(
+        await this.dependencies.agentProvider(),
+        sdJwt,
+        this.nowSeconds(),
+      )
+    ).payload;
+    const cnf = attestation.cnf as { wallet?: string; proof?: string };
+    if (
+      attestation.iss !== issuerDid ||
+      normalizeHash(String(attestation.sourceCredentialHash)) !== normalizeHash(hash) ||
+      attestation.sourceCredentialId !== credential.id ||
+      attestation.sourceCredentialIssuedAt !== credential.issuanceDate ||
+      attestation.sourceCredentialExpiresAt !== credential.expirationDate ||
+      !sameAddress(cnf.wallet ?? '', session.address) ||
+      cnf.proof !== 'tracechain:eip712:holder:v1' ||
+      Object.entries(credential.credentialSubject).some(
+        ([key, value]) => key in attestation && canonical(value) !== canonical(attestation[key]),
+      )
+    )
+      throw this.recordMismatch(
+        'The issuer-authorized wallet attestation differs from the current Company Role Credential.',
+      );
+    return {
+      format: 'COMPANY_IDENTITY_SD_JWT' as const,
+      sdJwt,
+      claims: Object.fromEntries(
+        Object.entries(credential.credentialSubject).filter(
+          ([key]) =>
+            key in attestation &&
+            [
+              ...COMPANY_ALWAYS_CLAIMS,
+              ...companyDisclosureGroup(proof.requiredClaims ?? []),
+              ...companyDisclosureGroup(proof.optionalClaims ?? []),
+            ].includes(key),
+        ),
+      ),
+      requiredClaims: [
+        ...new Set([
+          ...COMPANY_ALWAYS_CLAIMS,
+          ...companyDisclosureGroup(proof.requiredClaims ?? []),
+        ]),
+      ],
+      optionalClaims: proof.optionalClaims,
+      policyVersion: 2,
+      audience: proof.audience,
+      challenge: proof.challenge,
+      requestId: workflow.requestId,
+      purpose: proof.purpose,
+      holderDid: credential.credentialSubject.id,
+      expiresAt: proof.expiresAt,
+      bindingTransaction,
+      walletContext: {
+        ...refs.domain,
+        holder: session.address,
+        verifier: proof.audience,
+        requestId: workflow.requestId,
+        purpose: proof.purpose,
+        challenge: proof.challenge,
+        batchId: workflow.batchId || ZeroHash,
+        issuedAt: this.nowSeconds(),
+        expiresAt: Math.min(
+          proof.expiresAt,
+          this.nowSeconds() + 300,
+          Math.floor(Date.parse(credential.expirationDate) / 1000),
+        ),
+      },
+    };
+  }
+
+  async prepareCompanyWalletBinding(sessionId?: string) {
+    if (!this.dependencies.companyReferences)
+      throw new ProductionFlowApiError(
+        'COMPANY_PROOF_REGISTRY_REQUIRED',
+        'Deploy and configure CompanyProofRegistry to enable portable wallet presentations.',
+        503,
+      );
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    const authorization = session.onChainAuthorization;
+    if (authorization?.status !== 'AUTHORIZED' || !authorization.credentialHash)
+      throw new ProductionFlowApiError(
+        'AUTHORIZATION_REQUIRED',
+        'A current authorized Company Role Credential is required.',
+        403,
+      );
+    const material = await this.walletCompanyMaterial(session, {
+      batchId: ZeroHash,
+      requestId: ZeroHash,
+      requester: session.address,
+      supplier: session.address,
+      challengeHash: id('binding'),
+      claimsHash: ZeroHash,
+      dueAt: this.nowSeconds() + 300,
+      operationId: 'binding',
+      requestCid: '',
+      identityProof: {
+        audience: session.address,
+        challenge: 'binding',
+        expiresAt: this.nowSeconds() + 300,
+        presenterRole: authorization.role!,
+        presenterWallet: session.address,
+        purpose: 'Enable MetaMask presentations',
+        status: 'REQUESTED',
+      },
+    });
+    return {
+      actorWallet: session.address,
+      state: material.bindingTransaction
+        ? ('TRANSACTION_REQUIRED' as const)
+        : ('COMPLETE' as const),
+      transaction: material.bindingTransaction,
+    };
+  }
+
+  private async ingredientRecord(batchId: string) {
+    if (!this.dependencies.contentStore.retrieveEnvelope)
+      return this.dependencies.ingredientRepository.find(batchId);
+    const batch = await this.dependencies.gateway.getIngredient(batchId);
+    if (!batch) return undefined;
+    const credential = await this.dependencies.gateway.getCredential(batch.credentialId);
+    if (!credential?.encryptedCid) return this.dependencies.ingredientRepository.find(batchId);
+    let payload, serialized;
+    try {
+      payload = await this.dependencies.contentStore.retrieveEnvelope(credential.encryptedCid);
+      serialized = await this.dependencies.contentStore.decrypt(payload);
+    } catch (error) {
+      if (isKeystoreLocked(error)) throw error;
+      throw new ProductionFlowApiError(
+        'ENCRYPTED_RECORD_UNAVAILABLE',
+        'The Ingredient Credential could not be downloaded or decrypted. Try again when the encrypted storage service is available.',
+        503,
+      );
+    }
+    const envelope = JSON.parse(serialized);
+    const credentialValue = envelope.sdJwt ?? canonical(envelope.credential);
+    if (
+      sha256(credentialValue).toLowerCase() !== credential.credentialHash.toLowerCase() ||
+      !sameAddress(credential.subject, batch.supplier) ||
+      !sameAddress(credential.issuer, batch.supplier) ||
+      sha256(JSON.stringify(envelope.metadata)).toLowerCase() !== batch.metadataHash.toLowerCase()
+    )
+      throw this.recordMismatch(
+        'The shared Ingredient Credential does not match its on-chain batch or hash.',
+      );
+    const claims = envelope.sdJwt
+      ? await readIngredientSdJwtClaims(envelope.sdJwt)
+      : envelope.credential.credentialSubject;
+    const jwk = claims.cnf?.jwk;
+    const legacyHolder =
+      jwk?.kty === 'OKP' && jwk?.crv === 'Ed25519' && typeof jwk.x === 'string'
+        ? `did:key:z${encodeBase58(Buffer.concat([Buffer.from([0xed, 0x01]), Buffer.from(jwk.x, 'base64url')]))}`
+        : undefined;
+    return {
+      batchId,
+      credentialId: batch.credentialId,
+      credentialHash: credential.credentialHash,
+      encryptedCid: credential.encryptedCid,
+      encryptedPayload: payload,
+      expiresAt: batch.expiresAt,
+      producedAt: batch.producedAt,
+      metadataHash: batch.metadataHash,
+      quantity: batch.totalQuantity,
+      supplierWallet: batch.supplier,
+      unit: decodeBytes32String(batch.unit),
+      issuerDid: String(claims.iss ?? envelope.credential?.issuer?.id ?? ''),
+      holderDid: String(legacyHolder ?? claims.holderDid ?? claims.supplierDid ?? ''),
+      credentialFormat: envelope.sdJwt ? ('SD_JWT_VC' as const) : ('JWT_VC' as const),
+    };
   }
 
   async listIngredients(sessionId?: string, location?: string, purpose?: 'production') {
@@ -350,7 +684,18 @@ export class ProductionFlowService {
     );
     const relevant = (
       await Promise.all(
-        requestIds.map((requestId) => this.dependencies.repository.findEvidence(requestId)),
+        requestIds.map(async (requestId) => {
+          try {
+            return await this.requireWorkflow(requestId, session.address);
+          } catch (error) {
+            if (
+              error instanceof ProductionFlowApiError &&
+              ['REQUEST_NOT_FOUND', 'ON_CHAIN_RECORD_MISMATCH'].includes(error.code)
+            )
+              return undefined;
+            throw error;
+          }
+        }),
       )
     ).filter((record): record is EvidenceWorkflowRecord => Boolean(record));
     const requests = await Promise.all(
@@ -463,7 +808,7 @@ export class ProductionFlowService {
 
   async getEvidenceDetails(sessionId: string | undefined, requestId: string) {
     const session = await this.requireEitherRole(sessionId);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (
       !sameAddress(session.address, workflow.requester) &&
       !sameAddress(session.address, workflow.supplier)
@@ -484,7 +829,7 @@ export class ProductionFlowService {
     let supplierSource:
       { credentialFormat: string; legacyClaims?: Record<string, unknown> } | undefined;
     if (sameAddress(session.address, workflow.supplier)) {
-      const source = await this.dependencies.ingredientRepository.find(workflow.batchId);
+      const source = await this.ingredientRecord(workflow.batchId);
       if (source && sameAddress(source.supplierWallet, session.address)) {
         if (source.credentialFormat === 'SD_JWT_VC')
           supplierSource = { credentialFormat: 'SD_JWT_VC' };
@@ -499,9 +844,14 @@ export class ProductionFlowService {
         }
       }
     }
-    if (workflow.response) {
+    if (workflow.response && chain.status >= 2) {
       const serializedPresentation = await this.responseContent(workflow);
-      const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
+      if (
+        sha256(serializedPresentation).toLowerCase() !==
+        workflow.response!.presentationHash.toLowerCase()
+      )
+        throw this.recordMismatch('Presentation integrity hash mismatch.');
+      const ingredient = await this.ingredientRecord(workflow.batchId);
       if (ingredient?.credentialFormat === 'SD_JWT_VC') {
         presentation = serializedPresentation;
       } else {
@@ -535,7 +885,7 @@ export class ProductionFlowService {
 
   async reviewEvidence(sessionId: string | undefined, requestId: string) {
     const session = await this.requireEvidenceRequester(sessionId);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError(
         'REQUEST_NOT_FOUND',
@@ -551,7 +901,7 @@ export class ProductionFlowService {
         409,
       );
     const serializedPresentation = await this.responseContent(workflow);
-    const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
+    const ingredient = await this.ingredientRecord(workflow.batchId);
     if (ingredient?.credentialFormat === 'SD_JWT_VC') {
       let claims: Record<string, unknown>;
       try {
@@ -586,7 +936,17 @@ export class ProductionFlowService {
         verification: workflow.response.verification ?? { state: 'NOT_VERIFIED' as const },
       };
     }
-    const presentation = JSON.parse(serializedPresentation) as {
+    const walletPresentation = parseWalletPresentation(serializedPresentation);
+    const presentation = (
+      walletPresentation
+        ? {
+            verifiableCredential: [JSON.parse(walletPresentation.presentation)],
+            expirationDate: new Date(
+              walletPresentation.proof.context.expiresAt * 1000,
+            ).toISOString(),
+          }
+        : JSON.parse(serializedPresentation)
+    ) as {
       expirationDate?: string;
       verifiableCredential?: unknown[];
     };
@@ -754,12 +1114,18 @@ export class ProductionFlowService {
       optionalClaims?: string[];
     } = {},
   ) {
+    if (this.dependencies.walletCompanyExchange && !this.dependencies.companyReferences)
+      throw new ProductionFlowApiError(
+        'COMPANY_PROOF_REGISTRY_REQUIRED',
+        'Deploy and configure CompanyProofRegistry before creating shared company requests.',
+        503,
+      );
     const session = await this.requireRole(
       sessionId,
       CompanyRole.SUPPLIER,
       'ISSUE_INGREDIENT_CREDENTIAL',
     );
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     const chain = await this.requireChainRequest(requestId);
     if (!sameAddress(session.address, workflow.supplier) || chain.status !== 1)
       throw new ProductionFlowApiError(
@@ -772,7 +1138,13 @@ export class ProductionFlowService {
       workflow.identityProof?.status === 'REQUESTED' &&
       workflow.identityProof.expiresAt > this.nowSeconds()
     )
-      return this.identityProofSummary(workflow);
+      return {
+        ...this.identityProofSummary(workflow),
+        actorWallet: session.address,
+        transaction: this.dependencies.companyReferences
+          ? await this.companyReferenceTransaction(workflow)
+          : undefined,
+      };
     const requesterSessionRole = await this.requesterRole(workflow);
     if (![CompanyRole.MANUFACTURER, CompanyRole.RETAILER].includes(requesterSessionRole))
       throw new ProductionFlowApiError(
@@ -800,12 +1172,24 @@ export class ProductionFlowService {
       status: 'REQUESTED',
     };
     await this.dependencies.repository.saveEvidence(workflow);
-    return this.identityProofSummary(workflow);
+    return {
+      ...this.identityProofSummary(workflow),
+      actorWallet: session.address,
+      transaction: this.dependencies.companyReferences
+        ? await this.companyReferenceTransaction(workflow)
+        : undefined,
+    };
   }
 
   async getCompanyIdentityProofMaterial(sessionId: string | undefined, requestId: string) {
+    if (this.dependencies.walletCompanyExchange && !this.dependencies.companyReferences)
+      throw new ProductionFlowApiError(
+        'COMPANY_PROOF_REGISTRY_REQUIRED',
+        'Configure the shared CompanyProofRegistry before creating new company presentations.',
+        503,
+      );
     const session = await this.requireIdentitySession(sessionId, requestId, true);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError(
         'IDENTITY_PROOF_ACCESS_DENIED',
@@ -819,6 +1203,15 @@ export class ProductionFlowService {
         'The Supplier identity-proof request is unavailable or expired.',
         409,
       );
+    if (this.dependencies.companyReferences) {
+      if (!workflow.sharedIdentity)
+        throw new ProductionFlowApiError(
+          'SHARED_REQUEST_PUBLICATION_REQUIRED',
+          'The requesting company must complete the on-chain shared-reference transaction before a new presentation can be signed.',
+          409,
+        );
+      return this.walletCompanyMaterial(session, workflow);
+    }
     const identity = await this.dependencies.messagingIdentityRepository?.findIdentityByWallet(
       session.address,
     );
@@ -945,9 +1338,43 @@ export class ProductionFlowService {
     presentation: string,
   ) {
     const session = await this.requireIdentitySession(sessionId, requestId, true);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError('IDENTITY_PROOF_ACCESS_DENIED', 'Wrong presenter.', 403);
+    if (workflow.sharedIdentity) {
+      const refs = this.sharedCompanyReferences()!;
+      const current = (await refs.get(requestId))!;
+      if (
+        current.status >= 2 &&
+        current.status <= 3 &&
+        current.responseHash.toLowerCase() === sha256(presentation).toLowerCase()
+      )
+        return {
+          ...this.identityProofSummary(workflow),
+          actorWallet: session.address,
+          state: 'COMPLETE' as const,
+          transaction: undefined,
+        };
+      if (current.status !== 1)
+        throw new ProductionFlowApiError(
+          'IDENTITY_PROOF_REPLAY',
+          'This company request has already been answered.',
+          409,
+        );
+      await this.verifyCompanyIdentityPresentation(workflow, presentation);
+      const stored = await this.store(presentation, `${requestId}-company-identity-proof`);
+      return {
+        ...this.identityProofSummary(workflow),
+        actorWallet: session.address,
+        state: 'TRANSACTION_REQUIRED' as const,
+        transaction: refs.prepare('respond', [
+          requestId,
+          current.challengeHash,
+          sha256(presentation),
+          stored.cid,
+        ]),
+      };
+    }
     if (workflow.identityProof?.status !== 'REQUESTED')
       throw new ProductionFlowApiError(
         'IDENTITY_PROOF_REPLAY',
@@ -968,10 +1395,10 @@ export class ProductionFlowService {
 
   async verifyCompanyIdentityProof(sessionId: string | undefined, requestId: string) {
     const session = await this.requireIdentitySession(sessionId, requestId, false);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (
       !sameAddress(session.address, workflow.supplier) ||
-      !workflow.identityProof?.presentationPayload
+      (!workflow.identityProof?.presentationPayload && !workflow.identityProof?.presentationCid)
     )
       throw new ProductionFlowApiError(
         'IDENTITY_PROOF_ACCESS_DENIED',
@@ -990,6 +1417,12 @@ export class ProductionFlowService {
     await this.dependencies.repository.saveEvidence(workflow);
     return {
       ...this.identityProofSummary(workflow),
+      actorWallet: session.address,
+      transaction:
+        workflow.sharedIdentity &&
+        (await this.sharedCompanyReferences()!.get(requestId))?.status === 2
+          ? this.sharedCompanyReferences()!.prepare('review', [requestId, false])
+          : undefined,
       checks: result.checks,
       credential:
         result.selectedClaims ??
@@ -999,9 +1432,15 @@ export class ProductionFlowService {
 
   async declineCompanyIdentityProof(sessionId: string | undefined, requestId: string) {
     const session = await this.requireIdentitySession(sessionId, requestId, true);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (!sameAddress(session.address, workflow.requester))
       throw new ProductionFlowApiError('IDENTITY_PROOF_ACCESS_DENIED', 'Wrong presenter.', 403);
+    if (workflow.sharedIdentity)
+      return {
+        ...this.identityProofSummary(workflow),
+        actorWallet: session.address,
+        transaction: this.sharedCompanyReferences()!.prepare('review', [requestId, true]),
+      };
     if (workflow.identityProof?.status !== 'REQUESTED')
       throw new ProductionFlowApiError(
         'IDENTITY_PROOF_REPLAY',
@@ -1015,7 +1454,7 @@ export class ProductionFlowService {
 
   async getCompanyIdentityProofStatus(sessionId: string | undefined, requestId: string) {
     const session = await this.requireIdentitySession(sessionId, requestId, false);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (
       !sameAddress(session.address, workflow.requester) &&
       !sameAddress(session.address, workflow.supplier)
@@ -1066,7 +1505,7 @@ export class ProductionFlowService {
       CompanyRole.SUPPLIER,
       'ISSUE_INGREDIENT_CREDENTIAL',
     );
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     const chain = await this.requireChainRequest(requestId);
     if (
       !sameAddress(chain.supplier, session.address) ||
@@ -1103,6 +1542,15 @@ export class ProductionFlowService {
       );
     }
     const batch = await this.requireActiveIngredient(workflow.batchId);
+    const sourceStatus = await this.safeGateway(() =>
+      this.dependencies.gateway.getCredential(batch.credentialId),
+    );
+    if (!sourceStatus || sourceStatus.status !== 1 || sourceStatus.expiresAt <= this.nowSeconds())
+      throw new ProductionFlowApiError(
+        'CREDENTIAL_INACTIVE',
+        'This Ingredient Credential is suspended, revoked or expired. It cannot be shared as current evidence.',
+        409,
+      );
     if (!sameAddress(batch.supplier, session.address)) {
       throw new ProductionFlowApiError(
         'BATCH_OWNERSHIP_MISMATCH',
@@ -1113,7 +1561,42 @@ export class ProductionFlowService {
 
     let response = workflow.response;
     if (!response) {
-      const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
+      const ingredient = await this.ingredientRecord(workflow.batchId);
+      if (
+        ingredient?.credentialFormat === 'JWT_VC' &&
+        !holderResponse &&
+        this.dependencies.gateway.presentationDomain
+      ) {
+        const request = JSON.parse(await this.requestContent(workflow));
+        const envelope = JSON.parse(
+          await this.dependencies.contentStore.decrypt(ingredient.encryptedPayload),
+        );
+        return {
+          actorWallet: session.address,
+          requestId,
+          state: 'HOLDER_SIGNATURE_REQUIRED' as const,
+          holderSigning: {
+            credential: canonical(envelope.credential),
+            holderDid: '',
+            claims: request.claims ?? [],
+            requiredClaims: request.requiredClaims ?? [],
+            audience: workflow.requester,
+            nonce: request.challenge,
+            purpose: request.reason,
+            walletContext: {
+              ...this.dependencies.gateway.presentationDomain(),
+              holder: session.address,
+              verifier: workflow.requester,
+              requestId,
+              purpose: request.reason,
+              challenge: request.challenge,
+              batchId: workflow.batchId,
+              issuedAt: this.nowSeconds(),
+              expiresAt: Math.min(workflow.dueAt, ingredient.expiresAt, this.nowSeconds() + 300),
+            },
+          },
+        };
+      }
       if (ingredient?.credentialFormat === 'SD_JWT_VC' && !holderResponse) {
         const request = JSON.parse(await this.requestContent(workflow)) as {
           challenge?: string;
@@ -1129,6 +1612,23 @@ export class ProductionFlowService {
         return {
           actorWallet: session.address,
           holderSigning: {
+            walletContext: this.dependencies.gateway.presentationDomain
+              ? {
+                  ...this.dependencies.gateway.presentationDomain(),
+                  holder: session.address,
+                  verifier: workflow.requester,
+                  requestId,
+                  purpose: request.reason ?? 'Ingredient evidence verification',
+                  challenge: request.challenge,
+                  batchId: workflow.batchId,
+                  issuedAt: this.nowSeconds(),
+                  expiresAt: Math.min(
+                    workflow.dueAt,
+                    ingredient.expiresAt,
+                    this.nowSeconds() + 300,
+                  ),
+                }
+              : undefined,
             audience: workflow.requester.toLowerCase(),
             claims: request.claims ?? [],
             requiredClaims: request.requiredClaims ?? request.claims ?? [],
@@ -1177,7 +1677,7 @@ export class ProductionFlowService {
 
   async prepareEvidenceAcceptance(sessionId: string | undefined, requestId: string) {
     const session = await this.requireEvidenceRequester(sessionId);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     const chain = await this.requireChainRequest(requestId);
     if (
       !sameAddress(chain.requester, session.address) ||
@@ -1260,12 +1760,13 @@ export class ProductionFlowService {
     const file = await this.dependencies.ingredientRepository.findAttachment?.(documentId);
     if (
       !allowed ||
-      !file ||
-      file.supplierWallet.toLowerCase() !== workflow.supplier.toLowerCase() ||
-      file.sha256 !== allowed.sha256 ||
-      file.cid !== allowed.cid ||
       !allowed.entryId ||
-      file.certificationId !== allowed.entryId
+      !allowed.cid ||
+      (file &&
+        (file.supplierWallet.toLowerCase() !== workflow.supplier.toLowerCase() ||
+          file.sha256 !== allowed.sha256 ||
+          file.cid !== allowed.cid ||
+          file.certificationId !== allowed.entryId))
     )
       throw new ProductionFlowApiError(
         'DOCUMENT_ACCESS_DENIED',
@@ -1274,7 +1775,11 @@ export class ProductionFlowService {
       );
     let value;
     try {
-      value = JSON.parse(await this.dependencies.contentStore.decrypt(file.payload));
+      value = JSON.parse(
+        file
+          ? await this.dependencies.contentStore.decrypt(file.payload)
+          : await this.retrieveEncrypted(allowed.cid, 'SHARED_CERTIFICATION_DOCUMENT'),
+      );
     } catch (error) {
       if (isKeystoreLocked(error)) throw error;
       throw new ProductionFlowApiError(
@@ -1299,7 +1804,7 @@ export class ProductionFlowService {
   }
   async verifyEvidence(sessionId: string | undefined, requestId: string) {
     const session = await this.requireEvidenceRequester(sessionId);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     const chain = await this.requireChainRequest(requestId);
     if (
       !sameAddress(chain.requester, session.address) ||
@@ -1347,7 +1852,7 @@ export class ProductionFlowService {
     input: EvidenceCloseInput,
   ) {
     const session = await this.requireEitherRole(sessionId);
-    const workflow = await this.requireWorkflow(requestId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     const chain = await this.requireChainRequest(requestId);
     const status = { DECLINED: 4, REJECTED: 5, CANCELLED: 6 }[input.status];
     const requester = sameAddress(session.address, workflow.requester);
@@ -2019,7 +2524,7 @@ export class ProductionFlowService {
     supplierWallet: string,
     holderPresentation?: string,
   ) {
-    const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
+    const ingredient = await this.ingredientRecord(workflow.batchId);
     if (!ingredient || !sameAddress(ingredient.supplierWallet, supplierWallet)) {
       throw new ProductionFlowApiError(
         'CREDENTIAL_NOT_AVAILABLE',
@@ -2044,7 +2549,7 @@ export class ProductionFlowService {
           'The Supplier must approve and sign the selective presentation in the browser.',
           409,
         );
-      if (holderPresentation.split('~')[0] !== envelope.sdJwt.split('~')[0])
+      if (presentationSdJwt(holderPresentation).split('~')[0] !== envelope.sdJwt.split('~')[0])
         throw new ProductionFlowApiError(
           'PRESENTATION_INVALID',
           'The presentation is not derived from this issued Ingredient Credential.',
@@ -2057,7 +2562,7 @@ export class ProductionFlowService {
         requiredClaims: request.requiredClaims ?? request.claims ?? [],
         policy: request.policy,
         requestedClaims: request.claims,
-        ...(request.policy
+        ...(request.policy || parseWalletPresentation(holderPresentation!)
           ? {
               context: {
                 requestId: workflow.requestId,
@@ -2070,17 +2575,20 @@ export class ProductionFlowService {
       });
       if (String(verified.payload.credentialId) === '')
         throw this.recordMismatch('The selective presentation credential identifier is missing.');
+      const walletProof = parseWalletPresentation(holderPresentation);
       const presentationExpiresAt = Math.min(
         ingredient.expiresAt,
+        ...(walletProof ? [walletProof.proof.context.expiresAt, workflow.dueAt] : []),
         ...(request.policy
           ? [
               Number(
-                JSON.parse(
-                  Buffer.from(
-                    holderPresentation.split('~').at(-1)!.split('.')[1]!,
-                    'base64url',
-                  ).toString(),
-                ).exp,
+                walletProof?.proof.context.expiresAt ??
+                  JSON.parse(
+                    Buffer.from(
+                      holderPresentation.split('~').at(-1)!.split('.')[1]!,
+                      'base64url',
+                    ).toString(),
+                  ).exp,
               ),
               workflow.dueAt,
             ]
@@ -2119,6 +2627,38 @@ export class ProductionFlowService {
         'The stored Ingredient Credential failed verification.',
         409,
       );
+    }
+    if (this.dependencies.gateway.presentationDomain) {
+      if (!holderPresentation)
+        throw new ProductionFlowApiError(
+          'HOLDER_SIGNATURE_REQUIRED',
+          'Approve the complete legacy credential with MetaMask before sharing.',
+          409,
+        );
+      const wallet = parseWalletPresentation(holderPresentation);
+      if (!wallet || wallet.presentation !== canonical(credential))
+        throw this.recordMismatch(
+          'The full credential holder proof differs from the issued credential.',
+        );
+      verifyWalletPresentation(wallet, {
+        ...this.dependencies.gateway.presentationDomain(),
+        requestId: workflow.requestId,
+        verifier: workflow.requester,
+        holder: supplierWallet,
+        batchId: workflow.batchId,
+        purpose: request.reason!,
+        challenge: request.challenge,
+        now: this.nowSeconds(),
+        expiresAt: Math.min(workflow.dueAt, ingredient.expiresAt),
+      });
+      const stored = await this.store(holderPresentation, `${workflow.requestId}-presentation`);
+      return {
+        credentialId: ingredient.credentialId,
+        presentationCid: stored.cid,
+        presentationHash: sha256(holderPresentation),
+        presentationExpiresAt: wallet.proof.context.expiresAt,
+        presentationPayload: stored.payload,
+      };
     }
     const presentationExpiresAt = Math.min(ingredient.expiresAt, this.nowSeconds() + 48 * 60 * 60);
     const presentation = await createIngredientEvidencePresentation(agent, {
@@ -2217,7 +2757,7 @@ export class ProductionFlowService {
     if (!request.challenge || id(request.challenge) !== chain!.challengeHash)
       throw this.recordMismatch('Presentation challenge mismatch.');
     this.assertEvidenceRequestBinding(workflow, request);
-    const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
+    const ingredient = await this.ingredientRecord(workflow.batchId);
     if (!ingredient) throw this.recordMismatch('Ingredient workflow is missing.');
     const agent: TraceChainAgent = await this.dependencies.agentProvider();
     if (ingredient.credentialFormat === 'SD_JWT_VC') {
@@ -2230,7 +2770,7 @@ export class ProductionFlowService {
       );
       if (
         !source.sdJwt ||
-        serializedPresentation.split('~')[0] !== source.sdJwt.split('~')[0] ||
+        presentationSdJwt(serializedPresentation).split('~')[0] !== source.sdJwt.split('~')[0] ||
         sha256(source.sdJwt).toLowerCase() !== ingredient.credentialHash.toLowerCase()
       )
         throw new ProductionFlowApiError(
@@ -2245,7 +2785,7 @@ export class ProductionFlowService {
         requiredClaims: requestDetails.requiredClaims ?? requestDetails.claims ?? [],
         policy: request.policy,
         requestedClaims: request.claims,
-        ...(request.policy
+        ...(request.policy || parseWalletPresentation(serializedPresentation)
           ? {
               context: {
                 requestId: workflow.requestId,
@@ -2287,18 +2827,42 @@ export class ProductionFlowService {
         );
       return ingredient.credentialId;
     }
+    const wallet = parseWalletPresentation(serializedPresentation);
+    if (wallet)
+      verifyWalletPresentation(wallet, {
+        ...this.dependencies.gateway.presentationDomain!(),
+        requestId: workflow.requestId,
+        verifier: workflow.requester,
+        holder: workflow.supplier,
+        batchId: workflow.batchId,
+        purpose: request.reason!,
+        challenge: request.challenge,
+        now: this.nowSeconds(),
+        expiresAt: Math.min(workflow.dueAt, ingredient.expiresAt),
+      });
     const presentation = JSON.parse(serializedPresentation) as unknown;
-    const verified = await verifyIngredientEvidencePresentation(agent, presentation, {
-      batchId: workflow.batchId,
-      challenge: request.challenge,
-      domain: this.dependencies.presentationDomain ?? 'tracechain.local',
-      expectedIssuerDid: ingredient.issuerDid,
-      now: this.clock(),
-      purpose: request.reason ?? 'Ingredient evidence verification',
-      requestId: workflow.requestId,
-      supplierWallet: workflow.supplier,
-      verifier: workflow.requester,
-    });
+    const verified = wallet
+      ? {
+          ...(await verifyIngredientCredential(
+            agent,
+            JSON.parse(wallet.presentation),
+            workflow.supplier,
+            ingredient.issuerDid,
+            this.clock(),
+          )),
+          credential: ingredientCredentialSchema.parse(JSON.parse(wallet.presentation)),
+        }
+      : await verifyIngredientEvidencePresentation(agent, presentation, {
+          batchId: workflow.batchId,
+          challenge: request.challenge,
+          domain: this.dependencies.presentationDomain ?? 'tracechain.local',
+          expectedIssuerDid: ingredient.issuerDid,
+          now: this.clock(),
+          purpose: request.reason ?? 'Ingredient evidence verification',
+          requestId: workflow.requestId,
+          supplierWallet: workflow.supplier,
+          verifier: workflow.requester,
+        });
     if (!verified.verified || !verified.credential)
       throw new ProductionFlowApiError(
         'PRESENTATION_INVALID',
@@ -2381,12 +2945,12 @@ export class ProductionFlowService {
     requestId: string,
     presenter: boolean,
   ) {
-    const workflow = await this.requireWorkflow(requestId);
+    const session = await this.dependencies.authService.requireSession(sessionId);
+    const workflow = await this.requireWorkflow(requestId, session.address);
     if (!workflow.deliveryOrderId)
       return presenter
         ? this.requireEvidenceRequester(sessionId)
         : this.requireEitherRole(sessionId);
-    const session = await this.dependencies.authService.requireSession(sessionId);
     if (sameAddress(session.address, workflow.requester))
       return workflow.identityProof?.presenterRole === CompanyRole.MANUFACTURER
         ? this.requireRole(sessionId, CompanyRole.MANUFACTURER, 'INITIATE_TRANSFER')
@@ -2436,8 +3000,77 @@ export class ProductionFlowService {
       );
     return batch;
   }
-  private async requireWorkflow(requestId: string) {
-    let record = await this.dependencies.repository.findEvidence(requestId);
+  private async requireWorkflow(requestId: string, viewer?: string) {
+    const reference = await this.sharedCompanyReferences()?.get(requestId);
+    if (reference) {
+      if (
+        viewer &&
+        !sameAddress(viewer, reference.presenter) &&
+        !sameAddress(viewer, reference.verifier)
+      )
+        throw new ProductionFlowApiError(
+          'REQUEST_NOT_FOUND',
+          'This company request belongs to other participants.',
+          404,
+        );
+      const serialized = await this.retrieveEncrypted(
+        reference.requestCid,
+        'COMPANY_IDENTITY_REQUEST',
+      );
+      if (sha256(serialized).toLowerCase() !== reference.requestHash.toLowerCase())
+        throw this.recordMismatch('Company request hash mismatch.');
+      const value = JSON.parse(serialized);
+      const refs = this.sharedCompanyReferences()!;
+      if (
+        value.version !== 1 ||
+        value.chainId !== refs.domain.chainId ||
+        !sameAddress(value.registry, refs.domain.verifyingContract) ||
+        value.requestId !== requestId ||
+        !sameAddress(value.requester, reference.presenter) ||
+        !sameAddress(value.supplier, reference.verifier) ||
+        id(value.identityProof?.challenge ?? '') !== reference.challengeHash ||
+        value.identityProof?.expiresAt !== reference.expiresAt ||
+        !sameAddress(value.identityProof?.presenterWallet ?? '', reference.presenter) ||
+        !sameAddress(value.identityProof?.audience ?? '', reference.verifier)
+      )
+        throw this.recordMismatch(
+          'The shared company request context differs from its chain reference.',
+        );
+      const evidence = !value.orderContext
+        ? await this.dependencies.gateway.getEvidenceRequest(requestId)
+        : undefined;
+      return {
+        ...value,
+        ...(evidence?.presentationCid
+          ? {
+              response: {
+                credentialId: ZeroHash,
+                presentationCid: evidence.presentationCid,
+                presentationHash: evidence.presentationHash,
+                presentationExpiresAt: evidence.presentationExpiresAt,
+              },
+            }
+          : {}),
+        sharedIdentity: true,
+        operationId: `shared:${requestId}`,
+        identityProof: {
+          ...value.identityProof,
+          presentationCid: reference.responseCid || undefined,
+          status:
+            reference.status === 4
+              ? ('DECLINED' as const)
+              : reference.status === 3
+                ? ('VERIFIED' as const)
+                : reference.status === 2
+                  ? ('PRESENTED' as const)
+                  : ('REQUESTED' as const),
+        },
+      } as EvidenceWorkflowRecord;
+    }
+    let record = await this.dependencies.repository.findEvidence(requestId).catch((error) => {
+      if (!this.dependencies.contentStore.retrieveAndDecrypt) throw error;
+      return undefined; // An unavailable compatibility cache cannot hide confirmed records.
+    });
     if (!record) {
       const chain = await this.safeGateway(() =>
         this.dependencies.gateway.getEvidenceRequest(requestId),
@@ -2446,6 +3079,12 @@ export class ProductionFlowService {
         throw new ProductionFlowApiError(
           'REQUEST_NOT_FOUND',
           'The evidence request was not found.',
+          404,
+        );
+      if (viewer && !sameAddress(viewer, chain.requester) && !sameAddress(viewer, chain.supplier))
+        throw new ProductionFlowApiError(
+          'REQUEST_NOT_FOUND',
+          'This evidence request belongs to other participants.',
           404,
         );
       const serialized = await this.retrieveEncrypted(chain.requestCid, 'EVIDENCE_REQUEST');
@@ -2508,7 +3147,33 @@ export class ProductionFlowService {
             }
           : {}),
       };
-      await this.dependencies.repository.saveEvidence(record);
+      if (!this.dependencies.walletCompanyExchange)
+        await this.dependencies.repository.saveEvidence(record);
+    }
+    if (!record.orderContext) {
+      const chain = await this.dependencies.gateway.getEvidenceRequest(requestId);
+      if (chain) {
+        this.assertRequestMatches(chain, record);
+        if (chain.presentationCid && chain.status >= 2)
+          record = {
+            ...record,
+            response: {
+              ...(record.response?.presentationHash === chain.presentationHash
+                ? record.response
+                : {}),
+              credentialId:
+                record.response?.credentialId ??
+                (await this.dependencies.gateway.getIngredient(record.batchId))?.credentialId ??
+                ZeroHash,
+              presentationCid: chain.presentationCid,
+              presentationHash: chain.presentationHash,
+              presentationExpiresAt: chain.presentationExpiresAt,
+              ...(record.response?.presentationHash === chain.presentationHash
+                ? { verification: record.response.verification }
+                : {}),
+            },
+          };
+      }
     }
     if (record.deliveryOrderId && !(await this.dependencies.validateDeliveryIdentity?.(record)))
       throw new ProductionFlowApiError(
@@ -2539,9 +3204,21 @@ export class ProductionFlowService {
   }
 
   private async requestContent(workflow: EvidenceWorkflowRecord) {
-    return workflow.requestPayload
+    const serialized = await (workflow.requestPayload
       ? this.dependencies.contentStore.decrypt(workflow.requestPayload)
-      : this.retrieveEncrypted(workflow.requestCid, 'EVIDENCE_REQUEST');
+      : this.retrieveEncrypted(workflow.requestCid, 'EVIDENCE_REQUEST'));
+    if (!workflow.orderContext) {
+      const request = JSON.parse(serialized) as EvidenceRequestPrivatePayload;
+      if (request.policy) {
+        if (
+          !request.challenge ||
+          id(request.challenge).toLowerCase() !== workflow.challengeHash.toLowerCase()
+        )
+          throw this.recordMismatch('Evidence request challenge mismatch.');
+        this.assertEvidenceRequestBinding(workflow, request);
+      }
+    }
+    return serialized;
   }
 
   private async responseContent(workflow: EvidenceWorkflowRecord) {
@@ -2551,9 +3228,12 @@ export class ProductionFlowService {
         'No evidence response exists.',
         409,
       );
-    return workflow.response.presentationPayload
+    const serialized = await (workflow.response.presentationPayload
       ? this.dependencies.contentStore.decrypt(workflow.response.presentationPayload)
-      : this.retrieveEncrypted(workflow.response.presentationCid, 'EVIDENCE_RESPONSE');
+      : this.retrieveEncrypted(workflow.response.presentationCid, 'EVIDENCE_RESPONSE'));
+    if (sha256(serialized).toLowerCase() !== workflow.response.presentationHash.toLowerCase())
+      throw this.recordMismatch('Presentation integrity hash mismatch.');
+    return serialized;
   }
   private async requireChainRequest(requestId: string) {
     const chain = await this.safeGateway(() =>
@@ -2638,6 +3318,17 @@ export class ProductionFlowService {
       );
     }
   }
+  private sharedCompanyReferences(): CompanyProofReferences | undefined {
+    const source = this.dependencies.companyReferences?.();
+    if (!source) return undefined;
+    return {
+      domain: source.domain,
+      get: (key) => this.safeGateway(() => source.get(key)),
+      list: (wallet) => this.safeGateway(() => source.list(wallet)),
+      binding: (wallet) => this.safeGateway(() => source.binding(wallet)),
+      prepare: (method, args) => source.prepare(method, args),
+    };
+  }
   private async safeGateway<T>(operation: () => Promise<T>) {
     try {
       return await operation();
@@ -2667,6 +3358,7 @@ export class ProductionFlowService {
   ) {
     try {
       const result = await verifyIngredientSdJwtPresentation(agent, presentation, {
+        walletDomain: this.dependencies.gateway.presentationDomain?.(),
         ...input,
         now: this.nowSeconds(),
       });
@@ -2810,6 +3502,16 @@ export class ProductionFlowService {
     workflow: EvidenceWorkflowRecord,
     presentation: string,
   ) {
+    if (workflow.sharedIdentity) {
+      const reference = await this.sharedCompanyReferences()!.get(workflow.requestId);
+      if (
+        reference?.responseCid &&
+        sha256(presentation).toLowerCase() !== reference.responseHash.toLowerCase()
+      )
+        throw this.recordMismatch(
+          'The company presentation differs from its registered integrity hash.',
+        );
+    }
     const proof = workflow.identityProof;
     if (!proof || proof.expiresAt <= this.nowSeconds())
       throw new ProductionFlowApiError(
@@ -2817,6 +3519,7 @@ export class ProductionFlowService {
         'The company identity-proof request has expired.',
         409,
       );
+    const walletPresentation = parseWalletPresentation(presentation);
     let jwt;
     let selectedClaims: Record<string, unknown> | undefined;
     try {
@@ -2827,6 +3530,10 @@ export class ProductionFlowService {
           await this.dependencies.agentProvider(),
           presentation,
           {
+            walletDomain: this.sharedCompanyReferences()?.domain,
+            wallet: proof.presenterWallet,
+            batchId: workflow.batchId || ZeroHash,
+            expiresAt: proof.expiresAt,
             audience: proof.audience,
             challenge: proof.challenge,
             requestId: workflow.requestId,
@@ -2836,29 +3543,9 @@ export class ProductionFlowService {
           },
         );
         const p = result.payload;
-        const records = await this.dependencies.companyRoleRepository?.list().catch(() => {
-          throw new ProductionFlowApiError(
-            'IDENTITY_SOURCE_UNAVAILABLE',
-            'The source credential store is unavailable. Retry when the service is restored.',
-            503,
-          );
-        });
-        const record = records?.find(
-          (record) =>
-            sameAddress(record.applicantWallet, proof.presenterWallet) &&
-            normalizeHash(record.credentialHash) === normalizeHash(String(p.sourceCredentialHash)),
-        );
-        if (!record) throw new Error('The source credential record is unavailable.');
-        const source = companyRoleCredentialSchema.parse(
-          JSON.parse(
-            await this.dependencies.contentStore.decrypt(record.encryptedPayload).catch(() => {
-              throw new ProductionFlowApiError(
-                'IDENTITY_SOURCE_UNAVAILABLE',
-                'The original credential could not be retrieved or decrypted. This does not establish a forged holder signature.',
-                503,
-              );
-            }),
-          ),
+        const source = await this.companySource(
+          proof.presenterWallet,
+          String(p.sourceCredentialHash),
         );
         const sourceIssuer = typeof source.issuer === 'string' ? source.issuer : source.issuer.id;
         if (p.iss !== sourceIssuer)
@@ -2891,14 +3578,14 @@ export class ProductionFlowService {
         );
         jwt = {
           payload: {
-            iss: p.holderDid,
-            aud: p.audience,
-            nonce: p.challenge,
-            requestId: p.requestId,
-            purpose: p.purpose,
+            iss: walletPresentation ? proof.presenterWallet : p.holderDid,
+            aud: walletPresentation ? proof.audience : p.audience,
+            nonce: walletPresentation ? proof.challenge : p.challenge,
+            requestId: walletPresentation ? workflow.requestId : p.requestId,
+            purpose: walletPresentation ? proof.purpose : p.purpose,
             wallet: p.walletAddress,
             role: p.role,
-            exp: p.exp,
+            exp: walletPresentation ? walletPresentation.proof.context.expiresAt : p.exp,
             credential: source,
             credentialHash: p.sourceCredentialHash,
           },
@@ -2921,12 +3608,13 @@ export class ProductionFlowService {
       );
     }
     const payload = jwt.payload as Record<string, unknown>;
-    const identity = await this.dependencies.messagingIdentityRepository?.findIdentityByWallet(
-      proof.presenterWallet,
-    );
+    const identity = walletPresentation
+      ? undefined
+      : await this.dependencies.messagingIdentityRepository?.findIdentityByWallet(
+          proof.presenterWallet,
+        );
     if (
-      !identity ||
-      payload.iss !== identity.did ||
+      (!walletPresentation && (!identity || payload.iss !== identity.did)) ||
       payload.nonce !== proof.challenge ||
       payload.aud !== proof.audience ||
       payload.requestId !== workflow.requestId ||

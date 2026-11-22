@@ -5,6 +5,7 @@ import { dirname } from 'node:path';
 import type { EncryptedCredentialPayload } from '../ssi/encrypted-credential.store.js';
 
 export interface EvidenceWorkflowRecord {
+  sharedIdentity?: boolean;
   deliveryOrderId?: string;
   orderContext?: boolean;
   batchId: string;

@@ -34,7 +34,6 @@ import {
   certificationEntries,
   type CertificationDraft,
 } from './CertificationEditor';
-import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
 const names = new Intl.DisplayNames(['en'], { type: 'region' });
 function OriginCountryFlag({ country, label }: { country?: Country; label: string }) {
   const Flag = country ? flags[country] : undefined;
@@ -856,7 +855,7 @@ export function RegisterBatch({
                       basis and image are separate listing metadata. A Supplier signature does not
                       verify a certification authority.
                     </p>
-                    <PresentationSigningSettingsLink role="supplier" />
+                    <p className="ingredient-help">New Ingredient Credentials are bound to this company wallet. MetaMask signs approved presentations; no separate holder-key setup is needed.</p>
                     {started && <p role="status">{status}</p>}
                     {started && !complete && (
                       <p>

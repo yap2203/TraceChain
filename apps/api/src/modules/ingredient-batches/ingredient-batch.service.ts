@@ -15,7 +15,6 @@ import {
   walletAddressToDid,
   createOrGetSupplierIssuerDid,
   ingredientCredentialSchema,
-  issueIngredientCredential,
   issueIngredientSdJwt,
   verifyIngredientCredential,
   verifyIssuedIngredientSdJwt,
@@ -534,15 +533,8 @@ export class IngredientBatchService {
     canonicalMetadata: string,
   ) {
     const issuer = await createOrGetSupplierIssuerDid(agent, input.supplierWallet);
-    const messagingIdentity =
-      await this.dependencies.messagingIdentityResolver?.findIdentityByWallet(input.supplierWallet);
-    if (this.dependencies.messagingIdentityResolver && !messagingIdentity)
-      throw new IngredientBatchApiError(
-        'HOLDER_KEY_BINDING_REQUIRED',
-        'Create and bind the Supplier messaging identity before issuing a selectively disclosable Ingredient Credential.',
-        409,
-      );
-    if (messagingIdentity) {
+    const messagingIdentity = { did: walletAddressToDid(input.supplierWallet) };
+    {
       const credentialUrn = `urn:tracechain:ingredient:${batchId}`;
       const sdJwt = await issueIngredientSdJwt(agent, {
         claims: {
@@ -568,7 +560,7 @@ export class IngredientBatchService {
           supplierWallet: input.supplierWallet,
         },
         expiresAt: Math.floor(input.expiryDate.getTime() / 1_000),
-        holderDid: messagingIdentity.did,
+        holderWallet: input.supplierWallet,
         issuerDid: issuer.identifier.did,
         issuedAt: Math.floor(this.clock().getTime() / 1_000),
       });
@@ -623,67 +615,6 @@ export class IngredientBatchService {
       await this.dependencies.repository.save(record);
       return record;
     }
-    const issued = await issueIngredientCredential(agent, {
-      ...input,
-      issuanceDate: this.clock(),
-      issuerDid: issuer.identifier.did,
-      issuerOperatorChainId: 11_155_111,
-    });
-    const verification = await verifyIngredientCredential(
-      agent,
-      issued.credential,
-      input.supplierWallet,
-      issuer.identifier.did,
-      this.clock(),
-    );
-    if (!verification.verified || verification.credentialHash !== issued.credentialHash) {
-      throw new IngredientBatchApiError(
-        'ISSUED_CREDENTIAL_INVALID',
-        'The generated Ingredient Credential failed cryptographic verification.',
-        500,
-      );
-    }
-    const credentialId = id(issued.credential.id);
-    let stored;
-    try {
-      stored = await this.dependencies.contentStore.encryptAndStore(
-        JSON.stringify({
-          credential: issued.credential,
-          metadata: JSON.parse(canonicalMetadata),
-          version: 1,
-        }),
-        credentialId,
-      );
-    } catch (error) {
-      if (isKeystoreLocked(error)) throw error;
-      throw new IngredientBatchApiError(
-        'ENCRYPTED_STORAGE_UNAVAILABLE',
-        'The encrypted Ingredient Credential could not be stored. No blockchain transaction was prepared.',
-        503,
-      );
-    }
-    const record: IngredientBatchWorkflowRecord = {
-      batchId,
-      operationId: input.operationId,
-      certificationDocumentIds: (input.certificationEntries ?? []).flatMap((entry) =>
-        entry.documents.map((file) => file.id),
-      ),
-      credentialHash: `0x${issued.credentialHash}`,
-      credentialId,
-      encryptedCid: stored.cid,
-      encryptedPayload: stored.payload,
-      expiresAt: Math.floor(input.expiryDate.getTime() / 1_000),
-      issuerDid: issuer.identifier.did,
-      metadataHash,
-      producedAt: Math.floor(input.productionDate.getTime() / 1_000),
-      quantity: input.quantity,
-      supplierWallet: input.supplierWallet,
-      unit: input.unit,
-      ...(input.price !== undefined ? { price: input.price, currency: input.currency } : {}),
-      credentialFormat: 'JWT_VC',
-    };
-    await this.dependencies.repository.save(record);
-    return record;
   }
 
   private async verifyStoredCredential(

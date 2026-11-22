@@ -1,5 +1,13 @@
 # TraceChain
 
+**Wallet presentations (2026-11-23):** new Ingredient Evidence and Company Identity exchanges use
+MetaMask EIP-712 holder signatures, encrypted Pinata/IPFS content and shared on-chain inbox references.
+SIWE login stays unchanged. New ingredient SD-JWT v3 credentials need no separate holder key;
+legacy Ed25519 credentials keep their original verification/recovery path until issuer-authorized replacement.
+Company proofs need the new companion CompanyProofRegistry and COMPANY_PROOF_REGISTRY_ADDRESS;
+existing ingredient evidence registries with the current CID/hash getters can be reused. No public deployment
+or active environment change was performed. See [protocol, deployment compatibility, recovery and tests](docs/WALLET_PRESENTATIONS.md).
+
 **Sepolia deployment:** the active root `.env` now targets chain `11155111`. API SIWE,
 MetaMask, QR chain references, SSI and Hardhat use the Sepolia configuration; the active
 `CHAIN_RPC_URL` is shared with SSI and Hardhat. Local-only test fixtures remain on 31337.
@@ -99,8 +107,7 @@ metadata, evidence exchanges, custody evidence, shipment details and catalogue m
 from configured blockchain references/events plus immutable encrypted IPFS objects. A second API can
 start with an empty business-data directory when it uses the same deployment, IPFS gateway and
 unlocked Phase 1 administrator keystore. Local JSON journals remain compatibility caches and retain
-unfinished/retry state; they are not authoritative for confirmed records. DIDComm state, Veramo public
-metadata and issuer portability remain later-phase work. The added location/media/private-workflow
+unfinished/retry state; they are not authoritative for confirmed records. Historical DIDComm state remains local. Veramo issuer material retains the existing portable Admin-keystore model. The added location/media/private-workflow
 references change contract bytecode, so deploy the complete suite together and update every configured
 address before using this behaviour. No deployment or environment update is performed by builds or
 tests. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
@@ -180,7 +187,7 @@ ordering uses a minimal public availability summary. On-chain balances remain pu
 
 **Information requests** is available to every stakeholder at `/{role}/information-requests`.
 Received/Sent company-proof cards cover custody/delivery, quantity-order and ingredient-information
-contexts, using existing proof signing, verification and DIDComm services. Ingredient evidence remains
+contexts, using MetaMask wallet proofs and encrypted IPFS shared references (legacy proof verification remains supported). Ingredient evidence remains
 available as a separate category. Admin visibility follows existing participant permissions; this page
 does not grant new proof/credential powers. Old Supplier/Retailer evidence-request links still resolve.
 These page/privacy changes need API/web restart or rebuild, with no additional contract deployment.
@@ -287,11 +294,10 @@ The updated IngredientRegistry and SupplyChainOrders require a fresh complete su
 to enable listing management and approve/reject. Missing capabilities produce explicit update
 messages; existing source credentials, keys, deployment journals and `.env` are preserved.
 
-DIDComm transport is entirely backend-managed: the API packs/encrypts and unpacks/decrypts
-messages with separate company-agent keys. Registration and evidence/request screens have no
-messaging key setup or backup panel. Presentation signature settings are separate, under
-**My company credential → Presentation signing settings**, with links from presentation flows.
-Those browser keys sign approved VPs; they are not used for DIDComm message encryption.
+New presentation delivery uses encrypted IPFS and shared registry references. MetaMask signs wallet-bound
+presentations; first-time company setup publishes an original-issuer-authorized attestation. Legacy
+Ed25519 key setup/recovery remains separately collapsed in the identity profile. DIDComm files, keys and
+mailbox reads are preserved only for historical recovery; migrated exchanges no longer send DIDComm messages.
 
 Company-agent role/name metadata follows current authenticated authorization while preserving its
 messaging DID and encrypted key. If the original ingredient-request notification was never delivered,
@@ -394,8 +400,8 @@ New authenticated endpoints: `GET /api/orders`, `POST /api/orders/prepare`,
 `POST|GET /api/orders/catalogue/products/:batchId/image`. Writes remain unsigned transaction
 preparations for MetaMask or authenticated presentation-media updates;
 the identity endpoint also reuses existing credential retrieval, holder-proof verification and
-backend-managed encrypted DIDComm transport. Company Role VCs remain full disclosure. Ingredient
-SD-JWT selective presentations remain supported. Run `npm run test:orders` for the scoped suite.
+encrypted IPFS reference publication. Company presentations use an issuer-authorized selective attestation
+referencing the original Company Role VC; Ingredient v3 SD-JWT presentations use wallet-bound proofs. Run `npm run test:orders` for the scoped suite.
 
 Admin Access Control includes **Individual Permissions** alongside Role Permissions and the
 Permission Matrix. Select a registered company wallet and choose **Inherit role**, **Allow**,
@@ -417,7 +423,7 @@ transaction preparation. Protected APIs retain their independent validation; dat
 numeric/boolean/null coercions and impossible calendar dates. Shared action buttons keep icons
 and labels aligned horizontally.
 
-> Evidence messaging uses backend-managed DIDComm company agents beneath the existing business screens. MetaMask + SIWE remains the login, holder presentation-signing keys remain client-controlled, and OpenID4VP is deferred. See [`docs/DIDCOMM_STAGE1.md`](docs/DIDCOMM_STAGE1.md) for protocol, custody, migration and security boundaries.
+> New evidence exchange uses MetaMask holder proofs and encrypted IPFS shared references. DIDComm documentation describes the retained historical path. See [current wallet presentations](docs/WALLET_PRESENTATIONS.md).
 
 The real Manufacturer/Retailer–Supplier Ingredient Evidence workflow now uses this channel for
 encrypted request and full-credential VP delivery. Suppliers can separately request a fresh,

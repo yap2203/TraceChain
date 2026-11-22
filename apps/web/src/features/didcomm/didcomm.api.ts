@@ -47,40 +47,4 @@ export const didCommApi = {
     }>('/binding/challenge', { method: 'POST' }),
   directory: () => request<MessagingIdentity[]>('/directory'),
   mailbox: () => request<{ envelopes: RelayEnvelope[]; identity?: MessagingIdentity }>('/mailbox'),
-  relay: (envelope: RelayEnvelope) =>
-    request<{ accepted: true; id: string }>('/relay', {
-      method: 'POST',
-      body: JSON.stringify(envelope),
-    }),
-  send: (message: {
-    body: Record<string, unknown>;
-    businessReference: string;
-    expiresAt: string;
-    ingredientBatchReference?: string;
-    messageType: string;
-    parentThreadId?: string;
-    recipientWallet: string;
-    threadId: string;
-  }) =>
-    request<{ accepted: true; id: string }>('/send', {
-      method: 'POST',
-      body: JSON.stringify(message),
-    }),
 };
-export const EVIDENCE_REQUEST_TYPE =
-  'https://tracechain.local/didcomm/ingredient-evidence-request/1.0';
-export const EVIDENCE_ACK_TYPE = 'https://tracechain.local/didcomm/ingredient-evidence-ack/1.0';
-export const EVIDENCE_PRESENTATION_TYPE =
-  'https://tracechain.local/didcomm/ingredient-evidence-presentation/1.0';
-export const EVIDENCE_DECLINED_TYPE =
-  'https://tracechain.local/didcomm/ingredient-evidence-declined/1.0';
-export const EVIDENCE_DECISION_TYPE =
-  'https://tracechain.local/didcomm/ingredient-evidence-decision/1.0';
-export const EVIDENCE_FOLLOW_UP_TYPE =
-  'https://tracechain.local/didcomm/ingredient-evidence-follow-up/1.0';
-export const COMPANY_IDENTITY_REQUEST_TYPE =
-  'https://tracechain.local/didcomm/company-identity-request/1.0';
-export const COMPANY_IDENTITY_PRESENTATION_TYPE =
-  'https://tracechain.local/didcomm/company-identity-presentation/1.0';
-export const COMPANY_IDENTITY_DECLINED_TYPE =
-  'https://tracechain.local/didcomm/company-identity-declined/1.0';

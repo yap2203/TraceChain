@@ -1,3 +1,4 @@
+import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
 import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
 import { reportError } from '../../components/ui/feedback';
@@ -35,7 +36,6 @@ import {
   verifyCompanyIdentityProof,
   type CompanyIdentityProofStatus,
 } from '../production-flow/production-flow.api';
-import { sendCompanyIdentityRequestMessage } from '../production-flow/evidence-didcomm';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { workspacePath } from '../workspaces/workspace-paths';
 import {
@@ -75,15 +75,24 @@ export function InformationRequestsWorkspace({
     setLoading(true);
     setError('');
     try {
-      const [requests, orders] = await Promise.all([getInformationRequests(), getOrders()]);
+      const requests = await getInformationRequests();
       setRows(requests.requests);
-      setData(orders);
+      if (requests.actor && requests.requests.every((row) => row.sharedReference))
+        setData({
+          actor: requests.actor,
+          role,
+          catalogue: [],
+          orders: [],
+          shipments: [],
+          locations: [],
+        });
+      else setData(await getOrders());
     } catch (cause) {
       setError(reportError(cause, 'Information requests unavailable.'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [role]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -210,6 +219,8 @@ export function InformationRequestsWorkspace({
               type="warning"
               message="This historical proof request is unavailable for further actions. Its participant binding or current authorization is no longer valid."
             />
+          ) : selected?.sharedReference ? (
+            <SharedCompanyProof key={selected.requestId} row={selected} role={role} />
           ) : context === 'custody' && data ? (
             <CustodyCompanyProof referenceId={reference} data={data} role={role} />
           ) : context === 'delivery' ? (
@@ -344,6 +355,67 @@ export function InformationRequestsWorkspace({
         </>
       )}
     </div>
+  );
+}
+
+function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: WorkspaceRole }) {
+  const [status, setStatus] = useState<CompanyIdentityProofStatus>(),
+    [error, setError] = useState(''),
+    [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void getCompanyIdentityProofStatus(row.requestId)
+      .then(setStatus)
+      .catch((error) => setError(error.message));
+  }, [row.requestId]);
+  return (
+    <Card>
+      <h3>Company identity presentation</h3>
+      <p>
+        {row.company} · {row.purpose}
+      </p>
+      <p>
+        Status: {status?.status ?? row.status}. Expires:{' '}
+        {new Date(row.expiresAt * 1000).toLocaleString()}
+      </p>
+      <p>
+        Shared through encrypted IPFS and its on-chain request reference. Verification is separate
+        from accepting an order, custody offer or delivery.
+      </p>
+      {error && <Alert type="error" message={error} />}
+      {row.direction === 'received' ? (
+        <CompanyIdentityProofAction requestId={row.requestId} role={role} />
+      ) : (
+        <>
+          <Btn
+            disabled={busy || !['PRESENTED', 'VERIFIED'].includes(status?.status ?? '')}
+            onClick={() => {
+              setBusy(true);
+              setError('');
+              void verifyCompanyIdentityProof(row.requestId)
+                .then(async (result) => {
+                  if (result.transaction && result.actorWallet)
+                    await submitProductionTransaction(result.transaction, result.actorWallet);
+                  setStatus({ ...result, ...(await getCompanyIdentityProofStatus(row.requestId)) });
+                })
+                .catch((error) => setError(error.message))
+                .finally(() => setBusy(false));
+            }}
+          >
+            {busy ? 'Verifying…' : 'Verify company identity'}
+          </Btn>
+          {status?.credential && (
+            <dl>
+              {Object.entries(status.credential).map(([key, value]) => (
+                <div key={key}>
+                  <dt>{key}</dt>
+                  <dd>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -682,18 +754,17 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
     setBusy(true);
     setError('');
     try {
-      if (verify) setStatus(await verifyCompanyIdentityProof(requestId));
-      else {
-        setStatus(
-          await requestCompanyIdentityProof(requestId, {
+      const result = verify
+        ? await verifyCompanyIdentityProof(requestId)
+        : await requestCompanyIdentityProof(requestId, {
             purpose,
             requiredClaims: required,
             optionalClaims: optional,
             ...(deadline ? { expiresAt: Math.floor(Date.parse(deadline) / 1000) } : {}),
-          }),
-        );
-        await sendCompanyIdentityRequestMessage(await getEvidenceDetails(requestId));
-      }
+          });
+      if (result.transaction && result.actorWallet)
+        await submitProductionTransaction(result.transaction, result.actorWallet);
+      setStatus({ ...result, ...(await getCompanyIdentityProofStatus(requestId)) });
     } catch (cause) {
       setError(reportError(cause, 'Company proof action failed.'));
     } finally {

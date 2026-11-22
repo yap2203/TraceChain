@@ -1,4 +1,5 @@
 import { dataFile } from './config/data-directory.js';
+import { EthersCompanyProofReferences } from './modules/production-flow/company-proof.gateway.js';
 import { CompanyRole } from '@tracechain/shared';
 import {
   ApplicationDocuments,
@@ -341,6 +342,7 @@ export function createApp({
     applicationMetadataRepository ??
     new JsonApplicationMetadataRepository(dataFile('applications/company-metadata.json'));
   const lazyCredentialContentStore: CredentialContentStore = {
+    retrieveEnvelope: async (cid) => withCredentialContentStore(keystore, (store) => store.retrieveEnvelope!(cid)),
     retrieveAndDecrypt: async (cid) => {
       return withCredentialContentStore(keystore, (store) => store.retrieveAndDecrypt!(cid));
     },
@@ -1053,6 +1055,8 @@ function createDefaultProductionFlowService(
     return gateway;
   };
   const lazyGateway: ProductionFlowGateway = {
+    presentationDomain: () => resolveGateway().presentationDomain!(),
+    companyCredential: (wallet) => resolveGateway().companyCredential!(wallet),
     supportsOptionalProductionEvidence: () =>
       resolveGateway().supportsOptionalProductionEvidence!(),
     getProductionRecord: (batchId) => resolveGateway().getProductionRecord!(batchId),
@@ -1104,6 +1108,11 @@ function createDefaultProductionFlowService(
     save: (input) => resolveIngredientRepository().save(input),
   };
   return new ProductionFlowService({
+    walletCompanyExchange: true,
+    companyReferences: process.env.COMPANY_PROOF_REGISTRY_ADDRESS ? () => {
+      const blockchain = loadBlockchainEnvironment();
+      return new EthersCompanyProofReferences(env.CHAIN_ID, blockchain.CHAIN_RPC_URL, process.env.COMPANY_PROOF_REGISTRY_ADDRESS!, blockchain.STAKEHOLDER_REGISTRY_ADDRESS);
+    } : undefined,
     validateDeliveryIdentity,
     agentProvider,
     authService,

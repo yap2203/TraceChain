@@ -23,7 +23,6 @@ import {
   type ProductionEvidenceRequest,
   type RetailerEvidenceOption,
 } from '../../../production-flow/production-flow.api';
-import { sendEvidenceRequestMessage } from '../../../production-flow/evidence-didcomm';
 import { CatalogueImage, CompanyAvatar } from '../../../orders/CatalogueMedia';
 import { getOrders, type OrderRecord } from '../../../orders/orders.api';
 import {
@@ -153,7 +152,6 @@ export function RetailerEvidenceRequests({
         }),
       );
       if (!completed.requestId) throw new Error('The confirmed request ID is unavailable.');
-      await sendEvidenceRequestMessage(await getEvidenceDetails(completed.requestId));
       setNotice('Request confirmed on chain and encrypted for the original Supplier.');
       setSelected('');
       await load();

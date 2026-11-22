@@ -23,6 +23,7 @@ export class CredentialRetrievalError extends Error {
 }
 
 export interface CredentialContentStore {
+  retrieveEnvelope?(cid: string): Promise<EncryptedCredentialPayload>;
   retrieveAndDecrypt?(cid: string): Promise<string>;
   decrypt(payload: EncryptedCredentialPayload): Promise<string>;
   encryptAndStore(
@@ -41,7 +42,9 @@ export class IpfsEncryptedCredentialStore implements CredentialContentStore {
     if (encryptionKey.length !== 32) throw new Error('Credential encryption key must be 32 bytes.');
   }
 
-  async retrieveAndDecrypt(reference: string) {
+  async retrieveAndDecrypt(reference: string) { return this.decrypt(await this.retrieveEnvelope(reference)); }
+
+  async retrieveEnvelope(reference: string) {
     const cid = reference.replace(/^ipfs:\/\//, '');
     if (!/^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{20,})$/.test(cid))
       throw new Error('Invalid encrypted credential CID.');
@@ -71,7 +74,7 @@ export class IpfsEncryptedCredentialStore implements CredentialContentStore {
       Buffer.from(payload.authTag ?? '', 'base64').length !== 16
     )
       throw new Error('The pinned encrypted credential envelope is invalid.');
-    return this.decrypt(payload);
+    return payload;
   }
 
   async encryptAndStore(serializedCredential: string, credentialId: string) {

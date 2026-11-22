@@ -1,3 +1,4 @@
+import { signCompanyPresentation } from '../production-flow/company-presentation';
 import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
 import {
   COMPANY_ALWAYS_CLAIMS,
@@ -36,14 +37,8 @@ import {
 import { workspacePath } from '../workspaces/workspace-paths';
 import { OrderLifecycle } from './OrderLifecycle';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
-import {
-  createCompanyIdentityPresentation,
-  createSelectiveCompanyIdentityPresentation,
-  getActiveMessagingAgent,
-} from '../didcomm/didcomm-agent';
 import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
 import { getEvidenceDetails, prepareEvidenceRequest } from '../production-flow/production-flow.api';
-import { sendEvidenceRequestMessage } from '../production-flow/evidence-didcomm';
 import { CatalogueBrowser, CatalogueSkeleton } from './CatalogueBrowser';
 import { SupplierStockSummary } from './SupplierStockSummary';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
@@ -397,7 +392,6 @@ export function OrdersPage({
               if (!prepared.transaction || !prepared.requestId)
                 throw new Error('Information request could not be prepared.');
               await sign(prepared.transaction);
-              await sendEvidenceRequestMessage(await getEvidenceDetails(prepared.requestId));
               setNotice(
                 'Information requested. Open Information requests to review the Supplier response.',
               );
@@ -1092,8 +1086,9 @@ export function OrdersPage({
                           disabled={busy}
                           onClick={() =>
                             void run(async () => {
-                              await orderIdentity(order.orderId, { action: 'decline' });
-                              setIdentityStatus({ status: 'DECLINED' });
+                              const result = await orderIdentity(order.orderId, { action: 'decline' });
+                              if (result.transaction && result.actorWallet) await submitProductionTransaction(result.transaction, result.actorWallet);
+                              setIdentityStatus(await orderIdentity(order.orderId, { action: 'status' }));
                             })
                           }
                         >
@@ -1154,7 +1149,7 @@ export function OrdersPage({
                             )}
                           />
                         )}
-                        <PresentationSigningSettingsLink role={role} />
+                        {identityMaterial && !identityMaterial.walletContext && <PresentationSigningSettingsLink role={role} />}
                         {identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' &&
                           identityMaterial.requiredClaims.some(
                             (key: string) => !identityMaterial.claims?.[key],
@@ -1168,39 +1163,9 @@ export function OrdersPage({
                           disabled={busy}
                           onClick={() =>
                             void run(async () => {
-                              const holder = getActiveMessagingAgent();
-                              if (
-                                identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' &&
-                                identityMaterial.requiredClaims.some(
-                                  (key: string) => !identityMaterial.claims?.[key],
-                                )
-                              )
-                                throw new Error(
-                                  'A required signed claim is unavailable. An authorized replacement credential is needed.',
-                                );
-                              if (!holder || holder.did !== identityMaterial.holderDid)
-                                throw new Error(
-                                  'Restore the holder signing key bound to your wallet.',
-                                );
-                              const presentation =
-                                identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT'
-                                  ? await createSelectiveCompanyIdentityPresentation(
-                                      holder,
-                                      identityMaterial.sdJwt,
-                                      {
-                                        audience: identityMaterial.audience,
-                                        nonce: identityMaterial.challenge,
-                                        claims: identitySelectedClaims,
-                                      },
-                                    )
-                                  : await createCompanyIdentityPresentation(
-                                      holder,
-                                      identityMaterial,
-                                    );
-                              await orderIdentity(order.orderId, {
-                                action: 'present',
-                                presentation,
-                              });
+                              const presentation = await signCompanyPresentation(identityMaterial, identitySelectedClaims);
+                              const result = await orderIdentity(order.orderId, { action: 'present', presentation });
+                              if (result.transaction) await sign(result.transaction);
                               setIdentityMaterial(undefined);
                               setIdentityStatus({ status: 'PRESENTED' });
                             })

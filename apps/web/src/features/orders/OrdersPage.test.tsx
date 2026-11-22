@@ -269,9 +269,9 @@ describe('browse and request-only UI', () => {
     expect(screen.queryByLabelText('Presentation key backup password')).toBeNull();
     expect(
       screen
-        .getByRole('link', { name: 'Manage presentation signing in My company credential' })
+        .getByRole('link', { name: 'Manage legacy presentation keys' })
         .getAttribute('href'),
-    ).toBe('/manufacturer/credentials#presentation-signing');
+    ).toBe('/manufacturer/credentials#legacy-presentation-signing');
     expect((screen.getByLabelText('Share role') as HTMLInputElement).disabled).toBe(true);
     expect(
       (screen.getByLabelText('Share companyRegistrationNumber') as HTMLInputElement).checked,

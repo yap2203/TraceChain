@@ -439,10 +439,7 @@ describe('custody offer, acceptance, pickup and handoff', () => {
           batchId,
         }),
       );
-      expect(messaging.send).toHaveBeenCalledWith(
-        's',
-        expect.objectContaining({ recipientWallet: source }),
-      );
+      expect(messaging.send).not.toHaveBeenCalled();
       expect((await service.identity('s', offer.offerId, { action: 'verify' }, true)).state).toBe(
         'COMPLETE',
       );

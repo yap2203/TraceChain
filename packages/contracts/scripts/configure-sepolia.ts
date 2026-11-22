@@ -142,6 +142,12 @@ async function main() {
     const administrator = getAddress(await registry.administrator());
     if (administrator === ZeroAddress)
       throw new ConfigurationError('The deployed registry has no administrator.');
+    const companyProofAddress = deployed['TraceChain#CompanyProofRegistry'];
+    if (companyProofAddress) {
+      const proofs = new Contract(getAddress(companyProofAddress), ['function stakeholders() view returns(address)'], provider);
+      if (getAddress(await proofs.stakeholders()) !== addresses.StakeholderRegistry)
+        throw new ConfigurationError('CompanyProofRegistry belongs to a different StakeholderRegistry.');
+    }
     const journal = (await readFile(journalPath, 'utf8'))
       .trim()
       .split(/\r?\n/)
@@ -170,6 +176,7 @@ async function main() {
       CHAIN_EVENT_START_BLOCK: String(receipt.blockNumber),
       TRACECHAIN_DATA_DIR: '.tracechain/sepolia',
       BOOTSTRAP_ADMIN_WALLET: administrator,
+      COMPANY_PROOF_REGISTRY_ADDRESS: companyProofAddress ? getAddress(companyProofAddress) : '',
     };
     for (const [name, key] of Object.entries(contracts))
       updates[key] = addresses[name as keyof typeof contracts];

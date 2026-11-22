@@ -40,3 +40,4 @@ export type {
 } from './company-branding.js';
 export * from './ingredient-details.js';
 export * from './disclosure-policy.js';
+export * from './wallet-presentation.js';

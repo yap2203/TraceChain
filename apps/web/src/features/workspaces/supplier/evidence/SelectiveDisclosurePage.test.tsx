@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
   claims: vi.fn(),
   sign: vi.fn(),
+  walletSign: vi.fn(),
   sent: vi.fn(),
   identity: vi.fn(),
 }));
@@ -18,14 +19,12 @@ vi.mock('../../../production-flow/production-flow.api', () => ({
 vi.mock('../../../production-flow/production-flow.transaction', () => ({
   completePreparedWorkflow: async (prepare: () => Promise<unknown>) => prepare(),
 }));
-vi.mock('../../../production-flow/evidence-didcomm', () => ({
-  sendEvidencePresentationMessage: mocks.sent,
-}));
 vi.mock('../../../didcomm/didcomm-agent', () => ({
   getActiveMessagingAgent: () => ({ did: 'did:key:holder' }),
   readSelectiveIngredientClaims: mocks.claims,
   createSelectiveIngredientPresentation: mocks.sign,
 }));
+vi.mock('../../../production-flow/wallet-presentation', () => ({ createWalletPresentation: mocks.walletSign, createFullWalletPresentation: vi.fn() }));
 import { SelectiveDisclosure } from './SelectiveDisclosurePage';
 const request = {
   requestId: 'request',
@@ -73,7 +72,7 @@ it('previews legacy full disclosure read-only, then shares only after explicit a
   expect(mocks.prepare).toHaveBeenCalledWith('request');
   expect(mocks.sign).not.toHaveBeenCalled();
 });
-it('selects one document with its complete certification, leaving another entry and private origin hidden', async () => {
+it.each([false, true])('selects one document for legacy/wallet-bound credentials (%s) with its complete certification, leaving another entry and private origin hidden', async (walletBound) => {
   const id = '11111111-1111-4111-8111-111111111111',
     key = 'certification_' + id.replaceAll('-', ''),
     other = 'certification_' + '3'.repeat(32),
@@ -90,13 +89,16 @@ it('selects one document with its complete certification, leaving another entry 
     state: 'HOLDER_SIGNATURE_REQUIRED',
     holderSigning: {
       credential: 'credential',
+      ...(walletBound ? { walletContext: { holder: 'supplier' } } : {}),
       holderDid: 'did:key:holder',
       requiredClaims: ['certifications'],
       audience: 'manufacturer',
       nonce: 'nonce',
     },
   });
+  mocks.walletSign.mockResolvedValue('wallet selective presentation');
   mocks.claims.mockResolvedValue({
+    ...(walletBound ? { vct: 'urn:tracechain:credential:ingredient:sd-jwt:v3' } : {}),
     [key]: {
       id,
       name: 'Organic',
@@ -128,8 +130,9 @@ it('selects one document with its complete certification, leaving another entry 
     screen.getByRole('checkbox', { name: /authorize sharing only these selected claims/ }),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Sign selective presentation and confirm' }));
-  await waitFor(() => expect(mocks.sign).toHaveBeenCalled());
-  const selected = mocks.sign.mock.calls[0]![2].claims;
+  await waitFor(() => expect(walletBound ? mocks.walletSign : mocks.sign).toHaveBeenCalled());
+  if (walletBound) expect(mocks.sign).not.toHaveBeenCalled();
+  const selected = walletBound ? mocks.walletSign.mock.calls[0]![1] : mocks.sign.mock.calls[0]![2].claims;
   expect(selected).toContain(key);
   expect(selected).toContain(file);
   expect(selected).not.toContain(other);
