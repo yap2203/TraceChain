@@ -474,6 +474,17 @@ credential, stakeholder, batch or inventory state.
   the safe image bytes. Catalogue responses expose only this authenticated route, never encrypted
   storage identifiers.
 
+For an active company or catalogue owner, a media `POST` stores the encrypted immutable object and
+returns `state: TRANSACTION_REQUIRED` plus unsigned reference-update calldata until its exact hash/CID
+is confirmed on-chain. The frontend submits that transaction through the authenticated MetaMask wallet
+and repeats the request idempotently; the confirmed response is `COMPLETE`. The backend never signs or
+broadcasts it. A different API with an empty business-data directory reads the confirmed reference,
+downloads/decrypts the image and validates its plaintext hash plus deployment/owner/record binding.
+The same chain-plus-encrypted-IPFS recovery pattern is used for confirmed order/location/shipment
+private records, evidence, custody receipt data and ingredient certification documents. Missing legacy
+references return `LEGACY_RECORD_NOT_MIGRATED`; RPC, IPFS, keystore and integrity failures are not
+reported as an empty successful view.
+
 `GET /api/blockchain/applications/manifest-configuration` returns the public chain, registry and
 declaration-version context used for applicant content authorization. `POST
 /api/blockchain/applications/manifest` accepts the complete registration and selected files only

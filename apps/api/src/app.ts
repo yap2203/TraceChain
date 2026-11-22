@@ -785,6 +785,16 @@ function createDefaultProductTraceabilityService(
     new JsonProductionFlowRepository(dataFile('issuance/production-flow.json')),
     new JsonIngredientBatchWorkflowRepository(dataFile('issuance/ingredient-batches.json')),
     contentStore,
+    {
+      ingredient: async (batchId) => {
+        const record = await resolveGateway().getIngredient(batchId);
+        return record ? { cid: record.encryptedCid, contentHash: record.metadataHash } : undefined;
+      },
+      product: async (batchId) => {
+        const record = await resolveGateway().getProduct(batchId);
+        return record ? { cid: record.publicCid, contentHash: record.metadataHash } : undefined;
+      },
+    },
   );
   return new ProductTraceabilityService({
     authService,
@@ -808,6 +818,7 @@ function createDefaultCustodyTransferService(
 ) {
   let blockchainEnvironment: ReturnType<typeof loadBlockchainEnvironment> | undefined;
   let gateway: CustodyTransferGateway | undefined;
+  let metadataGateway: EthersProductTraceabilityGateway | undefined;
   let permissionGateway: BlockchainGatewayService | undefined;
   const configuration = () => {
     blockchainEnvironment ??= loadBlockchainEnvironment();
@@ -906,6 +917,38 @@ function createDefaultCustodyTransferService(
     new JsonProductionFlowRepository(dataFile('issuance/production-flow.json')),
     new JsonIngredientBatchWorkflowRepository(dataFile('issuance/ingredient-batches.json')),
     contentStore,
+    {
+      ingredient: async (batchId) => {
+        const resolved = configuration();
+        metadataGateway ??= new EthersProductTraceabilityGateway(
+          resolved.chainId,
+          blockchainEnvironment!.CHAIN_RPC_URL,
+          {
+            credential: blockchainEnvironment!.CREDENTIAL_REGISTRY_ADDRESS,
+            custody: blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+            ingredient: blockchainEnvironment!.INGREDIENT_REGISTRY_ADDRESS,
+            product: blockchainEnvironment!.PRODUCT_REGISTRY_ADDRESS,
+          },
+        );
+        const record = await metadataGateway.getIngredient(batchId);
+        return record ? { cid: record.encryptedCid, contentHash: record.metadataHash } : undefined;
+      },
+      product: async (batchId) => {
+        const resolved = configuration();
+        metadataGateway ??= new EthersProductTraceabilityGateway(
+          resolved.chainId,
+          blockchainEnvironment!.CHAIN_RPC_URL,
+          {
+            credential: blockchainEnvironment!.CREDENTIAL_REGISTRY_ADDRESS,
+            custody: blockchainEnvironment!.CUSTODY_TRANSFER_ADDRESS,
+            ingredient: blockchainEnvironment!.INGREDIENT_REGISTRY_ADDRESS,
+            product: blockchainEnvironment!.PRODUCT_REGISTRY_ADDRESS,
+          },
+        );
+        const record = await metadataGateway.getProduct(batchId);
+        return record ? { cid: record.publicCid, contentHash: record.metadataHash } : undefined;
+      },
+    },
   );
 
   return new CustodyTransferService({

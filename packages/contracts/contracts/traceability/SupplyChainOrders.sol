@@ -96,6 +96,7 @@ contract SupplyChainOrders {
     mapping(bytes32 => bytes32) public batchItem;
     mapping(bytes32 => address) public locationOwner;
     mapping(bytes32 => bytes32) public locationDetailsHash;
+    mapping(bytes32 => string) public locationDetailsCid;
     mapping(bytes32 => Order) private orders;
     mapping(bytes32 => bool) public requestOnly;
     mapping(bytes32 => Shipment) private shipments;
@@ -107,27 +108,28 @@ contract SupplyChainOrders {
     mapping(bytes32 => uint256) public proposalEpoch;
     mapping(bytes32 => uint256) private evidenceEpoch;
     event ItemListed(bytes32 indexed itemId, address indexed seller, bytes32 indexed batchId);
-    event LocationRegistered(bytes32 indexed location, address indexed company, bytes32 detailsHash);
+    event LocationRegistered(bytes32 indexed location, address indexed company, bytes32 detailsHash, string detailsCid);
     event OrderRequested(bytes32 indexed orderId, address indexed buyer, address indexed seller);
     event OrderChanged(bytes32 indexed orderId, uint8 status);
     event BatchProposed(bytes32 indexed orderId, bytes32 indexed batchId, bytes32 location, uint256 proposalVersion);
-    event ShipmentDispatched(bytes32 indexed shipmentId, bytes32 indexed orderId, bytes32 indexed batchId);
+    event ShipmentDispatched(bytes32 indexed shipmentId, bytes32 indexed orderId, bytes32 indexed batchId, bytes32 detailsHash, string detailsCid);
     event ShipmentReceived(bytes32 indexed shipmentId, uint256 accepted, uint256 damaged, uint256 rejected, uint256 missing, uint64 occurredAt, uint64 recordedAt);
     event IdentityRequested(bytes32 indexed orderId, bytes32 challenge, bytes32 purposeHash, bytes32 claimsHash, uint64 expiresAt, bool required);
-    event IdentityAttested(bytes32 indexed orderId, bytes32 presentationHash, bytes32 credentialHash, uint64 validUntil);
+    event IdentityAttested(bytes32 indexed orderId, bytes32 presentationHash, bytes32 credentialHash, uint64 validUntil, string presentationCid);
     event EvidenceLinked(bytes32 indexed orderId, bytes32 indexed evidenceId);
-    event CorrectionAppended(bytes32 indexed correctionId, bytes32 indexed originalId, address indexed actor, bytes32 reasonHash, bytes32 valuesHash, uint64 occurredAt, uint64 recordedAt, bool reconciliationRequired);
+    event CorrectionAppended(bytes32 indexed correctionId, bytes32 indexed originalId, address indexed actor, bytes32 reasonHash, bytes32 valuesHash, string valuesCid, uint64 occurredAt, uint64 recordedAt, bool reconciliationRequired);
 
     constructor(address stakeholder, address ingredient, address product, address evidenceRegistry, address custodyRegistry) {
         stakeholders = IStakeholderRegistry(stakeholder); ingredients = IngredientRegistry(ingredient);
         ingredientDelivery = new IngredientDelivery(address(this), stakeholder, ingredient, product, evidenceRegistry);
         products = ProductRegistry(product); evidence = EvidenceRegistry(evidenceRegistry); custody = CustodyTransfer(custodyRegistry);
     }
-    function registerLocation(bytes32 location, bytes32 detailsHash) external {
+    function registerLocation(bytes32 location, bytes32 detailsHash, string calldata detailsCid) external {
         if (stakeholders.roleOf(msg.sender) < 2) revert Unauthorized();
         if (location == bytes32(0) || detailsHash == bytes32(0) || locationOwner[location] != address(0)) revert InvalidInput();
-        locationOwner[location] = msg.sender; locationDetailsHash[location] = detailsHash;
-        emit LocationRegistered(location, msg.sender, detailsHash);
+        locationOwner[location] = msg.sender;
+        locationDetailsHash[location] = detailsHash; locationDetailsCid[location] = detailsCid;
+        emit LocationRegistered(location, msg.sender, detailsHash, detailsCid);
     }
     function listItem(bytes32 itemId, string calldata name, uint8 kind, bytes32 batchId, bytes32 metadataHash) external {
         if (itemId == bytes32(0) || bytes(name).length == 0 || bytes(name).length > 160 || metadataHash == bytes32(0)) revert InvalidInput();
@@ -232,12 +234,12 @@ contract SupplyChainOrders {
         identityDeadline[orderId] = expiresAt;
         emit IdentityRequested(orderId, challenge, purposeHash, claimsHash, expiresAt, required);
     }
-    function attestIdentity(bytes32 orderId, bytes32 challenge, bytes32 credentialHash, bytes32 presentationHash, uint64 validUntil) external {
+    function attestIdentity(bytes32 orderId, bytes32 challenge, bytes32 credentialHash, bytes32 presentationHash, uint64 validUntil, string calldata presentationCid) external {
         Order storage order = _seller(orderId);
         if (challenge == bytes32(0) || challenge != order.identityChallenge || credentialHash != stakeholders.credentialHashOf(order.buyer) ||
-            presentationHash == bytes32(0) || order.identityCredentialHash != bytes32(0) || validUntil <= block.timestamp || validUntil > identityDeadline[orderId]) revert InvalidInput();
+            presentationHash == bytes32(0) || bytes(presentationCid).length == 0 || order.identityCredentialHash != bytes32(0) || validUntil <= block.timestamp || validUntil > identityDeadline[orderId]) revert InvalidInput();
         order.identityCredentialHash = credentialHash; order.identityValidUntil = validUntil;
-        emit IdentityAttested(orderId, presentationHash, credentialHash, validUntil);
+        emit IdentityAttested(orderId, presentationHash, credentialHash, validUntil, presentationCid);
     }
     function linkEvidence(bytes32 orderId, bytes32 evidenceId) external {
         Order storage order = orders[orderId];
@@ -280,7 +282,7 @@ contract SupplyChainOrders {
         shipments[shipmentId] = Shipment(orderId, order.proposedBatch, msg.sender, recipient, quantity, order.dispatchLocation, destination,
             occurredAt, uint64(block.timestamp), 1, 0, 0, 0, 0, 0, 0);
         orderShipments[orderId].push(shipmentId);
-        emit ShipmentDispatched(shipmentId, orderId, order.proposedBatch);
+        emit ShipmentDispatched(shipmentId, orderId, order.proposedBatch, shipmentHash, encryptedCid);
     }
     function receiveIngredient(bytes32 shipmentId, uint256 accepted, uint256 damaged, uint256 rejected, uint256 missing, uint64 occurredAt) external {
         Shipment storage shipment = shipments[shipmentId];
@@ -292,11 +294,11 @@ contract SupplyChainOrders {
         ingredients.receiveSupply(shipment.batchId, msg.sender, shipment.toLocation, accepted, damaged, rejected, missing);
         emit ShipmentReceived(shipmentId, accepted, damaged, rejected, missing, occurredAt, uint64(block.timestamp));
     }
-    function appendCorrection(bytes32 correctionId, bytes32 shipmentId, bytes32 reasonHash, bytes32 valuesHash, uint64 occurredAt,
+    function appendCorrection(bytes32 correctionId, bytes32 shipmentId, bytes32 reasonHash, bytes32 valuesHash, string calldata valuesCid, uint64 occurredAt,
         bool reduceStock, uint256 correctedUsable) external {
         Shipment memory shipment = shipments[shipmentId];
         if (shipment.status == 0 || !stakeholders.isAuthorized(msg.sender, 1)) revert Unauthorized();
-        if (correctionId == bytes32(0) || correctionUsed[correctionId] || reasonHash == bytes32(0) || valuesHash == bytes32(0) || occurredAt == 0 || occurredAt > block.timestamp) revert InvalidInput();
+        if (correctionId == bytes32(0) || correctionUsed[correctionId] || reasonHash == bytes32(0) || valuesHash == bytes32(0) || bytes(valuesCid).length == 0 || occurredAt == 0 || occurredAt > block.timestamp) revert InvalidInput();
         correctionUsed[correctionId] = true;
         bool reconcile = true;
         if (reduceStock) {
@@ -305,7 +307,7 @@ contract SupplyChainOrders {
             ingredients.correctReceived(shipment.batchId, shipment.recipient, shipment.toLocation, correctedUsable);
             reconcile = stock.consumed > 0;
         }
-        emit CorrectionAppended(correctionId, shipmentId, msg.sender, reasonHash, valuesHash, occurredAt, uint64(block.timestamp), reconcile);
+        emit CorrectionAppended(correctionId, shipmentId, msg.sender, reasonHash, valuesHash, valuesCid, occurredAt, uint64(block.timestamp), reconcile);
     }
     function getItem(bytes32 itemId) external view returns (Item memory) { return items[itemId]; }
     function getOrder(bytes32 orderId) external view returns (Order memory) { return orders[orderId]; }

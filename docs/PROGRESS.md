@@ -1,5 +1,35 @@
 # Project Progress
 
+## 2026-11-22 - Cross-device confirmed business records
+
+- Added blockchain-discoverable encrypted content references for company branding, ingredient/product
+  media, private location details, order/shipment details, identity presentations, correction values and
+  custody rejection reasons. Existing credential, batch, evidence, transfer and receipt CID/hash fields
+  remain the source for those workflows. The complete contract suite must be redeployed together; no
+  chain, address, environment file or local record was changed by this implementation.
+- Moved the next Sepolia deployment to the new `tracechain-sepolia-storage-v2` Ignition journal so
+  immutable older deployment history is not overwritten. Post-deploy configuration verifies both full
+  suite wiring and Phase 2 reference getters before atomically updating `.env`.
+- API reads now recover confirmed ingredient/product metadata, certification documents, evidence
+  requests/responses, custody receipt details, shipment/order/location records and authenticated media
+  from chain references plus encrypted IPFS when the local business-data directory is empty. Retrieval
+  verifies hashes and record/participant/deployment binding where the record format supplies it, while
+  chain status remains authoritative.
+- Catalogue image and company-branding updates now return an unsigned reference-update transaction;
+  the existing frontend submits it through the authenticated owner's MetaMask wallet and rereads the
+  confirmed reference. The backend never signs or broadcasts it.
+- Reused the confirmed-block incremental event index for recovery. It pages event reads, maintains
+  independent chain/contract/filter checkpoints, rebuilds after reorgs or Hardhat resets, and treats
+  local Hardhat blocks as immediately confirmed while public chains retain configured confirmations.
+- Preserved all old `.tracechain` files. They remain safe caches, retry journals and legacy sources;
+  unfinished local transactions are never promoted to confirmed cross-device records. Historical
+  objects whose deployed contract emitted no CID remain explicitly legacy and require a participant-
+  signed migration after redeployment rather than a new local latest-CID index.
+- Added two-data-directory recovery tests for ingredients and certification documents, product metadata,
+  evidence requests, custody receipts and catalogue media, plus integrity/binding and unavailable-content
+  failures. Contract tests cover the new immutable references. DIDComm state, Veramo public metadata,
+  SIWE process-local sessions and issuer-key portability remain out of Phase 2.
+
 ## 2026-11-21 - Portable administrator and company presentation keystores
 
 - Added a strict version-1 System Admin JSON keystore using scrypt (N=16384, r=8, p=1) and

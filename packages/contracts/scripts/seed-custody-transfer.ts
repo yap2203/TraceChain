@@ -225,12 +225,14 @@ async function main() {
       connected(orders, supplierSigner).registerLocation(
         sourceLocation,
         id('local-dev:source-location'),
+        'local-dev:source-location',
       ),
     );
     await wait(
       connected(orders, manufacturerSigner).registerLocation(
         productionLocation,
         id('local-dev:production-location'),
+        'local-dev:production-location',
       ),
     );
     await wait(

@@ -187,7 +187,18 @@ function createFixture() {
   } as unknown as StakeholderDirectory;
   const orders = new OrdersService(
     auth,
-    { chainId: 31337, address: administrator.address } as unknown as OrdersGateway,
+    {
+      chainId: 31337,
+      address: administrator.address,
+      read: vi.fn(async (_contract: string, method: string) => {
+        if (method === 'getCompanyBranding')
+          return { contentHash: zeroHash, encryptedCid: '', updatedAt: '0' };
+        throw Object.assign(new Error(`Unexpected contract read: ${method}`), {
+          code: 'CALL_EXCEPTION',
+          data: '0x',
+        });
+      }),
+    } as unknown as OrdersGateway,
     store,
     repository,
     undefined,

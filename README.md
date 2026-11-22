@@ -14,7 +14,7 @@ npm run deploy:sepolia
 ```
 
 Enter the key only in Hardhat's terminal prompt. The deployment command resumes the
-`tracechain-sepolia` Ignition journal and then checks Sepolia chain ID, all seven deployed
+`tracechain-sepolia-storage-v2` Ignition journal and then checks Sepolia chain ID, all seven deployed
 contracts and their wiring before updating root `.env`, including the actual on-chain
 administrator as `BOOTSTRAP_ADMIN_WALLET`. If the chain verification temporarily fails,
 run `npm run configure:sepolia` after deployment completes, then restart `npm run dev`.
@@ -94,11 +94,16 @@ record, excludes the encrypted CID and does not export the signed VC.
 Control may block the downloaded native compiler (`spawn UNKNOWN`). Solidity version and optimizer
 settings are preserved. See [contract setup](packages/contracts/README.md).
 
-**Storage recovery:** Veramo VC/VP caches now use an encrypted local file instead of readable
-copies in `public-data.json`. My company identity retrieves the current registry-referenced VC from
-encrypted IPFS. Backend encryption-key backup and restore checks are not exposed in the web app
-or HTTP API. Existing operator backups and the separate holder signing-key recovery flow are preserved.
-See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
+**Cross-device storage:** confirmed Company Role and Ingredient credentials, product/ingredient
+metadata, evidence exchanges, custody evidence, shipment details and catalogue media are recovered
+from configured blockchain references/events plus immutable encrypted IPFS objects. A second API can
+start with an empty business-data directory when it uses the same deployment, IPFS gateway and
+unlocked Phase 1 administrator keystore. Local JSON journals remain compatibility caches and retain
+unfinished/retry state; they are not authoritative for confirmed records. DIDComm state, Veramo public
+metadata and issuer portability remain later-phase work. The added location/media/private-workflow
+references change contract bytecode, so deploy the complete suite together and update every configured
+address before using this behaviour. No deployment or environment update is performed by builds or
+tests. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
 
 **Stakeholder record views:** inventory now uses one shared searchable list/detail presentation for
 Manufacturer, Distributor and Supplier custody records, while shipment lists use the same scannable

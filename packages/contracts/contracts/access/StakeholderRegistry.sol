@@ -58,6 +58,7 @@ contract StakeholderRegistry is IStakeholderRegistry {
         uint64 submittedAt;
         uint64 updatedAt;
     }
+    struct ContentReference { bytes32 contentHash; string encryptedCid; uint64 updatedAt; }
 
     error Unauthorized(address caller);
     error InvalidInput();
@@ -73,6 +74,7 @@ contract StakeholderRegistry is IStakeholderRegistry {
     bytes32[] private applicationIds;
     mapping(bytes32 => RoleChangeRequest) private roleChangeRequests;
     mapping(Role => mapping(bytes32 => bool)) private rolePermissions;
+    mapping(address => ContentReference) private branding;
     // 0 inherits the role default, 1 allows, 2 denies. Scoped to a role-assignment epoch
     // so a role change or replacement wallet cannot inherit stale exceptions.
     mapping(address => uint256) private permissionEpoch;
@@ -142,6 +144,17 @@ contract StakeholderRegistry is IStakeholderRegistry {
         Role indexed newRole,
         bytes32 credentialHash
     );
+    event CompanyBrandingUpdated(address indexed account, bytes32 contentHash, string encryptedCid);
+
+    function updateCompanyBranding(bytes32 contentHash, string calldata encryptedCid) external {
+        if (!isActive(msg.sender) || contentHash == bytes32(0) || bytes(encryptedCid).length == 0) revert InvalidInput();
+        branding[msg.sender] = ContentReference(contentHash, encryptedCid, uint64(block.timestamp));
+        emit CompanyBrandingUpdated(msg.sender, contentHash, encryptedCid);
+    }
+
+    function getCompanyBranding(address account) external view returns (ContentReference memory) {
+        return branding[account];
+    }
 
     constructor(address initialAdministrator) {
         if (initialAdministrator == address(0)) revert InvalidInput();

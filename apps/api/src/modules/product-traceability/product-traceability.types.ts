@@ -3,6 +3,8 @@ export interface TraceabilityProductRecord {
   manufacturer: string;
   producedAt: number;
   status: number;
+  metadataHash: string;
+  publicCid: string;
 }
 
 export interface TraceabilityIngredientRecord {
@@ -10,6 +12,8 @@ export interface TraceabilityIngredientRecord {
   expiresAt: number;
   status: number;
   supplier: string;
+  metadataHash: string;
+  encryptedCid: string;
 }
 
 export interface TraceabilityCredentialRecord {

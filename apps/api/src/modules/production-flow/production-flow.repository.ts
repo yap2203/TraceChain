@@ -14,7 +14,7 @@ export interface EvidenceWorkflowRecord {
   operationId: string;
   requestCid: string;
   requestId: string;
-  requestPayload: EncryptedCredentialPayload;
+  requestPayload?: EncryptedCredentialPayload;
   requester: string;
   supplier: string;
   identityProof?: {
@@ -29,6 +29,7 @@ export interface EvidenceWorkflowRecord {
     purpose: string;
     status: 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED';
     presentationPayload?: EncryptedCredentialPayload;
+    presentationCid?: string;
     verifiedAt?: string;
   };
   response?: {
@@ -36,7 +37,7 @@ export interface EvidenceWorkflowRecord {
     presentationCid: string;
     presentationExpiresAt: number;
     presentationHash: string;
-    presentationPayload: EncryptedCredentialPayload;
+    presentationPayload?: EncryptedCredentialPayload;
     verification?: {
       state: 'PASSED';
       verifiedAt: string;

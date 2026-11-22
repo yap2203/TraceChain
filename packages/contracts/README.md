@@ -12,7 +12,7 @@ npm run deploy:sepolia
 ```
 
 The command deploys/resumes the complete `TraceChain` module under deployment ID
-`tracechain-sepolia`. Its post-deploy step reads the completed address manifest,
+`tracechain-sepolia-storage-v2`. Its post-deploy step reads the completed address manifest,
 checks all seven contracts and their references on Sepolia, then atomically writes
 their addresses and the actual registry administrator to root `.env`. It does not
 register test stakeholders or transfer local records. An incomplete deployment or
@@ -46,6 +46,17 @@ Never put any of the following on-chain:
 - Confidential business records.
 
 Sensitive content must be encrypted before IPFS upload. A CID is an integrity/location reference, not access control. Hashes prove that content has not changed but do not hide predictable plaintext.
+
+Phase 2 adds discoverable hash/CID references for company branding, ingredient/product catalogue
+media, private location and shipment details, identity presentations, corrections and custody
+rejection reasons. Existing registry fields/events continue to reference credentials, ingredient and
+product metadata, evidence requests/responses, transfer shipment content and receipt/discrepancy
+evidence. The API must still authenticate and authorize every download, decrypt it off-chain and check
+its hash and record/participant binding. No plaintext file, credential or key is stored on-chain.
+
+These ABI changes require a fresh deployment of the complete wired suite. Do not point one new
+contract at older immutable dependencies. Deployment does not automatically attach historical local
+media/journals that never had an on-chain CID; those require an explicit owner-signed replay/migration.
 
 ## Contract map
 

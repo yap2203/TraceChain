@@ -5,10 +5,20 @@ import {ICredentialRegistry} from '../interfaces/ICredentialRegistry.sol';
 import {IIngredientRegistry} from '../interfaces/IIngredientRegistry.sol';
 
 contract IngredientRegistry is IIngredientRegistry {
+    struct ContentReference { bytes32 contentHash; string encryptedCid; uint64 updatedAt; }
     struct Listing { bytes32 metadataHash; string encryptedCid; bool archived; }
     mapping(bytes32 => Listing) private listings;
+    mapping(bytes32 => ContentReference) private media;
     event IngredientListingUpdated(bytes32 indexed batchId, bytes32 metadataHash, string encryptedCid);
     event IngredientArchived(bytes32 indexed batchId, bool archived);
+    event IngredientMediaUpdated(bytes32 indexed batchId, bytes32 contentHash, string encryptedCid);
+    function updateMedia(bytes32 batchId, bytes32 contentHash, string calldata encryptedCid) external {
+        _listingOwner(batchId);
+        if (contentHash == bytes32(0) || bytes(encryptedCid).length == 0) revert InvalidInput();
+        media[batchId] = ContentReference(contentHash, encryptedCid, uint64(block.timestamp));
+        emit IngredientMediaUpdated(batchId, contentHash, encryptedCid);
+    }
+    function getMedia(bytes32 batchId) external view returns (ContentReference memory) { return media[batchId]; }
     function listingManagementPolicy() external pure returns (uint8) { return 1; }
     function getListing(bytes32 batchId) external view returns (Listing memory) { return listings[batchId]; }
     function _listingOwner(bytes32 batchId) private view {
@@ -110,7 +120,7 @@ contract IngredientRegistry is IIngredientRegistry {
         bytes32 indexed productBatchId,
         uint256 quantity
     );
-    event IngredientStatusChanged(bytes32 indexed batchId, Status status, bytes32 reasonHash);
+    event IngredientStatusChanged(bytes32 indexed batchId, Status status, bytes32 reasonHash, string reasonCid);
     constructor(address stakeholderRegistry, address credentialRegistry) {
         stakeholders = IStakeholderRegistry(stakeholderRegistry);
         credentials = ICredentialRegistry(credentialRegistry);
@@ -182,14 +192,14 @@ contract IngredientRegistry is IIngredientRegistry {
         batch.availableQuantity -= quantity;
         emit IngredientConsumed(batchId, productBatchId, quantity);
     }
-    function setStatus(bytes32 batchId, Status status, bytes32 reasonHash) external {
+    function setStatus(bytes32 batchId, Status status, bytes32 reasonHash, string calldata reasonCid) external {
         Batch storage batch = batches[batchId];
         if (msg.sender != batch.supplier && !stakeholders.isAuthorized(msg.sender, 1))
             revert Unauthorized(msg.sender);
-        if (batch.status == Status.None || batch.status == Status.Recalled || status == Status.None)
+        if (batch.status == Status.None || batch.status == Status.Recalled || status == Status.None || reasonHash == bytes32(0) || bytes(reasonCid).length == 0)
             revert InvalidState();
         batch.status = status;
-        emit IngredientStatusChanged(batchId, status, reasonHash);
+        emit IngredientStatusChanged(batchId, status, reasonHash, reasonCid);
     }
     function isUsable(bytes32 batchId) public view override returns (bool) {
         Batch storage batch = batches[batchId];

@@ -66,6 +66,8 @@ export interface ApplicationLogoSource {
   >;
 }
 const same = (a: string, b: string) => a?.toLowerCase() === b?.toLowerCase();
+const isKeystoreLocked = (error: unknown) =>
+  (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
 export class OrdersService {
   private custodyOfferService?: CustodyOffers;
   private offers() {
@@ -117,16 +119,14 @@ export class OrdersService {
       const event = events.find(
         (event) => same(event.location, location) && same(event.company, owner),
       );
-      const record = await this.repository.findPrivate('products', location);
-      if (
-        event &&
-        record &&
-        same(record.owner, owner) &&
-        same(record.contentHash, event.detailsHash)
-      ) {
-        const serialized = await this.store.decrypt(record.payload);
-        if (same(record.contentHash, `0x${createHash('sha256').update(serialized).digest('hex')}`))
-          return JSON.parse(serialized).label;
+      if (event) {
+        const details = await this.readOptionalPrivateRecord({
+          cid: event.detailsCid,
+          contentHash: event.detailsHash,
+          id: location,
+          owner,
+        });
+        return String(details?.label ?? 'Location name unavailable');
       }
       return 'Location name unavailable';
     };
@@ -400,7 +400,7 @@ export class OrdersService {
           ordersAddress: this.gateway.address,
           publicAppUrl: process.env.VITE_PUBLIC_APP_URL ?? '',
         });
-      } catch {
+      } catch (error) {
         throw new OrdersError(
           'SHIPMENT_QR_INVALID',
           'Scan this rejected shipment label before confirming its physical return.',
@@ -897,22 +897,14 @@ export class OrdersService {
   private async loadRequestDecision(requestId: string, seller: string) {
     const decision = await this.optionalRead('orders', 'requestDecision', [requestId]);
     if (decision && Number(decision.status) !== 0) {
-      const record = await this.repository.findPrivate(
-        'products',
-        id(`request-decision:${requestId.toLowerCase()}:${decision.detailsHash.toLowerCase()}`),
-      );
-      if (
-        record &&
-        same(record.owner, seller) &&
-        same(record.contentHash, decision.detailsHash) &&
-        record.cid === decision.encryptedCid
-      ) {
-        const serialized = await this.store.decrypt(record.payload);
-        if (
-          same(`0x${createHash('sha256').update(serialized).digest('hex')}`, decision.detailsHash)
-        )
-          decision.reason = JSON.parse(serialized).reason;
-      }
+      const key = id(`request-decision:${requestId.toLowerCase()}`);
+      const details = await this.readOptionalPrivateRecord({
+        cid: decision.encryptedCid,
+        contentHash: decision.detailsHash,
+        id: key,
+        owner: seller,
+      });
+      decision.reason = details?.reason;
     }
     return decision;
   }
@@ -1046,15 +1038,27 @@ export class OrdersService {
   }
   private async locationAlias(location: string, owner: string) {
     const record = await this.repository.findPrivate('products', this.locationLabelKey(location));
-    if (!record || !same(record.owner, owner)) return undefined;
-    const serialized = await this.store.decrypt(record.payload);
-    if (!same(record.contentHash, `0x${createHash('sha256').update(serialized).digest('hex')}`))
-      throw new OrdersError(
-        'PROFILE_UNAVAILABLE',
-        'Location display metadata could not be checked.',
-        503,
-      );
-    return (JSON.parse(serialized) as { label: string; address?: string }).label;
+    if (record && same(record.owner, owner)) {
+      const serialized = await this.store.decrypt(record.payload);
+      if (!same(record.contentHash, `0x${createHash('sha256').update(serialized).digest('hex')}`))
+        throw new OrdersError(
+          'PROFILE_UNAVAILABLE',
+          'Location display metadata could not be checked.',
+          503,
+        );
+      return (JSON.parse(serialized) as { label: string; address?: string }).label;
+    }
+    const event = (await this.gateway.events('orders', 'LocationRegistered')).find(
+      (entry) => same(entry.location, location) && same(entry.company, owner),
+    );
+    if (!event) return undefined;
+    const details = await this.readOptionalPrivateRecord({
+      cid: event.detailsCid,
+      contentHash: event.detailsHash,
+      id: location,
+      owner,
+    });
+    return typeof details?.label === 'string' ? details.label : undefined;
   }
   private async locationAddress(location: string, owner: string, detailsHash?: string) {
     const alias = await this.repository.findPrivate('products', this.locationLabelKey(location));
@@ -1073,6 +1077,20 @@ export class OrdersService {
         throw new OrdersError('PROFILE_UNAVAILABLE', 'Location details could not be checked.', 503);
       const data = JSON.parse(text);
       if (typeof data.address === 'string') return data.address;
+    }
+    if (detailsHash) {
+      const event = (await this.gateway.events('orders', 'LocationRegistered')).find(
+        (entry) => same(entry.location, location) && same(entry.company, owner),
+      );
+      if (event) {
+        const data = await this.readOptionalPrivateRecord({
+          cid: event.detailsCid,
+          contentHash: event.detailsHash,
+          id: location,
+          owner,
+        });
+        if (typeof data?.address === 'string') return data.address;
+      }
     }
     return undefined;
   }
@@ -1093,13 +1111,14 @@ export class OrdersService {
           await this.gateway.read('orders', 'locationOwner', [event.location]),
           session.address,
         );
-        const record = await this.repository.findPrivate('products', event.location);
+        const details = await this.readOptionalPrivateRecord({
+          cid: event.detailsCid,
+          contentHash: event.detailsHash,
+          id: event.location,
+          owner: session.address,
+        });
         const registeredLabel =
-          record &&
-          same(record.owner, session.address) &&
-          same(record.contentHash, event.detailsHash)
-            ? JSON.parse(await this.store.decrypt(record.payload)).label
-            : 'Registered location';
+          typeof details?.label === 'string' ? details.label : 'Registered location';
         const warehouse =
           session.role === CompanyRole.DISTRIBUTOR &&
           Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1
@@ -1179,7 +1198,12 @@ export class OrdersService {
       label,
       ...(savedAddress ? { address: savedAddress } : {}),
     });
-    return { location, label, address: savedAddress, source: 'Company profile location details' };
+    return {
+      location,
+      label,
+      address: savedAddress,
+      source: 'Company profile location details',
+    };
   }
   private pickupKey(referenceId: string, distributor: string) {
     return id(
@@ -1326,8 +1350,8 @@ export class OrdersService {
         summary.credentialStatus = 0;
         summary.evidenceAvailability = 'Credential status unavailable';
       }
-      const image = await this.repository.findPrivate('products', mediaKey('ingredient', batchId));
-      if (image && same(image.owner, batch.supplier))
+      const image = await this.optionalRead('ingredients', 'getMedia', [batchId]);
+      if (image && !same(image.contentHash, ZeroHash))
         summary.imagePath = `/catalogue/ingredients/${batchId}/image`;
       const listing = await this.optionalRead('ingredients', 'getListing', [batchId]);
       summary.archived = Boolean(listing?.archived);
@@ -1335,9 +1359,7 @@ export class OrdersService {
       summary.listingSupported = !!listing;
       summary.credentialName = summary.name;
       if (listing && listing.metadataHash !== ZeroHash) {
-        const key = id(
-          `ingredient-listing:${batchId.toLowerCase()}:${listing.metadataHash.toLowerCase()}`,
-        );
+        const key = id(`ingredient-listing:${batchId.toLowerCase()}`);
         const record = await this.repository.findPrivate('products', key);
         if (
           record &&
@@ -1371,8 +1393,8 @@ export class OrdersService {
       summary.evidenceAvailability = transferable
         ? 'All linked ingredient credentials and product traceability checks are active'
         : 'One or more linked ingredient credentials or traceability checks are not active';
-      const image = await this.repository.findPrivate('products', mediaKey('product', batchId));
-      if (image && same(image.owner, batch.manufacturer))
+      const image = await this.optionalRead('products', 'getMedia', [batchId]);
+      if (image && !same(image.contentHash, ZeroHash))
         summary.imagePath = `/catalogue/products/${batchId}/image`;
     }
     return summary;
@@ -1552,6 +1574,7 @@ export class OrdersService {
                 challenge: proof.challengeHash,
                 credentialHash: proof.credentialHash,
                 presentationHash: proof.presentationHash,
+                presentationCid: proof.presentationCid,
                 validUntil: proof.expiresAt,
               })
             : [
@@ -1560,6 +1583,7 @@ export class OrdersService {
                 proof.credentialHash,
                 proof.presentationHash,
                 proof.expiresAt,
+                proof.presentationCid,
               ],
         ),
       };
@@ -1611,7 +1635,7 @@ export class OrdersService {
     return session;
   }
   private async privateRecord(key: string, actor: string, value: unknown) {
-    const serialized = JSON.stringify(value);
+    const serialized = JSON.stringify(this.bindPrivateValue(key, actor, value));
     const contentHash = `0x${createHash('sha256').update(serialized).digest('hex')}`;
     const existing = await this.repository.findPrivate('products', key);
     if (existing) {
@@ -1641,7 +1665,7 @@ export class OrdersService {
         'This presentation record is not yours.',
         403,
       );
-    const serialized = JSON.stringify(value);
+    const serialized = JSON.stringify(this.bindPrivateValue(key, actor, value));
     const contentHash = `0x${createHash('sha256').update(serialized).digest('hex')}`;
     if (existing?.contentHash === contentHash) return existing;
     const encrypted = await this.store.encryptAndStore(serialized, key);
@@ -1654,6 +1678,101 @@ export class OrdersService {
     };
     await this.repository.savePrivate('products', record);
     return record;
+  }
+
+  private bindPrivateValue(key: string, actor: string, value: unknown) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    return {
+      ...(value as Record<string, unknown>),
+      tracechainBinding: {
+        chainId: this.gateway.chainId,
+        contractAddress: this.gateway.address.toLowerCase(),
+        owner: getAddress(actor),
+        recordId: key.toLowerCase(),
+        version: 1,
+      },
+    };
+  }
+
+  private async readPrivateRecord(input: {
+    cid?: string;
+    contentHash?: string;
+    id: string;
+    owner?: string;
+  }) {
+    if (!input.contentHash || same(input.contentHash, ZeroHash)) return undefined;
+    const local = await this.repository.findPrivate('products', input.id);
+    let serialized: string;
+    let localRecord = false;
+    if (
+      local &&
+      same(local.contentHash, input.contentHash) &&
+      (!input.cid || local.cid === input.cid)
+    ) {
+      serialized = await this.store.decrypt(local.payload);
+      localRecord = true;
+    } else {
+      if (!input.cid || !this.store.retrieveAndDecrypt)
+        throw new OrdersError(
+          'LEGACY_RECORD_NOT_MIGRATED',
+          'This confirmed record has not been migrated to discoverable encrypted storage.',
+          409,
+        );
+      try {
+        serialized = await this.store.retrieveAndDecrypt(input.cid);
+      } catch (error) {
+        if (isKeystoreLocked(error)) throw error;
+        throw new OrdersError(
+          'ENCRYPTED_RECORD_UNAVAILABLE',
+          'The encrypted record could not be downloaded or decrypted.',
+          503,
+        );
+      }
+    }
+    const calculated = `0x${createHash('sha256').update(serialized).digest('hex')}`;
+    const value = JSON.parse(serialized) as Record<string, unknown>;
+    const binding = value.tracechainBinding as Record<string, unknown> | undefined;
+    if ((!localRecord || binding) && !same(calculated, input.contentHash))
+      throw new OrdersError(
+        'ENCRYPTED_RECORD_INTEGRITY_MISMATCH',
+        'The encrypted record does not match its blockchain hash.',
+        409,
+      );
+    if (binding) {
+      if (
+        Number(binding.chainId) !== this.gateway.chainId ||
+        String(binding.contractAddress).toLowerCase() !== this.gateway.address.toLowerCase() ||
+        String(binding.recordId).toLowerCase() !== input.id.toLowerCase() ||
+        (input.owner && !same(String(binding.owner), input.owner))
+      )
+        throw new OrdersError(
+          'ENCRYPTED_RECORD_BINDING_MISMATCH',
+          'The encrypted record belongs to a different deployment, record, or participant.',
+          409,
+        );
+    } else if (!localRecord) {
+      throw new OrdersError(
+        'LEGACY_RECORD_NOT_MIGRATED',
+        'This legacy record must be migrated before another API can trust it.',
+        409,
+      );
+    }
+    return value;
+  }
+
+  private async readOptionalPrivateRecord(input: {
+    cid?: string;
+    contentHash?: string;
+    id: string;
+    owner?: string;
+  }) {
+    try {
+      return await this.readPrivateRecord(input);
+    } catch (error) {
+      if (error instanceof OrdersError && error.code === 'LEGACY_RECORD_NOT_MIGRATED')
+        return undefined;
+      throw error;
+    }
   }
 
   async updateIngredientImage(
@@ -1676,8 +1795,14 @@ export class OrdersService {
         403,
       );
     const image = validateImage(input);
-    await this.replacePresentationRecord(mediaKey('ingredient', batchId), session.address, image);
+    const record = await this.replacePresentationRecord(
+      mediaKey('ingredient', batchId),
+      session.address,
+      image,
+    );
+    const current = await this.gateway.read('ingredients', 'getMedia', [batchId]);
     return {
+      actorWallet: session.address,
       image: {
         height: image.height,
         mimeType: image.mimeType,
@@ -1685,6 +1810,18 @@ export class OrdersService {
         supplierProvided: true,
         width: image.width,
       },
+      state:
+        same(current.contentHash, record.contentHash) && current.encryptedCid === record.cid
+          ? ('COMPLETE' as const)
+          : ('TRANSACTION_REQUIRED' as const),
+      transaction:
+        same(current.contentHash, record.contentHash) && current.encryptedCid === record.cid
+          ? undefined
+          : await this.gateway.prepare(session.address, 'ingredients', 'updateMedia', [
+              batchId,
+              record.contentHash,
+              record.cid,
+            ]),
     };
   }
 
@@ -1708,8 +1845,14 @@ export class OrdersService {
         403,
       );
     const image = validateImage(input);
-    await this.replacePresentationRecord(mediaKey('product', batchId), session.address, image);
+    const record = await this.replacePresentationRecord(
+      mediaKey('product', batchId),
+      session.address,
+      image,
+    );
+    const current = await this.gateway.read('products', 'getMedia', [batchId]);
     return {
+      actorWallet: session.address,
       image: {
         height: image.height,
         manufacturerProvided: true,
@@ -1717,6 +1860,18 @@ export class OrdersService {
         path: `/catalogue/products/${batchId}/image`,
         width: image.width,
       },
+      state:
+        same(current.contentHash, record.contentHash) && current.encryptedCid === record.cid
+          ? ('COMPLETE' as const)
+          : ('TRANSACTION_REQUIRED' as const),
+      transaction:
+        same(current.contentHash, record.contentHash) && current.encryptedCid === record.cid
+          ? undefined
+          : await this.gateway.prepare(session.address, 'products', 'updateMedia', [
+              batchId,
+              record.contentHash,
+              record.cid,
+            ]),
     };
   }
 
@@ -1740,18 +1895,33 @@ export class OrdersService {
         403,
       );
     const image = validateImage(input);
-    await this.replacePresentationRecord(
+    const record = await this.replacePresentationRecord(
       mediaKey('company', session.address),
       session.address,
       image,
     );
+    const current = await this.gateway.read('stakeholders', 'getCompanyBranding', [
+      session.address,
+    ]);
     return {
+      actorWallet: session.address,
       branding: {
         companyName: identity.companyName,
         logoPath: `/branding/${getAddress(session.address)}/logo`,
         role: identity.role,
         companyProvided: true,
       },
+      state:
+        same(current.contentHash, record.contentHash) && current.encryptedCid === record.cid
+          ? ('COMPLETE' as const)
+          : ('TRANSACTION_REQUIRED' as const),
+      transaction:
+        same(current.contentHash, record.contentHash) && current.encryptedCid === record.cid
+          ? undefined
+          : await this.gateway.prepare(session.address, 'stakeholders', 'updateCompanyBranding', [
+              record.contentHash,
+              record.cid,
+            ]),
     };
   }
 
@@ -1843,16 +2013,25 @@ export class OrdersService {
       const product = await this.gateway.read('products', 'getProduct', [reference]);
       owner = product.manufacturer;
     }
-    const record = await this.repository.findPrivate('products', mediaKey(kind, reference));
-    if (!record || !same(record.owner, owner))
+    const media = await this.gateway.read(
+      kind === 'ingredient' ? 'ingredients' : 'products',
+      'getMedia',
+      [reference],
+    );
+    if (!media || same(media.contentHash, ZeroHash))
       throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
     try {
       const stored = decodeStoredCatalogueImage(
-        JSON.parse(await this.store.decrypt(record.payload)),
+        await this.readPrivateRecord({
+          cid: media.encryptedCid,
+          contentHash: media.contentHash,
+          id: mediaKey(kind, reference),
+          owner,
+        }),
       );
       return {
         bytes: stored.bytes,
-        contentHash: record.contentHash,
+        contentHash: media.contentHash,
         fileName: `${kind}-${createHash('sha256').update(reference.toLowerCase()).digest('hex').slice(0, 16)}.${extensionFor(stored.mimeType)}`,
         mimeType: stored.mimeType,
       };
@@ -1877,6 +2056,23 @@ export class OrdersService {
   }
 
   private async readCompanyLogo(wallet: string, applicationId?: string) {
+    const branding = await this.optionalRead('stakeholders', 'getCompanyBranding', [wallet]);
+    if (branding && !same(branding.contentHash, ZeroHash)) {
+      const stored = decodeStoredCatalogueImage(
+        await this.readPrivateRecord({
+          cid: branding.encryptedCid,
+          contentHash: branding.contentHash,
+          id: mediaKey('company', wallet),
+          owner: wallet,
+        }),
+      );
+      return {
+        bytes: stored.bytes,
+        contentHash: branding.contentHash,
+        fileName: `company-${createHash('sha256').update(wallet.toLowerCase()).digest('hex').slice(0, 16)}.${extensionFor(stored.mimeType)}`,
+        mimeType: stored.mimeType,
+      };
+    }
     const record = await this.companyLogoRecord(wallet, applicationId);
     if (record) {
       const stored = await this.decodeCompanyLogo(
@@ -2273,11 +2469,12 @@ export class OrdersService {
         same(actor, productDelivery?.distributor) ||
         same(actor, custodyPosition?.distributor);
       if (!involved) continue;
-      const record = await this.repository.findPrivate('products', event.orderId);
-      const details =
-        record && record.contentHash === order.detailsHash && record.cid === order.detailsCid
-          ? JSON.parse(await this.store.decrypt(record.payload))
-          : undefined;
+      const details = await this.readOptionalPrivateRecord({
+        cid: order.detailsCid,
+        contentHash: order.detailsHash,
+        id: event.orderId,
+        owner: order.buyer,
+      });
       const decision = await this.loadRequestDecision(event.orderId, order.seller);
       const deliveryReceivingLocation =
         typeof details?.receivingLocation === 'string' &&
@@ -2375,11 +2572,13 @@ export class OrdersService {
           !shipments.some((s) => [s.fromLocation, s.toLocation].includes(location.location))
         )
           return { location: location.location, company: location.company };
-        const record = await this.repository.findPrivate('products', location.location);
-        const label =
-          record && record.contentHash === location.detailsHash
-            ? JSON.parse(await this.store.decrypt(record.payload)).label
-            : 'Location label unavailable';
+        const locationDetails = await this.readOptionalPrivateRecord({
+          cid: location.detailsCid,
+          contentHash: location.detailsHash,
+          id: location.location,
+          owner: location.company,
+        });
+        const label = locationDetails?.label ?? 'Location label unavailable';
         return {
           location: location.location,
           company: location.company,
@@ -2895,9 +3094,8 @@ export class OrdersService {
           currency: input.currency,
           ...(input.priceBasis ? { priceBasis: input.priceBasis } : {}),
         };
-        const hash = `0x${createHash('sha256').update(JSON.stringify(payload)).digest('hex')}`;
         const stored = await this.privateRecord(
-          id(`ingredient-listing:${input.batchId.toLowerCase()}:${hash.toLowerCase()}`),
+          id(`ingredient-listing:${input.batchId.toLowerCase()}`),
           session.address,
           payload,
         );
@@ -2927,9 +3125,8 @@ export class OrdersService {
           'A final decision is already recorded. Refresh this request.',
         );
       const details = { requestId: input.orderId, decision: input.decision, reason: input.reason };
-      const hash = `0x${createHash('sha256').update(JSON.stringify(details)).digest('hex')}`;
       const stored = await this.privateRecord(
-        id(`request-decision:${input.orderId.toLowerCase()}:${hash.toLowerCase()}`),
+        id(`request-decision:${input.orderId.toLowerCase()}`),
         session.address,
         details,
       );
@@ -2949,7 +3146,7 @@ export class OrdersService {
         ...(input.address ? { address: input.address } : {}),
       });
       method = 'registerLocation';
-      args = [operationKey, stored.contentHash];
+      args = [operationKey, stored.contentHash, stored.cid];
     } else if (input.action === 'list') {
       if (
         (input.kind === 1 && session.role !== CompanyRole.SUPPLIER) ||
@@ -3463,7 +3660,7 @@ export class OrdersService {
       const stored = await this.privateRecord(operationKey, session.address, input);
       contract = 'ingredients';
       method = 'setStatus';
-      args = [input.batchId, 3, stored.contentHash];
+      args = [input.batchId, 3, stored.contentHash, stored.cid];
     } else {
       if (session.role !== CompanyRole.SYSTEM_ADMIN)
         throw new OrdersError('ADMIN_REQUIRED', 'Only Admin can append corrections.', 403);
@@ -3474,6 +3671,7 @@ export class OrdersService {
         input.shipmentId,
         id(input.reason),
         stored.contentHash,
+        stored.cid,
         input.occurredAt,
         input.reduceStock,
         input.correctedUsable,
@@ -3547,11 +3745,12 @@ export class OrdersService {
           ingredientShipments.some((shipment) => shipment.shipmentId === correction.originalId),
         )
         .map(async (correction) => {
-          const record = await this.repository.findPrivate('products', correction.correctionId);
-          const values =
-            record && record.contentHash === correction.valuesHash
-              ? JSON.parse(await this.store.decrypt(record.payload))
-              : undefined;
+          const values = await this.readPrivateRecord({
+            cid: correction.valuesCid,
+            contentHash: correction.valuesHash,
+            id: correction.correctionId,
+            owner: correction.actor,
+          });
           return {
             ...correction,
             reason: values?.reason,
@@ -3598,6 +3797,7 @@ function deliveryArgs(
     occurredAt?: number;
     credentialHash?: string;
     presentationHash?: string;
+    presentationCid?: string;
     validUntil?: number;
   } = {},
 ) {
@@ -3611,5 +3811,6 @@ function deliveryArgs(
     fields.credentialHash ?? ZeroHash,
     fields.presentationHash ?? ZeroHash,
     fields.validUntil ?? 0,
+    fields.presentationCid ?? '',
   ];
 }

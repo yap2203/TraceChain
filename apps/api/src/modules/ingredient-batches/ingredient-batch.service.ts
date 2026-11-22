@@ -187,7 +187,8 @@ export class IngredientBatchService {
       (await (async () => {
         const encrypted = await this.dependencies.contentStore
           .encryptAndStore(JSON.stringify(file), file.id)
-          .catch(() => {
+          .catch((error) => {
+            if (isKeystoreLocked(error)) throw error;
             throw new IngredientBatchApiError(
               'DOCUMENT_STORAGE_UNAVAILABLE',
               'Encrypted document upload failed. Retry this file; no credential was issued.',
@@ -248,24 +249,79 @@ export class IngredientBatchService {
   }
   async certificationDocument(sessionId: string | undefined, batchId: string, documentId: string) {
     const { supplierWallet } = await this.requireSupplierDocumentAccess(sessionId);
-    const batch = await this.dependencies.repository.find(batchId);
-    const file = await this.dependencies.repository.findAttachment?.(documentId);
-    if (
-      !batch ||
-      batch.supplierWallet !== supplierWallet ||
-      !batch.certificationDocumentIds?.includes(documentId) ||
-      !file ||
-      file.supplierWallet !== supplierWallet
-    )
+    const [batch, chainBatch] = await Promise.all([
+      this.dependencies.repository.find(batchId),
+      this.safeGateway(() => this.dependencies.gateway.getBatch(batchId)),
+    ]);
+    const localFile = await this.dependencies.repository.findAttachment?.(documentId);
+    const localAuthorized =
+      batch?.supplierWallet === supplierWallet &&
+      batch.certificationDocumentIds?.includes(documentId) &&
+      localFile?.supplierWallet === supplierWallet;
+    if ((!chainBatch || getAddress(chainBatch.supplier) !== supplierWallet) && !localAuthorized)
       throw new IngredientBatchApiError(
         'DOCUMENT_ACCESS_DENIED',
         'This certification document is not available to your company.',
         403,
       );
-    let value;
+    let value: {
+      data: string;
+      fileName: string;
+      mimeType: CertificationDocument['mimeType'];
+    };
+    let expected!: CertificationDocument;
     try {
-      value = JSON.parse(await this.dependencies.contentStore.decrypt(file.payload));
-    } catch {
+      if (localAuthorized && localFile) {
+        value = certificationUploadSchema.parse(
+          JSON.parse(await this.dependencies.contentStore.decrypt(localFile.payload)),
+        );
+        expected = {
+          cid: localFile.cid,
+          fileName: String(value.fileName ?? ''),
+          id: localFile.id,
+          mimeType: value.mimeType,
+          sha256: localFile.sha256,
+          size: Buffer.from(String(value.data ?? ''), 'base64').length,
+        };
+      } else {
+        if (!chainBatch)
+          throw new IngredientBatchApiError(
+            'DOCUMENT_ACCESS_DENIED',
+            'This certification document is not available to your company.',
+            403,
+          );
+        if (!this.dependencies.contentStore.retrieveAndDecrypt)
+          throw new Error('Remote encrypted content retrieval is unavailable.');
+        const envelope = JSON.parse(
+          await this.dependencies.contentStore.retrieveAndDecrypt(chainBatch.encryptedCid),
+        ) as { metadata?: Record<string, unknown> };
+        const metadata = envelope.metadata ?? {};
+        const metadataHash = `0x${createHash('sha256')
+          .update(JSON.stringify(metadata))
+          .digest('hex')}`;
+        if (metadataHash.toLowerCase() !== chainBatch.metadataHash.toLowerCase())
+          throw new IngredientBatchApiError(
+            'DOCUMENT_HASH_MISMATCH',
+            'The ingredient metadata does not match its blockchain hash.',
+            409,
+          );
+        const remoteDocument = certificationDocuments(metadata).find(
+          (document) => document.id === documentId,
+        );
+        if (!remoteDocument)
+          throw new IngredientBatchApiError(
+            'DOCUMENT_ACCESS_DENIED',
+            'This certification document is not available to your company.',
+            403,
+          );
+        expected = remoteDocument;
+        value = certificationUploadSchema.parse(
+          JSON.parse(await this.dependencies.contentStore.retrieveAndDecrypt(expected.cid)),
+        );
+      }
+    } catch (error) {
+      if (error instanceof IngredientBatchApiError) throw error;
+      if (isKeystoreLocked(error)) throw error;
       throw new IngredientBatchApiError(
         'DOCUMENT_RETRIEVAL_UNAVAILABLE',
         'The encrypted document is temporarily unavailable. Retry when the service is restored.',
@@ -278,7 +334,12 @@ export class IngredientBatchService {
     } catch {
       actualHash = 'invalid';
     }
-    if (actualHash !== file.sha256)
+    if (
+      actualHash !== expected.sha256 ||
+      value.fileName !== expected.fileName ||
+      value.mimeType !== expected.mimeType ||
+      Buffer.from(String(value.data ?? ''), 'base64').length !== expected.size
+    )
       throw new IngredientBatchApiError(
         'DOCUMENT_HASH_MISMATCH',
         'Document integrity check failed.',
@@ -336,21 +397,53 @@ export class IngredientBatchService {
         if (!batch || getAddress(batch.supplier) !== supplierWallet) return null;
         const record = await this.dependencies.repository.find(batchId);
         let metadata: Record<string, unknown> = {};
-        if (
+        const localRecordMatches =
           record &&
           getAddress(record.supplierWallet) === supplierWallet &&
           record.metadataHash.toLowerCase() === batch.metadataHash.toLowerCase() &&
           record.credentialId.toLowerCase() === batch.credentialId.toLowerCase() &&
-          record.encryptedCid === batch.encryptedCid
-        ) {
-          try {
-            const envelope = JSON.parse(
-              await this.dependencies.contentStore.decrypt(record.encryptedPayload),
-            ) as { metadata?: Record<string, unknown> };
-            metadata = visibleIngredientClaims(envelope.metadata ?? {});
-          } catch {
-            metadata = {};
+          record.encryptedCid === batch.encryptedCid;
+        try {
+          const serialized = localRecordMatches
+            ? await this.dependencies.contentStore.decrypt(record.encryptedPayload)
+            : this.dependencies.contentStore.retrieveAndDecrypt
+              ? await this.dependencies.contentStore.retrieveAndDecrypt(batch.encryptedCid)
+              : undefined;
+          if (serialized) {
+            const envelope = JSON.parse(serialized) as { metadata?: Record<string, unknown> };
+            const privateMetadata = envelope.metadata ?? {};
+            const calculated = `0x${createHash('sha256')
+              .update(JSON.stringify(privateMetadata))
+              .digest('hex')}`;
+            if (
+              !localRecordMatches &&
+              calculated.toLowerCase() !== batch.metadataHash.toLowerCase()
+            )
+              throw new IngredientBatchApiError(
+                'INGREDIENT_METADATA_INTEGRITY_MISMATCH',
+                'The encrypted ingredient metadata does not match its blockchain hash.',
+                409,
+              );
+            if (
+              !localRecordMatches &&
+              (typeof privateMetadata.batchId !== 'string' ||
+                id(privateMetadata.batchId).toLowerCase() !== batchId.toLowerCase())
+            )
+              throw new IngredientBatchApiError(
+                'INGREDIENT_METADATA_BINDING_MISMATCH',
+                'The encrypted ingredient metadata belongs to a different batch.',
+                409,
+              );
+            metadata = visibleIngredientClaims(privateMetadata);
           }
+        } catch (error) {
+          if (error instanceof IngredientBatchApiError) throw error;
+          if (isKeystoreLocked(error)) throw error;
+          throw new IngredientBatchApiError(
+            'INGREDIENT_METADATA_UNAVAILABLE',
+            'The encrypted ingredient metadata could not be downloaded or decrypted.',
+            503,
+          );
         }
         return {
           allergenInformation: stringValue(metadata.allergenInformation),
@@ -496,7 +589,8 @@ export class IngredientBatchService {
           }),
           credentialId,
         );
-      } catch {
+      } catch (error) {
+        if (isKeystoreLocked(error)) throw error;
         throw new IngredientBatchApiError(
           'ENCRYPTED_STORAGE_UNAVAILABLE',
           'The encrypted Ingredient Credential could not be stored. No blockchain transaction was prepared.',
@@ -560,7 +654,8 @@ export class IngredientBatchService {
         }),
         credentialId,
       );
-    } catch {
+    } catch (error) {
+      if (isKeystoreLocked(error)) throw error;
       throw new IngredientBatchApiError(
         'ENCRYPTED_STORAGE_UNAVAILABLE',
         'The encrypted Ingredient Credential could not be stored. No blockchain transaction was prepared.',
@@ -785,6 +880,27 @@ export class IngredientBatchService {
   }
 }
 
+function certificationDocuments(metadata: Record<string, unknown>) {
+  const entries = Array.isArray(metadata.certificationEntries) ? metadata.certificationEntries : [];
+  return entries.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const documents = (entry as { documents?: unknown }).documents;
+    if (!Array.isArray(documents)) return [];
+    return documents.filter((document): document is CertificationDocument => {
+      if (!document || typeof document !== 'object') return false;
+      const value = document as Record<string, unknown>;
+      return (
+        typeof value.id === 'string' &&
+        typeof value.cid === 'string' &&
+        typeof value.fileName === 'string' &&
+        typeof value.mimeType === 'string' &&
+        typeof value.sha256 === 'string' &&
+        typeof value.size === 'number'
+      );
+    });
+  });
+}
+
 function decodeUnit(value: string) {
   try {
     return decodeBytes32String(value);
@@ -804,4 +920,8 @@ function stableJson(value: unknown): string {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`)
     .join(',')}}`;
+}
+
+function isKeystoreLocked(error: unknown) {
+  return (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
 }

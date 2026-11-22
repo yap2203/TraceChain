@@ -215,6 +215,7 @@ export class CustodyTransferService {
         chainId: configuration.chainId,
         contractAddress: configuration.contractAddress,
         reasonHash: record.contentHash,
+        rejectionCid: record.cid,
         transferId: input.transferId,
       }),
     };
@@ -354,14 +355,38 @@ export class CustodyTransferService {
 
   private async privateDetails(reference: ReceiptWorkflowReference) {
     const record = await this.dependencies.receiptRepository?.find(reference);
-    if (!record || !this.dependencies.contentStore) return undefined;
+    const contentStore = this.dependencies.contentStore;
+    if (!contentStore) return undefined;
+    if (!record && (!reference.cid || !contentStore.retrieveAndDecrypt)) return undefined;
     try {
-      return JSON.parse(await this.dependencies.contentStore.decrypt(record.payload)) as Record<
-        string,
-        unknown
-      >;
-    } catch {
-      return undefined;
+      const serialized = record
+        ? await contentStore.decrypt(record.payload)
+        : await contentStore.retrieveAndDecrypt!(reference.cid!);
+      if (sha256(toUtf8Bytes(serialized)).toLowerCase() !== reference.contentHash.toLowerCase())
+        throw new CustodyTransferApiError(
+          'RECEIPT_EVIDENCE_INTEGRITY_MISMATCH',
+          'The encrypted receipt evidence does not match its blockchain hash.',
+          409,
+        );
+      const value = JSON.parse(serialized) as Record<string, unknown>;
+      if (
+        typeof value.transferId !== 'string' ||
+        value.transferId.toLowerCase() !== reference.transferId.toLowerCase()
+      )
+        throw new CustodyTransferApiError(
+          'RECEIPT_EVIDENCE_BINDING_MISMATCH',
+          'The encrypted receipt evidence belongs to a different transfer.',
+          409,
+        );
+      return value;
+    } catch (error) {
+      if (error instanceof CustodyTransferApiError) throw error;
+      if (isKeystoreLocked(error)) throw error;
+      throw new CustodyTransferApiError(
+        'RECEIPT_EVIDENCE_UNAVAILABLE',
+        'The encrypted receipt evidence could not be downloaded or decrypted.',
+        503,
+      );
     }
   }
 
@@ -415,7 +440,8 @@ export class CustodyTransferService {
     let stored;
     try {
       stored = await contentStore.encryptAndStore(serialized, randomUUID());
-    } catch {
+    } catch (error) {
+      if (isKeystoreLocked(error)) throw error;
       throw new CustodyTransferApiError(
         'RECEIPT_STORAGE_UNAVAILABLE',
         'Encrypted receipt storage is unavailable. No transaction was prepared.',
@@ -639,6 +665,10 @@ function sameAddress(left: string, right: string) {
   } catch {
     return false;
   }
+}
+
+function isKeystoreLocked(error: unknown) {
+  return (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
 }
 
 function transferStatusError(status: number) {

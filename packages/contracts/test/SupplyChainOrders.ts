@@ -146,6 +146,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
         ethers.ZeroHash,
         ethers.ZeroHash,
         0,
+        '',
       ),
     ).to.revert(ethers);
     const shipmentId = ethers.id('from-custody');
@@ -206,6 +207,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
       ethers.ZeroHash,
       ethers.ZeroHash,
       0,
+      '',
     );
     await expect(
       signed(f.delivery, f.supplier).arrangeFromCustody(f.requestId, f.positionId, f.destination),
@@ -220,6 +222,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
       ethers.ZeroHash,
       ethers.ZeroHash,
       0,
+      '',
     );
     await signed(f.delivery, f.supplier).arrangeFromCustody(
       f.requestId,
@@ -300,6 +303,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
         hash,
         action === 5 ? ethers.id('vp') : ethers.ZeroHash,
         until,
+        action === 5 ? 'encrypted-presentation' : '',
       );
     await proof(4);
     await expect(
@@ -462,7 +466,11 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
       await f.custody.locationStock(productId, f.manufacturer.address, f.destination),
     ).to.equal(60n);
     const second = await send('reject-road', 20);
-    await signed(f.custody, f.distributor).reject(second, ethers.id('reject'));
+    await signed(f.custody, f.distributor).reject(
+      second,
+      ethers.id('reject'),
+      'encrypted-rejection',
+    );
     expect(
       await f.custody.locationStock(productId, f.manufacturer.address, f.destination),
     ).to.equal(60n);
@@ -527,6 +535,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
         credentialHash?: string;
         presentationHash?: string;
         until?: number;
+        presentationCid?: string;
       } = {},
     ) =>
       signed(delivery, actor).act(
@@ -539,6 +548,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
         fields.credentialHash ?? ethers.ZeroHash,
         fields.presentationHash ?? ethers.ZeroHash,
         fields.until ?? 0,
+        fields.presentationCid ?? (action === 5 ? 'encrypted-presentation' : ''),
       );
     return { ...f, delivery, deliveryOrder, act };
   }
@@ -584,6 +594,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
         ethers.ZeroHash,
         ethers.ZeroHash,
         0,
+        '',
       ),
     ).to.be.revertedWithCustomError(f.delivery, 'Unauthorized');
     await f.act(f.distributor, 2);
@@ -824,7 +835,12 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
       f.ingredients,
       'InvalidState',
     );
-    await signed(f.ingredients, f.supplier).setStatus(batch, 3, ethers.id('recall'));
+    await signed(f.ingredients, f.supplier).setStatus(
+      batch,
+      3,
+      ethers.id('recall'),
+      'encrypted-recall',
+    );
     await expect(create('recalled-no-evidence', 1)).to.be.revertedWithCustomError(
       f.products,
       'InvalidState',
@@ -1172,6 +1188,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
       hash,
       ethers.id('verified-proof'),
       f.expiry - 3,
+      'encrypted-presentation',
     );
     expect((await f.orders.getOrder(request)).identityCredentialHash).to.equal(hash);
     expect((await f.ingredients.getBatch(f.batchId)).availableQuantity).to.equal(before);
@@ -1658,7 +1675,11 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
       [distributor, transit],
       [retailer, shop],
     ] as const)
-      await signed(orders, actor).registerLocation(location, ethers.id('encrypted-location-label'));
+      await signed(orders, actor).registerLocation(
+        location,
+        ethers.id('encrypted-location-label'),
+        'encrypted-location-label',
+      );
     const batchId = ethers.id('ingredient-grams'),
       credentialId = ethers.id('ingredient-credential'),
       itemId = ethers.id('ingredient-item');
@@ -2264,6 +2285,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
       system.batchId,
       3,
       ethers.id('recall'),
+      'encrypted-recall',
     );
     expect(await system.products.isTransferable(productId)).to.equal(false);
     // Exercise actual API ABI loading, event decoding, access filtering and recall traversal
@@ -2327,6 +2349,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
         shipmentId,
         ethers.id('reason'),
         ethers.id('corrected-values'),
+        'encrypted-correction',
         await networkHelpers.time.latest(),
         true,
         34000,
@@ -2357,6 +2380,7 @@ describe('Orders, physical ingredient inventory and downstream recall links', fu
         shipmentId,
         ethers.id('reason'),
         ethers.id('values'),
+        'encrypted-correction',
         await networkHelpers.time.latest(),
         true,
         33000,

@@ -41,10 +41,11 @@ New ordinary requests leave selection to Supplier after approval; explicit earli
 keep reservation-at-placement behavior. Selection remains subject to the original deadline.
 
 This requires a fresh complete-suite deployment because the immutable delivery child is created
-inside Orders. Current compiled runtime sizes are Orders 24,166 and delivery 23,553 bytes; Orders
-creation bytecode plus five constructor addresses is 48,960 bytes. Preserve the deployment size
-tests when extending this suite: the remaining initcode margin is small. No network was redeployed
-as part of this change. See [setup and tests](../testing/TWO_MODE_INGREDIENT_DELIVERY.md).
+inside Orders. With the Phase 2 encrypted-content references, current compiled runtime sizes are
+Orders 24,192 and delivery 23,685 bytes; Orders creation bytecode plus five constructor addresses is
+49,114 bytes. Preserve the deployment size tests when extending this suite: only 38 bytes of initcode
+margin remain. No network was redeployed as part of this change. See
+[setup and tests](../testing/TWO_MODE_INGREDIENT_DELIVERY.md).
 
 ## Custody review and Supplier arrangement
 
@@ -81,6 +82,16 @@ other roots retain their existing configuration. Tests assert real deployed size
 and run with the normal size limit enabled. See [the delivery test guide](../testing/INGREDIENT_DISTRIBUTOR_DELIVERY.md).
 
 `packages/contracts` contains seven top-level TraceChain registry/ledger contracts plus the automatically created ingredient-delivery module, using Solidity 0.8.34, Hardhat 3, ethers, Mocha, Hardhat Ignition, and Foundry-compatible Solidity tests. The contracts implement stakeholder authorization, credential lifecycle, ingredient evidence, ingredient/product traceability, inventory, and custody transfers.
+
+## Phase 2 encrypted-content discovery
+
+The current suite emits or stores immutable encrypted content references for company branding,
+ingredient/product media, location details, order and dispatch details, identity presentations,
+corrections and custody rejection reasons. Existing credential, batch, evidence, transfer and receipt
+records retain their established CID/hash references. Contracts store no plaintext private content;
+the authorized API follows the reference, decrypts off-chain and validates the saved hash and binding.
+These ABI changes require full-suite redeployment. Older records without a CID are preserved but cannot
+be made cross-device through a server-local index.
 
 ## Current package
 

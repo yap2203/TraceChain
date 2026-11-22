@@ -162,6 +162,68 @@ describe('production flow service', () => {
     };
     service = createService(gateway, repository, manufacturerAuth(), encryptedWrites);
   });
+
+  it('recovers a confirmed evidence request from chain and IPFS without API A journal data', async () => {
+    const prepared = await service.prepareEvidenceRequest('session', requestInput());
+    const record = evidence.get(prepared.requestId!.toLowerCase())!;
+    vi.mocked(gateway.getEvidenceRequest).mockResolvedValue({
+      requester: record.requester,
+      supplier: record.supplier,
+      ingredientBatchId: record.batchId,
+      challengeHash: record.challengeHash,
+      claimsHash: record.claimsHash,
+      requestCid: record.requestCid,
+      dueAt: record.dueAt,
+      status: 1,
+      updatedAt: 0,
+      presentationCid: '',
+      presentationHash: id('none'),
+      presentationExpiresAt: 0,
+    });
+    const deviceBEvidence = new Map<string, EvidenceWorkflowRecord>();
+    const deviceBRepository: ProductionFlowRepository = {
+      findEvidence: async (requestId) => deviceBEvidence.get(requestId.toLowerCase()),
+      findEvidenceByOperation: async () => undefined,
+      findPrivate: async () => undefined,
+      saveEvidence: async (entry) => {
+        deviceBEvidence.set(entry.requestId.toLowerCase(), entry);
+      },
+      savePrivate: async () => undefined,
+    };
+    const retrieveAndDecrypt = vi.fn(async (cid: string) => {
+      if (cid !== record.requestCid) throw new Error('IPFS object unavailable');
+      return encryptedWrites[0]!;
+    });
+    const deviceB = new ProductionFlowService({
+      agentProvider: vi.fn(),
+      authService: manufacturerAuth(),
+      clock: () => NOW,
+      contentStore: {
+        decrypt: vi.fn(),
+        encryptAndStore: vi.fn(),
+        retrieveAndDecrypt,
+      },
+      gateway,
+      ingredientRepository: {
+        find: vi.fn(),
+        listForSupplier: vi.fn().mockResolvedValue([]),
+        save: vi.fn(),
+      },
+      repository: deviceBRepository,
+    });
+
+    await expect(deviceB.getEvidenceDetails('session', record.requestId)).resolves.toMatchObject({
+      requestId: record.requestId,
+      requester: MANUFACTURER,
+      supplier: SUPPLIER,
+    });
+    expect(retrieveAndDecrypt).toHaveBeenCalledWith(record.requestCid);
+    expect(deviceBEvidence.get(record.requestId.toLowerCase())).toMatchObject({
+      requestCid: record.requestCid,
+      requester: MANUFACTURER,
+      supplier: SUPPLIER,
+    });
+  });
   it('binds delivery identity to a Supplier presenter and authorized Distributor verifier', async () => {
     const deliveryService = createService(
       gateway,

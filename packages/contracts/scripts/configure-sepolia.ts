@@ -8,10 +8,13 @@ class ConfigurationError extends Error {}
 const root = new URL('../../../', import.meta.url);
 const environmentPath = fileURLToPath(new URL('.env', root));
 const addressesPath = fileURLToPath(
-  new URL('../ignition/deployments/tracechain-sepolia/deployed_addresses.json', import.meta.url),
+  new URL(
+    '../ignition/deployments/tracechain-sepolia-storage-v2/deployed_addresses.json',
+    import.meta.url,
+  ),
 );
 const journalPath = fileURLToPath(
-  new URL('../ignition/deployments/tracechain-sepolia/journal.jsonl', import.meta.url),
+  new URL('../ignition/deployments/tracechain-sepolia-storage-v2/journal.jsonl', import.meta.url),
 );
 const contracts = {
   StakeholderRegistry: 'STAKEHOLDER_REGISTRY_ADDRESS',
@@ -92,6 +95,45 @@ async function main() {
       () => check('SupplyChainOrders', 'custody', 'CustodyTransfer'),
     ];
     for (const verify of checks) await verify();
+    const phaseTwoReads = [
+      {
+        contract: 'StakeholderRegistry' as const,
+        signature:
+          'function getCompanyBranding(address) view returns (tuple(bytes32 contentHash,string encryptedCid,uint64 updatedAt))',
+        method: 'getCompanyBranding',
+        args: [ZeroAddress],
+      },
+      {
+        contract: 'IngredientRegistry' as const,
+        signature:
+          'function getMedia(bytes32) view returns (tuple(bytes32 contentHash,string encryptedCid,uint64 updatedAt))',
+        method: 'getMedia',
+        args: [`0x${'0'.repeat(64)}`],
+      },
+      {
+        contract: 'ProductRegistry' as const,
+        signature:
+          'function getMedia(bytes32) view returns (tuple(bytes32 contentHash,string encryptedCid,uint64 updatedAt))',
+        method: 'getMedia',
+        args: [`0x${'0'.repeat(64)}`],
+      },
+      {
+        contract: 'SupplyChainOrders' as const,
+        signature: 'function locationDetailsCid(bytes32) view returns (string)',
+        method: 'locationDetailsCid',
+        args: [`0x${'0'.repeat(64)}`],
+      },
+    ];
+    for (const capability of phaseTwoReads) {
+      const target = new Contract(addresses[capability.contract], [capability.signature], provider);
+      try {
+        await target[capability.method](...capability.args);
+      } catch {
+        throw new ConfigurationError(
+          `${capability.contract} does not expose the Phase 2 encrypted-content reference API.`,
+        );
+      }
+    }
     const registry = new Contract(
       addresses.StakeholderRegistry,
       ['function administrator() view returns (address)'],

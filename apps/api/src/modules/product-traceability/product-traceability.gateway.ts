@@ -67,6 +67,8 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
       return {
         expiresAt: Number(record.expiresAt),
         manufacturer: getAddress(String(record.manufacturer)),
+        metadataHash: String(record.metadataHash),
+        publicCid: String(record.publicCid),
         producedAt: Number(record.producedAt),
         status: Number(record.status),
       };
@@ -88,9 +90,11 @@ export class EthersProductTraceabilityGateway implements ProductTraceabilityGate
       const record = await this.ingredients.getBatch(batchId);
       return {
         credentialId: String(record.credentialId),
+        encryptedCid: String(record.encryptedCid),
         expiresAt: Number(record.expiresAt),
         status: Number(record.status),
         supplier: getAddress(String(record.supplier)),
+        metadataHash: String(record.metadataHash),
       };
     } catch (error) {
       if (isMissing(error, ingredientInterface)) return null;

@@ -2,6 +2,17 @@
 
 ## Repository and implementation
 
+- Make confirmed TraceChain business content cross-device through blockchain-discoverable immutable
+  encrypted IPFS references (user-confirmed 2026-11-22, including complete-suite redeployment). Treat
+  blockchain state/events as lifecycle authority, verify retrieved plaintext hashes and record/deployment
+  bindings, and use local JSON only for compatibility caches plus unfinished/retry work. Add the smallest
+  required CID/hash references for company branding, catalogue media, locations, shipment dispatch,
+  identity presentations, corrections, rejection reasons and related private records. Deploy the full
+  consistently wired suite; do not upgrade one contract in isolation. Historical records without an
+  on-chain CID cannot be made cross-device by a local index and require an explicit participant-signed
+  replay/migration on the replacement deployment. Keep DIDComm and Veramo issuer portability out of
+  Phase 2.
+
 - Protect the API's IPFS encryption key, Veramo KMS secret and issuer private-key store in one
   administrator-controlled portable JSON keystore (user-confirmed 2026-11-21). Derive its AES-256-GCM
   key with scrypt (N=16384, r=8, p=1), authenticate format/version/purpose, start every API process

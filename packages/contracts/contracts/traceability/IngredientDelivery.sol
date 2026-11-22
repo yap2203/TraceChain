@@ -234,7 +234,7 @@ contract IngredientDelivery {
     mapping(bytes32 => Record) private records;
     event IngredientDeliveryChanged(bytes32 indexed orderId, address indexed distributor, uint8 stage, uint64 recordedAt);
     event DeliveryIdentityRequested(bytes32 indexed orderId, bytes32 challenge, uint64 expiresAt);
-    event DeliveryIdentityAttested(bytes32 indexed orderId, bytes32 presentationHash, bytes32 credentialHash, uint64 validUntil);
+    event DeliveryIdentityAttested(bytes32 indexed orderId, bytes32 presentationHash, bytes32 credentialHash, uint64 validUntil, string presentationCid);
     modifier onlyOrders() { if (msg.sender != address(orders)) revert Unauthorized(); _; }
     constructor(address parent, address registry, address ingredient, address product, address proofRegistry) {
         orders = IIngredientDeliveryOrders(parent); stakeholders = IStakeholderRegistry(registry); ingredients = IngredientRegistry(ingredient);
@@ -268,10 +268,11 @@ contract IngredientDelivery {
     }
     /// 1 assign, 2 accept, 3 decline, 4 request proof, 5 attest proof, 6 pickup, 7 finalize expiry.
     function act(uint8 action, address actor, bytes32 orderId, address distributor, bytes32 challenge,
-        uint64 occurredAt, bytes32 credentialHash, bytes32 presentationHash, uint64 validUntil) external {
+        uint64 occurredAt, bytes32 credentialHash, bytes32 presentationHash, uint64 validUntil, string calldata contentCid) external {
         if (actor != msg.sender) revert Unauthorized();
         if (roadShipments[orderId].leg == 1 && action != 4 && action != 5) revert InvalidState();
         if (custodyOrders[orderId].quantity != 0 && action != 4 && action != 5) revert InvalidState();
+        if (action == 5 && bytes(contentCid).length == 0) revert InvalidState();
         Record storage r = records[orderId]; Context memory c = context(orderId); uint8 stage = get(orderId).stage;
         if (action == 7) {
             if (stage != 6 || r.stage == 6) revert InvalidState();
@@ -294,7 +295,7 @@ contract IngredientDelivery {
             } else if (action == 5) {
                 if ((stage != 2 && stage != 3) || challenge == bytes32(0) || challenge != r.identityChallenge || r.identityCredentialHash != bytes32(0) || credentialHash != stakeholders.credentialHashOf(c.seller) || presentationHash == bytes32(0) || validUntil <= block.timestamp || validUntil > r.identityValidUntil) revert InvalidState();
                 r.identityCredentialHash = credentialHash; r.identityValidUntil = validUntil;
-                emit DeliveryIdentityAttested(orderId, presentationHash, credentialHash, validUntil);
+                emit DeliveryIdentityAttested(orderId, presentationHash, credentialHash, validUntil, contentCid);
             } else if (action == 6) {
                 if (!stakeholders.isAuthorized(c.seller, 2) || !stakeholders.isAuthorized(c.buyer, 3)) revert Unauthorized();
                 if (stage != 3 || occurredAt < r.acceptedAt || occurredAt > block.timestamp ||

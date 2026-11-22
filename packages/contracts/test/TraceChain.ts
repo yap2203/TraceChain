@@ -462,6 +462,7 @@ describe('TraceChain integration', function () {
         system.ingredientId,
         status,
         ethers.id(`${label}-ingredient`),
+        `encrypted-${label}`,
       );
 
       expect(

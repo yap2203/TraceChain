@@ -54,6 +54,8 @@ const awaitingTransfer: CustodyTransferRecord = {
 
 describe('custody-transfer QR resolution API', () => {
   let app: ReturnType<typeof createApp>;
+  let authService: AuthService;
+  let gateway: CustodyTransferGateway;
   let getTransfer: ReturnType<typeof vi.fn<CustodyTransferGateway['getTransfer']>>;
   let prepareReceiptConfirmation: ReturnType<
     typeof vi.fn<CustodyTransferGateway['prepareReceiptConfirmation']>
@@ -81,7 +83,7 @@ describe('custody-transfer QR resolution API', () => {
 
   beforeEach(async () => {
     sessionRepository = new InMemorySessionRepository();
-    const authService = new AuthService({
+    authService = new AuthService({
       clock: () => new Date(NOW),
       configuration: {
         chainId: CHAIN_ID,
@@ -203,7 +205,7 @@ describe('custody-transfer QR resolution API', () => {
     getReceiptEvidenceReference = vi.fn().mockResolvedValue(null);
     getRejectionEvidenceReference = vi.fn().mockResolvedValue(null);
     hasReceiptPermission = vi.fn().mockResolvedValue(true);
-    const gateway: CustodyTransferGateway = {
+    gateway = {
       getDiscrepancy,
       getReceiptEvidenceReference,
       getRejectionEvidenceReference,
@@ -711,6 +713,73 @@ describe('custody-transfer QR resolution API', () => {
       .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
       .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
       .expect(404);
+  });
+
+  it('recovers confirmed receipt evidence on a second API with an empty data directory', async () => {
+    const created = await request(app)
+      .post('/api/custody-transfers/transactions/confirm-receipt')
+      .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+      .send({
+        actualQuantity: '250',
+        damagedQuantity: '0',
+        evidence: [],
+        notes: 'Received by device A.',
+        rejectedQuantity: '0',
+        transferId: TRANSFER_ID,
+      })
+      .expect(200);
+    expect(created.body.action).toBe('CONFIRM_RECEIPT');
+    const record = (await receiptRepository.list())[0]!;
+    getTransfer.mockResolvedValue({ ...awaitingTransfer, status: 2 });
+    getReceiptEvidenceReference.mockResolvedValue({
+      cid: record.cid,
+      contentHash: record.contentHash,
+    });
+    const directory = await mkdtemp(join(tmpdir(), 'tracechain-cross-device-receipt-'));
+    try {
+      const deviceA = new JsonReceiptWorkflowRepository(
+        join(directory, 'device-a', 'receipts.json'),
+      );
+      const deviceB = new JsonReceiptWorkflowRepository(
+        join(directory, 'device-b', 'receipts.json'),
+      );
+      await deviceA.save(record);
+      const retrieveAndDecrypt = vi.fn(async (cid: string) => {
+        if (cid !== record.cid) throw new Error('IPFS object unavailable');
+        return Buffer.from(record.payload.ciphertext, 'base64').toString('utf8');
+      });
+      const deviceBService = () =>
+        new CustodyTransferService({
+          authService,
+          configuration: () => ({
+            chainId: CHAIN_ID,
+            contractAddress: CUSTODY_TRANSFER_ADDRESS,
+            publicAppUrl: PUBLIC_APP_URL,
+          }),
+          gateway,
+          hasReceiptPermission,
+          contentStore: { decrypt, encryptAndStore, retrieveAndDecrypt },
+          productMetadata: {
+            product: vi.fn().mockResolvedValue({
+              name: 'Dark Chocolate Bar',
+              reference: 'CHOCOLATE-2026-050',
+            }),
+          },
+          receiptRepository: deviceB,
+        });
+      for (const recoveredService of [deviceBService(), deviceBService()]) {
+        const recovered = createApp({ authService, custodyTransferService: recoveredService });
+        const response = await request(recovered)
+          .get(`/api/custody-transfers/${TRANSFER_ID}/evidence`)
+          .set('Cookie', `${COOKIE_NAME}=${SESSION_ID}`)
+          .expect(200);
+        expect(response.body.privateDetails.notes).toBe('Received by device A.');
+      }
+      expect(retrieveAndDecrypt).toHaveBeenCalledWith(record.cid);
+      expect(await deviceB.list()).toEqual([]);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it('returns an honest missing actual-arrival state after confirmation', async () => {

@@ -198,6 +198,12 @@ contract CustodyTransfer {
         string shipmentCid
     );
     event TransferStatusChanged(bytes32 indexed transferId, Status status, bytes32 reasonHash);
+    event TransferRejected(
+        bytes32 indexed transferId,
+        address indexed recipient,
+        bytes32 reasonHash,
+        string rejectionCid
+    );
     event ReceiptConfirmed(
         bytes32 indexed transferId,
         address indexed recipient,
@@ -291,15 +297,16 @@ contract CustodyTransfer {
         transfer.status = Status.Cancelled;
         emit TransferStatusChanged(transferId, transfer.status, reasonHash);
     }
-    function reject(bytes32 transferId, bytes32 reasonHash) external {
+    function reject(bytes32 transferId, bytes32 reasonHash, string calldata rejectionCid) external {
         if(productDeliveryOrder[transferId]!=bytes32(0))revert InvalidState();
         Transfer storage transfer = _transfer(transferId);
         if (msg.sender != transfer.recipient) revert Unauthorized(msg.sender);
-        if (transfer.status != Status.AwaitingReceipt) revert InvalidState();
+        if (transfer.status != Status.AwaitingReceipt || reasonHash == bytes32(0) || bytes(rejectionCid).length == 0) revert InvalidState();
         _release(transferId, transfer);
         transfer.rejected = transfer.quantity;
         transfer.status = Status.Rejected;
         emit TransferStatusChanged(transferId, transfer.status, reasonHash);
+        emit TransferRejected(transferId, msg.sender, reasonHash, rejectionCid);
     }
     function reportDiscrepancy(
         bytes32 transferId,

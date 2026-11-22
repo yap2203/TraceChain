@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { ingredientBatchRequestSchema } from './ingredient-batch.schema.js';
 import { certificationClaim, certificationDocumentsClaim } from '@tracechain/shared';
 import { verifyIngredientSdJwtPresentation } from '@tracechain/ssi';
@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { createTraceChainAgent, type TraceChainAgent } from '@tracechain/ssi';
 import { CompanyRole } from '@tracechain/shared';
 import type { DIDResolver } from 'did-resolver';
-import { Interface, computeAddress, getAddress, isAddress } from 'ethers';
+import { Interface, computeAddress, encodeBytes32String, getAddress, id, isAddress } from 'ethers';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +27,7 @@ import type {
   IngredientBatchWorkflowRecord,
   IngredientBatchWorkflowRepository,
 } from './ingredient-batch.repository.js';
+import { JsonIngredientBatchWorkflowRepository } from './ingredient-batch.repository.js';
 import { IngredientBatchService } from './ingredient-batch.service.js';
 
 const CHAIN_ID = 31_337;
@@ -183,6 +184,102 @@ describe('Supplier ingredient-batch API', () => {
       repository,
     };
     service = new IngredientBatchService(dependencies);
+  });
+
+  it('recovers a confirmed ingredient on a second API with an empty data directory', async () => {
+    const batchId = id(BODY.batchReference);
+    const documentData =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jDfsAAAAASUVORK5CYII=';
+    const document = {
+      cid: 'bafy-portable-certification',
+      fileName: 'organic-certificate.png',
+      id: randomUUID(),
+      mimeType: 'image/png',
+      sha256: createHash('sha256').update(Buffer.from(documentData, 'base64')).digest('hex'),
+      size: Buffer.from(documentData, 'base64').length,
+    };
+    const metadata = {
+      batchId: BODY.batchReference,
+      ingredientName: BODY.ingredientName,
+      category: BODY.category,
+      countryOfOrigin: BODY.origin,
+      certificationEntries: [{ id: randomUUID(), documents: [document] }],
+    };
+    const envelope = JSON.stringify({ metadata, version: 2 });
+    const metadataHash = `0x${createHash('sha256').update(JSON.stringify(metadata)).digest('hex')}`;
+    const payload: EncryptedCredentialPayload = {
+      algorithm: 'aes-256-gcm',
+      authTag: 'portable-test-tag',
+      ciphertext: Buffer.from(envelope).toString('base64'),
+      iv: 'portable-test-iv',
+      version: 1,
+    };
+    const deviceA = new JsonIngredientBatchWorkflowRepository(
+      join(directory, 'device-a', 'issuance', 'ingredient-batches.json'),
+    );
+    const deviceB = new JsonIngredientBatchWorkflowRepository(
+      join(directory, 'device-b', 'issuance', 'ingredient-batches.json'),
+    );
+    await deviceA.save({
+      batchId,
+      credentialHash: `0x${'11'.repeat(32)}`,
+      credentialId: `0x${'22'.repeat(32)}`,
+      encryptedCid: 'bafy-portable-ingredient',
+      encryptedPayload: payload,
+      expiresAt: 1_900_000_000,
+      issuerDid: 'did:example:issuer',
+      metadataHash,
+      producedAt: 1_790_000_000,
+      quantity: '500',
+      supplierWallet: getAddress(SUPPLIER),
+      unit: 'kg',
+    });
+    batch = {
+      availableQuantity: '500',
+      credentialId: `0x${'22'.repeat(32)}`,
+      encryptedCid: 'bafy-portable-ingredient',
+      expiresAt: 1_900_000_000,
+      metadataHash,
+      producedAt: 1_790_000_000,
+      status: 1,
+      supplier: getAddress(SUPPLIER),
+      totalQuantity: '500',
+      unit: encodeBytes32String('kg'),
+    };
+    vi.mocked(gateway.listBatchIds).mockResolvedValue([batchId]);
+    const sharedContent = {
+      decrypt: async () => envelope,
+      encryptAndStore: dependencies.contentStore.encryptAndStore,
+      retrieveAndDecrypt: vi.fn(async (cid: string) => {
+        if (cid === 'bafy-portable-ingredient') return envelope;
+        if (cid === document.cid)
+          return JSON.stringify({
+            data: documentData,
+            fileName: document.fileName,
+            mimeType: document.mimeType,
+          });
+        throw new Error('IPFS object unavailable');
+      }),
+    };
+    const fromDeviceA = new IngredientBatchService({
+      ...dependencies,
+      contentStore: sharedContent,
+      repository: deviceA,
+    });
+    const fromDeviceB = new IngredientBatchService({
+      ...dependencies,
+      contentStore: sharedContent,
+      repository: deviceB,
+    });
+
+    expect((await fromDeviceA.list('session')).batches[0]?.ingredientName).toBe('Cocoa Powder');
+    expect((await fromDeviceB.list('session')).batches[0]?.ingredientName).toBe('Cocoa Powder');
+    await expect(
+      fromDeviceB.certificationDocument('session', batchId, document.id),
+    ).resolves.toMatchObject({ fileName: document.fileName, data: documentData });
+    expect(sharedContent.retrieveAndDecrypt).toHaveBeenCalledWith('bafy-portable-ingredient');
+    expect(sharedContent.retrieveAndDecrypt).toHaveBeenCalledWith(document.cid);
+    expect(await deviceB.find(batchId)).toBeUndefined();
   });
 
   it.each([0, 1, 3])(

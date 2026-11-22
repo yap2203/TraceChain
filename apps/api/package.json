@@ -20,7 +20,7 @@
     "test:ingredient-batches": "vitest run src/modules/ingredient-batches/ingredient-batch.test.ts",
     "test:document-extraction": "vitest run src/modules/document-extraction",
     "test:production-flow": "vitest run src/modules/production-flow/production-flow.test.ts",
-    "test:product-traceability": "vitest run src/modules/product-traceability/product-traceability.test.ts",
+    "test:product-traceability": "vitest run src/modules/product-traceability",
     "test:stakeholder-directory": "vitest run src/modules/stakeholder-directory/stakeholder-directory.test.ts",
     "test:ssi-api": "vitest run src/modules/ssi/ssi.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"

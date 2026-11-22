@@ -29,7 +29,7 @@ import {
 } from '@tracechain/shared';
 import { Resolver } from 'did-resolver';
 import { verifyJWT } from 'did-jwt';
-import { decodeBytes32String, getAddress, id } from 'ethers';
+import { ZeroHash, decodeBytes32String, getAddress, id } from 'ethers';
 import { getResolver } from 'key-did-resolver';
 
 import type { AuthService } from '../auth/auth.service.js';
@@ -199,6 +199,7 @@ export class ProductionFlowService {
         return {
           challenge: previous.identityProof.challenge,
           expiresAt: previous.identityProof.expiresAt,
+          requestCid: previous.requestCid,
         };
       throw new ProductionFlowApiError(
         'IDENTITY_REQUEST_EXISTS',
@@ -238,19 +239,32 @@ export class ProductionFlowService {
       requestPayload: stored.payload,
       identityProof: proof,
     });
-    return { challenge: proof.challenge, expiresAt: proof.expiresAt };
+    return { challenge: proof.challenge, expiresAt: proof.expiresAt, requestCid: stored.cid };
   }
 
   async orderIdentityAttestation(sessionId: string | undefined, orderId: string) {
     const result = await this.verifyCompanyIdentityProof(sessionId, orderId);
     const workflow = await this.requireWorkflow(orderId);
-    const presentation = await this.dependencies.contentStore.decrypt(
-      workflow.identityProof!.presentationPayload!,
-    );
+    const presentation = workflow.identityProof!.presentationPayload
+      ? await this.dependencies.contentStore.decrypt(workflow.identityProof!.presentationPayload)
+      : await this.retrieveEncrypted(
+          workflow.identityProof!.presentationCid ?? '',
+          'COMPANY_IDENTITY_PRESENTATION',
+        );
+    if (!workflow.identityProof!.presentationCid) {
+      const migrated = await this.store(presentation, `${orderId}-company-identity-proof`);
+      workflow.identityProof = {
+        ...workflow.identityProof!,
+        presentationCid: migrated.cid,
+        presentationPayload: migrated.payload,
+      };
+      await this.dependencies.repository.saveEvidence(workflow);
+    }
     const checked = await this.verifyCompanyIdentityPresentation(workflow, presentation);
     return {
       challengeHash: id(workflow.identityProof!.challenge),
       presentationHash: id(presentation),
+      presentationCid: workflow.identityProof!.presentationCid!,
       credentialHash: `0x${normalizeHash(checked.credentialHash)}`,
       expiresAt: Math.min(
         workflow.identityProof!.expiresAt,
@@ -357,9 +371,7 @@ export class ProductionFlowService {
         }
         let context: { productBatchId?: string; requesterRole?: CompanyRole } = {};
         try {
-          const stored = JSON.parse(
-            await this.dependencies.contentStore.decrypt(record.requestPayload),
-          ) as typeof context;
+          const stored = JSON.parse(await this.requestContent(record)) as typeof context;
           context = {
             ...(typeof stored.productBatchId === 'string'
               ? { productBatchId: stored.productBatchId }
@@ -463,9 +475,11 @@ export class ProductionFlowService {
       );
     const chain = await this.requireChainRequest(requestId);
     this.assertRequestMatches(chain, workflow);
-    const request = JSON.parse(
-      await this.dependencies.contentStore.decrypt(workflow.requestPayload),
-    ) as { claims?: string[]; requiredClaims?: string[]; reason?: string };
+    const request = JSON.parse(await this.requestContent(workflow)) as {
+      claims?: string[];
+      requiredClaims?: string[];
+      reason?: string;
+    };
     let presentation: unknown;
     let supplierSource:
       { credentialFormat: string; legacyClaims?: Record<string, unknown> } | undefined;
@@ -486,9 +500,7 @@ export class ProductionFlowService {
       }
     }
     if (workflow.response) {
-      const serializedPresentation = await this.dependencies.contentStore.decrypt(
-        workflow.response.presentationPayload,
-      );
+      const serializedPresentation = await this.responseContent(workflow);
       const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
       if (ingredient?.credentialFormat === 'SD_JWT_VC') {
         presentation = serializedPresentation;
@@ -538,9 +550,7 @@ export class ProductionFlowService {
         'No presentation has been received for this request.',
         409,
       );
-    const serializedPresentation = await this.dependencies.contentStore.decrypt(
-      workflow.response.presentationPayload,
-    );
+    const serializedPresentation = await this.responseContent(workflow);
     const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
     if (ingredient?.credentialFormat === 'SD_JWT_VC') {
       let claims: Record<string, unknown>;
@@ -948,6 +958,7 @@ export class ProductionFlowService {
     const stored = await this.store(presentation, `${requestId}-company-identity-proof`);
     workflow.identityProof = {
       ...workflow.identityProof!,
+      presentationCid: stored.cid,
       presentationPayload: stored.payload,
       status: 'PRESENTED',
     };
@@ -967,9 +978,12 @@ export class ProductionFlowService {
         'Only the intended Supplier can verify the received identity proof.',
         403,
       );
-    const presentation = await this.dependencies.contentStore.decrypt(
-      workflow.identityProof.presentationPayload,
-    );
+    const presentation = workflow.identityProof.presentationPayload
+      ? await this.dependencies.contentStore.decrypt(workflow.identityProof.presentationPayload)
+      : await this.retrieveEncrypted(
+          workflow.identityProof.presentationCid ?? '',
+          'COMPANY_IDENTITY_PRESENTATION',
+        );
     const result = await this.verifyCompanyIdentityPresentation(workflow, presentation);
     workflow.identityProof.status = 'VERIFIED';
     workflow.identityProof.verifiedAt = this.clock().toISOString();
@@ -1012,11 +1026,16 @@ export class ProductionFlowService {
       sameAddress(session.address, workflow.supplier) &&
       workflow.identityProof?.status === 'VERIFIED' &&
       (!workflow.deliveryOrderId || workflow.identityProof.expiresAt > this.nowSeconds()) &&
-      workflow.identityProof.presentationPayload
+      (workflow.identityProof.presentationPayload || workflow.identityProof.presentationCid)
     ) {
       const checked = await this.verifyCompanyIdentityPresentation(
         workflow,
-        await this.dependencies.contentStore.decrypt(workflow.identityProof.presentationPayload),
+        workflow.identityProof.presentationPayload
+          ? await this.dependencies.contentStore.decrypt(workflow.identityProof.presentationPayload)
+          : await this.retrieveEncrypted(
+              workflow.identityProof.presentationCid!,
+              'COMPANY_IDENTITY_PRESENTATION',
+            ),
       );
       return {
         ...summary,
@@ -1096,9 +1115,12 @@ export class ProductionFlowService {
     if (!response) {
       const ingredient = await this.dependencies.ingredientRepository.find(workflow.batchId);
       if (ingredient?.credentialFormat === 'SD_JWT_VC' && !holderResponse) {
-        const request = JSON.parse(
-          await this.dependencies.contentStore.decrypt(workflow.requestPayload),
-        ) as { challenge?: string; claims?: string[]; requiredClaims?: string[]; reason?: string };
+        const request = JSON.parse(await this.requestContent(workflow)) as {
+          challenge?: string;
+          claims?: string[];
+          requiredClaims?: string[];
+          reason?: string;
+        };
         const envelope = JSON.parse(
           await this.dependencies.contentStore.decrypt(ingredient.encryptedPayload),
         ) as { sdJwt?: string };
@@ -1253,7 +1275,8 @@ export class ProductionFlowService {
     let value;
     try {
       value = JSON.parse(await this.dependencies.contentStore.decrypt(file.payload));
-    } catch {
+    } catch (error) {
+      if (isKeystoreLocked(error)) throw error;
       throw new ProductionFlowApiError(
         'DOCUMENT_RETRIEVAL_UNAVAILABLE',
         'The encrypted document could not be retrieved. Retry when the service is available.',
@@ -1847,28 +1870,64 @@ export class ProductionFlowService {
 
   private async productPresentation(productBatchId: string) {
     const workflow = await this.dependencies.repository.findPrivate('products', productBatchId);
-    if (!workflow) return undefined;
     try {
-      const parsed = JSON.parse(
-        await this.dependencies.contentStore.decrypt(workflow.payload),
-      ) as Record<string, unknown>;
+      const chain = !workflow
+        ? await this.safeGateway(() => this.dependencies.gateway.getProduct(productBatchId))
+        : undefined;
+      if (!workflow && !chain) return undefined;
+      if (!workflow && !this.dependencies.contentStore.retrieveAndDecrypt) return undefined;
+      const serialized = workflow
+        ? await this.dependencies.contentStore.decrypt(workflow.payload)
+        : await this.retrieveEncrypted(chain!.publicCid, 'PRODUCT_METADATA');
+      const contentHash = workflow?.contentHash ?? chain!.metadataHash;
+      if (sha256(serialized).toLowerCase() !== contentHash.toLowerCase())
+        throw this.recordMismatch(
+          'The encrypted product metadata does not match the blockchain hash.',
+        );
+      const parsed = JSON.parse(serialized) as Record<string, unknown>;
+      if (
+        typeof parsed.batchReference !== 'string' ||
+        id(parsed.batchReference).toLowerCase() !== productBatchId.toLowerCase()
+      )
+        throw this.recordMismatch('The encrypted product metadata belongs to another batch.');
       return {
         batchReference:
           typeof parsed.batchReference === 'string' ? parsed.batchReference : undefined,
         productName: typeof parsed.productName === 'string' ? parsed.productName : undefined,
       };
-    } catch {
-      return undefined;
+    } catch (error) {
+      if (error instanceof ProductionFlowApiError) throw error;
+      throw new ProductionFlowApiError(
+        'PRODUCT_METADATA_UNAVAILABLE',
+        'The encrypted product metadata could not be downloaded or decrypted.',
+        503,
+      );
     }
   }
 
   private async ingredientPresentation(batchId: string) {
     const workflow = await this.dependencies.ingredientRepository.find(batchId);
-    if (!workflow) return undefined;
     try {
-      const parsed = JSON.parse(
-        await this.dependencies.contentStore.decrypt(workflow.encryptedPayload),
-      ) as { metadata?: Record<string, unknown> };
+      const chain = !workflow
+        ? await this.safeGateway(() => this.dependencies.gateway.getIngredient(batchId))
+        : undefined;
+      if (!workflow && !chain) return undefined;
+      if (!workflow && !this.dependencies.contentStore.retrieveAndDecrypt) return undefined;
+      const serialized = workflow
+        ? await this.dependencies.contentStore.decrypt(workflow.encryptedPayload)
+        : await this.retrieveEncrypted(chain!.encryptedCid, 'INGREDIENT_METADATA');
+      const parsed = JSON.parse(serialized) as { metadata?: Record<string, unknown> };
+      const metadata = parsed.metadata ?? {};
+      const contentHash = workflow?.metadataHash ?? chain!.metadataHash;
+      if (sha256(JSON.stringify(metadata)).toLowerCase() !== contentHash.toLowerCase())
+        throw this.recordMismatch(
+          'The encrypted ingredient metadata does not match the blockchain hash.',
+        );
+      if (
+        typeof metadata.batchId !== 'string' ||
+        id(metadata.batchId).toLowerCase() !== batchId.toLowerCase()
+      )
+        throw this.recordMismatch('The encrypted ingredient metadata belongs to another batch.');
       return {
         batchReference:
           typeof parsed.metadata?.batchId === 'string' ? parsed.metadata.batchId : undefined,
@@ -1877,8 +1936,13 @@ export class ProductionFlowService {
             ? parsed.metadata.ingredientName
             : undefined,
       };
-    } catch {
-      return undefined;
+    } catch (error) {
+      if (error instanceof ProductionFlowApiError) throw error;
+      throw new ProductionFlowApiError(
+        'INGREDIENT_METADATA_UNAVAILABLE',
+        'The encrypted ingredient metadata could not be downloaded or decrypted.',
+        503,
+      );
     }
   }
 
@@ -1968,7 +2032,7 @@ export class ProductionFlowService {
       await this.dependencies.contentStore.decrypt(ingredient.encryptedPayload),
     ) as { credential?: unknown; sdJwt?: string };
     const request = JSON.parse(
-      await this.dependencies.contentStore.decrypt(workflow.requestPayload),
+      await this.requestContent(workflow),
     ) as EvidenceRequestPrivatePayload;
     if (!request.challenge || id(request.challenge) !== workflow.challengeHash)
       throw this.recordMismatch('Evidence challenge mismatch.');
@@ -2147,11 +2211,9 @@ export class ProductionFlowService {
     )
       throw this.recordMismatch('Presentation reference mismatch.');
     const request = JSON.parse(
-      await this.dependencies.contentStore.decrypt(workflow.requestPayload),
+      await this.requestContent(workflow),
     ) as EvidenceRequestPrivatePayload;
-    const serializedPresentation = await this.dependencies.contentStore.decrypt(
-      workflow.response.presentationPayload,
-    );
+    const serializedPresentation = await this.responseContent(workflow);
     if (!request.challenge || id(request.challenge) !== chain!.challengeHash)
       throw this.recordMismatch('Presentation challenge mismatch.');
     this.assertEvidenceRequestBinding(workflow, request);
@@ -2159,9 +2221,10 @@ export class ProductionFlowService {
     if (!ingredient) throw this.recordMismatch('Ingredient workflow is missing.');
     const agent: TraceChainAgent = await this.dependencies.agentProvider();
     if (ingredient.credentialFormat === 'SD_JWT_VC') {
-      const requestDetails = JSON.parse(
-        await this.dependencies.contentStore.decrypt(workflow.requestPayload),
-      ) as { claims?: string[]; requiredClaims?: string[] };
+      const requestDetails = JSON.parse(await this.requestContent(workflow)) as {
+        claims?: string[];
+        requiredClaims?: string[];
+      };
       const source = JSON.parse(
         await this.dependencies.contentStore.decrypt(ingredient.encryptedPayload),
       );
@@ -2374,13 +2437,79 @@ export class ProductionFlowService {
     return batch;
   }
   private async requireWorkflow(requestId: string) {
-    const record = await this.dependencies.repository.findEvidence(requestId);
-    if (!record)
-      throw new ProductionFlowApiError(
-        'REQUEST_NOT_FOUND',
-        'The evidence request was not found.',
-        404,
+    let record = await this.dependencies.repository.findEvidence(requestId);
+    if (!record) {
+      const chain = await this.safeGateway(() =>
+        this.dependencies.gateway.getEvidenceRequest(requestId),
       );
+      if (!chain)
+        throw new ProductionFlowApiError(
+          'REQUEST_NOT_FOUND',
+          'The evidence request was not found.',
+          404,
+        );
+      const serialized = await this.retrieveEncrypted(chain.requestCid, 'EVIDENCE_REQUEST');
+      let request: EvidenceRequestPrivatePayload & {
+        challenge?: string;
+        claims?: string[];
+        requiredClaims?: string[];
+        requestId?: string;
+        requester?: string;
+        supplier?: string;
+      };
+      try {
+        request = JSON.parse(serialized);
+      } catch {
+        throw this.recordMismatch('The encrypted evidence request is malformed.');
+      }
+      const claims = [...new Set(request.claims ?? [])].sort();
+      const requiredClaims = [...new Set(request.requiredClaims ?? request.claims ?? [])].sort();
+      const claimsHash = sha256(
+        canonical({
+          claims,
+          requiredClaims,
+          ...(request.policy ? { policy: request.policy } : {}),
+        }),
+      );
+      if (
+        request.requestId?.toLowerCase() !== requestId.toLowerCase() ||
+        !request.challenge ||
+        id(request.challenge).toLowerCase() !== chain.challengeHash.toLowerCase() ||
+        claimsHash.toLowerCase() !== chain.claimsHash.toLowerCase() ||
+        !sameAddress(String(request.requester ?? ''), chain.requester) ||
+        !sameAddress(String(request.supplier ?? ''), chain.supplier) ||
+        request.batchId?.toLowerCase() !== chain.ingredientBatchId.toLowerCase() ||
+        Number(request.dueAt) !== chain.dueAt
+      )
+        throw this.recordMismatch(
+          'The encrypted evidence request does not match the blockchain record.',
+        );
+      const ingredient = await this.safeGateway(() =>
+        this.dependencies.gateway.getIngredient(chain.ingredientBatchId),
+      );
+      record = {
+        batchId: chain.ingredientBatchId,
+        challengeHash: chain.challengeHash,
+        claimsHash: chain.claimsHash,
+        dueAt: chain.dueAt,
+        operationId: `recovered:${requestId.toLowerCase()}`,
+        requestCid: chain.requestCid,
+        requestId,
+        requester: chain.requester,
+        supplier: chain.supplier,
+        ...(chain.presentationCid
+          ? {
+              response: {
+                credentialId: ingredient?.credentialId ?? ZeroHash,
+                presentationCid: chain.presentationCid,
+                presentationExpiresAt: chain.presentationExpiresAt,
+                presentationHash: chain.presentationHash,
+              },
+            }
+          : {}),
+      };
+      await this.dependencies.repository.saveEvidence(record);
+    }
     if (record.deliveryOrderId && !(await this.dependencies.validateDeliveryIdentity?.(record)))
       throw new ProductionFlowApiError(
         'IDENTITY_PROOF_ACCESS_DENIED',
@@ -2388,6 +2517,43 @@ export class ProductionFlowService {
         404,
       );
     return record;
+  }
+
+  private async retrieveEncrypted(cid: string, label: string) {
+    if (!cid || !this.dependencies.contentStore.retrieveAndDecrypt)
+      throw new ProductionFlowApiError(
+        'LEGACY_RECORD_NOT_MIGRATED',
+        `${label} is not available from this API instance because its encrypted IPFS reference has not been migrated.`,
+        409,
+      );
+    try {
+      return await this.dependencies.contentStore.retrieveAndDecrypt(cid);
+    } catch (error) {
+      if (isKeystoreLocked(error)) throw error;
+      throw new ProductionFlowApiError(
+        'ENCRYPTED_RECORD_UNAVAILABLE',
+        `${label} could not be downloaded or decrypted.`,
+        503,
+      );
+    }
+  }
+
+  private async requestContent(workflow: EvidenceWorkflowRecord) {
+    return workflow.requestPayload
+      ? this.dependencies.contentStore.decrypt(workflow.requestPayload)
+      : this.retrieveEncrypted(workflow.requestCid, 'EVIDENCE_REQUEST');
+  }
+
+  private async responseContent(workflow: EvidenceWorkflowRecord) {
+    if (!workflow.response)
+      throw new ProductionFlowApiError(
+        'EVIDENCE_NOT_RECEIVED',
+        'No evidence response exists.',
+        409,
+      );
+    return workflow.response.presentationPayload
+      ? this.dependencies.contentStore.decrypt(workflow.response.presentationPayload)
+      : this.retrieveEncrypted(workflow.response.presentationCid, 'EVIDENCE_RESPONSE');
   }
   private async requireChainRequest(requestId: string) {
     const chain = await this.safeGateway(() =>
@@ -2463,7 +2629,8 @@ export class ProductionFlowService {
   private async store(content: string, key: string) {
     try {
       return await this.dependencies.contentStore.encryptAndStore(content, key);
-    } catch {
+    } catch (error) {
+      if (isKeystoreLocked(error)) throw error;
       throw new ProductionFlowApiError(
         'ENCRYPTED_STORAGE_UNAVAILABLE',
         'Encrypted off-chain storage is unavailable. No transaction was prepared.',
@@ -2573,9 +2740,9 @@ export class ProductionFlowService {
   }
 
   private async requesterRole(workflow: EvidenceWorkflowRecord) {
-    const payload = JSON.parse(
-      await this.dependencies.contentStore.decrypt(workflow.requestPayload),
-    ) as { requesterRole?: CompanyRole };
+    const payload = JSON.parse(await this.requestContent(workflow)) as {
+      requesterRole?: CompanyRole;
+    };
     if (
       payload.requesterRole !== CompanyRole.MANUFACTURER &&
       payload.requesterRole !== CompanyRole.RETAILER
@@ -2898,6 +3065,10 @@ function sameAddress(left: string, right: string) {
   } catch {
     return false;
   }
+}
+
+function isKeystoreLocked(error: unknown) {
+  return (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
 }
 
 function normalizeHash(value: string) {

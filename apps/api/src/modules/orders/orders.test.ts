@@ -5,7 +5,7 @@ import { productRequestSchema } from '../production-flow/production-flow.schema.
 import express from 'express';
 import request from 'supertest';
 import { CompanyRole, encodeIngredientDeliveryQr, encodeShipmentQr } from '@tracechain/shared';
-import { encodeBytes32String, id } from 'ethers';
+import { encodeBytes32String, id, ZeroHash } from 'ethers';
 import { OrdersService } from './orders.service.js';
 import { createOrdersRouter } from './orders.routes.js';
 import type { OrdersGateway } from './orders.gateway.js';
@@ -866,6 +866,8 @@ function fixture(
         return { metadataHash: `0x${'0'.repeat(64)}`, encryptedCid: '', archived: false };
       if (method === 'getInventory')
         return { available: '0', reserved: '0', damaged: '0', rejected: '0' };
+      if (method === 'getMedia' || method === 'getCompanyBranding')
+        return { contentHash: ZeroHash, encryptedCid: '', updatedAt: '0' };
       if (method === 'locationTracked') return false;
       if (method === 'productionLocation') return id('factory');
       if (method === 'requestDecision')
@@ -1306,12 +1308,51 @@ describe('order API and private metadata', () => {
       height: 1,
     });
     expect(JSON.stringify(uploaded.body)).not.toContain('encrypted-cid');
+    expect(uploaded.body.state).toBe('TRANSACTION_REQUIRED');
+    const mediaArgs = f.gateway.prepare.mock.calls.at(-1)?.[3] as string[];
+    const ingredientRead = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getMedia'
+        ? { contentHash: mediaArgs[1], encryptedCid: mediaArgs[2], updatedAt: '1' }
+        : ingredientRead(contract, method, args),
+    );
     const image = await request(f.app)
       .get(`/api/orders/catalogue/ingredients/${batchId}/image`)
       .expect(200)
       .expect('Content-Type', 'image/png');
     expect(image.headers['x-content-type-options']).toBe('nosniff');
     expect(image.body).toEqual(Buffer.from(png, 'base64'));
+  });
+
+  it('serves a confirmed ingredient image from IPFS on an API with no local media record', async () => {
+    const deviceA = fixture(seller, true, CompanyRole.SUPPLIER);
+    await request(deviceA.app)
+      .post(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .send({ data: png, fileName: 'cocoa.png', mimeType: 'image/png' })
+      .expect(200);
+    const mediaArgs = deviceA.gateway.prepare.mock.calls.at(-1)?.[3] as string[];
+    const serialized = deviceA.store.encryptAndStore.mock.calls.at(-1)?.[0] as string;
+    const deviceB = fixture(seller, true, CompanyRole.SUPPLIER);
+    const retrieveAndDecrypt = vi.fn(async (cid: string) => {
+      if (cid !== mediaArgs[2]) throw new Error('IPFS object unavailable');
+      return serialized;
+    });
+    Object.assign(deviceB.store, { retrieveAndDecrypt });
+    const read = deviceB.gateway.read.getMockImplementation()!;
+    deviceB.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getMedia'
+        ? { contentHash: mediaArgs[1], encryptedCid: mediaArgs[2], updatedAt: '1' }
+        : read(contract, method, args),
+    );
+
+    const image = await request(deviceB.app)
+      .get(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .expect(200)
+      .expect('Content-Type', 'image/png');
+
+    expect(image.body).toEqual(Buffer.from(png, 'base64'));
+    expect(retrieveAndDecrypt).toHaveBeenCalledWith(mediaArgs[2]);
+    expect(deviceB.repository.findPrivate).toHaveBeenCalled();
   });
 
   it('stores and serves an authorized Manufacturer product image without exposing storage references', async () => {
@@ -1375,6 +1416,14 @@ describe('order API and private metadata', () => {
       width: 1,
     });
     expect(JSON.stringify(uploaded.body)).not.toContain('encrypted-cid');
+    expect(uploaded.body.state).toBe('TRANSACTION_REQUIRED');
+    const mediaArgs = f.gateway.prepare.mock.calls.at(-1)?.[3] as string[];
+    const productRead = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getMedia'
+        ? { contentHash: mediaArgs[1], encryptedCid: mediaArgs[2], updatedAt: '1' }
+        : productRead(contract, method, args),
+    );
     const image = await request(f.app)
       .get(`/api/orders/catalogue/products/${productBatchId}/image`)
       .expect(200)
@@ -1490,13 +1539,32 @@ describe('order API and private metadata', () => {
       .post(`/api/orders/branding/${seller}/logo`)
       .send({ data: png, fileName: 'logo.png', mimeType: 'image/png' })
       .expect(200);
+    const ingredientMediaArgs = f.gateway.prepare.mock.calls[0]?.[3] as string[];
+    const companyMediaArgs = f.gateway.prepare.mock.calls[1]?.[3] as string[];
+    const mediaRead = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'getMedia'
+        ? {
+            contentHash: ingredientMediaArgs[1],
+            encryptedCid: ingredientMediaArgs[2],
+            updatedAt: '1',
+          }
+        : method === 'getCompanyBranding' && args?.[0] === seller
+          ? {
+              contentHash: companyMediaArgs[0],
+              encryptedCid: companyMediaArgs[1],
+              updatedAt: '1',
+            }
+          : mediaRead(contract, method, args),
+    );
     const events = f.gateway.events.getMockImplementation()!;
     f.gateway.events.mockImplementation(async (contract, name) =>
       name === 'IngredientBatchRegistered'
         ? [{ batchId, supplier: seller, blockNumber: 42 }]
         : events(contract, name),
     );
-    const response = await request(f.app).get('/api/orders').expect(200);
+    const response = await request(f.app).get('/api/orders');
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
     expect(response.body.catalogue[0]).toMatchObject({
       imagePath: `/catalogue/ingredients/${batchId}/image`,
       sellerLogoPath: `/branding/${seller}/logo`,

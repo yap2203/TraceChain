@@ -23,12 +23,12 @@ export async function queryContractEvents(
   const provider = contract.runner?.provider;
   if (!provider) throw new Error('A blockchain provider is required to read contract events.');
   const [rawHead, network, address] = await Promise.all([
-    provider.getBlockNumber(),
+    latestBlockNumber(provider),
     provider.getNetwork(),
     contract.getAddress(),
   ]);
   const local = network.chainId === 31_337n;
-  const confirmations = integerEnvironment('CHAIN_EVENT_CONFIRMATIONS', local ? 0 : 2, 0, 1_000);
+  const confirmations = local ? 0 : integerEnvironment('CHAIN_EVENT_CONFIRMATIONS', 2, 0, 1_000);
   const confirmedHead = Math.max(0, rawHead - confirmations);
   const fromBlock = await eventStartBlock(provider, address, rawHead, confirmedHead, local);
   const key = `${network.chainId}:${address.toLowerCase()}:${fromBlock}:${await filterKey(event)}`;
@@ -47,6 +47,14 @@ export async function queryContractEvents(
   } finally {
     if (index.pending === operation) index.pending = undefined;
   }
+}
+
+async function latestBlockNumber(provider: Provider) {
+  const transport = provider as Provider & {
+    send?: (method: string, params: unknown[]) => Promise<unknown>;
+  };
+  if (transport.send) return Number(BigInt(String(await transport.send('eth_blockNumber', []))));
+  return provider.getBlockNumber();
 }
 
 async function refreshEventIndex(

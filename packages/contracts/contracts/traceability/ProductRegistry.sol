@@ -7,6 +7,7 @@ import {EvidenceRegistry} from './EvidenceRegistry.sol';
 interface ILocationDirectory { function locationOwner(bytes32 location) external view returns (address); }
 
 contract ProductRegistry is IProductRegistry {
+    struct ContentReference { bytes32 contentHash; string encryptedCid; uint64 updatedAt; }
     function receivedProductionPolicy() external pure returns (uint8) { return 1; }
     enum Status {
         None,
@@ -36,6 +37,7 @@ contract ProductRegistry is IProductRegistry {
     EvidenceRegistry public immutable evidence;
     mapping(bytes32 => Product) private products;
     mapping(bytes32 => IngredientLink[]) private links;
+    mapping(bytes32 => ContentReference) private media;
     mapping(bytes32 => bytes32) public productionLocation;
     mapping(bytes32 => uint64) public productionRecordedAt;
     event ProductionRecorded(bytes32 indexed batchId, bytes32 indexed location, uint64 occurredAt, uint64 recordedAt);
@@ -52,6 +54,15 @@ contract ProductRegistry is IProductRegistry {
         uint256 quantity
     );
     event ProductStatusChanged(bytes32 indexed batchId, Status status, bytes32 reasonHash);
+    event ProductMediaUpdated(bytes32 indexed batchId, bytes32 contentHash, string encryptedCid);
+    function updateMedia(bytes32 batchId, bytes32 contentHash, string calldata encryptedCid) external {
+        Product storage product = products[batchId];
+        if (product.manufacturer != msg.sender || !stakeholders.isAuthorized(msg.sender, 3)) revert Unauthorized(msg.sender);
+        if (contentHash == bytes32(0) || bytes(encryptedCid).length == 0) revert InvalidInput();
+        media[batchId] = ContentReference(contentHash, encryptedCid, uint64(block.timestamp));
+        emit ProductMediaUpdated(batchId, contentHash, encryptedCid);
+    }
+    function getMedia(bytes32 batchId) external view returns (ContentReference memory) { return media[batchId]; }
     constructor(address stakeholderRegistry, address ingredientRegistry, address evidenceRegistry) {
         stakeholders = IStakeholderRegistry(stakeholderRegistry);
         ingredients = IIngredientRegistry(ingredientRegistry);

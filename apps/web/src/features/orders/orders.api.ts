@@ -1,5 +1,6 @@
 import { apiErrorMessage } from '../../components/ui/feedback';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
+import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 export type OrderRecord = Record<string, any>;
 export interface SupplierStock {
   batchId: string;
@@ -90,12 +91,22 @@ export interface CompanyProfile {
   locations: CompanyLocation[];
 }
 export const getCompanyProfile = () => request<CompanyProfile>('/profile');
-export const updateLocationLabel = (location: string, label: string, address?: string) =>
-  request(
-    `/profile/locations/${encodeURIComponent(location)}`,
-    { label, ...(address !== undefined ? { address } : {}) },
-    'PATCH',
-  );
+export const updateLocationLabel = async (location: string, label: string, address?: string) => {
+  const update = () =>
+    request<MediaUpdateResult & { location: string; label: string; address?: string }>(
+      `/profile/locations/${encodeURIComponent(location)}`,
+      { label, ...(address !== undefined ? { address } : {}) },
+      'PATCH',
+    );
+  let result = await update();
+  if (result.transaction) {
+    await submitProductionTransaction(result.transaction, result.actorWallet);
+    result = await update();
+  }
+  if (result.state && result.state !== 'COMPLETE')
+    throw new Error('The location update transaction was not confirmed.');
+  return result;
+};
 export interface PickupPlan {
   pickupAt: number;
   arrangedAt: string;
@@ -201,29 +212,59 @@ export const uploadIngredientCatalogueImage = async (
   batchId: string,
   image: CatalogueImageUpload,
 ) => {
-  const result = await request<{ image: { path: string } }>(
-    `/catalogue/ingredients/${batchId}/image`,
-    image,
-  );
+  const upload = () =>
+    request<MediaUpdateResult & { image: { path: string } }>(
+      `/catalogue/ingredients/${batchId}/image`,
+      image,
+    );
+  let result = await upload();
+  if (result.transaction) {
+    await submitProductionTransaction(result.transaction, result.actorWallet);
+    result = await upload();
+  }
+  if (result.state && result.state !== 'COMPLETE')
+    throw new Error('The ingredient image transaction was not confirmed.');
   mediaRequests.delete(result.image.path);
   return result;
 };
 export const uploadProductCatalogueImage = async (batchId: string, image: CatalogueImageUpload) => {
-  const result = await request<{ image: { path: string } }>(
-    `/catalogue/products/${batchId}/image`,
-    image,
-  );
+  const upload = () =>
+    request<MediaUpdateResult & { image: { path: string } }>(
+      `/catalogue/products/${batchId}/image`,
+      image,
+    );
+  let result = await upload();
+  if (result.transaction) {
+    await submitProductionTransaction(result.transaction, result.actorWallet);
+    result = await upload();
+  }
+  if (result.state && result.state !== 'COMPLETE')
+    throw new Error('The product image transaction was not confirmed.');
   mediaRequests.delete(result.image.path);
   return result;
 };
 export const uploadCompanyLogo = async (wallet: string, image: CatalogueImageUpload) => {
-  const result = await request<{ branding: { logoPath: string } }>(
-    `/branding/${wallet}/logo`,
-    image,
-  );
+  const upload = () =>
+    request<MediaUpdateResult & { branding: { logoPath: string } }>(
+      `/branding/${wallet}/logo`,
+      image,
+    );
+  let result = await upload();
+  if (result.transaction) {
+    await submitProductionTransaction(result.transaction, result.actorWallet);
+    result = await upload();
+  }
+  if (result.state && result.state !== 'COMPLETE')
+    throw new Error('The company logo transaction was not confirmed.');
   mediaRequests.delete(result.branding.logoPath);
   return result;
 };
+
+interface MediaUpdateResult {
+  actorWallet: string;
+  state: 'COMPLETE' | 'TRANSACTION_REQUIRED';
+  transaction?: PreparedTransaction;
+}
 export const getMyCompanyBranding = () =>
   request<{ branding: { companyName: string; logoPath?: string; role: string } }>('/branding/me');
 export class CatalogueMediaError extends Error {
