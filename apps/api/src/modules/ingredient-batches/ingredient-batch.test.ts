@@ -188,22 +188,33 @@ describe('Supplier ingredient-batch API', () => {
 
   it('recovers a confirmed ingredient on a second API with an empty data directory', async () => {
     const batchId = id(BODY.batchReference);
+    const operationId = randomUUID();
+    const certificationId = randomUUID();
+    const documentId = randomUUID();
     const documentData =
       'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jDfsAAAAASUVORK5CYII=';
     const document = {
       cid: 'bafy-portable-certification',
       fileName: 'organic-certificate.png',
-      id: randomUUID(),
+      id: documentId,
       mimeType: 'image/png',
       sha256: createHash('sha256').update(Buffer.from(documentData, 'base64')).digest('hex'),
       size: Buffer.from(documentData, 'base64').length,
+    };
+    const encryptedDocument = {
+      id: documentId,
+      operationId,
+      certificationId,
+      fileName: document.fileName,
+      mimeType: document.mimeType,
+      data: documentData,
     };
     const metadata = {
       batchId: BODY.batchReference,
       ingredientName: BODY.ingredientName,
       category: BODY.category,
       countryOfOrigin: BODY.origin,
-      certificationEntries: [{ id: randomUUID(), documents: [document] }],
+      certificationEntries: [{ id: certificationId, documents: [document] }],
     };
     const envelope = JSON.stringify({ metadata, version: 2 });
     const metadataHash = `0x${createHash('sha256').update(JSON.stringify(metadata)).digest('hex')}`;
@@ -221,6 +232,8 @@ describe('Supplier ingredient-batch API', () => {
       join(directory, 'device-b', 'issuance', 'ingredient-batches.json'),
     );
     await deviceA.save({
+      operationId,
+      certificationDocumentIds: [documentId],
       batchId,
       credentialHash: `0x${'11'.repeat(32)}`,
       credentialId: `0x${'22'.repeat(32)}`,
@@ -233,6 +246,21 @@ describe('Supplier ingredient-batch API', () => {
       quantity: '500',
       supplierWallet: getAddress(SUPPLIER),
       unit: 'kg',
+    });
+    await deviceA.saveAttachment({
+      id: documentId,
+      operationId,
+      certificationId,
+      supplierWallet: getAddress(SUPPLIER),
+      sha256: document.sha256,
+      cid: document.cid,
+      payload: {
+        algorithm: 'aes-256-gcm',
+        authTag: 'portable-document-tag',
+        ciphertext: Buffer.from(JSON.stringify(encryptedDocument)).toString('base64'),
+        iv: 'portable-document-iv',
+        version: 1,
+      },
     });
     batch = {
       availableQuantity: '500',
@@ -252,12 +280,7 @@ describe('Supplier ingredient-batch API', () => {
       encryptAndStore: dependencies.contentStore.encryptAndStore,
       retrieveAndDecrypt: vi.fn(async (cid: string) => {
         if (cid === 'bafy-portable-ingredient') return envelope;
-        if (cid === document.cid)
-          return JSON.stringify({
-            data: documentData,
-            fileName: document.fileName,
-            mimeType: document.mimeType,
-          });
+        if (cid === document.cid) return JSON.stringify(encryptedDocument);
         throw new Error('IPFS object unavailable');
       }),
     };
@@ -272,6 +295,10 @@ describe('Supplier ingredient-batch API', () => {
       repository: deviceB,
     });
 
+    expect(await deviceA.find(batchId)).toBeDefined();
+    expect(await deviceA.findAttachment(documentId)).toBeDefined();
+    expect(await deviceB.find(batchId)).toBeUndefined();
+    expect(await deviceB.findAttachment(documentId)).toBeUndefined();
     expect((await fromDeviceA.list('session')).batches[0]?.ingredientName).toBe('Cocoa Powder');
     expect((await fromDeviceB.list('session')).batches[0]?.ingredientName).toBe('Cocoa Powder');
     await expect(
@@ -280,6 +307,7 @@ describe('Supplier ingredient-batch API', () => {
     expect(sharedContent.retrieveAndDecrypt).toHaveBeenCalledWith('bafy-portable-ingredient');
     expect(sharedContent.retrieveAndDecrypt).toHaveBeenCalledWith(document.cid);
     expect(await deviceB.find(batchId)).toBeUndefined();
+    expect(await deviceB.findAttachment(documentId)).toBeUndefined();
   });
 
   it.each([0, 1, 3])(

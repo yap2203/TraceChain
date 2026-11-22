@@ -271,6 +271,8 @@ describe('administrator keystore API access', () => {
   it('allows only the on-chain System Admin to import and export', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'tracechain-keystore-'));
     directories.push(directory);
+    const initialization = new KeystoreInitializationGuard(join(directory, 'state.json'), []);
+    await initialization.markInitialized();
     const manager = new AdminKeystoreManager();
     const encrypted = await encryptAdminKeystore(bundle, PASSWORD);
     const app = express()
@@ -280,7 +282,7 @@ describe('administrator keystore API access', () => {
           authService: session(COMPANY, CompanyRole.SUPPLIER),
           cookieName: 'session',
           gateway: { getAdministrator: async () => ADMIN },
-          initialization: new KeystoreInitializationGuard(join(directory, 'state.json'), []),
+          initialization,
           manager,
         }),
       );
@@ -297,7 +299,7 @@ describe('administrator keystore API access', () => {
           authService: session(ADMIN, CompanyRole.SYSTEM_ADMIN),
           cookieName: 'session',
           gateway: { getAdministrator: async () => ADMIN },
-          initialization: new KeystoreInitializationGuard(join(directory, 'state.json'), []),
+          initialization,
           manager,
         }),
       );
