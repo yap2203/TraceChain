@@ -32,6 +32,57 @@ const state = {
   locations: [{ company: actor, location: 'factory', label: 'My factory' }],
 };
 describe('browse and request-only UI', () => {
+  it('requests summary pages first and fetches full detail only when a row is opened', async () => {
+    const rows = [
+      {
+        orderId: 'summary-order',
+        itemId: 'item',
+        seller: actor,
+        buyer: 'manufacturer',
+        requested: '12',
+        status: 1,
+        expiresAt: '2000000000',
+      },
+    ];
+    const summary = {
+      ...state,
+      orders: rows,
+      catalogue: [{ itemId: 'item', name: 'Listed ingredient', unit: 'kg' }],
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        total: 41,
+        counts: { all: 41, attention: 41, evidence: 0, approved: 0, closed: 0 },
+      },
+    };
+    api.getOrders.mockImplementation(async (scope, options) =>
+      scope === 'order-detail'
+        ? {
+            ...summary,
+            pagination: undefined,
+            orders: rows.map((row) => ({
+              ...row,
+              isRequestOnly: true,
+              details: { note: 'Authorized private detail' },
+            })),
+          }
+        : { ...summary, pagination: { ...summary.pagination, page: options?.page ?? 1 } },
+    );
+    render(
+      <MemoryRouter>
+        <OrdersPage role="supplier" />
+      </MemoryRouter>,
+    );
+    await screen.findByText(/Page 1 of 3/);
+    expect(api.getOrders.mock.calls[0][0]).toBe('order-list');
+    expect(screen.queryByText('Authorized private detail')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    await screen.findByText(/Page 2 of 3/);
+    expect(api.getOrders.mock.calls.at(-1)![1]).toMatchObject({ page: 2, direction: 'received' });
+    fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
+    await screen.findByText('Private note: Authorized private detail');
+    expect(api.getOrders.mock.calls.at(-1)).toEqual(['order-detail', { orderId: 'summary-order' }]);
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     api.getOrders.mockResolvedValue(state);
@@ -268,9 +319,7 @@ describe('browse and request-only UI', () => {
     await screen.findByLabelText('Share companyName');
     expect(screen.queryByLabelText('Presentation key backup password')).toBeNull();
     expect(
-      screen
-        .getByRole('link', { name: 'Manage legacy presentation keys' })
-        .getAttribute('href'),
+      screen.getByRole('link', { name: 'Manage legacy presentation keys' }).getAttribute('href'),
     ).toBe('/manufacturer/credentials#legacy-presentation-signing');
     expect((screen.getByLabelText('Share role') as HTMLInputElement).disabled).toBe(true);
     expect(
@@ -374,7 +423,7 @@ describe('browse and request-only UI', () => {
     );
     await screen.findAllByRole('button', { name: 'Review request' });
     fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
-    expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Request company evidence' })).toBeTruthy();
     expect(screen.queryByLabelText('Dispatch quantity')).toBeNull();
     expect(screen.queryByLabelText('Allocation quantity')).toBeNull();
     expect(screen.getByText(/This request does not reserve stock/)).toBeTruthy();
@@ -487,6 +536,7 @@ describe('browse and request-only UI', () => {
     expect(submit.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText('Close dialog'));
     fireEvent.click(screen.getByRole('button', { name: 'My requests' }));
+    await screen.findAllByRole('button', { name: 'View request' });
     expect(container.querySelector('.requests-desktop')).toBeTruthy();
     expect(container.querySelector('.requests-mobile')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'View request' })).toHaveLength(2);
@@ -673,10 +723,12 @@ describe('browse and request-only UI', () => {
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
     expect(screen.getByRole('table')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Received from buyers' }));
-    expect(screen.getAllByText('Retailer A').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Retailer A')).length).toBeGreaterThan(0);
     expect(screen.queryByText('Supplier A')).toBeNull();
     fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
-    expect(screen.getByRole('button', { name: 'Approve' }).hasAttribute('disabled')).toBe(false);
+    expect((await screen.findByRole('button', { name: 'Approve' })).hasAttribute('disabled')).toBe(
+      false,
+    );
     expect(screen.getByRole('button', { name: 'Reject' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();

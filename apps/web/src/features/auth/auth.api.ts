@@ -1,4 +1,9 @@
 import { apiErrorMessage } from '../../components/ui/feedback';
+import {
+  authRequestScope,
+  resetAuthRequestScope,
+  synchronizeAuthRequestScope,
+} from './auth-request-scope';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
   /\/$/,
   '',
@@ -83,24 +88,41 @@ async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function requestNonce(address: string) {
+  resetAuthRequestScope();
   return apiRequest<NonceResponse>('/api/auth/nonce', {
     body: JSON.stringify({ address }),
     method: 'POST',
   });
 }
 
-export function verifySiweMessage(message: string, signature: string) {
-  return apiRequest<AuthenticatedSession>('/api/auth/verify', {
+export async function verifySiweMessage(message: string, signature: string) {
+  resetAuthRequestScope();
+  const scope = authRequestScope();
+  const result = await apiRequest<AuthenticatedSession>('/api/auth/verify', {
     body: JSON.stringify({ message, signature }),
     method: 'POST',
   });
+  if (scope === authRequestScope())
+    synchronizeAuthRequestScope(
+      `${result.address}:${result.role}:${result.credentialId}:${result.authorizationStatus}`,
+    );
+  return result;
 }
 
-export function getAuthSession() {
-  return apiRequest<SessionResponse>('/api/auth/session');
+export async function getAuthSession() {
+  const scope = authRequestScope();
+  const result = await apiRequest<SessionResponse>('/api/auth/session');
+  if (scope === authRequestScope())
+    synchronizeAuthRequestScope(
+      result.authenticated
+        ? `${result.address}:${result.role}:${result.credentialId}:${result.authorizationStatus}`
+        : 'guest',
+    );
+  return result;
 }
 
 export function deleteAuthSession() {
+  resetAuthRequestScope();
   return apiRequest<void>('/api/auth/logout', { method: 'POST' });
 }
 import type { CompanyRole } from '@tracechain/shared';

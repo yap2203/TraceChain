@@ -43,17 +43,14 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
 
 ## Current implementation
 
-- Normal API runtime starts with its protected content/issuer key material locked. A versioned,
-  scrypt-derived AES-256-GCM administrator keystore carries the existing IPFS encryption key,
-  Veramo KMS secret and encrypted issuer private-key store between API machines. Only the current
-  on-chain System Admin may initialize, import, export or lock it after SIWE authorization; decrypted
-  material exists only in API memory and is lost on restart. Existing installations use the
-  non-destructive interactive migration command before archiving legacy key sources. Company
-  presentation signing uses separate per-company encrypted portable keystores that must be downloaded
-  and confirmed before a new key is bound. Admin exports require password confirmation, and changed
-  issuer keys block manual lock until a current backup is exported. Phase 1 deliberately
-  retains application caches, issuance/production journals, DIDComm state/backend agent keys, public
-  Veramo metadata and development exports. See `docs/STORAGE_AND_RECOVERY.md`.
+- Normal API runtime loads original IPFS_ENCRYPTION_KEY and VERAMO_KMS_SECRET_KEY from protected
+  backend environment configuration at startup (2026-11-23). It validates existing encrypted Veramo
+  keys, matching public DID metadata and the configured authority before listening. Missing or
+  inconsistent issuer material stops startup without generating a replacement. Runtime Admin-keystore
+  pages, endpoints and locks are removed. Historical encrypted bundles remain offline recovery sources;
+  keys:restore compares/decrypt-validates them and backs up originals before an explicit restore.
+  Hardhat deployment keystore, SIWE, wallet-bound presentations and legacy holder-key recovery are
+  unchanged. See docs/BACKEND_ENVIRONMENT_RECOVERY.md.
 
 - The active environment targets Sepolia (11155111), with one active RPC shared by the
   API/frontend/SSI/Hardhat. Deployment uses a fixed Ignition journal and verifies the
@@ -65,9 +62,9 @@ See `docs/testing/ROLE_WORKFLOWS_TEST_GUIDE.md` for current navigation and valid
 - Registration collects legal business details, contact details, wallet identity and supporting documents without requiring a physical dispatch/receiving location. Companies add named physical locations in Profile when needed for orders, shipments or production. Existing signed application location drafts remain supported; registered addresses and edits use encrypted location presentation records. Stable on-chain IDs, stock/history and authorized-only address visibility remain unchanged.
 
 - New registration stores a canonical versioned application manifest plus separately encrypted supporting documents and optional logo in the existing AES-256-GCM IPFS store. Applicant signatures bind the complete company/contact/representative content, file digests, application/wallet/role, chain/registry and final manifest CID/hash. `StakeholderRegistry` records the real encrypted manifest reference and exact hash; local application JSON is only a legacy/cache source. Authorized Admin review, approved branding, credential discovery and company-directory enrichment can resolve from chain plus encrypted content on a fresh backend with the same configuration/key. Legacy `local://` records remain read-only compatible and can be assessed with `npm run applications:assess-legacy`; no historical record is silently rewritten. No contract change is required for new registrations.
-- Cross-device Phase 2 extends that pattern to confirmed business content. Blockchain state/events discover immutable encrypted IPFS CIDs and hashes for credentials, ingredient/product metadata and media, evidence, custody/receipt evidence, order/shipment details, company branding and private location/correction content. A fresh API using the same deployment, gateway and unlocked Phase 1 keystore reconstructs authorized views without copying the first API's business JSON. Retrieved data is checked against the configured chain/contract reference, record and participant binding, and saved content hash; blockchain lifecycle state remains authoritative. Old JSON is retained as cache/retry/legacy state, never as a new cross-device latest-CID index. The new content-reference fields require a complete suite redeployment; historical records without a discoverable CID require explicit participant-signed replay/migration.
+- Cross-device Phase 2 extends that pattern to confirmed business content. Blockchain state/events discover immutable encrypted IPFS CIDs and hashes for credentials, ingredient/product metadata and media, evidence, custody/receipt evidence, order/shipment details, company branding and private location/correction content. A fresh API using the same deployment, gateway and original environment keys and matching restored Veramo files reconstructs authorized views without copying the first API's business JSON. Retrieved data is checked against the configured chain/contract reference, record and participant binding, and saved content hash; blockchain lifecycle state remains authoritative. Old JSON is retained as cache/retry/legacy state, never as a new cross-device latest-CID index. The new content-reference fields require a complete suite redeployment; historical records without a discoverable CID require explicit participant-signed replay/migration.
 
-- SSI data storage separates public DID/key metadata from an AES-GCM encrypted VC/VP/claim/message cache. Legacy public-store contents migrate after encrypted write/read-back, preserving bootstrap/export compatibility. The company identity feature retrieves its authenticated wallet's current registry CID from encrypted IPFS. The retired raw backend-key backup endpoint remains unavailable; the authorized Admin keystore route exports only a password-encrypted portable bundle. Company presentation-signing recovery remains separate. See `docs/STORAGE_AND_RECOVERY.md`.
+- SSI data storage separates public DID/key metadata from an AES-GCM encrypted VC/VP/claim/message cache. Legacy public-store contents migrate after encrypted write/read-back, preserving bootstrap/export compatibility. The company identity feature retrieves its authenticated wallet's current registry CID from encrypted IPFS. The retired raw backend-key backup endpoint remains unavailable; runtime Admin keystore endpoints are removed; encrypted bundle recovery is offline only. Company presentation-signing recovery remains separate. See `docs/STORAGE_AND_RECOVERY.md`.
 
 - Product orders now mirror two-mode ingredient fulfilment: Retailer requests, Manufacturer approves/rejects and selects an assigned direct carrier or sufficient received Distributor custody, Distributor dispatches, and Retailer scans/settles receipt. ProductDelivery is automatically deployed by CustodyTransfer, keeps owner/receiver/carrier roles separate and reuses product inventory, road QR/receipt services and Manufacturer company-proof verification. Manufacturer has Custody inventory; Retailer has Shipments. The running local suite remains unchanged because its newly completed ingredient delivery cannot be replayed safely by the existing restricted migration helper. See `docs/testing/PRODUCT_DISTRIBUTOR_RETAILER_FLOW.md`.
 

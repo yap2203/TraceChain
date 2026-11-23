@@ -15,14 +15,7 @@ import {
   loadCredentialStoragePaths,
   loadCredentialStoragePublicEnvironment,
 } from './config/credential-storage-env.js';
-import {
-  AdminKeystoreError,
-  AdminKeystoreManager,
-} from './modules/admin-keystore/admin-keystore.js';
-import {
-  createAdminKeystoreRouter,
-  KeystoreInitializationGuard,
-} from './modules/admin-keystore/admin-keystore.routes.js';
+import { loadBackendSecrets } from './config/backend-runtime.js';
 import { AuthController } from './modules/auth/auth.controller.js';
 import {
   InMemoryNonceRepository,
@@ -121,7 +114,6 @@ import {
 } from './modules/stakeholder-directory/stakeholder-directory.service.js';
 
 interface CreateAppOptions {
-  adminKeystore?: AdminKeystoreManager;
   applicationMetadataRepository?: ApplicationMetadataRepository;
   authService?: AuthService;
   blockchainGateway?: BlockchainGateway;
@@ -138,7 +130,6 @@ interface CreateAppOptions {
 }
 
 export function createApp({
-  adminKeystore,
   applicationMetadataRepository,
   authService,
   blockchainGateway,
@@ -150,7 +141,6 @@ export function createApp({
   ssi,
 }: CreateAppOptions = {}) {
   const app = express();
-  const keystore = adminKeystore ?? new AdminKeystoreManager();
   const sessionTtlMs = env.AUTH_SESSION_TTL_SECONDS * 1_000;
   let resolvedGateway = blockchainGateway;
   const authorizationResolver = {
@@ -175,7 +165,7 @@ export function createApp({
     },
   };
   let listManifestApplicationIdentities:
-    | (() => Promise<
+    | ((walletAddresses?: string[]) => Promise<
         Array<{
           applicationId: string;
           companyName: string;
@@ -188,7 +178,8 @@ export function createApp({
     lazyIssuanceRepository,
     authorizationResolver,
     {
-      list: () => listManifestApplicationIdentities?.() ?? Promise.resolve([]),
+      list: (walletAddresses) =>
+        listManifestApplicationIdentities?.(walletAddresses) ?? Promise.resolve([]),
     },
   );
   const resolvedAuthService =
@@ -211,14 +202,13 @@ export function createApp({
     cookieSecure: env.NODE_ENV === 'production',
     sessionTtlMs,
   });
-  const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider(keystore);
+  const defaultSsi = ssi ?? createDefaultTraceChainAgentProvider();
   const didCommRepository = new JsonDidCommRepository(dataFile('didcomm/state.json'));
   const didCommStorage = loadCredentialStoragePaths();
   const backendDidCommAgents = new BackendDidCommAgentService(
     dataFile('didcomm/backend-agents.json'),
-    () => keystore.ipfsEncryptionKey(),
+    () => loadBackendSecrets().ipfsEncryptionKey,
   );
-  keystore.subscribe(() => backendDidCommAgents.clearMemory());
   let blockchainService: BlockchainAuthorizationService | undefined;
   const blockchainAuthorization: BlockchainAuthorizationService | undefined = ssi
     ? undefined
@@ -342,17 +332,16 @@ export function createApp({
     applicationMetadataRepository ??
     new JsonApplicationMetadataRepository(dataFile('applications/company-metadata.json'));
   const lazyCredentialContentStore: CredentialContentStore = {
-    retrieveEnvelope: async (cid) => withCredentialContentStore(keystore, (store) => store.retrieveEnvelope!(cid)),
+    retrieveEnvelope: async (cid) =>
+      withCredentialContentStore((store) => store.retrieveEnvelope!(cid)),
     retrieveAndDecrypt: async (cid) => {
-      return withCredentialContentStore(keystore, (store) => store.retrieveAndDecrypt!(cid));
+      return withCredentialContentStore((store) => store.retrieveAndDecrypt!(cid));
     },
     decrypt: async (payload) => {
-      return withCredentialContentStore(keystore, (store) => store.decrypt(payload));
+      return withCredentialContentStore((store) => store.decrypt(payload));
     },
     encryptAndStore: async (serialized, credentialId) => {
-      return withCredentialContentStore(keystore, (store) =>
-        store.encryptAndStore(serialized, credentialId),
-      );
+      return withCredentialContentStore((store) => store.encryptAndStore(serialized, credentialId));
     },
   };
   const registryReferences = lazyGateway.getRegistryReferences?.() ?? {
@@ -364,13 +353,20 @@ export function createApp({
     lazyCredentialContentStore,
     lazyGateway,
   );
-  listManifestApplicationIdentities = async () => {
-    const applications = await lazyGateway.listApplications();
+  listManifestApplicationIdentities = async (walletAddresses) => {
+    const selectedWallets = walletAddresses
+      ? new Set(walletAddresses.map((wallet) => wallet.toLowerCase()))
+      : undefined;
+    const applications =
+      walletAddresses?.length === 1 && lazyGateway.listApplicationsForApplicant
+        ? await lazyGateway.listApplicationsForApplicant(walletAddresses[0])
+        : await lazyGateway.listApplications();
     const values = await Promise.all(
       applications
         .filter(
           (application) =>
             application.status === 'approved' &&
+            (!selectedWallets || selectedWallets.has(application.applicant.toLowerCase())) &&
             !application.encryptedProfileCid.startsWith('local://'),
         )
         .map(async (application) => {
@@ -631,30 +627,6 @@ export function createApp({
 
   app.use('/api/auth', express.json({ limit: '10kb' }), createAuthRouter(authController));
   app.use(
-    '/api/admin/keystore',
-    express.json({ limit: '2100kb' }),
-    createAdminKeystoreRouter({
-      authService: resolvedAuthService,
-      cookieName: env.AUTH_COOKIE_NAME,
-      gateway: lazyGateway,
-      initialization: new KeystoreInitializationGuard(
-        dataFile('keystore/initialized.json'),
-        [
-          dataFile('veramo/private-keys.json'),
-          dataFile('veramo/public-data.credentials.encrypted.json'),
-          dataFile('didcomm/backend-agents.json'),
-          dataFile('applications/company-metadata.json'),
-          dataFile('issuance/company-role.json'),
-          dataFile('issuance/ingredient-batches.json'),
-          dataFile('issuance/production-flow.json'),
-          dataFile('applications/documents.encrypted.json'),
-        ],
-        async () => (await lazyGateway.listApplications()).length > 0,
-      ),
-      manager: keystore,
-    }),
-  );
-  app.use(
     '/api/didcomm',
     express.json({ limit: '300kb' }),
     createDidCommRouter(didCommService, env.AUTH_COOKIE_NAME),
@@ -711,10 +683,6 @@ export function createApp({
       response: express.Response,
       _next: express.NextFunction,
     ) => {
-      if (error instanceof AdminKeystoreError) {
-        response.status(error.status).json({ error: { code: error.code, message: error.message } });
-        return;
-      }
       if (error.type === 'entity.too.large') {
         response.status(413).json({
           error: { code: 'PAYLOAD_TOO_LARGE', message: 'The request is too large.' },
@@ -1109,10 +1077,17 @@ function createDefaultProductionFlowService(
   };
   return new ProductionFlowService({
     walletCompanyExchange: true,
-    companyReferences: process.env.COMPANY_PROOF_REGISTRY_ADDRESS ? () => {
-      const blockchain = loadBlockchainEnvironment();
-      return new EthersCompanyProofReferences(env.CHAIN_ID, blockchain.CHAIN_RPC_URL, process.env.COMPANY_PROOF_REGISTRY_ADDRESS!, blockchain.STAKEHOLDER_REGISTRY_ADDRESS);
-    } : undefined,
+    companyReferences: process.env.COMPANY_PROOF_REGISTRY_ADDRESS
+      ? () => {
+          const blockchain = loadBlockchainEnvironment();
+          return new EthersCompanyProofReferences(
+            env.CHAIN_ID,
+            blockchain.CHAIN_RPC_URL,
+            process.env.COMPANY_PROOF_REGISTRY_ADDRESS!,
+            blockchain.STAKEHOLDER_REGISTRY_ADDRESS,
+          );
+        }
+      : undefined,
     validateDeliveryIdentity,
     agentProvider,
     authService,
@@ -1136,10 +1111,9 @@ function createIssuanceDependencies() {
 }
 
 async function withCredentialContentStore<T>(
-  keystore: AdminKeystoreManager,
   operation: (store: CredentialContentStore) => Promise<T>,
 ) {
-  const key = keystore.ipfsEncryptionKey();
+  const key = loadBackendSecrets().ipfsEncryptionKey;
   try {
     const storage = loadCredentialStoragePublicEnvironment();
     return await operation(

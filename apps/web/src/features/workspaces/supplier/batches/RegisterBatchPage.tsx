@@ -2,7 +2,7 @@ import './ingredient-creation.css';
 import { useEffect, useRef, useState } from 'react';
 import { type Country } from 'react-phone-number-input';
 import flags from 'react-phone-number-input/flags';
-import { FileSearch, Keyboard, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRight, FileSearch, Keyboard, LoaderCircle, Upload } from 'lucide-react';
 import {
   normalizeIngredientQuantity,
   ingredientCountryCodes,
@@ -100,6 +100,7 @@ export function RegisterBatch({
     [extracting, setExtracting] = useState(false),
     [reviewed, setReviewed] = useState(false);
   const [image, setImage] = useState<File>(),
+    [imageError, setImageError] = useState(''),
     [imageUrl, setImageUrl] = useState(''),
     [imageNotice, setImageNotice] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({}),
@@ -111,6 +112,7 @@ export function RegisterBatch({
   const [batchId, setBatchId] = useState('');
   const confirmedStages = useRef(new Set<string>());
   const form = useRef<HTMLDivElement>(null),
+    imageInput = useRef<HTMLInputElement>(null),
     lock = useRef(false),
     frozen = useRef<IngredientBatchInput | undefined>(undefined);
   useEffect(() => setReviewed(false), [entries]);
@@ -239,7 +241,7 @@ export function RegisterBatch({
       focusError();
       return;
     }
-    setStep((value) => Math.min(value + 1, 2));
+    editStep(Math.min(step + 1, 2));
     setError('');
   };
   const extract = async (file?: File) => {
@@ -383,8 +385,9 @@ export function RegisterBatch({
     setBusy(true);
     setStarted(true);
     setError('');
+    let confirmationPending = false;
     try {
-      setStatus('Issuing and storing the encrypted Ingredient Credential...');
+      setStatus('Preparing documents and the encrypted Ingredient Credential...');
       let workflow = await prepareWorkflow(frozen.current);
       setBatchId(workflow.batchId);
       for (let count = 0; workflow.state !== 'COMPLETE'; count++) {
@@ -402,15 +405,17 @@ export function RegisterBatch({
             'This transaction already confirmed. The RPC read is stale; resume to reread state without registering again.',
           );
         const currentStage = workflow.state;
-        await submitTransaction(workflow.transaction, workflow.supplierWallet, (stage) =>
+        await submitTransaction(workflow.transaction, workflow.supplierWallet, (stage) => {
+          confirmationPending = stage === 'submitted';
           setStatus(
             stage === 'wallet'
               ? 'Awaiting your explicit MetaMask confirmation.'
               : stage === 'submitted'
                 ? 'Transaction submitted. Waiting for blockchain confirmation...'
                 : 'Transaction confirmed. Reading the resulting batch state...',
-          ),
-        );
+          );
+        });
+        confirmationPending = false;
         confirmedStages.current.add(currentStage);
         setStatus('Transaction confirmed. Reading the batch registration state...');
         workflow = await prepareWorkflow(frozen.current);
@@ -438,7 +443,9 @@ export function RegisterBatch({
         ),
       );
       setStatus(
-        'Registration paused. Your data and stable operation ID are retained. Retry reads the chain before preparing the next transaction.',
+        confirmationPending && !/revert/i.test(cause instanceof Error ? cause.message : '')
+          ? 'Transaction submitted; confirmation is not yet known. Resume registration to check its on-chain state before continuing.'
+          : 'Registration paused. Your entries are retained. Resume registration to check the chain and retry.',
       );
     } finally {
       lock.current = false;
@@ -453,6 +460,19 @@ export function RegisterBatch({
       error={errors[key]}
       {...extra}
     />
+  );
+  const editStep = (page: number) => {
+    setErrors({});
+    setStep(page);
+    requestAnimationFrame(() =>
+      form.current?.querySelector<HTMLElement>('legend, #listing-heading')?.focus(),
+    );
+  };
+  const reviewValue = (label: string, value: string) => (
+    <div key={label}>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
+    </div>
   );
   return (
     <div className="ingredient-create" ref={form}>
@@ -579,7 +599,7 @@ export function RegisterBatch({
               <Card>
                 {step === 0 && (
                   <fieldset disabled={busy || started} className="ingredient-create-fields">
-                    <legend>Batch details</legend>
+                    <legend tabIndex={-1}>Batch details</legend>
                     <div className="workspace-form-grid">
                       {field('name', 'Ingredient name', {
                         required: true,
@@ -606,25 +626,27 @@ export function RegisterBatch({
                           </p>
                         )}
                       </div>
-                      {field('quantity', 'Quantity', {
-                        required: true,
-                        inputMode: 'decimal',
-                        maxLength: 43,
-                        placeholder: 'e.g. 1.25',
-                      })}
-                      <SelectField
-                        label="Unit"
-                        required
-                        value={draft.unit}
-                        onChange={(value) => {
-                          update('unit')(value);
-                          update('priceBasis')(value);
-                        }}
-                        options={['kg', 'g', 'litre', 'mL', 'each'].map((value) => ({
-                          value,
-                          label: value,
-                        }))}
-                      />
+                      <div className="ingredient-quantity-fields">
+                        {field('quantity', 'Quantity', {
+                          required: true,
+                          inputMode: 'decimal',
+                          maxLength: 43,
+                          placeholder: 'e.g. 1.25',
+                        })}
+                        <SelectField
+                          label="Unit"
+                          required
+                          value={draft.unit}
+                          onChange={(value) => {
+                            update('unit')(value);
+                            update('priceBasis')(value);
+                          }}
+                          options={['kg', 'g', 'litre', 'mL', 'each'].map((value) => ({
+                            value,
+                            label: value,
+                          }))}
+                        />
+                      </div>
                       {field('produced', 'Production date', {
                         type: 'date',
                         required: true,
@@ -635,7 +657,7 @@ export function RegisterBatch({
                 )}
                 {step === 1 && (
                   <fieldset disabled={busy || started} className="ingredient-create-fields">
-                    <legend>Origin and certifications</legend>
+                    <legend tabIndex={-1}>Origin and certifications</legend>
                     <p className="ingredient-help">
                       Origin describes where the ingredient was sourced. Current storage and
                       dispatch locations are managed through locations and shipments.
@@ -674,7 +696,7 @@ export function RegisterBatch({
                         this text cannot be mapped confidently.
                       </p>
                     )}
-                    <h3>Allergen declaration</h3>
+                    <h3 className="ingredient-form-divider">Allergen declaration</h3>
                     <div data-error={Boolean(errors.allergenKind)}>
                       <SelectField
                         label="Allergen declaration"
@@ -700,7 +722,7 @@ export function RegisterBatch({
                         required: true,
                         maxLength: 500,
                       })}
-                    <h3>Certifications (optional)</h3>
+                    <h3 className="ingredient-form-divider">Certifications (optional)</h3>
                     {legacyCerts.length > 0 && (
                       <p>
                         Legacy extracted certification text: {legacyCerts.join(', ')}. Issuer,
@@ -726,111 +748,226 @@ export function RegisterBatch({
                 )}
                 {step === 2 && (
                   <div className="ingredient-create-review">
-                    <h3>Optional listing details</h3>
-                    <fieldset disabled={busy || started} className="workspace-form-grid">
-                      {field('price', 'Indicative price (optional)', {
-                        inputMode: 'decimal',
-                        maxLength: 15,
-                      })}
-                      {draft.price && (
-                        <>
-                          {field('currency', 'Currency', { required: true, maxLength: 3 })}
-                          <SelectField
-                            label="Price basis"
-                            value={draft.priceBasis}
-                            onChange={update('priceBasis')}
-                            options={(['kg', 'g'].includes(draft.unit)
-                              ? ['kg', 'g']
-                              : ['litre', 'mL'].includes(draft.unit)
-                                ? ['litre', 'mL']
-                                : ['each']
-                            ).map((value) => ({ value, label: `Per ${value}` }))}
-                          />
-                          {errors.priceBasis && <p role="alert">{errors.priceBasis}</p>}
-                        </>
-                      )}
-                      <label>
-                        Ingredient image (optional)
-                        <input
-                          aria-label="Choose optional ingredient image"
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          onChange={(event) => {
-                            const file = event.target.files?.[0];
-                            if (
-                              file &&
-                              (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
-                                file.size > 2 * 1024 * 1024)
-                            ) {
-                              setError('Use a PNG, JPEG or WebP image up to 2 MB.');
-                              return;
-                            }
-                            setImage(file);
-                          }}
-                        />
-                        <small>
-                          Supplier-provided listing image; PNG, JPEG or WebP, maximum 2 MB.
-                        </small>
-                      </label>
-                    </fieldset>
-                    {imageUrl && (
-                      <img
-                        src={imageUrl}
-                        alt="Ingredient image preview"
-                        className="ingredient-create-image"
-                      />
-                    )}
-                    <h3>Review signed batch information</h3>
-                    <dl className="workspace-review-grid">
-                      {[
-                        ['Ingredient', draft.name],
-                        ['Batch reference', draft.reference],
-                        ['Category', draft.category],
-                        ['Quantity entered', `${draft.quantity} ${draft.unit}`],
-                        [
-                          'Registered quantity',
-                          frozen.current && !frozen.current.originDetails
-                            ? `${frozen.current.quantity} ${frozen.current.unit}`
-                            : conversion
-                              ? `${conversion.quantity} ${conversion.unit}`
-                              : 'Invalid quantity',
-                        ],
-                        ['Production date', draft.produced],
-                        ['Expiry date', draft.expiry],
-                        ['Country / legacy origin', origin.countryName || legacyOrigin],
-                        ['State / region', draft.region],
-                        ['City / district', draft.city],
-                        ['Source facility', draft.facility],
-                        ['Private source address', draft.address],
-                        [
-                          'Allergen declaration',
-                          frozen.current?.allergenInformation ?? input().allergenInformation,
-                        ],
-                        [
-                          'Indicative price',
-                          draft.price
-                            ? `${draft.currency} ${draft.price} per ${draft.priceBasis}`
-                            : 'Not supplied',
-                        ],
-                      ].map(([label, value]) => (
-                        <div key={label}>
-                          <dt>{label}</dt>
-                          <dd>{value || 'Unavailable'}</dd>
+                    <section
+                      className="ingredient-review-section"
+                      aria-labelledby="listing-heading"
+                    >
+                      <header className="ingredient-review-heading">
+                        <div>
+                          <h3 id="listing-heading" tabIndex={-1}>
+                            Optional listing details
+                          </h3>
+                          <p className="ingredient-help">
+                            Add a price or photo, or skip this section.
+                          </p>
                         </div>
-                      ))}
-                    </dl>
-                    {legacyCerts.length > 0 && (
-                      <p>
-                        Legacy certification text: {legacyCerts.join(', ')}. Issuer, reference,
-                        dates and scope are unavailable unless separately supplied.
-                      </p>
-                    )}
-                    <CertificationEditor
-                      entries={entries}
-                      setEntries={setEntries}
-                      operationId={operationId}
-                      readOnly
-                    />
+                        <span className="ingredient-optional-badge">Optional</span>
+                      </header>
+                      <fieldset disabled={busy || started} className="ingredient-listing-fields">
+                        <div className="workspace-form-grid ingredient-price-fields">
+                          {field('price', 'Indicative price (optional)', {
+                            inputMode: 'decimal',
+                            maxLength: 15,
+                          })}
+                          {draft.price && (
+                            <>
+                              {field('currency', 'Currency', { required: true, maxLength: 3 })}
+                              <SelectField
+                                label="Price basis"
+                                value={draft.priceBasis}
+                                onChange={update('priceBasis')}
+                                options={(['kg', 'g'].includes(draft.unit)
+                                  ? ['kg', 'g']
+                                  : ['litre', 'mL'].includes(draft.unit)
+                                    ? ['litre', 'mL']
+                                    : ['each']
+                                ).map((value) => ({ value, label: `Per ${value}` }))}
+                              />
+                              {errors.priceBasis && <p role="alert">{errors.priceBasis}</p>}
+                            </>
+                          )}
+                        </div>
+                        <div className="ingredient-listing-upload">
+                          <label htmlFor="ingredient-listing-image">
+                            Ingredient image (optional)
+                          </label>
+                          <input
+                            ref={imageInput}
+                            id="ingredient-listing-image"
+                            className="sr-only"
+                            tabIndex={-1}
+                            aria-label="Choose optional ingredient image"
+                            aria-invalid={Boolean(imageError)}
+                            aria-describedby="ingredient-image-rules ingredient-image-error"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            onChange={(event) => {
+                              const file = event.target.files?.[0];
+                              event.target.value = '';
+                              if (!file) return;
+                              if (
+                                file &&
+                                (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) ||
+                                  file.size > 2 * 1024 * 1024)
+                              ) {
+                                setImageError('Use a PNG, JPEG or WebP image up to 2 MB.');
+                                return;
+                              }
+                              setImageError('');
+                              setImage(file);
+                            }}
+                          />
+                          {image && imageUrl ? (
+                            <div className="ingredient-image-selection">
+                              <img
+                                src={imageUrl}
+                                alt="Ingredient image preview"
+                                className="ingredient-create-image"
+                              />
+                              <div className="ingredient-image-file">
+                                <strong>{image.name}</strong>
+                                <small className="ingredient-help">
+                                  {(image.size / 1024).toFixed(1)} KB
+                                </small>
+                                <div className="ingredient-image-actions">
+                                  <Btn
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => imageInput.current?.click()}
+                                  >
+                                    Replace image
+                                  </Btn>
+                                  <Btn
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      setImage(undefined);
+                                      setImageError('');
+                                    }}
+                                  >
+                                    Remove image
+                                  </Btn>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <Btn
+                              variant="outline"
+                              icon={<Upload size={16} aria-hidden="true" />}
+                              onClick={() => imageInput.current?.click()}
+                            >
+                              Choose image
+                            </Btn>
+                          )}
+                          <small id="ingredient-image-rules" className="ingredient-help">
+                            PNG, JPEG or WebP · Up to 2 MB · Supplier-provided listing photo.
+                          </small>
+                          <span
+                            id="ingredient-image-error"
+                            className="text-ws-red"
+                            role={imageError ? 'alert' : undefined}
+                          >
+                            {imageError}
+                          </span>
+                        </div>
+                      </fieldset>
+                    </section>
+                    <section
+                      className="ingredient-review-section"
+                      aria-labelledby="batch-review-heading"
+                    >
+                      <header className="ingredient-review-heading">
+                        <h3 id="batch-review-heading">Batch details</h3>
+                        <Btn
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || started}
+                          onClick={() => editStep(0)}
+                        >
+                          Edit batch details
+                        </Btn>
+                      </header>
+                      <dl className="workspace-review-grid">
+                        {[
+                          ['Ingredient', draft.name],
+                          ['Batch reference', draft.reference],
+                          [
+                            'Category',
+                            categories.find((item) => item.value === draft.category)?.label ??
+                              draft.category,
+                          ],
+                          ['Production date', formatReviewDate(draft.produced)],
+                          ['Expiry date', formatReviewDate(draft.expiry)],
+                        ].map(([label, value]) => reviewValue(label, value || 'Unavailable'))}
+                        <div>
+                          <dt>Quantity</dt>
+                          <dd>
+                            {draft.quantity} {draft.unit}
+                            <small className="ingredient-quantity-note">
+                              Registered as{' '}
+                              {formatQuantity(
+                                frozen.current && !frozen.current.originDetails
+                                  ? frozen.current.quantity
+                                  : (conversion?.quantity ?? ''),
+                              )}{' '}
+                              {frozen.current && !frozen.current.originDetails
+                                ? frozen.current.unit
+                                : conversion?.unit}
+                            </small>
+                          </dd>
+                        </div>
+                      </dl>
+                    </section>
+                    <section
+                      className="ingredient-review-section"
+                      aria-labelledby="origin-review-heading"
+                    >
+                      <header className="ingredient-review-heading">
+                        <h3 id="origin-review-heading">Origin and allergens</h3>
+                        <Btn
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || started}
+                          onClick={() => editStep(1)}
+                        >
+                          Edit origin and certifications
+                        </Btn>
+                      </header>
+                      <dl className="workspace-review-grid">
+                        {reviewValue(
+                          draft.country ? 'Country of origin' : 'Origin (previously supplied text)',
+                          draft.country ? origin.countryName : legacyOrigin || 'Unavailable',
+                        )}
+                        {draft.region && reviewValue('State / region', draft.region)}
+                        {draft.city && reviewValue('City / district', draft.city)}
+                        {draft.facility && reviewValue('Source facility', draft.facility)}
+                        {draft.address && reviewValue('Private source address', draft.address)}
+                      </dl>
+                      <div className="ingredient-allergen-summary">
+                        <span>Allergen declaration</span>
+                        <strong>
+                          {frozen.current?.allergenInformation ?? input().allergenInformation}
+                        </strong>
+                      </div>
+                    </section>
+                    <section
+                      className="ingredient-review-section"
+                      aria-labelledby="certifications-review-heading"
+                    >
+                      <h3 id="certifications-review-heading">Certifications</h3>
+                      {legacyCerts.length > 0 && (
+                        <p>
+                          Legacy certification text: {legacyCerts.join(', ')}. Issuer, reference,
+                          dates and scope are unavailable unless separately supplied.
+                        </p>
+                      )}
+                      <CertificationEditor
+                        entries={entries}
+                        setEntries={setEntries}
+                        operationId={operationId}
+                        readOnly
+                      />
+                    </section>
                     {extraction && (
                       <label data-error={Boolean(errors.reviewed)}>
                         <input
@@ -848,19 +985,35 @@ export function RegisterBatch({
                         {errors.reviewed}
                       </p>
                     )}
-                    <p className="ingredient-help">
-                      Batch identity, canonical quantity/unit, dates, origin, allergen declaration,
-                      certification entries and document hashes/references become signed claims.
-                      Private details and documents are encrypted off-chain. Price, currency, price
-                      basis and image are separate listing metadata. A Supplier signature does not
-                      verify a certification authority.
-                    </p>
-                    <p className="ingredient-help">New Ingredient Credentials are bound to this company wallet. MetaMask signs approved presentations; no separate holder-key setup is needed.</p>
-                    {started && <p role="status">{status}</p>}
+                    <details className="ingredient-registration-technical">
+                      <summary>What registration records</summary>
+                      <p className="ingredient-help">
+                        Batch identity, registered quantity and unit, dates, origin, allergens,
+                        certifications and document references become signed claims. Price and photo
+                        are separate listing metadata. Certifications remain supplier-provided.
+                        MetaMask signs future presentations for this company wallet.
+                      </p>
+                    </details>
+                    {started && (
+                      <div
+                        className="ingredient-registration-status"
+                        role="status"
+                        aria-live="polite"
+                      >
+                        {busy && (
+                          <LoaderCircle
+                            size={18}
+                            className="animate-spin shrink-0"
+                            aria-hidden="true"
+                          />
+                        )}
+                        <span>{status}</span>
+                      </div>
+                    )}
                     {started && !complete && (
                       <p>
-                        Signed details are locked after registration begins. Retry resumes this same
-                        operation; changes to signed claims require replacement/reissuance.
+                        Your entries are retained. Resume registration checks the chain before
+                        continuing this same attempt.
                       </p>
                     )}
                     {complete && (
@@ -878,14 +1031,22 @@ export function RegisterBatch({
                     )}
                   </div>
                 )}
-                <div className="action-row ingredient-create-actions">
-                  {step > 0 && !complete && (
+                {step === 2 && !complete && (
+                  <p className="ingredient-help ingredient-register-note">
+                    Registration signs the batch details. Private details and documents stay
+                    encrypted off-chain.
+                  </p>
+                )}
+                <div className="ingredient-create-actions">
+                  {!complete && (
                     <Btn
                       variant="outline"
+                      icon={<ArrowLeft size={16} aria-hidden="true" />}
                       disabled={busy}
                       onClick={() => {
                         setErrors({});
-                        setStep((value) => value - 1);
+                        if (step > 0) editStep(step - 1);
+                        else setMode('choose');
                       }}
                     >
                       Back
@@ -893,7 +1054,7 @@ export function RegisterBatch({
                   )}
                   {step < 2 ? (
                     <Btn disabled={busy} onClick={next}>
-                      Continue
+                      Continue <ArrowRight size={16} aria-hidden="true" />
                     </Btn>
                   ) : (
                     <Btn
@@ -929,4 +1090,22 @@ function currentIngredientInput(input: IngredientBatchInput): IngredientBatchInp
   delete originDetails.processingCountry;
   delete originDetails.processingLocation;
   return { ...current, originDetails };
+}
+
+function formatReviewDate(value: string) {
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  return Number.isNaN(date.getTime())
+    ? value || 'Unavailable'
+    : new Intl.DateTimeFormat('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        timeZone: 'UTC',
+      }).format(date);
+}
+
+function formatQuantity(value: string) {
+  // Keep the exact decimal string; Number can round large registered quantities.
+  const [whole, fraction] = value.split('.');
+  return `${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${fraction ? `.${fraction}` : ''}`;
 }

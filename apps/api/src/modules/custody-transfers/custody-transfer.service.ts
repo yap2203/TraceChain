@@ -381,7 +381,6 @@ export class CustodyTransferService {
       return value;
     } catch (error) {
       if (error instanceof CustodyTransferApiError) throw error;
-      if (isKeystoreLocked(error)) throw error;
       throw new CustodyTransferApiError(
         'RECEIPT_EVIDENCE_UNAVAILABLE',
         'The encrypted receipt evidence could not be downloaded or decrypted.',
@@ -441,7 +440,6 @@ export class CustodyTransferService {
     try {
       stored = await contentStore.encryptAndStore(serialized, randomUUID());
     } catch (error) {
-      if (isKeystoreLocked(error)) throw error;
       throw new CustodyTransferApiError(
         'RECEIPT_STORAGE_UNAVAILABLE',
         'Encrypted receipt storage is unavailable. No transaction was prepared.',
@@ -667,9 +665,6 @@ function sameAddress(left: string, right: string) {
   }
 }
 
-function isKeystoreLocked(error: unknown) {
-  return (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
-}
 
 function transferStatusError(status: number) {
   const states: Record<number, [string, string]> = {

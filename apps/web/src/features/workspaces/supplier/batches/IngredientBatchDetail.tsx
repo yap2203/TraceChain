@@ -23,7 +23,7 @@ export function IngredientBatchDetail({
 
   useEffect(() => {
     let active = true;
-    void getOrders()
+    void getOrders('supplier-inventory')
       .then((data) => {
         const entry = data.catalogue.find(
           (item) =>

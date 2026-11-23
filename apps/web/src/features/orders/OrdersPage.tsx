@@ -22,6 +22,7 @@ import {
   orderIdentity,
   type OrdersState,
   type OrderRecord,
+  type OrderListOptions,
 } from './orders.api';
 import {
   Alert,
@@ -83,6 +84,7 @@ export function OrdersPage({
   fixedDirection?: 'sent' | 'received';
 }) {
   const [data, setData] = useState<OrdersState>();
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -92,6 +94,10 @@ export function OrdersPage({
   );
   const [direction, setDirection] = useState<'sent' | 'received'>(fixedDirection ?? 'sent');
   const [selected, setSelected] = useState(initialOrderId);
+  const [listOptions, setListOptions] = useState<OrderListOptions>({ page: 1, pageSize: 20 });
+  const summaryList = !selected && !evidenceOnly && tab === 'orders' && role !== 'distributor';
+  const loadGeneration = useRef(0);
+  const listLoadStart = useRef<number | undefined>(undefined);
   const [pendingDecision, setPendingDecision] = useState<1 | 2>();
   const [decisionReason, setDecisionReason] = useState('');
   const [receiptConfirmed, setReceiptConfirmed] = useState(false);
@@ -115,12 +121,56 @@ export function OrdersPage({
   const navigate = useNavigate();
   const change = (field: string) => (value: string) =>
     setForm((current) => ({ ...current, [field]: value }));
-  const load = useCallback(async () => {
-    setData(await getOrders());
-  }, []);
+  const load = useCallback(
+    async (refresh = true) => {
+      const generation = ++loadGeneration.current;
+      if (summaryList) listLoadStart.current = performance.now();
+      setLoading(true);
+      try {
+        const result = await getOrders(
+          summaryList ? 'order-list' : selected ? 'order-detail' : undefined,
+          summaryList
+            ? {
+                ...listOptions,
+                direction: role === 'supplier' ? 'received' : mode === 'manage' ? direction : 'all',
+                refresh,
+              }
+            : selected
+              ? { orderId: selected }
+              : {},
+        );
+        if (generation === loadGeneration.current) {
+          setData(result);
+          setError('');
+        }
+      } finally {
+        if (generation === loadGeneration.current) setLoading(false);
+      }
+    },
+    [summaryList, selected, listOptions, direction, role, mode],
+  );
   useEffect(() => {
-    load().catch((cause) => setError(orderError(cause)));
+    let active = true;
+    setData((current) => (summaryList && current?.pagination ? current : undefined));
+    setError('');
+    load(false).catch((cause) => {
+      if (active) setError(orderError(cause));
+    });
+    return () => {
+      active = false;
+      loadGeneration.current++;
+    };
   }, [load]);
+  useEffect(() => {
+    if (data?.pagination && !loading && listLoadStart.current !== undefined) {
+      if (typeof performance.measure === 'function')
+        performance.measure('TraceChain Orders: usable list', {
+          start: listLoadStart.current,
+          end: performance.now(),
+        });
+      listLoadStart.current = undefined;
+    }
+  }, [data, loading]);
   const hasActiveDelivery = data?.orders.some(
     (entry) =>
       (entry.delivery && Number(entry.delivery.stage) < 5) ||
@@ -336,7 +386,8 @@ export function OrdersPage({
           />
         )}
       {notice && <Alert type="success" message={notice} />}
-      {!data && !error && (role === 'supplier' ? <RequestsLoading /> : <CatalogueSkeleton />)}
+      {loading && data?.pagination && <p role="status">Updating requests…</p>}
+      {!data && !error && (tab === 'orders' ? <RequestsLoading /> : <CatalogueSkeleton />)}
       {data && role !== 'supplier' && tab === 'catalogue' && (
         <CatalogueBrowser
           actor={data.actor}
@@ -436,6 +487,9 @@ export function OrdersPage({
               catalogue={data.catalogue}
               orders={mode === 'manage' || role === 'supplier' ? managedOrders : data.orders}
               role={role}
+              pagination={data.pagination}
+              options={listOptions}
+              onQueryChange={(options) => setListOptions((current) => ({ ...current, ...options }))}
               onView={(orderId) => {
                 setSelected(orderId);
                 setPendingDecision(undefined);
@@ -1086,9 +1140,17 @@ export function OrdersPage({
                           disabled={busy}
                           onClick={() =>
                             void run(async () => {
-                              const result = await orderIdentity(order.orderId, { action: 'decline' });
-                              if (result.transaction && result.actorWallet) await submitProductionTransaction(result.transaction, result.actorWallet);
-                              setIdentityStatus(await orderIdentity(order.orderId, { action: 'status' }));
+                              const result = await orderIdentity(order.orderId, {
+                                action: 'decline',
+                              });
+                              if (result.transaction && result.actorWallet)
+                                await submitProductionTransaction(
+                                  result.transaction,
+                                  result.actorWallet,
+                                );
+                              setIdentityStatus(
+                                await orderIdentity(order.orderId, { action: 'status' }),
+                              );
                             })
                           }
                         >
@@ -1149,7 +1211,9 @@ export function OrdersPage({
                             )}
                           />
                         )}
-                        {identityMaterial && !identityMaterial.walletContext && <PresentationSigningSettingsLink role={role} />}
+                        {identityMaterial && !identityMaterial.walletContext && (
+                          <PresentationSigningSettingsLink role={role} />
+                        )}
                         {identityMaterial.format === 'COMPANY_IDENTITY_SD_JWT' &&
                           identityMaterial.requiredClaims.some(
                             (key: string) => !identityMaterial.claims?.[key],
@@ -1163,8 +1227,14 @@ export function OrdersPage({
                           disabled={busy}
                           onClick={() =>
                             void run(async () => {
-                              const presentation = await signCompanyPresentation(identityMaterial, identitySelectedClaims);
-                              const result = await orderIdentity(order.orderId, { action: 'present', presentation });
+                              const presentation = await signCompanyPresentation(
+                                identityMaterial,
+                                identitySelectedClaims,
+                              );
+                              const result = await orderIdentity(order.orderId, {
+                                action: 'present',
+                                presentation,
+                              });
                               if (result.transaction) await sign(result.transaction);
                               setIdentityMaterial(undefined);
                               setIdentityStatus({ status: 'PRESENTED' });

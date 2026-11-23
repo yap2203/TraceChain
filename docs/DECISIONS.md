@@ -2,6 +2,19 @@
 
 ## Repository and implementation
 
+- After the recovery-bundle password was lost, the user explicitly requested a fresh test identity
+  (2026-11-23). Create it in an isolated data profile with fresh environment keys and preserve the
+  previous environment/data/bundles. Treat this as new issuance, never recovery or continuity of the
+  old issuer. Keep existing on-chain records unchanged until separately authorized replacement actions.
+
+- Replace the runtime Admin-keystore/manual-unlock model with environment-based backend startup
+  (user-confirmed 2026-11-23; supersedes the 2026-11-21 runtime-lock decision). Load the original IPFS
+  and Veramo KMS secrets from protected backend configuration and require matching existing encrypted
+  private keys and DID/public metadata before serving. Never generate a replacement authority during
+  recovery. Remove Admin-keystore HTTP/UI controls; retain encrypted bundles and non-destructive offline
+  comparison/restore/backup procedures. Hardhat deployment keys, SIWE, MetaMask VP signatures and
+  separate legacy holder recovery remain unchanged. No on-chain change or deployment is required.
+
 - Use MetaMask EIP-712 holder proofs plus encrypted IPFS/shared on-chain references for new Ingredient
   and Company Identity presentations (user-confirmed 2026-11-23), including order/delivery company
   proofs. Keep issuer signatures/disclosure verification independent; no SQL/NoSQL. Add the minimal

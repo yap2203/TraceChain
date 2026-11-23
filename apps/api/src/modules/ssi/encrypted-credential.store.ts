@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { countRead } from '../blockchain/read-timing.js';
 
 export interface EncryptedCredentialPayload {
   algorithm: 'aes-256-gcm';
@@ -33,6 +34,12 @@ export interface CredentialContentStore {
 }
 
 export class IpfsEncryptedCredentialStore implements CredentialContentStore {
+  // Immutable encrypted envelopes only. Authorization, decryption and hash/context checks
+  // remain in their callers on every access; no plaintext or authorization grants are cached.
+  private readonly envelopeReads = new Map<
+    string,
+    { value: Promise<EncryptedCredentialPayload>; until: number }
+  >();
   constructor(
     private readonly encryptionKey: Buffer,
     private readonly pinningApiUrl: string,
@@ -42,12 +49,35 @@ export class IpfsEncryptedCredentialStore implements CredentialContentStore {
     if (encryptionKey.length !== 32) throw new Error('Credential encryption key must be 32 bytes.');
   }
 
-  async retrieveAndDecrypt(reference: string) { return this.decrypt(await this.retrieveEnvelope(reference)); }
+  async retrieveAndDecrypt(reference: string) {
+    return this.decrypt(await this.retrieveEnvelope(reference));
+  }
 
   async retrieveEnvelope(reference: string) {
     const cid = reference.replace(/^ipfs:\/\//, '');
     if (!/^(Qm[1-9A-HJ-NP-Za-km-z]{44}|b[a-z2-7]{20,})$/.test(cid))
       throw new Error('Invalid encrypted credential CID.');
+    const existing = this.envelopeReads.get(cid);
+    if (existing && existing.until > Date.now()) return structuredClone(await existing.value);
+    const pending = this.downloadEnvelope(cid);
+    const entry = { value: pending, until: Infinity };
+    this.envelopeReads.set(cid, entry);
+    if (this.envelopeReads.size > 64)
+      this.envelopeReads.delete(this.envelopeReads.keys().next().value!);
+    try {
+      const result = await pending;
+      // Bound completed ciphertext retention to ~32 MB; large media only shares in-flight work.
+      if (result.ciphertext.length <= 512 * 1024) entry.until = Date.now() + 30_000;
+      else if (this.envelopeReads.get(cid) === entry) this.envelopeReads.delete(cid);
+      return structuredClone(result);
+    } catch (error) {
+      if (this.envelopeReads.get(cid) === entry) this.envelopeReads.delete(cid);
+      throw error;
+    }
+  }
+
+  private async downloadEnvelope(cid: string) {
+    countRead('ipfs');
     let response: Response;
     try {
       response = await fetch(`${this.gatewayUrl.replace(/\/$/, '')}/${encodeURIComponent(cid)}`, {

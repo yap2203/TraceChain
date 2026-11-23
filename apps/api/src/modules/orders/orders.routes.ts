@@ -8,7 +8,7 @@ import { DidCommError } from '../didcomm/didcomm.service.js';
 import { evidenceRequestSchema } from '../production-flow/production-flow.schema.js';
 import { logisticsActionSchema } from './logistics.schema.js';
 import { CustodyOfferError } from './custody-offers.js';
-import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
+import { timeOrderRead } from '../blockchain/read-timing.js';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
   const router = Router();
@@ -26,7 +26,11 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     ) =>
     async (request: any, response: any, next: any) => {
       try {
-        response.json(await operation(resolve(), request.cookies?.[cookieName], request));
+        const timed = await timeOrderRead(() =>
+          operation(resolve(), request.cookies?.[cookieName], request),
+        );
+        response.setHeader('Server-Timing', timed.header);
+        response.json(timed.result);
       } catch (error) {
         if (error instanceof ZodError)
           return response
@@ -37,8 +41,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
           error instanceof AuthError ||
           error instanceof ProductionFlowApiError ||
           error instanceof DidCommError ||
-          error instanceof CustodyOfferError ||
-          error instanceof AdminKeystoreError
+          error instanceof CustodyOfferError
         )
           return response
             .status(error.status)
@@ -55,9 +58,53 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     };
   router.get(
     '/',
-    action((service, session, request) =>
-      service.state(session, z.enum(['supplier-inventory']).optional().parse(request.query.scope)),
-    ),
+    action((service, session, request) => {
+      if (request.query.scope === 'order-detail') {
+        return service.state(
+          session,
+          undefined,
+          z
+            .string()
+            .regex(/^0x[0-9a-fA-F]{64}$/)
+            .parse(request.query.orderId),
+        );
+      }
+      if (request.query.scope === 'order-list') {
+        const query = z
+          .object({
+            page: z.coerce.number().int().min(1).max(100000).default(1),
+            pageSize: z.coerce.number().int().min(1).max(50).default(20),
+            direction: z.enum(['all', 'sent', 'received']).default('all'),
+            search: z.string().trim().max(160).default(''),
+            status: z
+              .enum([
+                'all',
+                'attention',
+                'evidence',
+                'approved',
+                'closed',
+                'submitted',
+                'expired',
+                'rejected',
+                'completed',
+                'in-transit',
+                'cancelled',
+              ])
+              .default('all'),
+            sort: z.enum(['newest', 'oldest', 'deadline', 'updated']).default('newest'),
+            refresh: z
+              .enum(['1'])
+              .optional()
+              .transform((value) => value === '1'),
+          })
+          .parse(request.query);
+        return service.listOrders(session, query);
+      }
+      return service.state(
+        session,
+        z.enum(['supplier-inventory']).optional().parse(request.query.scope),
+      );
+    }),
   );
   const hash = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
   router.get(

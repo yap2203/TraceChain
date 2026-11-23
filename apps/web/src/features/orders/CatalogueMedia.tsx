@@ -17,12 +17,32 @@ export function CatalogueImage({
 }) {
   const [source, setSource] = useState('');
   const [state, setState] = useState<MediaState>('idle');
+  const [element, setElement] = useState<Element | null>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (visible || !element) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [element, visible]);
   useEffect(() => {
     let active = true;
     let url = '';
     setState(path ? 'loading' : 'missing');
     setSource('');
-    if (path)
+    if (path && visible)
       void fetchCatalogueMedia(path)
         .then((blob) => {
           if (!active) return;
@@ -46,10 +66,11 @@ export function CatalogueImage({
       active = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [path]);
+  }, [path, visible]);
   if (source && state === 'ready')
     return (
       <img
+        ref={setElement}
         src={source}
         alt={alt}
         loading="lazy"
@@ -63,6 +84,7 @@ export function CatalogueImage({
     text.includes('plant') || text.includes('produce') ? Leaf : text ? Package : ImageIcon;
   return (
     <div
+      ref={setElement}
       className={`catalogue-image catalogue-image--fallback ${large ? 'catalogue-image--large' : ''}`}
       role="img"
       aria-label={

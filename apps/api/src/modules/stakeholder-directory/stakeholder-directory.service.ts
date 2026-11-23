@@ -26,7 +26,7 @@ export interface StakeholderDirectory {
 }
 
 export interface ApplicationIdentitySource {
-  list(): Promise<
+  list(walletAddresses?: string[]): Promise<
     Array<{
       applicationId: string;
       companyName: string;
@@ -60,13 +60,11 @@ export class VerifiedStakeholderDirectory implements StakeholderDirectory {
   async resolve(walletAddress: string, authorization?: OnChainAuthorizationSummary) {
     const address = getAddress(walletAddress);
     const records = await this.issuanceRepository.list();
-    const applications = await this.applicationIdentities?.list().catch(() => []);
-    const wallets = uniqueWallets(records);
-    if (!wallets.some((wallet) => sameAddress(wallet, address))) wallets.push(address);
+    const applications = await this.applicationIdentities?.list([address]).catch(() => []);
     const authorizations = new Map<string, OnChainAuthorizationSummary>();
     if (authorization) authorizations.set(address.toLowerCase(), authorization);
     const identities = await this.resolveCandidates(
-      wallets,
+      [address],
       records,
       authorizations,
       applications ?? [],
@@ -75,8 +73,9 @@ export class VerifiedStakeholderDirectory implements StakeholderDirectory {
   }
 
   async resolveMany(walletAddresses: string[]) {
+    if (!walletAddresses.length) return [];
     const records = await this.issuanceRepository.list();
-    const applications = await this.applicationIdentities?.list().catch(() => []);
+    const applications = await this.applicationIdentities?.list(walletAddresses).catch(() => []);
     return this.resolveCandidates(
       [...new Set(walletAddresses.map((wallet) => getAddress(wallet)))],
       records,

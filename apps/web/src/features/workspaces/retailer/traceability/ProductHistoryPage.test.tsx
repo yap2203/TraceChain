@@ -95,5 +95,7 @@ describe('Retailer received product presentation', () => {
     expect(within(route).getByText('Distributor')).toBeTruthy();
     expect(within(route).getByText('Retailer')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'View traceability' })).toBeTruthy();
+    expect(mocks.orders).toHaveBeenCalledTimes(1);
+    expect(mocks.trace).toHaveBeenCalledTimes(1);
   });
 });

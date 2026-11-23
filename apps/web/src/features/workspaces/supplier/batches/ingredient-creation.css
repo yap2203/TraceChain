@@ -15,6 +15,15 @@
   .ingredient-create-fields legend {
     @apply text-lg font-semibold text-ws-navy mb-4;
   }
+  .ingredient-form-divider {
+    @apply border-0 border-t border-solid border-ws-border pt-5 mt-1 mb-0;
+  }
+  .ingredient-quantity-fields {
+    @apply grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] items-start gap-3 min-w-0;
+  }
+  .ingredient-price-fields {
+    @apply grid-cols-3;
+  }
   .ingredient-help {
     @apply text-[13px] text-ws-text2 leading-relaxed;
   }
@@ -62,15 +71,91 @@
   .ingredient-create-review dt {
     @apply text-xs text-ws-text2 mb-1;
   }
+  .ingredient-create-review .ingredient-certification-card > summary {
+    @apply mb-0;
+  }
+  .ingredient-create-review .ingredient-certification-card[open] > summary {
+    @apply mb-3;
+  }
   .ingredient-create-image {
-    @apply max-w-full max-h-[200px] object-contain rounded-lg;
+    @apply w-20 h-20 shrink-0 object-contain rounded-lg bg-ws-surface border border-solid border-ws-border;
+  }
+  .ingredient-review-section {
+    @apply grid min-w-0 gap-4 rounded-xl border border-solid border-ws-border p-4 sm:p-5;
+  }
+  .ingredient-review-section h3,
+  .ingredient-review-section p {
+    @apply m-0;
+  }
+  .ingredient-review-heading {
+    @apply flex flex-wrap items-center justify-between gap-2 min-w-0;
+  }
+  .ingredient-review-heading > div {
+    @apply grid gap-1;
+  }
+  .ingredient-optional-badge {
+    @apply text-xs text-ws-text2 bg-ws-surface border border-solid border-ws-border rounded-full px-3 py-1;
+  }
+  .ingredient-listing-fields {
+    @apply grid gap-5;
+  }
+  .ingredient-listing-upload {
+    @apply grid justify-items-start min-w-0 gap-2 text-sm border-0 border-t border-solid border-ws-border pt-4;
+  }
+  .ingredient-image-selection {
+    @apply flex items-start gap-3 min-w-0 w-full;
+  }
+  .ingredient-image-file {
+    @apply grid min-w-0 gap-1;
+    overflow-wrap: anywhere;
+  }
+  .ingredient-image-actions {
+    @apply flex flex-wrap gap-2 mt-2;
+  }
+  .ingredient-quantity-note {
+    @apply block mt-1 text-xs text-ws-text2;
+  }
+  .ingredient-allergen-summary {
+    @apply grid gap-1 rounded-lg bg-ws-surface border border-solid border-ws-border p-3 text-sm;
+    overflow-wrap: anywhere;
+  }
+  .ingredient-allergen-summary > span {
+    @apply text-xs text-ws-text2;
+  }
+  .ingredient-registration-technical {
+    @apply text-sm text-ws-text2;
+  }
+  .ingredient-registration-technical > summary {
+    @apply cursor-pointer py-2;
+  }
+  .ingredient-registration-status {
+    @apply flex items-start gap-2 rounded-lg bg-ws-surface p-3 text-sm;
+  }
+  .ingredient-register-note {
+    @apply mt-5 mb-0;
   }
   .ingredient-create-actions {
-    @apply mt-6 pt-4 border-0 border-t border-solid border-ws-border;
+    @apply flex items-center justify-between gap-3 mt-4 pt-4 border-0 border-t border-solid border-ws-border;
+  }
+  .ingredient-create-actions > :last-child {
+    @apply ml-auto;
+  }
+  .ingredient-create :is(button, summary):focus-visible {
+    @apply outline-2 outline-offset-4 outline-ws-teal;
+  }
+  .ingredient-create .workspace-review-grid {
+    @apply grid grid-cols-2 gap-x-6 gap-y-4 m-0;
   }
   @media (max-width: 640px) {
-    .ingredient-create .workspace-form-grid {
+    .ingredient-create .workspace-form-grid,
+    .ingredient-create .workspace-review-grid {
       grid-template-columns: minmax(0, 1fr);
+    }
+    .ingredient-create-actions > button {
+      @apply min-w-0 whitespace-normal;
+    }
+    .ingredient-review-heading {
+      @apply items-start;
     }
   }
 }

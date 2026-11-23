@@ -11,7 +11,6 @@ import { KeyManager, MemoryKeyStore, MemoryPrivateKeyStore } from '@veramo/key-m
 import { KeyManagementSystem } from '@veramo/kms-local';
 import { Resolver } from 'did-resolver';
 import { getResolver } from 'key-did-resolver';
-import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 
 export interface BackendMessagingIdentity {
   companyName: string;
@@ -202,7 +201,6 @@ export class BackendDidCommAgentService {
         if (typeof this.encryptionKey === 'function') encryptionKey.fill(0);
       }
     } catch (error) {
-      if (error instanceof AdminKeystoreError) throw error;
       throw new Error('The protected backend messaging key cannot be decrypted.');
     }
   }

@@ -2,7 +2,7 @@ import { Wallet } from 'ethers';
 import { CompanyRole } from '@tracechain/shared';
 import request from 'supertest';
 import { SiweMessage } from 'siwe';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../app.js';
 import { InMemoryNonceRepository, InMemorySessionRepository } from './auth.repository.js';
@@ -19,6 +19,43 @@ interface TestWallet {
 }
 
 describe('SIWE authentication', () => {
+  it('keeps business authorization independent of stalled profile retrieval and still detects suspension', async () => {
+    const sessions = new InMemorySessionRepository();
+    await sessions.save({
+      id: 'performance-test',
+      address: '0x1000000000000000000000000000000000000001',
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 60000),
+    });
+    let status: 'AUTHORIZED' | 'SUSPENDED' = 'AUTHORIZED';
+    const profile = vi.fn(() => new Promise<never>(() => {}));
+    const resolve = vi.fn(async () => ({
+      checkedAt: new Date(),
+      status,
+      role: CompanyRole.SUPPLIER,
+    }));
+    const service = new AuthService({
+      authorizationResolver: { resolve },
+      stakeholderDirectory: { resolve: profile },
+      configuration: {
+        chainId: CHAIN_ID,
+        domain: DOMAIN,
+        uri: URI,
+        nonceTtlMs: NONCE_TTL_MS,
+        sessionTtlMs: 60000,
+      },
+      nonceRepository: new InMemoryNonceRepository(),
+      sessionRepository: sessions,
+    });
+    const result = await service.getSession('performance-test', { includeCompanyIdentity: false });
+    expect(result).toMatchObject({ authorizationReady: true, role: CompanyRole.SUPPLIER });
+    status = 'SUSPENDED';
+    expect(
+      await service.getSession('performance-test', { includeCompanyIdentity: false }),
+    ).toMatchObject({ authorizationReady: false, authorizationStatus: 'SUSPENDED' });
+    expect(profile).not.toHaveBeenCalled();
+    expect(resolve).toHaveBeenCalledTimes(2);
+  });
   let now: Date;
   let app: ReturnType<typeof createApp>;
 

@@ -196,17 +196,26 @@ export class AuthService {
     };
   }
 
-  async getSession(sessionId?: string): Promise<SessionResponse> {
+  async getSession(
+    sessionId?: string,
+    options: { includeCompanyIdentity?: boolean } = {},
+  ): Promise<SessionResponse> {
     if (!sessionId) return { authenticated: false };
 
     const session = await this.sessionRepository.find(sessionId, this.clock());
     if (!session) return { authenticated: false };
-    const refreshed = await this.refreshAuthorization(session);
+    const refreshed = await this.refreshAuthorization(
+      session,
+      options.includeCompanyIdentity ?? true,
+    );
     await this.sessionRepository.save(refreshed);
     return this.toAuthenticatedSession(refreshed);
   }
 
-  async requireSession(sessionId?: string): Promise<SessionRecord> {
+  async requireSession(
+    sessionId?: string,
+    options: { includeCompanyIdentity?: boolean } = {},
+  ): Promise<SessionRecord> {
     if (!sessionId) {
       throw new AuthError('AUTHENTICATION_REQUIRED', 'Wallet authentication is required.', 401);
     }
@@ -216,7 +225,10 @@ export class AuthService {
       throw new AuthError('AUTHENTICATION_REQUIRED', 'Wallet authentication is required.', 401);
     }
 
-    const refreshed = await this.refreshAuthorization(session);
+    const refreshed = await this.refreshAuthorization(
+      session,
+      options.includeCompanyIdentity ?? true,
+    );
     await this.sessionRepository.save(refreshed);
     return refreshed;
   }
@@ -279,11 +291,14 @@ export class AuthService {
     };
   }
 
-  private async refreshAuthorization(session: SessionRecord): Promise<SessionRecord> {
-    const key = session.address.toLowerCase();
+  private async refreshAuthorization(
+    session: SessionRecord,
+    includeCompanyIdentity = true,
+  ): Promise<SessionRecord> {
+    const key = `${session.address.toLowerCase()}:${includeCompanyIdentity}`;
     let pending = this.pendingAuthorizations.get(key);
     if (!pending) {
-      pending = this.resolveAuthorization(session);
+      pending = this.resolveAuthorization(session, includeCompanyIdentity);
       this.pendingAuthorizations.set(key, pending);
     }
     try {
@@ -293,14 +308,21 @@ export class AuthService {
     }
   }
 
-  private async resolveAuthorization(session: SessionRecord): Promise<OnChainAuthorizationSummary> {
+  private async resolveAuthorization(
+    session: SessionRecord,
+    includeCompanyIdentity = true,
+  ): Promise<OnChainAuthorizationSummary> {
     let onChainAuthorization = this.authorizationResolver
       ? await this.authorizationResolver.resolve(session.address)
       : (session.onChainAuthorization ?? {
           checkedAt: this.clock(),
           status: 'UNAVAILABLE' as const,
         });
-    if (onChainAuthorization.status === 'AUTHORIZED' && this.stakeholderDirectory) {
+    if (
+      includeCompanyIdentity &&
+      onChainAuthorization.status === 'AUTHORIZED' &&
+      this.stakeholderDirectory
+    ) {
       try {
         const identity = await this.stakeholderDirectory.resolve(
           session.address,

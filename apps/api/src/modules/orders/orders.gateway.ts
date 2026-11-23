@@ -1,4 +1,4 @@
-import { blockchainProvider } from '../blockchain/rpc-provider.js';
+import { blockchainProvider, ApiRpcProvider } from '../blockchain/rpc-provider.js';
 import { queryContractEvents } from '../blockchain/contract-events.js';
 import { readFileSync } from 'node:fs';
 import { Contract, Interface, JsonRpcProvider } from 'ethers';
@@ -50,19 +50,23 @@ export class EthersOrdersGateway implements OrdersGateway {
       throw new Error('Wrong RPC chain.');
     if ((await this.provider.getCode(this.address)) === '0x')
       throw new Error('Order registry is not deployed.');
-    for (const name of ['stakeholders', 'ingredients', 'products', 'evidence', 'custody']) {
-      if (
-        String(await this.read('orders', name)).toLowerCase() !==
-        this.addresses[name]?.toLowerCase()
-      )
-        throw new Error('Order registry deployment references do not match.');
-    }
-    for (const name of ['ingredients', 'custody']) {
-      if (
-        String(await this.read(name, 'supplyOrders')).toLowerCase() !== this.address.toLowerCase()
-      )
-        throw new Error('Order ledger is not wired into inventory.');
-    }
+    await Promise.all(
+      ['stakeholders', 'ingredients', 'products', 'evidence', 'custody'].map(async (name) => {
+        if (
+          String(await this.read('orders', name)).toLowerCase() !==
+          this.addresses[name]?.toLowerCase()
+        )
+          throw new Error('Order registry deployment references do not match.');
+      }),
+    );
+    await Promise.all(
+      ['ingredients', 'custody'].map(async (name) => {
+        if (
+          String(await this.read(name, 'supplyOrders')).toLowerCase() !== this.address.toLowerCase()
+        )
+          throw new Error('Order ledger is not wired into inventory.');
+      }),
+    );
   }
   private contracts = new Map<string, Contract>();
   private provider: JsonRpcProvider;
@@ -100,6 +104,8 @@ export class EthersOrdersGateway implements OrdersGateway {
         this.provider,
       );
       this.contracts.set(name, contract);
+      if ((name === 'delivery' || name === 'productDelivery') && this.provider instanceof ApiRpcProvider)
+        this.provider.registerMulticallTarget(String(contract.target));
     }
     return contract;
   }

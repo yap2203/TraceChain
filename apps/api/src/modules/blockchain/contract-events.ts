@@ -1,4 +1,5 @@
 import type { BaseContract, EventLog, Log, Provider } from 'ethers';
+import { countRead } from './read-timing.js';
 
 const DEFAULT_PAGE_SIZE = 5_000;
 const deploymentBlocks = new WeakMap<Provider, Map<string, Promise<number>>>();
@@ -76,6 +77,7 @@ async function refreshEventIndex(
   const pageSize = integerEnvironment('CHAIN_EVENT_PAGE_SIZE', DEFAULT_PAGE_SIZE, 1, 100_000);
   const additions: Array<EventLog | Log> = [];
   for (let pageStart = start; pageStart <= confirmedHead; pageStart += pageSize) {
+    countRead('scans');
     additions.push(
       ...(await contract.queryFilter(
         event,

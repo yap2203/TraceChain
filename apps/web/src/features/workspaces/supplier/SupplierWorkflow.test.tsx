@@ -235,7 +235,7 @@ describe('Supplier ingredient and request management', () => {
     expect(document.querySelector('.supplier-request-row.supplier-request-card')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
     fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
-    const dialog = screen.getByRole('dialog');
+    const dialog = await screen.findByRole('dialog');
     expect(dialog).toBeTruthy();
     expect(screen.getByText(/For our next production run/)).toBeTruthy();
     const technical = within(dialog).getByText('Technical details').closest('details');
@@ -265,7 +265,7 @@ describe('Supplier ingredient and request management', () => {
     mount(<OrdersPage role="supplier" />);
     await screen.findAllByRole('button', { name: 'Review request' });
     fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     const confirm = screen.getByRole('button', { name: 'Confirm approval' });
     fireEvent.click(confirm);
     fireEvent.click(confirm);

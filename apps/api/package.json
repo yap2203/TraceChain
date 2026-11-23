@@ -23,7 +23,8 @@
     "test:product-traceability": "vitest run src/modules/product-traceability",
     "test:stakeholder-directory": "vitest run src/modules/stakeholder-directory/stakeholder-directory.test.ts",
     "test:ssi-api": "vitest run src/modules/ssi/ssi.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false",
+    "keys:restore": "tsx src/scripts/restore-admin-bundle.ts"
   },
   "dependencies": {
     "@tesseract.js-data/eng": "^1.0.0",

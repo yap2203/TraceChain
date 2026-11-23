@@ -1,5 +1,5 @@
 import { CompanyRole } from '@tracechain/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { OnChainAuthorizationSummary } from '../auth/auth.types.js';
 import type { LoginAuthorizationResolver } from '../blockchain/login-authorization.service.js';
@@ -53,6 +53,27 @@ function resolver(
 }
 
 describe('verified stakeholder directory', () => {
+  it('does not authorize unrelated wallets or request unrelated profiles for a single identity', async () => {
+    const authorization = {
+      checkedAt: new Date(),
+      credentialId: `0x${'11'.repeat(32)}`,
+      role: CompanyRole.DISTRIBUTOR,
+      status: 'AUTHORIZED' as const,
+    };
+    const resolve = vi.fn(async () => authorization);
+    const list = vi.fn(async () => []);
+    const directory = new VerifiedStakeholderDirectory(
+      repository(WALLETS.map((wallet) => record(wallet, 'Test company'))),
+      { resolve },
+      { list },
+    );
+    await directory.resolve(WALLETS[0], authorization);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(list).toHaveBeenCalledWith([WALLETS[0]]);
+    await directory.resolve(WALLETS[1]);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(resolve).toHaveBeenCalledWith(WALLETS[1]);
+  });
   it('resolves a verified wallet to its credential-issued company name', async () => {
     const directory = new VerifiedStakeholderDirectory(
       repository([record(WALLETS[0], 'Swift Distribution Sdn. Bhd.')]),

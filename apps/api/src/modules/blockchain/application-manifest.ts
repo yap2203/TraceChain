@@ -13,7 +13,6 @@ import type { CatalogueImageInput } from '../orders/catalogue-media.js';
 import { validateCatalogueImage } from '../orders/catalogue-media.js';
 import type { BlockchainGateway, ChainApplicationRecord } from './blockchain-gateway.service.js';
 import { applicationDocumentsSchema } from './application-documents.schema.js';
-import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
 const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
@@ -338,7 +337,6 @@ export class ApplicationManifestService {
     try {
       serialized = await this.contentStore.retrieveAndDecrypt(application.encryptedProfileCid);
     } catch (error) {
-      if (error instanceof AdminKeystoreError) throw error;
       const message = error instanceof Error ? error.message : '';
       const missingKey = /authenticate data|auth tag|bad decrypt|decrypt/i.test(message);
       throw new ApplicationManifestError(

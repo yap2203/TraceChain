@@ -25,6 +25,7 @@ import { supplierStock } from './supplier-stock.js';
 import { readLogistics } from './logistics-state.js';
 import { readBusinessTraceability } from './business-traceability.js';
 import { readProductInventorySnapshot } from './product-inventory.js';
+import { OrderSummaryReader, type OrderListQuery } from './order-summaries.js';
 import { CustodyOffers, type CustodyOffer } from './custody-offers.js';
 import type { ApplicationMetadataRepository } from '../blockchain/application-metadata.repository.js';
 import type { LogisticsAction } from './logistics.schema.js';
@@ -66,9 +67,40 @@ export interface ApplicationLogoSource {
   >;
 }
 const same = (a: string, b: string) => a?.toLowerCase() === b?.toLowerCase();
-const isKeystoreLocked = (error: unknown) =>
-  (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
 export class OrdersService {
+  private summaryReader?: OrderSummaryReader;
+  async listOrders(sessionId: string | undefined, query: OrderListQuery) {
+    const session = await this.session(sessionId);
+    if (!session.role)
+      throw new OrdersError(
+        'AUTHORIZATION_REQUIRED',
+        'Sign in with an authorized company role.',
+        403,
+      );
+    this.summaryReader ??= new OrderSummaryReader(this.gateway, this.directory, async (row) => {
+      const requested = await this.optionalRead('orders', 'requestedBatch', [row.orderId]);
+      const batchId =
+        requested && !same(requested, ZeroHash)
+          ? requested
+          : row.proposedBatch && !same(row.proposedBatch, ZeroHash)
+            ? row.proposedBatch
+            : row.item.batches?.[0];
+      if (!batchId || same(batchId, ZeroHash)) return;
+      const kind = Number(row.item.kind);
+      const summary = await this.discoverBatch(
+        kind,
+        batchId,
+        await this.catalogueBatch(kind, batchId),
+      );
+      return {
+        ...(summary.name && !summary.name.endsWith('name unavailable')
+          ? { name: summary.name }
+          : {}),
+        batchReference: summary.batchReference,
+      };
+    });
+    return this.summaryReader.list(session.address, session.role, query);
+  }
   private custodyOfferService?: CustodyOffers;
   private offers() {
     return (this.custodyOfferService ??= new CustodyOffers({
@@ -1618,7 +1650,7 @@ export class OrdersService {
     return session;
   }
   private async authorizedSession(sessionId?: string) {
-    const session = await this.auth.getSession(sessionId);
+    const session = await this.auth.getSession(sessionId, { includeCompanyIdentity: false });
     assertAuthorizationAvailable(session);
     if (!session.authenticated || !session.authorizationReady || !session.address)
       throw new OrdersError(
@@ -1715,7 +1747,6 @@ export class OrdersService {
       try {
         serialized = await this.store.retrieveAndDecrypt(input.cid);
       } catch (error) {
-        if (isKeystoreLocked(error)) throw error;
         throw new OrdersError(
           'ENCRYPTED_RECORD_UNAVAILABLE',
           'The encrypted record could not be downloaded or decrypted.',
@@ -2096,8 +2127,34 @@ export class OrdersService {
     const image = pending || stored?.image ? stored.image : stored;
     return decodeStoredCatalogueImage(image);
   }
-  async state(sessionId?: string, scope?: 'supplier-inventory') {
+  async state(sessionId?: string, scope?: 'supplier-inventory', detailOrderId?: string) {
     const session = await this.session(sessionId);
+    const detailOrder = detailOrderId
+      ? await this.gateway.read('orders', 'getOrder', [detailOrderId])
+      : undefined;
+    const detailBatches = new Set<string>();
+    if (detailOrderId && detailOrder) {
+      if (
+        !same(detailOrder.buyer, session.address) &&
+        !same(detailOrder.seller, session.address) &&
+        session.role !== CompanyRole.SYSTEM_ADMIN
+      ) {
+        if (session.role !== CompanyRole.DISTRIBUTOR)
+          throw new OrdersError('NOT_FOUND', 'This order is not available to your company.', 404);
+        const [ingredient, product] = await Promise.all([
+          this.optionalRead('delivery', 'get', [detailOrderId]),
+          this.optionalRead('productDelivery', 'get', [detailOrderId]),
+        ]);
+        if (
+          !same(ingredient?.distributor, session.address) &&
+          !same(product?.distributor, session.address)
+        )
+          throw new OrdersError('NOT_FOUND', 'This order is not available to your company.', 404);
+      }
+      detailBatches.add(String(detailOrder.proposedBatch));
+      const requested = await this.optionalRead('orders', 'requestedBatch', [detailOrderId]);
+      if (requested) detailBatches.add(String(requested));
+    }
     const inventoryOnly = scope === 'supplier-inventory';
     if (inventoryOnly && session.role !== CompanyRole.SUPPLIER)
       throw new OrdersError(
@@ -2113,13 +2170,22 @@ export class OrdersService {
       transferEvents,
       inventoryInitializationEvents,
     ] = await Promise.all([
-      this.gateway.events('orders', 'ItemListed'),
-      this.gateway.events('orders', 'OrderRequested'),
+      this.gateway
+        .events('orders', 'ItemListed')
+        .then((events) =>
+          detailOrder ? events.filter((e) => same(e.itemId, detailOrder.itemId)) : events,
+        ),
+      this.gateway
+        .events('orders', 'OrderRequested')
+        .then((events) =>
+          detailOrderId ? events.filter((e) => same(e.orderId, detailOrderId)) : events,
+        ),
       inventoryOnly ? [] : this.gateway.events('orders', 'LocationRegistered'),
       inventoryOnly ? [] : this.gateway.events('orders', 'ShipmentDispatched'),
       inventoryOnly ? [] : this.gateway.events('custody', 'OrderTransferLinked'),
       inventoryOnly ? [] : this.gateway.events('custody', 'InventoryInitialized'),
     ]);
+    if (detailOrderId) for (const listing of listings) detailBatches.add(listing.batchId);
     const listedCatalogue = await Promise.all(
       [
         ...new Set(
@@ -2190,6 +2256,7 @@ export class OrdersService {
         if (inventoryOnly && !same(event.supplier, session.address)) continue;
         const batchId = event.batchId ?? event.productBatchId;
         if (!batchId) continue;
+        if (detailOrderId && !detailBatches.has(batchId)) continue;
         const batch = await this.catalogueBatch(kind, batchId);
         if (inventoryOnly && !same(batch.supplier, session.address)) continue;
         const summary = await this.discoverBatch(kind, batchId, batch);
@@ -2388,6 +2455,7 @@ export class OrdersService {
         listingKind === 1 ? 'IngredientBatchRegistered' : 'ProductCreated',
       );
       for (const entry of registered) {
+        if (detailOrderId && !detailBatches.has(entry.batchId)) continue;
         if (!same(listingKind === 1 ? entry.supplier : entry.manufacturer, actor)) continue;
         const batch = await this.catalogueBatch(listingKind, entry.batchId);
         const unit = this.batchUnit(batch.unit);
@@ -2799,6 +2867,7 @@ export class OrdersService {
   }
   async prepare(sessionId: string | undefined, input: OrderAction) {
     const session = await this.session(sessionId);
+    this.summaryReader?.invalidate();
     const operationKey = id(
       `${this.gateway.chainId}:${this.gateway.address}:${session.address.toLowerCase()}:${input.operationId}`,
     );

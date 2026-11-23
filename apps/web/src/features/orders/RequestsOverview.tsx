@@ -1,6 +1,8 @@
+import { requestStatus } from '@tracechain/shared';
+export { requestStatus } from '@tracechain/shared';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { ClipboardList, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Badge,
   Btn,
@@ -15,7 +17,7 @@ import {
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
-import type { OrderRecord } from './orders.api';
+import type { OrderRecord, OrdersState, OrderListOptions } from './orders.api';
 
 type RequestGroup = 'attention' | 'evidence' | 'approved' | 'closed';
 type RequestFilter = 'all' | RequestGroup;
@@ -39,17 +41,39 @@ export function RequestsOverview({
   orders,
   role,
   onView,
+  pagination,
+  options,
+  onQueryChange,
 }: {
   actor: string;
   catalogue: OrderRecord[];
   orders: OrderRecord[];
   role: string;
   onView: (orderId: string) => void;
+  pagination?: OrdersState['pagination'];
+  options?: OrderListOptions;
+  onQueryChange?: (query: OrderListOptions) => void;
 }) {
   const supplierView = role === 'supplier';
-  const [search, setSearch] = useState('');
-  const [status, setStatus] = useState('all');
-  const [sort, setSort] = useState<RequestSort>('newest');
+  const [search, setSearchText] = useState(options?.search ?? '');
+  const [status, setStatusValue] = useState(options?.status ?? 'all');
+  const [sort, setSortValue] = useState<RequestSort>(options?.sort ?? 'newest');
+  const queryCallback = useRef(onQueryChange);
+  queryCallback.current = onQueryChange;
+  useEffect(() => {
+    if (!pagination || search === (options?.search ?? '')) return;
+    const timer = setTimeout(() => queryCallback.current?.({ search, page: 1 }), 300);
+    return () => clearTimeout(timer);
+  }, [search, options?.search, Boolean(pagination)]);
+  const setSearch = (value: string) => setSearchText(value);
+  const setStatus = (value: string) => {
+    setStatusValue(value);
+    if (pagination) onQueryChange?.({ status: value, page: 1 });
+  };
+  const setSort = (value: RequestSort) => {
+    setSortValue(value);
+    if (pagination) onQueryChange?.({ sort: value, page: 1 });
+  };
   const summaries = useMemo(
     () => ({
       attention: orders.filter((entry) => requestStatus(entry).group === 'attention').length,
@@ -60,6 +84,7 @@ export function RequestsOverview({
     [orders],
   );
   const records = useMemo(() => {
+    if (pagination) return orders;
     const query = search.trim().toLocaleLowerCase();
     return orders
       .filter((entry) => {
@@ -76,9 +101,33 @@ export function RequestsOverview({
         );
       })
       .sort((left, right) => compareRequests(left, right, sort));
-  }, [catalogue, orders, search, sort, status, supplierView]);
+  }, [catalogue, orders, search, sort, status, supplierView, pagination]);
+  const total = pagination?.total ?? records.length;
+  const summaryCount = (group: string, fallback: number) => pagination?.counts[group] ?? fallback;
+  const pager = pagination && (
+    <nav aria-label="Order pages" className="flex flex-wrap items-center justify-end gap-3 mt-4">
+      <span>
+        Page {pagination.page} of {Math.max(1, Math.ceil(total / pagination.pageSize))} · {total}{' '}
+        results
+      </span>
+      <Btn
+        variant="outline"
+        disabled={pagination.page <= 1}
+        onClick={() => onQueryChange?.({ page: pagination.page - 1 })}
+      >
+        Previous page
+      </Btn>
+      <Btn
+        variant="outline"
+        disabled={pagination.page * pagination.pageSize >= total}
+        onClick={() => onQueryChange?.({ page: pagination.page + 1 })}
+      >
+        Next page
+      </Btn>
+    </nav>
+  );
 
-  if (!orders.length)
+  if (!orders.length && (!pagination || pagination.counts.all === 0))
     return (
       <EmptyState
         icon={<ClipboardList size={44} />}
@@ -97,35 +146,35 @@ export function RequestsOverview({
         <div className="request-summary-grid" aria-label="Filter requests by status">
           <SummaryFilter
             label="All requests"
-            value={orders.length}
+            value={summaryCount('all', orders.length)}
             tone="all"
             selected={status === 'all'}
             onSelect={() => setStatus('all')}
           />
           <SummaryFilter
             label="Needs review"
-            value={summaries.attention}
+            value={summaryCount('attention', summaries.attention)}
             tone="attention"
             selected={status === 'attention'}
             onSelect={() => setStatus('attention')}
           />
           <SummaryFilter
             label="Waiting for company evidence"
-            value={summaries.evidence}
+            value={summaryCount('evidence', summaries.evidence)}
             tone="evidence"
             selected={status === 'evidence'}
             onSelect={() => setStatus('evidence')}
           />
           <SummaryFilter
             label="Approved"
-            value={summaries.approved}
+            value={summaryCount('approved', summaries.approved)}
             tone="approved"
             selected={status === 'approved'}
             onSelect={() => setStatus('approved')}
           />
           <SummaryFilter
             label="Rejected or closed"
-            value={summaries.closed}
+            value={summaryCount('closed', summaries.closed)}
             tone="closed"
             selected={status === 'closed'}
             onSelect={() => setStatus('closed')}
@@ -152,7 +201,7 @@ export function RequestsOverview({
               { value: 'updated', label: 'Recently updated' },
             ]}
           />
-          <strong aria-live="polite">{records.length} results</strong>
+          <strong aria-live="polite">{total} results</strong>
         </div>
 
         {!records.length ? (
@@ -184,6 +233,7 @@ export function RequestsOverview({
             ))}
           </div>
         )}
+        {pager}
       </section>
     );
 
@@ -194,7 +244,7 @@ export function RequestsOverview({
           <h3 id="requests-title">My requests</h3>
           <p>Open a request to see its status and next action.</p>
         </div>
-        <strong>{records.length} results</strong>
+        <strong>{total} results</strong>
       </div>
       <StatusTabs
         label="Filter requests by status"
@@ -202,11 +252,23 @@ export function RequestsOverview({
         onChange={setStatus}
         variant="connected"
         tabs={[
-          { value: 'all', label: 'All', count: orders.length },
-          { value: 'attention', label: 'Needs action', count: summaries.attention },
-          { value: 'evidence', label: 'Evidence', count: summaries.evidence },
-          { value: 'approved', label: 'Approved', count: summaries.approved },
-          { value: 'closed', label: 'Closed', count: summaries.closed },
+          { value: 'all', label: 'All', count: summaryCount('all', orders.length) },
+          {
+            value: 'attention',
+            label: 'Needs action',
+            count: summaryCount('attention', summaries.attention),
+          },
+          {
+            value: 'evidence',
+            label: 'Evidence',
+            count: summaryCount('evidence', summaries.evidence),
+          },
+          {
+            value: 'approved',
+            label: 'Approved',
+            count: summaryCount('approved', summaries.approved),
+          },
+          { value: 'closed', label: 'Closed', count: summaryCount('closed', summaries.closed) },
         ]}
       />
       <div className="requests-toolbar">
@@ -267,7 +329,12 @@ export function RequestsOverview({
                 const state = requestStatus(entry);
                 return (
                   <TR key={entry.orderId}>
-                    <TD bold>{item?.name ?? 'Item name unavailable'}</TD>
+                    <TD bold>
+                      {item?.name ?? 'Item name unavailable'}
+                      <small className="block text-ws-text2">
+                        ORD-{String(entry.orderId).replace(/^0x/, '').slice(0, 8).toUpperCase()}
+                      </small>
+                    </TD>
                     <TD>
                       <span className="workspace-company-cell">
                         <CompanyAvatar
@@ -341,6 +408,7 @@ export function RequestsOverview({
           </div>
         </>
       )}
+      {pager}
     </section>
   );
 }
@@ -397,6 +465,7 @@ function SupplierRequestCard({
         <div className="supplier-request-item-info">
           <div className="supplier-request-item-copy">
             <h4>{item?.name ?? 'Item name unavailable'}</h4>
+            <small>ORD-{String(entry.orderId).replace(/^0x/, '').slice(0, 8).toUpperCase()}</small>
             <span>Batch reference: {item?.batchReference || 'Not disclosed'}</span>
           </div>
           <div className="supplier-request-company">
@@ -438,110 +507,6 @@ function SupplierRequestCard({
       </article>
     </Card>
   );
-}
-
-export function requestStatus(order: OrderRecord) {
-  if (Number(order.productDelivery?.stage) === 5)
-    return {
-      key: 'completed',
-      group: 'closed' as const,
-      label: 'Received by Retailer',
-      variant: 'verified' as const,
-    };
-  if (Number(order.productDelivery?.stage) === 6)
-    return {
-      key: 'cancelled',
-      group: 'closed' as const,
-      label: 'Product delivery cancelled / expired',
-      variant: 'rejected' as const,
-    };
-  if (Number(order.productDelivery?.stage) === 4)
-    return {
-      key: 'in-transit',
-      group: 'approved' as const,
-      label: 'In transit to Retailer',
-      variant: 'accepted' as const,
-    };
-  if (
-    order.custodyOrder &&
-    BigInt(order.custodyOrder.dispatched) < BigInt(order.requested) &&
-    Number(order.expiresAt) <= Date.now() / 1000
-  )
-    return {
-      key: 'expired',
-      group: 'closed' as const,
-      label:
-        BigInt(order.custodyOrder.dispatched) > BigInt(order.custodyOrder.received)
-          ? 'Remainder expired; shipment in transit'
-          : 'Expired',
-      variant: 'expired' as const,
-    };
-  if (Number(order.delivery?.stage) === 6)
-    return {
-      key: 'completed',
-      group: 'closed' as const,
-      label: 'Delivery cancelled',
-      variant: 'rejected' as const,
-    };
-  if (
-    /^\d+$/.test(String(order.approvedReceivedQuantity)) &&
-    BigInt(order.approvedReceivedQuantity) > 0n
-  ) {
-    return BigInt(order.approvedReceivedQuantity) >= BigInt(order.requested)
-      ? {
-          key: 'completed',
-          group: 'closed' as const,
-          label: 'Received',
-          variant: 'verified' as const,
-        }
-      : {
-          key: 'approved',
-          group: 'approved' as const,
-          label: 'Partially received',
-          variant: 'accepted' as const,
-        };
-  }
-  if (Number(order.decision?.status) === 1)
-    return {
-      key: 'approved',
-      group: 'approved' as const,
-      label: Number(order.delivery?.stage) === 4 ? 'In transit' : 'Approved',
-      variant: 'accepted' as const,
-    };
-  if (Number(order.decision?.status) === 2)
-    return {
-      key: 'rejected',
-      group: 'closed' as const,
-      label: 'Rejected',
-      variant: 'rejected' as const,
-    };
-  if (Number(order.expiresAt) <= Date.now() / 1000)
-    return {
-      key: 'expired',
-      group: 'closed' as const,
-      label: 'Expired',
-      variant: 'expired' as const,
-    };
-  if (Number(order.status) >= 3)
-    return {
-      key: 'completed',
-      group: 'closed' as const,
-      label: 'Closed',
-      variant: 'default' as const,
-    };
-  if (hasValue(order.identityChallenge) && !hasValue(order.identityCredentialHash))
-    return {
-      key: 'evidence',
-      group: 'evidence' as const,
-      label: 'Waiting for Manufacturer proof',
-      variant: 'requested' as const,
-    };
-  return {
-    key: 'submitted',
-    group: 'attention' as const,
-    label: 'Needs your review',
-    variant: 'pending' as const,
-  };
 }
 
 export function companyEvidenceStatus(order: OrderRecord) {

@@ -162,9 +162,7 @@ export function CertificationEditor({
   return (
     <div className="ingredient-certifications">
       <p className="ingredient-help">
-        Supplier-provided certification. Documents are not independently verified by their stated
-        authority. PDF (up to 50 pages), PNG or JPEG; 10 MB per file, 3 per certification, 20 files
-        / 20 MB total.
+        Supplier-provided certifications. Not independently verified by the stated authority.
       </p>
       {error && <Alert type="error" message={error} />}
       {!entries.length && <p>No certifications supplied.</p>}
@@ -176,7 +174,8 @@ export function CertificationEditor({
         >
           <summary>
             {entry.name || `Certification ${index + 1}`} · {entry.scope} · {entry.files.length}{' '}
-            document(s) · {readOnly ? 'View' : 'Edit'}
+            {entry.files.length === 1 ? 'document' : 'documents'}
+            {!readOnly && ' · Edit'}
           </summary>
           {!readOnly ? (
             <>
@@ -312,6 +311,10 @@ export function CertificationEditor({
                     event.target.value = '';
                   }}
                 />
+                <small className="ingredient-help">
+                  PDF (up to 50 pages), PNG or JPEG. Up to 10 MB each, 3 files per certification; 20
+                  files / 20 MB total.
+                </small>
               </label>
               {showErrors && !entry.files.length && (
                 <p role="alert" className="text-ws-red">

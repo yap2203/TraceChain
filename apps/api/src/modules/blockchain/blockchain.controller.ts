@@ -14,12 +14,12 @@ import {
 import type { CompanyRoleIssuanceRepository } from '../ssi/issuance.repository.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import { OrdersError } from '../orders/orders.service.js';
+import { isRpcRateLimitError } from './rpc-provider.js';
 import type { CatalogueImageInput, StoredCatalogueImage } from '../orders/catalogue-media.js';
 import {
   ApplicationManifestError,
   type ApplicationManifestService,
 } from './application-manifest.js';
-import { AdminKeystoreError } from '../admin-keystore/admin-keystore.js';
 import {
   applicationTransactionSchema,
   credentialLifecycleTransactionSchema,
@@ -476,10 +476,10 @@ export class BlockchainController {
       const data = await this.gateway
         .listOperationalData(session.address, {
           administrator: session.role === CompanyRole.SYSTEM_ADMIN,
+          role: session.role,
         })
         .catch((error: unknown) => {
-          const rateLimited =
-            error instanceof Error && /too many requests|rate.?limit|429/i.test(error.message);
+          const rateLimited = isRpcRateLimitError(error);
           throw new BlockchainApiError(
             rateLimited ? 'BLOCKCHAIN_RATE_LIMITED' : 'OPERATIONAL_READS_UNAVAILABLE',
             rateLimited
@@ -811,7 +811,7 @@ export class BlockchainController {
 
   private async requireAdministrator(request: Request) {
     const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
-    const session = await this.authService.getSession(sessionId);
+    const session = await this.authService.getSession(sessionId, { includeCompanyIdentity: false });
     assertAuthorizationAvailable(session);
     if (
       !session.authenticated ||
@@ -828,7 +828,7 @@ export class BlockchainController {
 
   private async requireAuthorizedStakeholder(request: Request) {
     const sessionId = request.cookies?.[this.sessionCookieName] as string | undefined;
-    const session = await this.authService.getSession(sessionId);
+    const session = await this.authService.getSession(sessionId, { includeCompanyIdentity: false });
     assertAuthorizationAvailable(session);
     if (!session.authenticated || !session.authorizationReady || !session.address) {
       throw new BlockchainApiError(
@@ -853,8 +853,7 @@ export class BlockchainController {
     if (
       error instanceof BlockchainApiError ||
       error instanceof AuthError ||
-      error instanceof ApplicationManifestError ||
-      error instanceof AdminKeystoreError
+      error instanceof ApplicationManifestError
     ) {
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
       return;

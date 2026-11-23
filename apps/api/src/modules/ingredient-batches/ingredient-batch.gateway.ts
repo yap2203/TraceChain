@@ -116,18 +116,18 @@ export class EthersIngredientBatchGateway implements IngredientBatchGateway {
     if ([stakeholderCode, credentialCode, ingredientCode].includes('0x')) {
       throw new Error('A configured ingredient workflow contract is not deployed.');
     }
-    if (
-      getAddress(await this.ingredients.stakeholders()) !== getAddress(this.stakeholderAddress) ||
-      getAddress(await this.ingredients.credentials()) !== getAddress(this.credentialAddress)
-    ) {
+    const [stakeholders, credentials] = await Promise.all([this.ingredients.stakeholders(),this.ingredients.credentials()]);
+    if (getAddress(stakeholders) !== getAddress(this.stakeholderAddress) ||
+      getAddress(credentials) !== getAddress(this.credentialAddress)) {
       throw new Error('The configured ingredient contracts do not belong to one deployment.');
     }
   }
 
   async getSupplierAccess(wallet: string, companyRoleCredentialHash: string) {
-    const stakeholder = await this.stakeholders.getStakeholder(wallet);
     const expectedHash = `0x${companyRoleCredentialHash.replace(/^0x/, '')}`;
-    const credentialId = await this.credentials.credentialIdByHash(expectedHash);
+    const [stakeholder, credentialId] = await Promise.all([
+      this.stakeholders.getStakeholder(wallet), this.credentials.credentialIdByHash(expectedHash),
+    ]);
     const [credentialStatus, issuePermission, registerPermission] = await Promise.all([
       /^0x0{64}$/i.test(String(credentialId))
         ? Promise.resolve(0)

@@ -525,7 +525,8 @@ describe('Company Role Credential presentation API', () => {
         expect(restored.identity.credentialId).toBe(issued.credential.id);
         expect(restored.verification?.outcome).toBe('CHECKS_PASSED');
       }
-      expect(downloads).toBe(2);
+      // Repeated authorized retrieval reuses immutable encrypted bytes, not an authorization grant.
+      expect(downloads).toBe(1);
     } finally {
       globalThis.fetch = originalFetch;
     }

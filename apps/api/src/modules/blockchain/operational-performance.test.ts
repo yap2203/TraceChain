@@ -15,6 +15,23 @@ function event(args: Record<string, unknown>) {
 
 describe('Stakeholder-scoped operational reads', () => {
   beforeEach(() => mocks.queryContractEvents.mockReset());
+  it('skips product and product-custody scans for an authenticated Supplier view', async () => {
+    const gateway = new BlockchainGatewayService(
+      11155111,
+      'http://127.0.0.1:1',
+      address,
+      address,
+      address,
+      address,
+      address,
+      address,
+    );
+    mocks.queryContractEvents.mockResolvedValue([]);
+    const result = await gateway.listOperationalData(actor, { role: 'SUPPLIER' });
+    expect(mocks.queryContractEvents).toHaveBeenCalledTimes(3);
+    expect(result.productBatches).toEqual([]);
+    expect(result.transfers).toEqual([]);
+  });
 
   it('filters indexed events before fetching records and skips unrelated chain records', async () => {
     const gateway = new BlockchainGatewayService(

@@ -187,7 +187,6 @@ export class IngredientBatchService {
         const encrypted = await this.dependencies.contentStore
           .encryptAndStore(JSON.stringify(file), file.id)
           .catch((error) => {
-            if (isKeystoreLocked(error)) throw error;
             throw new IngredientBatchApiError(
               'DOCUMENT_STORAGE_UNAVAILABLE',
               'Encrypted document upload failed. Retry this file; no credential was issued.',
@@ -320,7 +319,6 @@ export class IngredientBatchService {
       }
     } catch (error) {
       if (error instanceof IngredientBatchApiError) throw error;
-      if (isKeystoreLocked(error)) throw error;
       throw new IngredientBatchApiError(
         'DOCUMENT_RETRIEVAL_UNAVAILABLE',
         'The encrypted document is temporarily unavailable. Retry when the service is restored.',
@@ -437,7 +435,6 @@ export class IngredientBatchService {
           }
         } catch (error) {
           if (error instanceof IngredientBatchApiError) throw error;
-          if (isKeystoreLocked(error)) throw error;
           throw new IngredientBatchApiError(
             'INGREDIENT_METADATA_UNAVAILABLE',
             'The encrypted ingredient metadata could not be downloaded or decrypted.',
@@ -582,7 +579,6 @@ export class IngredientBatchService {
           credentialId,
         );
       } catch (error) {
-        if (isKeystoreLocked(error)) throw error;
         throw new IngredientBatchApiError(
           'ENCRYPTED_STORAGE_UNAVAILABLE',
           'The encrypted Ingredient Credential could not be stored. No blockchain transaction was prepared.',
@@ -660,7 +656,9 @@ export class IngredientBatchService {
   }
 
   private async requireSupplier(sessionId: string | undefined) {
-    const session = await this.dependencies.authService.requireSession(sessionId);
+    const session = await this.dependencies.authService.requireSession(sessionId, {
+      includeCompanyIdentity: false,
+    });
     assertAuthorizationAvailable(session);
     const authorization = session.onChainAuthorization;
     if (
@@ -851,8 +849,4 @@ function stableJson(value: unknown): string {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`)
     .join(',')}}`;
-}
-
-function isKeystoreLocked(error: unknown) {
-  return (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
 }

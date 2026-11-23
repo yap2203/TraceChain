@@ -1,5 +1,166 @@
 # Project Progress
 
+## 2026-11-23 - Multicall alternative to serialized RPC reads
+
+- Tested the official existing Sepolia Multicall3 deployment with six actual TraceChain getters in one
+  read-only RPC: all six passed in 282 ms. Checked its runtime code and pinned its hash in the adapter.
+- Added optional `RPC_MULTICALL_ENABLED=true` aggregation for an explicit list of caller-independent
+  getters on configured TraceChain contracts and their discovered delivery children. Collects reads
+  for 15 ms, caps groups at 32 and preserves each result/revert. Unknown selectors/targets, callers,
+  state overrides, non-latest reads and writes retain their individual paths. No result/permission cache.
+- Runtime mismatch uses ordinary reads; network failure remains an error rather than fabricated
+  authorization. Existing read retry limits apply to aggregate RPCs; no fallback storm of individual
+  reads after a transport failure. Parallelized independent authorization/wiring reads to enable grouping.
+- Integrated live read-only Supplier pipeline with two transports / 200 ms ordinary pacing: current
+  authorization 2,358 ms; ingredient chain checks 5,488 ms (one batch); operations 7,184 ms first /
+  959 ms repeat. Five aggregate batches covered eleven logical getters; the full probe recorded zero
+  rate limits/retries. First operations reused ingredient event discovery from the preceding check;
+  these are public gateway timings, not a fresh authenticated browser/IPFS benchmark.
+- Enabled the tested flag/pacing in the ignored environment after saving its previous contents.
+  Kept log pacing at 1,200 ms. No deployment, database, dependency, wallet key or credential change.
+- Full API suite passed (496 tests), including code-pin fallback, fresh results, partial reverts,
+  simulation/write exclusions and transport errors. API build passed. Source and deployment reference:
+  https://github.com/mds1/multicall3 and its deployments.json / src/Multicall3.sol.
+- Identified the existing tsx API watcher and triggered a content-preserving source timestamp reload
+  after enabling the flag. Confirmed its listener process changed and API health returned 200.
+
+## 2026-11-23 - Live operations 503 investigation and RPC pacing
+
+- Reproduced the live Supplier read sequence: 24 logical reads triggered 27 rate-limit events and
+  exceeded a 45-second deadline. Individual spaced Infura chain/head/call and log-range requests
+  succeeded; range alone was not rejected in those checks. A single-threaded paced probe completed
+  Supplier operations twice: 11,362 ms cold and 10,579 ms repeat, with one ingredient and no product,
+  custody-transfer or evidence records. It still recorded 8 rate-limit events across the full probe.
+- Supplier operational views now omit product and product-custody scans, using the current role
+  supplied by authorization. Default/other-role and administrator histories remain unchanged.
+- Added separate pacing after expensive log queries. After preserving the ignored environment,
+  set active RPC concurrency/bulk concurrency to 1, ordinary spacing to 500 ms and log spacing to
+  1,200 ms. No addresses, keys, chain or contract deployment changed. This trades burst rate for
+  fewer rejected requests; it does not establish a fast full authenticated page load.
+- Nested HTTP/RPC rate-limit errors now retain the readable BLOCKCHAIN_RATE_LIMITED classification.
+  Added regression tests for role-specific scans, log spacing and nested 429 handling. API build and
+  full API suite (491 tests) passed; no authorization or available-stock cache added.
+- Infura's official rate-limit documentation confirms throughput/account limits apply separately
+  from daily quotas. Remaining provider rejections require checking project usage, shared traffic
+  and throughput configuration: https://docs.infura.io/how-to/avoid-rate-limiting/ .
+
+## 2026-11-23 - Follow-up inventory and authorization loading fixes
+
+- Investigated the user's real inventory (24-39 s), operations (13.6 s), ingredient-list (12-24 s)
+  and complete Orders (~72 s) timings. These were different paths from the summary-list benchmark.
+- Removed display-name/IPFS enrichment from protected Orders, operations and ingredient session checks.
+  They still resolve current on-chain authorization every time; login/session presentation retains
+  company identity enrichment. Added regression coverage for stalled profile retrieval and subsequent
+  suspension denial, without caching any authorization grant.
+- Scoped directory single/multi-wallet lookups to their requested wallets and filtered application
+  profiles before retrieval. A single lookup with already-checked authorization now makes no unrelated
+  wallet authorization calls. Empty directory requests return immediately.
+- Reuse small immutable encrypted IPFS envelopes for 30 seconds, bounded to 64 entries (~32 MB).
+  Keep large files in-flight-only; clone returned envelopes and evict failed fetches. Authorization,
+  decryption and integrity checks remain per access. Existing credential retrieval test confirms
+  two authorized reads use one download; expiry/tampering and wrong-key tests still pass.
+- Parallelized independent Orders deployment wiring probes; changed Supplier batch detail to the
+  supplier-inventory scope and deduplicated concurrent ingredient-list calls per wallet-session scope.
+- Live read-only RPC samples: eth_chainId 902 ms and eth_blockNumber 301 ms, both HTTP 200.
+  Full authenticated endpoint timings after this fix remain unmeasured; no live speedup is claimed.
+- Validation: full API suite 488 passed; 78 Supplier/auth frontend tests passed; API/web builds and
+  frontend typecheck passed. No database, contract, deployment, environment or key changes.
+
+## 2026-11-23 — Orders-first loading performance
+
+- Confirmed Orders still built the complete catalogue/inventory/history/private-detail workspace before
+  displaying requests. Retained existing bounded RPC batching/backoff, in-flight coalescing and
+  incremental confirmed event indexes with checkpoint validation for reorganizations.
+- Added authenticated `scope=order-list` pagination with global direction/status/search/sorting,
+  bounded parallel reads and five-second wallet/role/deployment-scoped display snapshots. Supplier,
+  Manufacturer and Retailer lists now fetch summaries first; row opening uses participant-checked
+  `scope=order-detail&orderId=...`. Private notes, evidence and documents are deferred. Detail still
+  retains existing logistics/directory context; Distributor delivery queues keep their specialized path.
+- Authorization and deployment checks run even on cache hits. Confirmed frontend writes and Refresh
+  bypass snapshots; preparation invalidates them. Permission, credential and stock checks stay current.
+  Shared status classification keeps API filters and UI badges aligned without changing lifecycle rules.
+- Shared improvements: viewport-triggered CatalogueImage downloads, concurrent encrypted IPFS envelope
+  coalescing, wallet-session-scoped frontend in-flight requests and stale-response rejection. Fixed a
+  reproduced Retailer product-history reload loop caused by equivalent new transfer-array instances.
+- RPC HTTP 429 handling respects numeric/date Retry-After with bounded read retries, disables ethers'
+  extra HTTP retry loop and never automatically resends transactions. Added safe Server-Timing request
+  counters and a browser usable-list measurement without identifiers, keys, URLs or private metadata.
+- Same local synthetic 40-order/20-batch HTTP workload: cold 2,674 to 419 ms; repeat 2,544 to 7 ms;
+  mock contract reads 205 to 103 cold / 0 repeat; event queries 9 to 2 cold / 0 repeat. Fixtures had
+  zero IPFS downloads in both cases. These are API/double measurements, not live RPC or browser paint
+  timings. Authenticated Sepolia/IPFS/browser timing remains unmeasured; runtime counters support that check.
+- Validation: full API suite 486 passed, full frontend suite 417 passed; shared/API builds, frontend
+  typecheck and production build passed. Existing bundle-size/third-party directive warnings remain.
+  Tests cover pagination, cached authorization denial, refresh/expiry/failure, company isolation,
+  lazy details/media, wallet changes, encrypted download deduplication and Retry-After.
+- Updated README and ORDERS_LOADING_PERFORMANCE.md. No database, dependency, environment, contract
+  or public deployment changes. Preserved a byte-for-byte backup before repairing two legacy-encoded
+  punctuation bytes in this progress file so documentation remains valid UTF-8.
+
+## 2026-11-23 - Intermittent RPC busy resilience
+
+- Investigated Supplier ingredient 503 reports. Read-only Sepolia checks passed deployment wiring,
+  active Supplier credential/permissions and ingredient event reads; the Supplier currently has no
+  registered ingredient batches. The reported intermittent RPC-busy response was not reproduced as
+  a persistent contract/decryption failure. No authorization bypass or on-chain changes were made.
+- Extended bounded read retry handling to recognized RPC/server busy, temporary HTTP failures and
+  selected transient connection failures. Added a shared cooldown for queued transports and retry of
+  only busy entries in partially successful batches. Transaction submissions and permanent contract
+  errors are not retried; current permission checks remain uncached.
+- Lowered public defaults and active environment burst settings to concurrency 4, bulk concurrency 2,
+  batch size 10, start spacing 100 ms and 3 retries. Preserved the previous ignored environment under
+  `.tracechain/recovery/rpc-tuning-20261123-*`; secrets, issuer files and contract addresses are unchanged.
+- Passed 187 API tests across blockchain, auth, ingredient-batches and production-flow, including
+  busy/HTTP/reset recovery, shared cooldown, partial batches, retry exhaustion and no transaction retry.
+  API build/typecheck passed. Restarted the API with network access to apply the settings; process-local
+  sessions require signing in again. Persistent RPC capacity problems can still return 503 after retries.
+
+## 2026-11-23 - Explicitly recreated fresh test issuer after lost recovery password
+
+- At the user's explicit request, created a new authority and fresh IPFS/KMS keys in a separate
+  `.tracechain/sepolia-fresh-20261123-*` profile. Updated ignored root `.env` to select that profile;
+  preserved the previous `.env` in an ignored `.tracechain/recovery/recreate-20261123-*` directory.
+  All previous data directories, candidate issuer backups and encrypted Admin bundles remain intact.
+- Created the local encrypted bootstrap Admin credential for the already configured administrator
+  wallet. Reopened the new saved issuer and cryptographically verified its bootstrap credential with
+  a local resolver. No wallet transaction, public deployment or IPFS upload was performed.
+- Started the compiled API with the new environment/profile. `/api/health` and `/api/auth/session`
+  returned HTTP 200. This restores API startup, not the old issuer or its encrypted records.
+  Existing on-chain references remain unchanged and need explicit credential replacement/reissuance
+  where they point to lost-key content. Restarted the validation API with network access, then verified
+  Sepolia chain 11155111 and that the deployed administrator matches the configured bootstrap wallet
+  using read-only RPC calls. No chain writes or Pinata uploads were performed.
+
+## 2026-11-23 - Environment-backed startup and offline issuer recovery
+
+- Based on checkout 4eda16d, removed the runtime Admin-keystore manager/routes and Admin workspace
+  page/navigation/controls. Removed obsolete KEYSTORE_LOCKED error gates and memory-store wiring.
+  Hardhat keystore, MetaMask/SIWE authorization, wallet-bound VPs and legacy holder recovery are intact.
+- API startup now validates the original 64-hex IPFS/KMS secrets, saved encrypted private keys,
+  corresponding public-key/DID metadata and configured authority alias before listening. Missing,
+  corrupted, mismatched or undecryptable issuer material stops startup with a safe recovery error;
+  no replacement authority is generated. Normal issuer changes persist to encrypted Veramo files.
+- Added ignored API-only .env.runtime loading after protected process variables and before root .env.
+  Updated environment placeholders and backend content/DIDComm key initialization. No active .env,
+  existing key file, encrypted bundle, chain address or historical record was changed.
+- Retained bundle cryptography as offline-only tooling. keys:restore securely prompts for the password,
+  compares a trusted bundle against saved keys, verifies matching metadata, refuses key loss/secret
+  conflicts, and requires --restore for writes. Restore preserves originals and an encrypted bundle copy
+  under the data directory's recovery folder, then restores encrypted keys/metadata and the original
+  secrets into the ignored backend environment file. Existing offline backup command remains available.
+- Local synthetic validation covers actual compiled API process start/restart with no Admin action,
+  older VC verification and new signing under the same DID, encrypted application document access,
+  cross-company denial, removed endpoints, startup errors and bundle recovery with backups.
+- The real active .tracechain/sepolia issuer files are absent and the two configured secrets are invalid.
+  Found an encrypted Downloads bundle and candidate older metadata backups, but its password is needed
+  for comparison. Actual data was left untouched; real retrieval/issuance requires the operator's offline
+  comparison/restore first. See docs/BACKEND_ENVIRONMENT_RECOVERY.md for exact steps and limitations.
+- Validation passed: complete API suite (466 tests), complete frontend suite (410 tests, rerun with
+  two workers after one concurrent-run timeout), SSI suite (29 tests), root production build and
+  API/web/SSI type checks. Build retains existing bundle-size/third-party directive warnings. Running
+  the compiled API with the real current configuration failed before listening with a safe missing-key
+  message, as intended; live existing-data retrieval/signing is pending operator recovery.
+
 ## 2026-11-23 - MetaMask presentations and shared encrypted IPFS exchange
 
 - New ingredient SD-JWT v3 credentials carry issuer-signed wallet binding. Added versioned EIP-712
@@ -1557,3 +1718,20 @@
 ## Important distinction
 
 The Admin application, credential, access-control, discrepancy, and audit screens use authoritative chain records. Primary Supplier, Manufacturer, Distributor, and Retailer dashboards and their batch, product, shipment, inventory, detail, and company-identity views are backed by authenticated services. Supplier Ingredient Credential/batch registration and the Manufacturer evidence, product, Manufacturer-to-Distributor transfer, Distributor-to-Retailer transfer, QR handoff, recipient reconciliation/evidence, and public product traceability flows use verified credentials where required, encrypted IPFS content, MetaMask writes, contract events, and authoritative reads. Remaining non-admin reports still require fixture removal.
+
+## 2026-11-23 — RPC batch response correlation repair
+
+- Reproduced the configured Sepolia endpoint returning bare `-32005 Too Many Requests` objects without JSON-RPC IDs during parallel dashboard reads. The previous retry path could send an empty batch and surface omitted-response errors as authorization unavailable.
+- Added a 60-second individual-read fallback for uncorrelated/unsupported batch errors, recovery of omitted replies by exact request ID, normalization of bare single-request errors, and batch-fallback diagnostics. Never infer successful response ownership from array position. Writes remain single-send without automatic retries.
+- Set the ignored active environment and example to `RPC_BATCH_MAX_COUNT=1`; preserved the original environment in an ignored recovery backup. Other user configuration and secrets are unchanged. Added a 15-second RPC transport timeout with bounded read-only timeout retries.
+- Validation: 193 tests passed across blockchain, auth, ingredient batches and production flow; API build and typecheck passed. Live read-only validation located the approved Supplier; the individual-call dashboard burst recorded zero rate-limit errors but exceeded a 45-second diagnostic deadline. Provider latency remains a limitation; full authenticated browser success was not established by that probe.
+- No contract or deployment changes. API restart clears process-memory sessions, requiring users to sign in again.
+
+## 2026-11-23 — Supplier ingredient creation review redesign
+
+- Refined the existing three-step frontend with consistent Back/primary footer placement, grouped quantity/unit inputs, section dividers and focus movement. Review edit links preserve draft values, certification uploads and the selected image.
+- Separated optional listing price/photo controls from three signed-data review groups. Added accessible image selection, filename/thumbnail, Replace/Remove and inline validation; retained PNG/JPEG/WebP and 2 MB limits. Currency/basis keep their existing behavior/options.
+- Review uses readable category labels, explicit date-only UTC formatting, exact grouped registered quantities, nonempty source fields and a prominent textual allergen declaration. Certification summaries are compact collapsed rows with scope/file counts and existing preview controls. Upload rules are beside upload inputs; technical detail is expandable.
+- Reused the current registration state callbacks, duplicate-submit lock, frozen input and retry behavior. Submission/confirmation uncertainty is separately labelled; no changes to API, contracts, credential claims or MetaMask transaction sequence.
+- Validation: all 28 Supplier batch/list/transaction tests passed, including review/submitted payload consistency, image/price retention, earlier-step editing, three attachments across two certifications, preview, pending confirmation and existing rejection/stale-read/duplicate-submit cases. Frontend typecheck and production build passed (existing bundle-size and third-party directive warnings remain).
+- Responsive CSS uses single-column mobile form/review grids and wrapping file/action layouts. Real desktop/mobile visual inspection, keyboard/browser behavior and live MetaMask/IPFS transaction acceptance still require manual testing; no public writes were performed. README and ingredient creation guide updated.

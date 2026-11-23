@@ -2338,3 +2338,154 @@ describe('order API and private metadata', () => {
     await request(app).get('/api/orders').expect(503);
   });
 });
+
+// Synthetic transport latency is deliberate; no private values are logged.
+describe('Orders list performance workload', () => {
+  it('measures cold and repeat API loads for the same account and deployment', async () => {
+    const f = fixture();
+    const baseRead = f.gateway.read.getMockImplementation();
+    const listed = Array.from({ length: 20 }, (_, i) => ({
+      itemId: id('perf-item-' + i),
+      batchId: id('perf-batch-' + i),
+      seller,
+    }));
+    const requested = Array.from({ length: 40 }, (_, i) => ({
+      orderId: id('perf-order-' + i),
+      buyer,
+      seller,
+      blockNumber: i + 1,
+    }));
+    f.gateway.events.mockImplementation(async (_contract, event) => {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      return event === 'ItemListed' ? listed : event === 'OrderRequested' ? requested : [];
+    });
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      const value = await baseRead(contract, method);
+      return method === 'getOrder'
+        ? {
+            ...value,
+            itemId:
+              listed[requested.findIndex((e) => e.orderId === args?.[0]) % listed.length].itemId,
+            createdAt: 100,
+          }
+        : value;
+    });
+    for (const phase of ['cold', 'repeat']) {
+      f.gateway.read.mockClear();
+      f.gateway.events.mockClear();
+      f.store.decrypt.mockClear();
+      const start = performance.now();
+      const response = await request(f.app)
+        .get(process.env.ORDERS_BENCHMARK_PATH || '/api/orders')
+        .expect(200);
+      expect(response.body.orders.length).toBeGreaterThan(0);
+      console.log(
+        JSON.stringify({
+          workload: '40 orders / 20 catalogue batches',
+          phase,
+          apiMs: Math.round(performance.now() - start),
+          contractReads: f.gateway.read.mock.calls.length,
+          eventQueries: f.gateway.events.mock.calls.length,
+          ipfsDownloads: 0,
+          localDecryptions: f.store.decrypt.mock.calls.length,
+          rows: response.body.orders.length,
+        }),
+      );
+    }
+  }, 20000);
+});
+
+describe('Paginated order summaries', () => {
+  it('filters and sorts the entire authorized set before slicing pages', async () => {
+    const f = fixture();
+    const read = f.gateway.read.getMockImplementation();
+    const events = Array.from({ length: 45 }, (_, i) => ({
+      orderId: id('page-' + i),
+      buyer,
+      seller,
+      blockNumber: i + 1,
+    }));
+    f.gateway.events.mockResolvedValue(events);
+    f.gateway.read.mockImplementation(async (c, m, args) => {
+      const value = await read(c, m);
+      if (m === 'requestDecision')
+        return { ...value, status: events.findIndex((e) => e.orderId === args?.[0]) >= 30 ? 1 : 0 };
+      return value;
+    });
+    const one = await request(f.app).get('/api/orders?scope=order-list&pageSize=10').expect(200);
+    const two = await request(f.app)
+      .get('/api/orders?scope=order-list&pageSize=10&page=2')
+      .expect(200);
+    expect(one.body.pagination).toMatchObject({
+      total: 45,
+      counts: { approved: 15, attention: 30 },
+    });
+    expect(one.body.orders[0].orderId).toBe(events[44].orderId);
+    expect(new Set([...one.body.orders, ...two.body.orders].map((r) => r.orderId)).size).toBe(20);
+    const approved = await request(f.app)
+      .get('/api/orders?scope=order-list&status=approved&sort=oldest&pageSize=10')
+      .expect(200);
+    expect(approved.body.pagination.total).toBe(15);
+    expect(approved.body.orders[0].orderId).toBe(events[30].orderId);
+    expect(f.gateway.events).toHaveBeenCalledTimes(2);
+    expect(f.store.decrypt).not.toHaveBeenCalled();
+    expect(
+      f.gateway.read.mock.calls.some(([, m]) =>
+        [
+          'getBatch',
+          'getProduct',
+          'getInventory',
+          'getOrderEvidence',
+          'getIngredientLinks',
+        ].includes(m),
+      ),
+    ).toBe(false);
+  });
+  it('rechecks authorization on a cached list and bypasses snapshots on refresh', async () => {
+    const f = fixture();
+    await request(f.app).get('/api/orders?scope=order-list').expect(200);
+    const read = f.gateway.read.getMockImplementation();
+    f.gateway.read.mockImplementation(async (c, m, args) =>
+      m === 'requestDecision' ? { status: 1, recordedAt: 100 } : read(c, m, args),
+    );
+    const cached = await request(f.app).get('/api/orders?scope=order-list').expect(200);
+    expect(cached.body.orders[0].decision.status).toBe('0');
+    const fresh = await request(f.app).get('/api/orders?scope=order-list&refresh=1').expect(200);
+    expect(fresh.body.orders[0].decision.status).toBe(1);
+    f.auth.getSession.mockResolvedValue({
+      authenticated: false,
+      authorizationReady: false,
+      address: buyer,
+      role: CompanyRole.MANUFACTURER,
+    });
+    await request(f.app).get('/api/orders?scope=order-list').expect(403);
+    expect(f.auth.getSession).toHaveBeenCalledTimes(4);
+  });
+  it('isolates companies, never decrypts list documents, and denies foreign details', async () => {
+    const f = fixture(outsider);
+    const result = await request(f.app).get('/api/orders?scope=order-list').expect(200);
+    expect(result.body.orders).toEqual([]);
+    await request(f.app)
+      .get('/api/orders?scope=order-detail&orderId=' + orderId)
+      .expect(404);
+    expect(f.store.decrypt).not.toHaveBeenCalled();
+  });
+  it('expires snapshots, fails closed on RPC errors and does not poison retries', async () => {
+    const f = fixture(),
+      clock = vi.spyOn(Date, 'now');
+    const base = Date.now();
+    try {
+      clock.mockReturnValue(base);
+      await request(f.app).get('/api/orders?scope=order-list').expect(200);
+      clock.mockReturnValue(base + 6000);
+      f.gateway.events.mockRejectedValueOnce(new Error('RPC busy'));
+      const failed = await request(f.app).get('/api/orders?scope=order-list').expect(503);
+      expect(failed.body.orders).toBeUndefined();
+      const recovered = await request(f.app).get('/api/orders?scope=order-list').expect(200);
+      expect(recovered.body.orders).toHaveLength(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+});

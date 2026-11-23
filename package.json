@@ -37,7 +37,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "deploy:sepolia": "npm run deploy:sepolia --workspace @tracechain/contracts",
-    "configure:sepolia": "npm run configure:sepolia --workspace @tracechain/contracts"
+    "configure:sepolia": "npm run configure:sepolia --workspace @tracechain/contracts",
+    "keys:restore": "npm run keys:restore --workspace @tracechain/api --"
   },
   "engines": {
     "node": ">=22.0.0",

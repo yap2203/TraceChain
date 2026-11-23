@@ -36,7 +36,7 @@ export interface TraceChainSsiConfig {
   kmsSecretKey: string;
   networkName: typeof SEPOLIA_NETWORK_NAME;
   privateKeyStorePath?: string;
-  /** Runtime-only private store supplied by the unlocked administrator keystore. */
+  /** Optional injected store for isolated agents/tests; normal API runtime uses the encrypted file store. */
   privateKeyStore?: VeramoJsonStore;
   publicStorePath: string;
   rpcUrl: string;

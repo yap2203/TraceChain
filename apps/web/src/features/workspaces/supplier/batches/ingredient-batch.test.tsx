@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PreparedTransaction } from '../../../blockchain/blockchain.api';
 import { IngredientBatches } from './IngredientBatchesPage';
 import { RegisterBatch } from './RegisterBatchPage';
+import * as batchApi from './ingredient-batch.api';
 import type { IngredientBatchWorkflow, IngredientDocumentExtraction } from './ingredient-batch.api';
 
 const TRANSACTION: PreparedTransaction = {
@@ -29,6 +30,196 @@ afterEach(() => {
 });
 
 describe('Supplier ingredient batch workflow', () => {
+  it('shares concurrent batch-list reads but fetches fresh data after completion', async () => {
+    let finish!: (response: Response) => void;
+    const fetch = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      )
+      .mockImplementation(async () => new Response(JSON.stringify({ batches: [] })));
+    vi.stubGlobal('fetch', fetch);
+    const first = batchApi.getIngredientBatches(),
+      second = batchApi.getIngredientBatches();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    finish(new Response(JSON.stringify({ batches: [] })));
+    await Promise.all([first, second]);
+    await batchApi.getIngredientBatches();
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+  it('reviews real values without empty optional fields or duplicate listing metadata', async () => {
+    const prepareWorkflow = vi.fn().mockResolvedValue({ ...BASE_WORKFLOW, state: 'COMPLETE' });
+    render(<RegisterBatch onBack={vi.fn()} prepareWorkflow={prepareWorkflow} />);
+    completeForm();
+    const review = screen.getByRole('region', { name: 'Batch details' });
+    expect(within(review).getByText('1.25 kg')).toBeTruthy();
+    expect(within(review).getByText('Registered as 1,250 g')).toBeTruthy();
+    expect(within(review).getByText('1 Oct 2026')).toBeTruthy();
+    expect(within(review).getByText('1 Jan 2030')).toBeTruthy();
+    expect(within(review).getByText('Cocoa & Chocolate')).toBeTruthy();
+    expect(within(review).queryByText(/price|image/i)).toBeNull();
+    const origin = screen.getByRole('region', { name: 'Origin and allergens' });
+    expect(within(origin).getByText('Country of origin')).toBeTruthy();
+    expect(within(origin).getByText('Supplier declares none')).toBeTruthy();
+    expect(within(origin).queryByText('State / region')).toBeNull();
+    expect(screen.queryByLabelText('Currency')).toBeNull();
+    expect(document.querySelectorAll('.workspace-step-progress .is-complete')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
+    await screen.findByText(
+      'The ingredient batch was confirmed and read back from the blockchain.',
+    );
+    expect(prepareWorkflow.mock.calls[0][0]).toMatchObject({
+      quantity: '1.25',
+      unit: 'kg',
+      originDetails: { countryCode: 'GH' },
+      productionDate: '2026-10-01',
+      expiryDate: '2030-01-01',
+    });
+    expect(prepareWorkflow.mock.calls[0][0]).not.toHaveProperty('price');
+  });
+  it('keeps price and files while editing earlier steps and supports image removal and inline errors', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:listing');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    render(<RegisterBatch onBack={vi.fn()} />);
+    completeForm();
+    fireEvent.change(screen.getByLabelText(/Indicative price/), { target: { value: '12.50' } });
+    expect(screen.getByLabelText(/Currency/)).toBeTruthy();
+    const filename = 'ingredient-photo-with-a-very-long-filename-'.repeat(5) + '.webp';
+    fireEvent.change(screen.getByLabelText('Choose optional ingredient image'), {
+      target: { files: [new File(['photo'], filename, { type: 'image/webp' })] },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit batch details' }));
+    fireEvent.change(screen.getByLabelText(/Quantity/), { target: { value: '123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByRole('button', { name: 'Country of origin' }).textContent).toContain(
+      'Ghana',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByText('Registered as 123,000 g')).toBeTruthy();
+    expect(screen.getByText(filename)).toBeTruthy();
+    expect((screen.getByLabelText(/Indicative price/) as HTMLInputElement).value).toBe('12.50');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit origin and certifications' }));
+    fireEvent.change(screen.getByLabelText(/City \/ district/), { target: { value: 'Kumasi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByText('Kumasi')).toBeTruthy();
+    expect(screen.getByAltText('Ingredient image preview')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Choose optional ingredient image'), {
+      target: { files: [new File(['x'], 'bad.svg', { type: 'image/svg+xml' })] },
+    });
+    expect(screen.getByText('Use a PNG, JPEG or WebP image up to 2 MB.')).toBeTruthy();
+    expect(screen.getByText(filename)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image' }));
+    expect(screen.queryByAltText('Ingredient image preview')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Choose image' })).toBeTruthy();
+  });
+  it('reviews multiple supplier certifications with expandable document previews and preserves attachments on edit', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:certificate');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const upload = vi
+      .spyOn(batchApi, 'uploadCertificationDocument')
+      .mockImplementation(async (file) => ({
+        id: file.id,
+        fileName: file.fileName,
+        mimeType: 'application/pdf',
+        size: 30,
+        sha256: '0x' + 'ab'.repeat(32),
+        cid: 'test-certificate',
+      }));
+    const prepareWorkflow = vi.fn().mockResolvedValue({ ...BASE_WORKFLOW, state: 'COMPLETE' });
+    render(<RegisterBatch onBack={vi.fn()} prepareWorkflow={prepareWorkflow} />);
+    completeForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit origin and certifications' }));
+    for (const [index, name] of ['Halal', 'Organic'].entries()) {
+      fireEvent.click(screen.getByRole('button', { name: 'Add certification' }));
+      const card = document.querySelectorAll('.ingredient-certification-card')[
+        index
+      ] as HTMLElement;
+      fireEvent.change(within(card).getByLabelText(/Certification name/), {
+        target: { value: name },
+      });
+      fireEvent.change(within(card).getByLabelText(/Issuing organization/), {
+        target: { value: 'Supplier stated issuer' },
+      });
+      fireEvent.change(within(card).getByLabelText(/Certificate reference/), {
+        target: { value: `CERT-${index}` },
+      });
+      fireEvent.change(within(card).getByLabelText(/Covered facility/), {
+        target: { value: 'COCOA-2026-001' },
+      });
+      fireEvent.click(within(card).getByLabelText('No expiry stated'));
+      const files = Array.from(
+        { length: index + 1 },
+        (_, j) =>
+          new File(['%PDF-1.4\n%%EOF'], `certificate-${index}-${j}.pdf`, {
+            type: 'application/pdf',
+          }),
+      );
+      fireEvent.change(within(card).getByLabelText(`Documents for certification ${index + 1}`), {
+        target: { files },
+      });
+      await waitFor(() =>
+        expect(within(card).getAllByText(/Encrypted copy stored/)).toHaveLength(index + 1),
+      );
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(screen.getByText('Halal · This batch · 1 document')).toBeTruthy();
+    expect(screen.getByText('Organic · This batch · 2 documents')).toBeTruthy();
+    const details = document.querySelectorAll(
+      '.ingredient-certification-card',
+    )[0] as HTMLDetailsElement;
+    expect(details.open).toBe(false);
+    fireEvent.click(within(details).getByText('Halal · This batch · 1 document'));
+    fireEvent.click(within(details).getByRole('button', { name: 'Preview' }));
+    expect(screen.getByTitle('Certification document preview')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Close/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit origin and certifications' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(upload).toHaveBeenCalledTimes(3);
+    fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
+    await screen.findByText(
+      'The ingredient batch was confirmed and read back from the blockchain.',
+    );
+    expect(
+      prepareWorkflow.mock.calls[0][0].certificationEntries.map(
+        (entry: { documents: unknown[] }) => entry.documents.length,
+      ),
+    ).toEqual([1, 2]);
+  });
+  it('shows submitted confirmation separately from rejection and retains a safe resume action', async () => {
+    const prepareWorkflow = vi.fn().mockResolvedValue({
+      ...BASE_WORKFLOW,
+      state: 'CREDENTIAL_REGISTRATION_REQUIRED',
+      transaction: TRANSACTION,
+    });
+    let rejectTransaction!: (error: Error) => void;
+    const submitTransaction = vi.fn((_tx, _wallet, progress) => {
+      progress?.('submitted');
+      return new Promise<never>((_resolve, reject) => {
+        rejectTransaction = reject;
+      });
+    });
+    render(
+      <RegisterBatch
+        onBack={vi.fn()}
+        prepareWorkflow={prepareWorkflow}
+        submitTransaction={submitTransaction}
+      />,
+    );
+    completeForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
+    await screen.findByText('Transaction submitted. Waiting for blockchain confirmation...');
+    expect(
+      (screen.getByRole('button', { name: 'Processing registration...' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    rejectTransaction(new Error('RPC confirmation timed out.'));
+    await screen.findByText(/Transaction submitted; confirmation is not yet known/);
+    expect(screen.getByRole('button', { name: 'Resume registration' })).toBeTruthy();
+    expect(screen.getByText('Cocoa Powder')).toBeTruthy();
+  });
   it('keeps values between three short steps and focuses invalid fields', async () => {
     render(<RegisterBatch onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Enter information manually' }));

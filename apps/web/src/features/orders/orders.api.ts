@@ -1,4 +1,5 @@
 import { apiErrorMessage } from '../../components/ui/feedback';
+import { authRequestScope } from '../auth/auth-request-scope';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 export type OrderRecord = Record<string, any>;
@@ -14,6 +15,7 @@ export interface SupplierStock {
   requestCount: number;
 }
 export interface OrdersState {
+  pagination?: { page: number; pageSize: number; total: number; counts: Record<string, number> };
   productDeliverySupported?: boolean;
   fulfilmentSupported?: boolean;
   warehouseSupported?: boolean;
@@ -64,14 +66,37 @@ async function request<T>(
   return response.json();
 }
 const ordersRequests = new Map<string, Promise<OrdersState>>();
-export const getOrders = (scope?: 'supplier-inventory') => {
-  const path = scope ? `?scope=${scope}` : '';
-  const existing = ordersRequests.get(path);
+export interface OrderListOptions {
+  orderId?: string;
+  page?: number;
+  pageSize?: number;
+  direction?: 'all' | 'sent' | 'received';
+  search?: string;
+  status?: string;
+  sort?: 'newest' | 'oldest' | 'deadline' | 'updated';
+  refresh?: boolean;
+}
+export const getOrders = (
+  scope?: 'supplier-inventory' | 'order-list' | 'order-detail',
+  options: OrderListOptions = {},
+) => {
+  const query = new URLSearchParams(scope ? { scope } : {});
+  for (const [key, value] of Object.entries(options))
+    if (value !== undefined) query.set(key, key === 'refresh' ? (value ? '1' : '') : String(value));
+  if (!options.refresh) query.delete('refresh');
+  const path = query.size ? `?${query}` : '';
+  const scopeKey = authRequestScope();
+  const key = `${scopeKey}:${path}`;
+  const existing = ordersRequests.get(key);
   if (existing) return existing;
-  const pending = request<OrdersState>(path);
-  ordersRequests.set(path, pending);
+  const pending = request<OrdersState>(path).then((result) => {
+    if (scopeKey !== authRequestScope())
+      throw new Error('The wallet session changed. Reload your requests.');
+    return result;
+  });
+  ordersRequests.set(key, pending);
   const clear = () => {
-    if (ordersRequests.get(path) === pending) ordersRequests.delete(path);
+    if (ordersRequests.get(key) === pending) ordersRequests.delete(key);
   };
   void pending.then(clear, clear);
   return pending;
@@ -286,7 +311,8 @@ export class CatalogueMediaError extends Error {
 const mediaRequests = new Map<string, Promise<Blob>>();
 
 export function fetchCatalogueMedia(path: string, revision = 0) {
-  const requestKey = `${path}#${revision}`;
+  const scope = authRequestScope();
+  const requestKey = `${scope}:${path}#${revision}`;
   const existing = mediaRequests.get(requestKey);
   if (existing) return existing;
   const mediaUrl = path.startsWith('/api/') ? `${base}${path}` : `${base}/api/orders${path}`;
@@ -300,7 +326,9 @@ export function fetchCatalogueMedia(path: string, revision = 0) {
             : 'unavailable',
         response.status,
       );
-    return response.blob();
+    const blob = await response.blob();
+    if (scope !== authRequestScope()) throw new CatalogueMediaError('denied', 403);
+    return blob;
   });
   mediaRequests.set(requestKey, pending);
   const clear = () => {

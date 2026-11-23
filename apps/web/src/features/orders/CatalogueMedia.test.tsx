@@ -1,13 +1,57 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { CatalogueImage } from './CatalogueMedia';
 import { fetchCatalogueMedia, getOrders } from './orders.api';
+import { resetAuthRequestScope } from '../auth/auth-request-scope';
 
 afterEach(() => {
+  resetAuthRequestScope();
   cleanup();
   vi.unstubAllGlobals();
+});
+
+it('waits for viewport proximity before downloading a catalogue image', async () => {
+  let notify!: (entries: Array<{ isIntersecting: boolean }>) => void;
+  vi.stubGlobal(
+    'IntersectionObserver',
+    class {
+      constructor(callback: typeof notify) {
+        notify = callback;
+      }
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const fetch = vi.fn().mockResolvedValue(new Response('', { status: 503 }));
+  vi.stubGlobal('fetch', fetch);
+  render(<CatalogueImage path="/catalogue/ingredients/lazy/image" alt="Lazy ingredient" />);
+  expect(fetch).not.toHaveBeenCalled();
+  await act(async () => notify([{ isIntersecting: true }]));
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(await screen.findByText('Image could not be loaded')).toBeTruthy();
+});
+
+it('never shares an in-flight order response with a different wallet session', async () => {
+  let finish!: (value: Response) => void;
+  const fetch = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    )
+    .mockResolvedValueOnce(new Response(JSON.stringify({ actor: 'new-company', orders: [] })));
+  vi.stubGlobal('fetch', fetch);
+  const first = getOrders('order-list').catch((error) => error);
+  resetAuthRequestScope();
+  const second = getOrders('order-list');
+  finish(new Response(JSON.stringify({ actor: 'old-company', orders: [] })));
+  expect((await first).message).toContain('wallet session changed');
+  expect((await second).actor).toBe('new-company');
+  expect(fetch).toHaveBeenCalledTimes(2);
 });
 
 it('deduplicates concurrent authenticated reads of the same ingredient image', async () => {

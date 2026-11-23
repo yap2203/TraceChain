@@ -1,6 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes, scrypt as nodeScrypt } from 'node:crypto';
 
-import type { VeramoJsonCache, VeramoJsonStore } from '@veramo/data-store-json';
 import { z } from 'zod';
 
 const FORMAT = 'tracechain-admin-keystore' as const;
@@ -57,16 +56,6 @@ export class AdminKeystoreError extends Error {
     readonly status: number,
   ) {
     super(message);
-  }
-}
-
-export class KeystoreLockedError extends AdminKeystoreError {
-  constructor() {
-    super(
-      'KEYSTORE_LOCKED',
-      'The TraceChain administrator keystore is locked. Ask the System Admin to unlock it.',
-      423,
-    );
   }
 }
 
@@ -138,120 +127,6 @@ export function parseAdminKeystoreJson(serialized: string) {
   }
 }
 
-export class AdminKeystoreManager {
-  private bundle?: AdminKeyBundle;
-  private exportedPrivateStoreRevision = 0;
-  private generation = 0;
-  private readonly listeners = new Set<() => void>();
-  private privateStoreRevision = 0;
-
-  status() {
-    return this.bundle ? ('Unlocked' as const) : ('Locked' as const);
-  }
-
-  currentGeneration() {
-    return this.generation;
-  }
-
-  backupRequired() {
-    return (
-      this.bundle !== undefined && this.privateStoreRevision !== this.exportedPrivateStoreRevision
-    );
-  }
-
-  subscribe(listener: () => void) {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  async unlock(value: unknown, password: string) {
-    this.replace(await decryptAdminKeystore(value, password));
-  }
-
-  async initialize(password: string) {
-    const bundle: AdminKeyBundle = {
-      ipfsEncryptionKey: randomBytes(32).toString('hex'),
-      veramoKmsSecretKey: randomBytes(32).toString('hex'),
-      veramoPrivateKeyStore: {},
-      createdAt: new Date().toISOString(),
-      keyBundleVersion: 1,
-    };
-    this.replace(bundle);
-    return encryptAdminKeystore(bundle, password);
-  }
-
-  async export(password: string) {
-    const revision = this.privateStoreRevision;
-    const keystore = await encryptAdminKeystore(this.requireBundle(), password);
-    this.exportedPrivateStoreRevision = revision;
-    return keystore;
-  }
-
-  lock() {
-    if (this.backupRequired())
-      throw new AdminKeystoreError(
-        'KEYSTORE_BACKUP_REQUIRED',
-        'Download an updated administrator keystore before locking this API session.',
-        409,
-      );
-    this.clearBundle();
-    this.bundle = undefined;
-    this.exportedPrivateStoreRevision = 0;
-    this.generation += 1;
-    this.privateStoreRevision = 0;
-    this.notify();
-  }
-
-  ipfsEncryptionKey() {
-    return Buffer.from(this.requireBundle().ipfsEncryptionKey, 'hex');
-  }
-
-  veramoKmsSecretKey() {
-    return this.requireBundle().veramoKmsSecretKey;
-  }
-
-  createVeramoPrivateKeyStore(): VeramoJsonStore {
-    const generation = this.generation;
-    const initial = serializableSnapshot(this.requireBundle().veramoPrivateKeyStore);
-    return {
-      ...initial,
-      notifyUpdate: async (_oldState, newState) => {
-        const bundle = this.requireBundle();
-        if (generation !== this.generation) throw new KeystoreLockedError();
-        const next = serializableSnapshot(newState);
-        if (JSON.stringify(next) === JSON.stringify(bundle.veramoPrivateKeyStore)) return;
-        bundle.veramoPrivateKeyStore = next;
-        this.privateStoreRevision += 1;
-      },
-    } as VeramoJsonStore;
-  }
-
-  private requireBundle() {
-    if (!this.bundle) throw new KeystoreLockedError();
-    return this.bundle;
-  }
-
-  private replace(bundle: AdminKeyBundle) {
-    this.clearBundle();
-    this.bundle = payloadSchema.parse(structuredClone(bundle));
-    this.exportedPrivateStoreRevision = 0;
-    this.generation += 1;
-    this.privateStoreRevision = 0;
-    this.notify();
-  }
-
-  private notify() {
-    for (const listener of this.listeners) listener();
-  }
-
-  private clearBundle() {
-    if (!this.bundle) return;
-    this.bundle.ipfsEncryptionKey = '0'.repeat(64);
-    this.bundle.veramoKmsSecretKey = '0'.repeat(64);
-    this.bundle.veramoPrivateKeyStore = {};
-  }
-}
-
 function validatePassword(password: string) {
   if (typeof password !== 'string' || password.length < 12 || password.length > 1024)
     throw new Error('invalid password');
@@ -266,10 +141,6 @@ function strictBase64(value: string, expectedLength?: number) {
   if (bytes.toString('base64') !== value || (expectedLength && bytes.length !== expectedLength))
     throw new Error('invalid base64');
   return bytes;
-}
-
-function serializableSnapshot(value: Partial<VeramoJsonCache> | Record<string, unknown>) {
-  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
 }
 
 function deriveKey(

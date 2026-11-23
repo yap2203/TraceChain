@@ -1,5 +1,56 @@
 # TraceChain
 
+**Sepolia read aggregation:** `RPC_MULTICALL_ENABLED=true` groups selected TraceChain getters through
+the existing, runtime-code-pinned Multicall3 deployment. No new contract deployment is required.
+The active configuration uses two transports, 200 ms ordinary pacing and 1,200 ms log pacing.
+Live read-only checks completed with zero retries: six getters in one raw RPC (282 ms); Supplier
+operations 7.2 s first / 1.0 s repeat and ingredient chain checks 5.5 s in the integrated probe.
+These are gateway timings, excluding authenticated HTTP/browser and IPFS rendering. Writes and
+caller-dependent simulations remain individual. Set the flag to `false` to use ordinary reads.
+
+**Orders loading:** Supplier, Manufacturer and Retailer request lists now load paginated summaries
+before fetching a selected order's full context. Display snapshots last five seconds; Refresh data
+and confirmed writes force fresh reads. Authorization and stock decisions remain current. Shared
+catalogue images defer downloads until near the viewport, and encrypted IPFS reads coalesce while
+in flight. See [measurements, cache scope and live timing checks](docs/ORDERS_LOADING_PERFORMANCE.md).
+Protected Orders, operations and ingredient authorization checks now skip company-name/IPFS
+enrichment; on-chain authorization remains fresh. Directory lookups are scoped to the requested
+wallets, and small encrypted IPFS envelopes are reused for 30 seconds (never plaintext or permissions).
+The earlier pacing-only Infura configuration used one transport, 500 ms ordinary spacing and 1,200 ms
+after log queries (`RPC_BULK_MIN_REQUEST_INTERVAL_MS`) following reproduced throughput rejections.
+Supplier operations skips product/custody history. Read-only live operations checks succeeded in
+11.4 s cold / 10.6 s repeat, but still encountered provider limits; these are gateway timings,
+not full browser/API timings. The Multicall configuration above supersedes that ordinary pacing.
+Check provider throughput/account traffic if rejections continue.
+
+**Backend startup (2026-11-23):** the API loads the original IPFS_ENCRYPTION_KEY and
+VERAMO_KMS_SECRET_KEY from protected backend environment variables and requires the matching saved
+Veramo issuer files before listening. The runtime Admin keystore page and HTTP endpoints are removed;
+no manual unlock is required after restart. See [startup and one-time offline issuer recovery](docs/BACKEND_ENVIRONMENT_RECOVERY.md).
+
+**Intermittent RPC busy/503:** the shared API transport retries recognized busy/rate-limit, temporary
+HTTP 502/503/504 and selected connection-reset/timeout failures for reads only. Backoff also pauses
+queued requests, and partially successful batches retry only failed entries. Public-network defaults
+are 4 concurrent transports, 2 bulk reads, batches of at most 10, 100 ms between starts and up to
+3 retries. Configure `RPC_READ_CONCURRENCY`, `RPC_BULK_READ_CONCURRENCY`, `RPC_BATCH_MAX_COUNT`,
+`RPC_MIN_REQUEST_INTERVAL_MS` and `RPC_READ_MAX_RETRIES` in backend configuration, then restart the API.
+Endpoints that return bare rate-limit errors or errors without request IDs for batches now trigger
+a 60-second fallback to individual reads. Missing batch replies are fetched individually; successful
+results are never assigned by array position. Set `RPC_BATCH_MAX_COUNT=1` for providers with restrictive
+batch limits (the active local configuration uses this setting). This still coalesces identical
+pending reads and paces requests; it does not cache company permissions.
+Each RPC transport has a 15-second timeout; read retries remain bounded. A whole dashboard can take
+longer because it needs multiple calls. Slow or unavailable providers can still produce a readable 503.
+Authorization is still checked against current chain state; contract reverts and transaction submissions
+are not automatically retried. Persistent provider quotas/outages still return an error rather than
+fabricating data. Use a provider/plan with sufficient capacity if limits continue after reducing load.
+
+**Fresh test identity:** following explicit recreation after a lost recovery password, the active
+ignored `.env` selects a separate `.tracechain/sepolia-fresh-20261123-*` profile. Previous environment
+values are backed up under `.tracechain/recovery/recreate-20261123-*`; old data and encrypted bundles
+are preserved. This profile has a new issuer and encryption keys. Existing on-chain records were not
+rewritten, and credentials/files tied to lost keys require explicit replacement rather than recovery.
+
 **Wallet presentations (2026-11-23):** new Ingredient Evidence and Company Identity exchanges use
 MetaMask EIP-712 holder signatures, encrypted Pinata/IPFS content and shared on-chain inbox references.
 SIWE login stays unchanged. New ingredient SD-JWT v3 credentials need no separate holder key;
@@ -71,6 +122,9 @@ Selective presentations can disclose individual certification entries/files with
 context while withholding other entries and private source fields. Legacy credentials and
 units remain supported. No contract redeployment or new environment settings are required.
 See [ingredient creation, storage, disclosure and test flow](docs/INGREDIENT_CREATION.md).
+The review separates optional listing details from signed batch/origin/certification groups.
+Edit links retain all values and files; image selection supports preview, replacement and removal.
+Back and the primary action stay in a consistent footer, with wallet and chain progress shown separately.
 The full-width searchable origin selector shows a flag and country name with an arrow
 on the right. It displays bundled SVG country flags from the existing
 `react-phone-number-input/flags` package; no external flag-image service is required.
@@ -106,8 +160,8 @@ settings are preserved. See [contract setup](packages/contracts/README.md).
 metadata, evidence exchanges, custody evidence, shipment details and catalogue media are recovered
 from configured blockchain references/events plus immutable encrypted IPFS objects. A second API can
 start with an empty business-data directory when it uses the same deployment, IPFS gateway and
-unlocked Phase 1 administrator keystore. Local JSON journals remain compatibility caches and retain
-unfinished/retry state; they are not authoritative for confirmed records. Historical DIDComm state remains local. Veramo issuer material retains the existing portable Admin-keystore model. The added location/media/private-workflow
+original backend secrets and matching saved issuer metadata/keys. Local JSON journals remain compatibility caches and retain
+unfinished/retry state; they are not authoritative for confirmed records. Historical DIDComm state remains local. Veramo issuer material persists in the encrypted file store; the offline encrypted bundle remains a recovery backup. The added location/media/private-workflow
 references change contract bytecode, so deploy the complete suite together and update every configured
 address before using this behaviour. No deployment or environment update is performed by builds or
 tests. See [storage and recovery](docs/STORAGE_AND_RECOVERY.md).
@@ -645,14 +699,14 @@ DEV_DISTRIBUTOR_WALLET=0x...
 AUTH_COOKIE_NAME=tracechain_session
 AUTH_SESSION_TTL_SECONDS=28800
 SEPOLIA_RPC_URL=https://example.invalid
-# Existing-installation migration only; normal runtime uses the uploaded Admin keystore.
-# VERAMO_KMS_SECRET_KEY=replace-with-a-64-character-hexadecimal-key
+# Required backend startup secret; use the original value, never a VITE_ variable.
+VERAMO_KMS_SECRET_KEY=replace-with-a-64-character-hexadecimal-key
 TRACECHAIN_AUTHORITY_DID_ALIAS=tracechain-authority
 BOOTSTRAP_ADMIN_WALLET=0x0000000000000000000000000000000000000000
 IPFS_PINNING_API_URL=https://example.invalid/pinning/pinFileToIPFS
 IPFS_PINNING_TOKEN=replace-with-a-scoped-pinning-token
-# Existing-installation migration only; normal runtime uses the uploaded Admin keystore.
-# IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
+# Required backend startup secret; retain the original value for existing encrypted records.
+IPFS_ENCRYPTION_KEY=replace-with-a-64-character-hexadecimal-key
 IPFS_GATEWAY_URL=https://gateway.pinata.cloud/ipfs
 
 VITE_API_BASE_URL=http://localhost:3000
@@ -681,36 +735,22 @@ return HTTP 403 even when it is reachable; check its Pinata access configuration
 is not automatically sent to the gateway. Network failures and denied retrieval do not establish
 credential tampering. Restart the API after changing gateway configuration.
 
-Normal API runtime no longer reads the IPFS encryption key, Veramo KMS secret, or issuer private-key
-store from environment/local files. It starts **Locked** after every restart. The current on-chain
-System Admin signs in with SIWE, opens `/admin/keystore`, uploads
-`tracechain-admin-keystore.json`, and enters its separate password. The backend decrypts the bundle
-only in memory; it never returns the password or raw keys. Authentication and the unlock page remain
-available while locked, while protected operations return `KEYSTORE_LOCKED`.
-Initial creation and every encrypted export require the Admin to enter the new download password
-twice. When issuer key material changes, the page shows **Backup required** and prevents manual lock
-until the Admin downloads an updated encrypted keystore. A process restart cannot be blocked, so
-export before restarting whenever this warning is present.
+Normal API runtime loads the original two 64-character hexadecimal secrets from the protected process
+environment, ignored apps/api/.env.runtime or ignored root .env (in that priority order). It validates
+saved encrypted Veramo keys against the configured authority DID and public metadata before listening.
+Missing or inconsistent issuer material stops startup with a recovery error; no replacement identity
+is generated. Save private-keys.json and public-data.json under the configured TRACECHAIN_DATA_DIR/veramo.
+The browser has no Admin-keystore page or unlock/export/lock endpoints. Users only sign in with SIWE.
 
-For an existing installation, keep the current environment and `.tracechain/veramo/private-keys.json`
-in place and run this once in an interactive terminal:
-
-```powershell
-npm run keystore:migrate -- --output=C:\secure\tracechain-admin-keystore.json
-```
-
-Choose a path outside the repository. The command asks for a hidden password, imports the two legacy
-environment keys and existing encrypted Veramo key store, verifies its own encrypted output, and
-does not modify or delete the originals. Restart the API, unlock with that file, verify retrieval of
-known encrypted IPFS content and issuer signing, export a fresh bundle, restart again, and verify the
-fresh export unlocks successfully. Only then may the old `IPFS_ENCRYPTION_KEY`,
-`VERAMO_KMS_SECRET_KEY`, and `.tracechain/veramo/private-keys.json` be archived manually. Never
-rotate these keys as part of migration. A fresh export is also required after issuer-key material is
-created or changed in memory.
+For installations whose latest issuer material exists only in an encrypted Admin bundle, use the
+read-only comparison and explicit backup-preserving offline restore in
+[Backend environment recovery](docs/BACKEND_ENVIRONMENT_RECOVERY.md). Never enter the bundle password
+in chat or command arguments. Keep the original IPFS key so existing pins remain readable. The existing
+keystore:migrate command remains an offline operator backup utility; save matching public metadata too.
 
 The former `POST /api/ssi/storage-key-backup` route remains removed. Company presentation signing
 uses a separate per-company `tracechain-presentation-keystore.json` protected by its own password;
-it is never combined with the System Admin bundle. A new presentation key is downloaded with a
+it remains separate from offline backend recovery bundles. A new presentation key is downloaded with a
 confirmed password before the user confirms the backup and binds that key to the company. See
 [Storage and recovery](docs/STORAGE_AND_RECOVERY.md) for the recovery checklist and Phase 1 local
 files that intentionally remain.
@@ -1022,8 +1062,8 @@ Resume the same Ignition deployment after a provider interruption; do not deploy
 
 Private company documents and evidence are encrypted before being sent to a configured pinning
 provider. Only their CID and integrity hash belong on-chain. The corresponding 32-byte IPFS key is
-inside the portable Admin keystore during normal runtime; losing every verified keystore export (or
-its password) makes that encrypted content unrecoverable.
+loaded from protected backend environment configuration during normal runtime. Keep its original value
+and a secure recovery backup; replacing it makes existing encrypted content unreadable.
 
 ## Custody-transfer QR locator
 

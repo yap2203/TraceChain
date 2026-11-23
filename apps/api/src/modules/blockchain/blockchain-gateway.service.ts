@@ -98,7 +98,7 @@ export interface BlockchainGateway {
   getRegistryReferences?(): { credentialRegistry: string; stakeholderRegistry: string };
   listOperationalData?(
     account: string,
-    options?: { administrator?: boolean },
+    options?: { administrator?: boolean; role?: string },
   ): Promise<OperationalData>;
   getAdministrator(): Promise<string>;
   getApplicationForIssuance(applicationId: string): Promise<{
@@ -221,12 +221,16 @@ export class BlockchainGatewayService implements BlockchainGateway {
 
   async listOperationalData(
     account: string,
-    options: { administrator?: boolean } = {},
+    options: { administrator?: boolean; role?: string } = {},
   ): Promise<OperationalData> {
-    const key = `${account.toLowerCase()}:${Boolean(options.administrator)}`;
+    const key = `${account.toLowerCase()}:${Boolean(options.administrator)}:${options.role ?? ''}`;
     const pending = this.pendingOperations.get(key);
     if (pending) return pending;
-    const operation = this.readOperationalData(account, options.administrator === true);
+    const operation = this.readOperationalData(
+      account,
+      options.administrator === true,
+      options.role === 'SUPPLIER' && !options.administrator,
+    );
     this.pendingOperations.set(key, operation);
     try {
       return await operation;
@@ -238,6 +242,7 @@ export class BlockchainGatewayService implements BlockchainGateway {
   private async readOperationalData(
     account: string,
     administrator = false,
+    ingredientOnly = false,
   ): Promise<OperationalData> {
     const normalized = account.toLowerCase();
     const [ingredientEvents, productEvents, transferEvents, requestedEvidence, suppliedEvidence] =
@@ -248,13 +253,17 @@ export class BlockchainGatewayService implements BlockchainGateway {
             ? this.ingredients.filters.IngredientBatchRegistered()
             : this.ingredients.filters.IngredientBatchRegistered(null, account),
         ),
-        queryContractEvents(
-          this.products,
-          administrator
-            ? this.products.filters.ProductCreated()
-            : this.products.filters.ProductCreated(null, account),
-        ),
-        queryContractEvents(this.custody, this.custody.filters.TransferCreated()),
+        ingredientOnly
+          ? Promise.resolve([])
+          : queryContractEvents(
+              this.products,
+              administrator
+                ? this.products.filters.ProductCreated()
+                : this.products.filters.ProductCreated(null, account),
+            ),
+        ingredientOnly
+          ? Promise.resolve([])
+          : queryContractEvents(this.custody, this.custody.filters.TransferCreated()),
         queryContractEvents(
           this.evidence,
           administrator
@@ -410,8 +419,8 @@ export class BlockchainGatewayService implements BlockchainGateway {
   }
 
   async getAdministrator() {
-    await this.requireDeployment();
-    return String(await this.registry.administrator());
+    const [administrator] = await Promise.all([this.registry.administrator(), this.requireDeployment()]);
+    return String(administrator);
   }
 
   async getApplicationForIssuance(applicationId: string) {

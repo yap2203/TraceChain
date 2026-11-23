@@ -41,3 +41,5 @@ export type {
 export * from './ingredient-details.js';
 export * from './disclosure-policy.js';
 export * from './wallet-presentation.js';
+
+export { requestStatus } from './order-status.js';

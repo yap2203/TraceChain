@@ -28,6 +28,27 @@ editable and require explicit review. Extraction alone does **not** persist an
 attachment. Use **Attach uploaded supply document** on the relevant certification
 to include a PDF/image. DOCX is extraction-only.
 
+### Listing and review layout
+
+- Optional listing price and photo appear once, apart from the signed batch summary. Currency and
+  compatible price basis appear when a price is entered. PNG/JPEG/WebP photos remain limited to 2 MB.
+- Three review groups show batch details, origin/allergens and supplier-provided certifications.
+  Quantity shows the entered unit above its exact registered equivalent. Date-only values use explicit
+  UTC formatting to preserve their calendar day. Blank optional source fields are omitted.
+- Edit links return to earlier steps without discarding files. Certifications are collapsed rows with
+  scope/document counts; expand to preview files. Upload limits remain beside their controls.
+- Back is on the left and Continue/Register with MetaMask on the right. The narrow-screen form and
+  summaries use one column. Keyboard users can activate the image picker, and step navigation moves
+  focus to the new content; invalid fields retain the existing focus behavior.
+- Progress distinguishes preparation, wallet confirmation, submitted confirmation and chain read-back.
+  A confirmation timeout does not label an already-submitted transaction as failed. Resume retains
+  the existing operation and rechecks chain state. Signed details remain locked once registration begins.
+
+Frontend regression checks cover no optional data, image/price editing, multiple certifications and
+attachments, document preview, date/quantity display, duplicate submission, rejection and safe resume.
+Before release, manually review desktop and 320/375 px phone layouts, keyboard focus and long filenames;
+use a real Supplier wallet to confirm both MetaMask transactions, cancellation and a confirmation delay.
+
 Origin means source provenance. A separate processing location does not replace
 the source. Registered stock/dispatch locations still belong to the shipment and
 inventory workflows. Country-only origin is valid. Unknown optional values stay

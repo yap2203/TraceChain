@@ -6,6 +6,7 @@ import type {
   CertificationDocument,
 } from '@tracechain/shared';
 import type { PreparedTransaction } from '../../../blockchain/blockchain.api';
+import { authRequestScope } from '../../../auth/auth-request-scope';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
   /\/$/,
@@ -112,8 +113,24 @@ export function prepareIngredientBatch(input: IngredientBatchInput) {
   });
 }
 
+let batchList:
+  { scope: string; value: Promise<{ batches: RegisteredIngredientBatch[] }> } | undefined;
 export function getIngredientBatches() {
-  return ingredientBatchRequest<{ batches: RegisteredIngredientBatch[] }>('/');
+  const scope = authRequestScope();
+  if (batchList?.scope === scope) return batchList.value;
+  const value = ingredientBatchRequest<{ batches: RegisteredIngredientBatch[] }>('/').then(
+    (result) => {
+      if (scope !== authRequestScope())
+        throw new Error('The wallet session changed. Reload your ingredient batches.');
+      return result;
+    },
+  );
+  batchList = { scope, value };
+  const clear = () => {
+    if (batchList?.value === value) batchList = undefined;
+  };
+  void value.then(clear, clear);
+  return value;
 }
 export function getIngredientDrafts() {
   return ingredientBatchRequest<{ workflows: { batchId: string; input: IngredientBatchInput }[] }>(

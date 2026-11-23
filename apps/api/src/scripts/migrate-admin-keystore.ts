@@ -4,13 +4,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import '../config/load-env.js';
+import { validateIssuerMaterial } from '../config/backend-runtime.js';
 import { dataFile } from '../config/data-directory.js';
-import {
-  decryptAdminKeystore,
-  encryptAdminKeystore,
-  type AdminKeyBundle,
-} from '../modules/admin-keystore/admin-keystore.js';
-import { KeystoreInitializationGuard } from '../modules/admin-keystore/admin-keystore.routes.js';
+import { decryptAdminKeystore, encryptAdminKeystore, type AdminKeyBundle } from './admin-bundle.js';
 
 const outputArgument = process.argv.find((value) => value.startsWith('--output='));
 const outputPath = resolve(
@@ -36,6 +32,13 @@ try {
     'The existing Veramo private-key store is missing or invalid. Migration stopped without changes.',
   );
 }
+
+await validateIssuerMaterial(
+  JSON.parse(await readFile(dataFile('veramo/public-data.json'), 'utf8')),
+  veramoPrivateKeyStore,
+  veramoKmsSecretKey!,
+  process.env.TRACECHAIN_AUTHORITY_DID_ALIAS!,
+);
 
 const password = await hiddenPassword('New administrator keystore password (12+ characters): ');
 const confirmation = await hiddenPassword('Confirm administrator keystore password: ');
@@ -63,7 +66,6 @@ await writeFile(outputPath, `${JSON.stringify(keystore, null, 2)}\n`, {
   flag: 'wx',
   mode: 0o600,
 });
-await new KeystoreInitializationGuard(dataFile('keystore/initialized.json'), []).markInitialized();
 stdout.write(`Encrypted administrator keystore created and verified: ${outputPath}\n`);
 stdout.write('The original environment variables and private-key file were not changed.\n');
 

@@ -569,7 +569,6 @@ export class ProductionFlowService {
       payload = await this.dependencies.contentStore.retrieveEnvelope(credential.encryptedCid);
       serialized = await this.dependencies.contentStore.decrypt(payload);
     } catch (error) {
-      if (isKeystoreLocked(error)) throw error;
       throw new ProductionFlowApiError(
         'ENCRYPTED_RECORD_UNAVAILABLE',
         'The Ingredient Credential could not be downloaded or decrypted. Try again when the encrypted storage service is available.',
@@ -1781,7 +1780,6 @@ export class ProductionFlowService {
           : await this.retrieveEncrypted(allowed.cid, 'SHARED_CERTIFICATION_DOCUMENT'),
       );
     } catch (error) {
-      if (isKeystoreLocked(error)) throw error;
       throw new ProductionFlowApiError(
         'DOCUMENT_RETRIEVAL_UNAVAILABLE',
         'The encrypted document could not be retrieved. Retry when the service is available.',
@@ -3194,7 +3192,6 @@ export class ProductionFlowService {
     try {
       return await this.dependencies.contentStore.retrieveAndDecrypt(cid);
     } catch (error) {
-      if (isKeystoreLocked(error)) throw error;
       throw new ProductionFlowApiError(
         'ENCRYPTED_RECORD_UNAVAILABLE',
         `${label} could not be downloaded or decrypted.`,
@@ -3310,7 +3307,6 @@ export class ProductionFlowService {
     try {
       return await this.dependencies.contentStore.encryptAndStore(content, key);
     } catch (error) {
-      if (isKeystoreLocked(error)) throw error;
       throw new ProductionFlowApiError(
         'ENCRYPTED_STORAGE_UNAVAILABLE',
         'Encrypted off-chain storage is unavailable. No transaction was prepared.',
@@ -3755,9 +3751,6 @@ function sameAddress(left: string, right: string) {
   }
 }
 
-function isKeystoreLocked(error: unknown) {
-  return (error as { code?: string } | undefined)?.code === 'KEYSTORE_LOCKED';
-}
 
 function normalizeHash(value: string) {
   return value.replace(/^0x/i, '').toLowerCase();

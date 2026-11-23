@@ -37,6 +37,8 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'newest' | 'name' | 'manufacturer'>('newest');
 
+  // A new array instance with unchanged records must not restart the history load.
+  const transferRevision = JSON.stringify(data.transfers);
   useEffect(() => {
     let active = true;
     const batchIds = [
@@ -81,7 +83,7 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
     return () => {
       active = false;
     };
-  }, [data.actorWallet, data.transfers, operationalLoading]);
+  }, [data.actorWallet, transferRevision, operationalLoading]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
