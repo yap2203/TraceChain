@@ -5,6 +5,7 @@ import { SiweMessage } from 'siwe';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../../app.js';
+import { createSessionCookieOptions } from './auth.controller.js';
 import { InMemoryNonceRepository, InMemorySessionRepository } from './auth.repository.js';
 import { AuthService } from './auth.service.js';
 
@@ -19,6 +20,21 @@ interface TestWallet {
 }
 
 describe('SIWE authentication', () => {
+  it('uses cross-site secure cookies in production and lax cookies in development', () => {
+    expect(createSessionCookieOptions(true, 60_000)).toMatchObject({
+      httpOnly: true,
+      path: '/api',
+      sameSite: 'none',
+      secure: true,
+    });
+    expect(createSessionCookieOptions(false, 60_000)).toMatchObject({
+      httpOnly: true,
+      path: '/api',
+      sameSite: 'lax',
+      secure: false,
+    });
+  });
+
   it('keeps business authorization independent of stalled profile retrieval and still detects suspension', async () => {
     const sessions = new InMemorySessionRepository();
     await sessions.save({

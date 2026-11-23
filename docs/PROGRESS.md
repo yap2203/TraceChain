@@ -1,5 +1,12 @@
 # Project Progress
 
+## 2026-11-23 - Cross-site production SIWE sessions
+
+- Production SIWE cookies now use `SameSite=None; Secure` for separate cross-site frontend/API
+  origins such as Render service domains; local and test cookies remain `SameSite=Lax`.
+- Existing exact-origin CORS and state-changing request Origin checks remain in place.
+- The focused authentication suite passed (20 tests), and the API typecheck passed.
+
 ## 2026-11-23 - Focused shipment/inventory reads and background display refresh
 
 - Shipment lists now use a focused scope: relevant batches only, without unrelated product inventory,

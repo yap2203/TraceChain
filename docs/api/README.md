@@ -261,7 +261,7 @@ Accepts a complete ERC-4361 message and wallet signature:
 { "message": "...", "signature": "0x..." }
 ```
 
-The API verifies the signature, recovered address, configured domain, URI and chain ID, nonce, issue time, and expiration. A successful request consumes the nonce, creates a server-side session, sets an HttpOnly SameSite=Lax cookie, and returns:
+The API verifies the signature, recovered address, configured domain, URI and chain ID, nonce, issue time, and expiration. A successful request consumes the nonce, creates a server-side session, sets an HttpOnly cookie, and returns. With `NODE_ENV=production`, the cookie is Secure and SameSite=None to support cross-site frontend/API origins; local and test environments use SameSite=Lax.
 
 EOA wallets are supported. ERC-1271 contract-wallet verification is not configured or claimed.
 
@@ -565,7 +565,7 @@ Offer decisions, schedules and location aliases use existing encrypted content a
 workflow storage. The API can decrypt them. They are not on-chain reservations or receipts; signed
 dispatch and exact-QR physical receipt remain authoritative. All these routes return `no-store`.
 
-Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Nonces are wallet-bound, expire after five minutes, and are atomically single-use in the supported single-process model. Nonce creation and verification are rate-limited per wallet, expired records are cleaned opportunistically, and state-changing browser requests with an unexpected `Origin` are rejected. Cookies are HttpOnly, SameSite=Lax, explicitly expiring, and Secure in production. Production deployment still requires shared atomic repositories, trusted proxy configuration, HTTPS, monitoring, and stronger distributed rate limiting.
+Nonce and session storage is accessed through repository interfaces, but the current implementations are in memory. Data does not survive a process restart and cannot be shared by multiple API instances. Nonces are wallet-bound, expire after five minutes, and are atomically single-use in the supported single-process model. Nonce creation and verification are rate-limited per wallet, expired records are cleaned opportunistically, and state-changing browser requests with an unexpected `Origin` are rejected. Cookies are HttpOnly and explicitly expiring; production cookies are SameSite=None and Secure for cross-site frontend/API origins, while local/test cookies use SameSite=Lax. Production deployment still requires shared atomic repositories, trusted proxy configuration, HTTPS, monitoring, and stronger distributed rate limiting.
 
 ## Production stock and optional evidence
 

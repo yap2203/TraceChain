@@ -10,6 +10,19 @@ interface AuthControllerOptions {
   sessionTtlMs: number;
 }
 
+export function createSessionCookieOptions(
+  cookieSecure: boolean,
+  sessionTtlMs: number,
+): CookieOptions {
+  return {
+    httpOnly: true,
+    maxAge: sessionTtlMs,
+    path: '/api',
+    sameSite: cookieSecure ? 'none' : 'lax',
+    secure: cookieSecure,
+  };
+}
+
 export class AuthController {
   private readonly cookieName: string;
   private readonly cookieOptions: CookieOptions;
@@ -19,13 +32,7 @@ export class AuthController {
     { cookieName, cookieSecure, sessionTtlMs }: AuthControllerOptions,
   ) {
     this.cookieName = cookieName;
-    this.cookieOptions = {
-      httpOnly: true,
-      maxAge: sessionTtlMs,
-      path: '/api',
-      sameSite: 'lax',
-      secure: cookieSecure,
-    };
+    this.cookieOptions = createSessionCookieOptions(cookieSecure, sessionTtlMs);
   }
 
   nonce = async (request: Request, response: Response, next: NextFunction) => {

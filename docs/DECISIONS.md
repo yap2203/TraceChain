@@ -178,6 +178,9 @@
 - Require MetaMask to sign and broadcast each user-authorized write so the stakeholder wallet remains Solidity's `msg.sender`.
 - Never send wallet private keys to the API and never use a backend wallet to impersonate stakeholder transactions.
 - Require an authorized SIWE session and matching role for protected reads and privileged transaction preparation.
+- Use an HttpOnly, Secure, SameSite=None SIWE cookie in production for cross-site frontend/API
+  origins. Retain exact-origin CORS and reject state-changing requests from unexpected origins.
+  Keep SameSite=Lax in local/test environments.
 
 Hardhat is development tooling. It is not the production blockchain and does not replace persistent storage.
 

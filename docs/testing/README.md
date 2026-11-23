@@ -66,7 +66,7 @@ frontend and API, a phone-reachable RPC, configured deployed contracts, an onboa
 Retailer wallet with `RECEIVE_TRANSFER`, and a real `AwaitingReceipt` transfer for that wallet.
 Set `VITE_PUBLIC_APP_URL` to the exact frontend origin before generating the Receipt Confirmation
 QR. Sepolia is recommended for the final demonstration. Keep the production session cookie
-HttpOnly, Secure, and SameSite=Lax on a same-site frontend/API deployment. Scanning should open
+HttpOnly and Secure; use SameSite=None for cross-site frontend/API origins. Scanning should open
 `/receive/transfer`; MetaMask Mobile performs SIWE and the later transaction signature separately.
 
 ## Required future coverage

@@ -955,7 +955,17 @@ Localhost uses the same SIWE and current on-chain role/status gate as other envi
 
 The login page restores an existing HttpOnly-cookie session without requesting wallet access. After an explicit user action, it reuses an already-authorized injected MetaMask extension provider when available, or uses MetaMask Connect for Mobile QR and extension fallback. Connection attempts are serialized and time-bounded, and progress plus cancellation remains visible inside the authentication card. It then requires the environment-configured chain, requests a five-minute nonce, builds an ERC-4361 message, requests a signature, and sends the signed message to the API. Local development uses chain 31337; the public test deployment uses Sepolia.
 
-The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and expiration. It atomically consumes the nonce, creates a process-local HttpOnly-cookie session, and resolves current authorization from the configured registries. The current administrator is checked through `administrator()`. Company wallets must have an active stakeholder, matching active/unexpired Company Role credential record and reference, valid subject/type, and a nonzero effective `roleOf` result. A Company Role Credential that was validly registered by a former administrator remains valid after an administrator transfer; its current lifecycle, expiry, subject, role, and stakeholder hash still govern authorization. No VC upload, vault password, VP, Snap, transaction, or gas is required for login.
+The API verifies the SIWE signature, address, domain, URI, chain ID, nonce, issue time, and
+expiration. It atomically consumes the nonce, creates a process-local HttpOnly-cookie session, and
+resolves current authorization from the configured registries. With `NODE_ENV=production`, the API
+uses a Secure `SameSite=None` session cookie for cross-site frontend/API hosting; configure
+`FRONTEND_URL` to the exact frontend origin. The API also rejects state-changing requests from other
+origins. The current administrator is checked through `administrator()`. Company wallets must have
+an active stakeholder, matching active/unexpired Company Role credential record and reference,
+valid subject/type, and a nonzero effective `roleOf` result. A Company Role Credential that was
+validly registered by a former administrator remains valid after an administrator transfer; its
+current lifecycle, expiry, subject, role, and stakeholder hash still govern authorization. No VC
+upload, vault password, VP, Snap, transaction, or gas is required for login.
 
 Authorized session responses also contain a safe company display name resolved from the existing Company Role issuance record. The stakeholder directory rechecks the wallet, role, credential ID, stakeholder lifecycle, and credential status through the live registry authorization rules before returning `companyName`, `role`, `walletAddress`, and `active`. Missing legacy names use a role-based fallback, duplicate names gain a shortened-wallet suffix, and stale or revoked identities are excluded. Names are presentation data only: authorization and transactions continue to use verified wallet addresses.
 
@@ -1163,7 +1173,8 @@ production labels. A normal phone camera can open that HTTPS link. Another phone
 developer machine's `localhost`. A complete phone test needs an externally reachable HTTPS
 frontend and API, reachable RPC, configured deployed contracts, an onboarded recipient wallet, and
 a real `AwaitingReceipt` transfer; Sepolia is recommended for the final demonstration. Keep the
-session cookie HttpOnly, Secure in production, and SameSite=Lax for a same-site frontend/API.
+session cookie HttpOnly and Secure in production; production uses SameSite=None for cross-site
+frontend/API origins.
 For local browser testing, set `VITE_PUBLIC_APP_URL=http://localhost:5173` in the root `.env` and
 restart Vite after editing it. A missing or invalid QR configuration displays an error in the QR
 section while the Manufacturer's on-chain product details remain available.
