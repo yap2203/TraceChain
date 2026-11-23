@@ -42,6 +42,7 @@ import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPane
 import { getEvidenceDetails, prepareEvidenceRequest } from '../production-flow/production-flow.api';
 import { CatalogueBrowser, CatalogueSkeleton } from './CatalogueBrowser';
 import { SupplierStockSummary } from './SupplierStockSummary';
+import { ReadModelStatus, useReadModelRefresh } from './ReadModelStatus';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
 import { ProductDeliveryPanel } from './ProductDeliveryPanel';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
@@ -176,10 +177,22 @@ export function OrdersPage({
       (entry.delivery && Number(entry.delivery.stage) < 5) ||
       (entry.productDelivery && Number(entry.productDelivery.stage) < 5),
   );
+  const backgroundLoad = useCallback(() => load(false), [load]);
+  useReadModelRefresh(data, backgroundLoad, (cause) => {
+    setError(orderError(cause));
+    setData((current) =>
+      current?.readModel
+        ? {
+            ...current,
+            readModel: { ...current.readModel, refreshing: false, refreshFailed: true },
+          }
+        : current,
+    );
+  });
   useEffect(() => {
     if (!hasActiveDelivery) return;
     const timer = setInterval(() => {
-      void load().catch((cause) => setError(orderError(cause)));
+      void load(false).catch((cause) => setError(orderError(cause)));
     }, 15000);
     return () => clearInterval(timer);
   }, [hasActiveDelivery, load]);
@@ -357,6 +370,7 @@ export function OrdersPage({
           </Btn>
         </header>
       )}
+      <ReadModelStatus state={data} />
       {role !== 'supplier' && mode === 'combined' && !evidenceOnly && (
         <nav aria-label="Browse and requests" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <Btn

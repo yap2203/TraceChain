@@ -7,6 +7,7 @@ import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { reportError } from '../../components/ui/feedback';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
 import { getOrders, type OrderRecord, type OrdersState } from './orders.api';
+import { ReadModelStatus, useReadModelRefresh } from './ReadModelStatus';
 import { formatOperationalQuantity } from '../workspaces/shared/operational-format';
 import {
   Alert,
@@ -58,15 +59,26 @@ export function CustodyInventoryPage({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [params, setParams] = useSearchParams();
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (refresh = false) => {
     setError('');
     try {
-      setData(await getOrders());
+      setData(await getOrders('custody-inventory', { refresh }));
     } catch (cause) {
       setError(reportError(cause, 'Custody inventory unavailable.'));
+      setData((current) =>
+        current?.readModel
+          ? {
+              ...current,
+              readModel: { ...current.readModel, refreshing: false, refreshFailed: true },
+            }
+          : current,
+      );
     }
   }, []);
 
+  useReadModelRefresh(data, load, (cause) =>
+    setError(reportError(cause, 'Inventory refresh unavailable.')),
+  );
   useEffect(() => {
     void load();
   }, [load]);
@@ -170,12 +182,13 @@ export function CustodyInventoryPage({
         title={copy.title}
         sub={copy.subtitle}
         action={
-          <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={() => void load()}>
+          <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={() => void load(true)}>
             Refresh inventory
           </Btn>
         }
       />
 
+      <ReadModelStatus state={data} />
       {error && <Alert type="error" message={error} />}
       {!data.warehouseSupported && (
         <Alert

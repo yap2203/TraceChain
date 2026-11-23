@@ -1,4 +1,5 @@
 import { decodeBytes32String } from 'ethers';
+import { DisplaySnapshots } from './display-snapshots.js';
 import { CompanyRole, requestStatus } from '@tracechain/shared';
 import type { OrdersGateway, ChainRecord } from './orders.gateway.js';
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
@@ -16,7 +17,7 @@ const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toL
 
 /** Display-only snapshots. Never consulted by action preparation or authorization. */
 export class OrderSummaryReader {
-  private snapshots = new Map<string, { until: number; value: Promise<ChainRecord[]> }>();
+  private snapshots = new DisplaySnapshots<ChainRecord[]>();
   constructor(
     private gateway: OrdersGateway,
     private directory?: StakeholderDirectory,
@@ -24,7 +25,7 @@ export class OrderSummaryReader {
   ) {}
 
   invalidate() {
-    this.snapshots.clear();
+    this.snapshots.invalidate();
   }
   private async optional(contract: string, method: string, args: unknown[] = []) {
     try {
@@ -43,24 +44,8 @@ export class OrderSummaryReader {
   async list(actor: string, role: string, query: OrderListQuery) {
     // The reader belongs to exactly one gateway/deployment. Include role and wallet for privacy.
     const key = `${this.gateway.chainId}:${this.gateway.address.toLowerCase()}:${actor.toLowerCase()}:${role}`;
-    let cached = this.snapshots.get(key);
-    if (query.refresh || !cached || cached.until <= Date.now()) {
-      const value = this.read(actor, role);
-      cached = { until: Infinity, value };
-      this.snapshots.set(key, cached);
-      if (this.snapshots.size > 64) this.snapshots.delete(this.snapshots.keys().next().value!);
-      void value.catch(() => {
-        if (this.snapshots.get(key)?.value === value) this.snapshots.delete(key);
-      });
-      const snapshot = cached;
-      void value.then(
-        () => {
-          snapshot.until = Date.now() + 5_000;
-        },
-        () => {},
-      );
-    }
-    const rows = (await cached.value)
+    const snapshot = await this.snapshots.get(key, () => this.read(actor, role), query.refresh);
+    const rows = snapshot.value
       .filter((row) =>
         query.direction === 'sent'
           ? same(row.buyer, actor)
@@ -150,6 +135,7 @@ export class OrderSummaryReader {
       locations: [],
       shipments: [],
       pagination: { page, pageSize: query.pageSize, total: filtered.length, counts },
+      readModel: snapshot.readModel,
     };
   }
 

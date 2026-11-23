@@ -103,6 +103,7 @@ describe('shared custody inventory presentation', () => {
     renderPage();
 
     expect(await screen.findByRole('heading', { name: 'Ingredient custody' })).toBeTruthy();
+    expect(api.get).toHaveBeenCalledWith('custody-inventory', { refresh: false });
     expect(screen.queryByText('Foreign flour')).toBeNull();
     expect(screen.queryByText('Private foreign warehouse')).toBeNull();
     expect(screen.getByRole('button', { name: 'List view' }).getAttribute('aria-pressed')).toBe(

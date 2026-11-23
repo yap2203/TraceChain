@@ -1,5 +1,28 @@
 # Project Progress
 
+## 2026-11-23 - Focused shipment/inventory reads and background display refresh
+
+- Shipment lists now use a focused scope: relevant batches only, without unrelated product inventory,
+  ingredient links, private order/decision documents, evidence or eager company-logo downloads.
+  Shipment/delivery details and transfer composition retain their existing full action context.
+- Added company-scoped custody-inventory reads without orders/listings/road-shipment histories.
+  Preserve balances/units and filter Supplier ownership, Manufacturer product ownership and
+  Distributor custody on the server. Company-proof inboxes defer legacy Orders context until detail.
+- Extended five-second display snapshots with bounded stale-while-refresh behavior (maximum two
+  minutes), deduplicated cold/background reads, failure backoff, explicit fresh refresh and write
+  invalidation. Show last-update/refresh state and poll pending refreshes without overlap. Keep
+  fresh authorization/deployment checks before snapshots and current preflight for all writes.
+- All caches are bounded process memory; no database, persistent snapshot, environment change or
+  redeployment. Existing incremental event indexes and reorg checkpoints remain in use on refresh.
+- Local mock workload: full workspace 2,649 / 2,652 ms vs summary 414 / 6 ms cold/repeat; getter counts
+  205 vs 103 / 0. The existing cold-summary optimization is retained; the new behavior serves stale
+  display rows immediately while refresh runs. Empty custody reduced 11 getter / 11 event queries
+  to 1 / 0, then 0 / 0 repeat. Not a live Sepolia/IPFS/browser benchmark. Cold restart and existing
+  full detail/legacy callers remain slower; no startup prewarming or persistent read model added.
+- Validation: full API suite 501 tests passed; Orders frontend suite 117 tests passed; API and web
+  builds/type checks passed. Running API health returned 200. Existing frontend bundle-size and
+  dependency directive warnings remain. No authenticated live Sepolia/Pinata timing was claimed.
+
 ## 2026-11-23 - Multicall alternative to serialized RPC reads
 
 - Tested the official existing Sepolia Multicall3 deployment with six actual TraceChain getters in one

@@ -77,7 +77,7 @@ export function InformationRequestsWorkspace({
     try {
       const requests = await getInformationRequests();
       setRows(requests.requests);
-      if (requests.actor && requests.requests.every((row) => row.sharedReference))
+      if (requests.actor && (!reference || requests.requests.every((row) => row.sharedReference)))
         setData({
           actor: requests.actor,
           role,
@@ -86,13 +86,19 @@ export function InformationRequestsWorkspace({
           shipments: [],
           locations: [],
         });
-      else setData(await getOrders());
+      else
+        setData(
+          await getOrders(
+            context === 'order' ? 'order-detail' : undefined,
+            context === 'order' ? { orderId: reference } : {},
+          ),
+        );
     } catch (cause) {
       setError(reportError(cause, 'Information requests unavailable.'));
     } finally {
       setLoading(false);
     }
-  }, [role]);
+  }, [role, reference, context]);
   useEffect(() => {
     void load();
   }, [load]);

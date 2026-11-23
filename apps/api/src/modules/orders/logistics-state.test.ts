@@ -164,6 +164,23 @@ describe('on-chain warehouse views', () => {
       available: '50',
       reserved: '20',
     });
+    f.read.mockClear();
+    const focused = await readLogistics(f, distributor, false, false, false, false, 'inventory');
+    expect(focused.productStock[0]).toMatchObject({
+      available: '50',
+      quantity: '50',
+      reserved: '20',
+    });
+    expect(
+      f.read.mock.calls.some(([, method]) =>
+        [
+          'vehicleRegistration',
+          'dispatchConfirmedBy',
+          'reportedDispatchAt',
+          'getRoadShipment',
+        ].includes(method),
+      ),
+    ).toBe(false);
   });
   it('keeps original units and separates physical, reserved and orderable stock', async () => {
     const state = await readLogistics(gateway(), manufacturer);

@@ -102,7 +102,12 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       }
       return service.state(
         session,
-        z.enum(['supplier-inventory']).optional().parse(request.query.scope),
+        z
+          .enum(['supplier-inventory', 'shipment-workspace', 'custody-inventory'])
+          .optional()
+          .parse(request.query.scope),
+        undefined,
+        z.enum(['1']).optional().parse(request.query.refresh) === '1',
       );
     }),
   );

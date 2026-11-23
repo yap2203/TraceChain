@@ -26,6 +26,7 @@ import { readLogistics } from './logistics-state.js';
 import { readBusinessTraceability } from './business-traceability.js';
 import { readProductInventorySnapshot } from './product-inventory.js';
 import { OrderSummaryReader, type OrderListQuery } from './order-summaries.js';
+import { DisplaySnapshots } from './display-snapshots.js';
 import { CustodyOffers, type CustodyOffer } from './custody-offers.js';
 import type { ApplicationMetadataRepository } from '../blockchain/application-metadata.repository.js';
 import type { LogisticsAction } from './logistics.schema.js';
@@ -69,6 +70,7 @@ export interface ApplicationLogoSource {
 const same = (a: string, b: string) => a?.toLowerCase() === b?.toLowerCase();
 export class OrdersService {
   private summaryReader?: OrderSummaryReader;
+  private displaySnapshots = new DisplaySnapshots<ChainRecord & { shipments: ChainRecord[] }>();
   async listOrders(sessionId: string | undefined, query: OrderListQuery) {
     const session = await this.session(sessionId);
     if (!session.role)
@@ -320,6 +322,8 @@ export class OrdersService {
   }
   async prepareLogistics(sessionId: string | undefined, input: LogisticsAction) {
     const session = await this.session(sessionId);
+    this.displaySnapshots.invalidate();
+    this.summaryReader?.invalidate();
     if (
       input.action === 'product-order-select' ||
       input.action === 'product-order-respond' ||
@@ -2127,8 +2131,144 @@ export class OrdersService {
     const image = pending || stored?.image ? stored.image : stored;
     return decodeStoredCatalogueImage(image);
   }
-  async state(sessionId?: string, scope?: 'supplier-inventory', detailOrderId?: string) {
+  async state(
+    sessionId?: string,
+    scope?: 'supplier-inventory' | 'shipment-workspace' | 'custody-inventory',
+    detailOrderId?: string,
+    refresh = false,
+  ) {
     const session = await this.session(sessionId);
+    if (scope === 'shipment-workspace' || scope === 'custody-inventory') {
+      const key = `${this.gateway.chainId}:${this.gateway.address.toLowerCase()}:${session.address.toLowerCase()}:${session.role}:${scope}`;
+      const snapshot = await this.displaySnapshots.get(
+        key,
+        () =>
+          scope === 'custody-inventory'
+            ? this.custodyInventory(session)
+            : this.buildState(session, scope),
+        refresh,
+      );
+      return { ...snapshot.value, readModel: snapshot.readModel };
+    }
+    return this.buildState(session, scope, detailOrderId);
+  }
+
+  private async custodyInventory(session: Awaited<ReturnType<OrdersService['session']>>) {
+    const actor = session.address;
+    const admin = session.role === CompanyRole.SYSTEM_ADMIN;
+    if (
+      ![
+        CompanyRole.SUPPLIER,
+        CompanyRole.MANUFACTURER,
+        CompanyRole.DISTRIBUTOR,
+        CompanyRole.SYSTEM_ADMIN,
+      ].includes(session.role!)
+    )
+      throw new OrdersError(
+        'INVENTORY_UNAVAILABLE',
+        'Your role does not have custody inventory.',
+        403,
+      );
+    const warehouseSupported = Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1;
+    const logistics = warehouseSupported
+      ? await readLogistics(
+          this.gateway,
+          actor,
+          admin,
+          false,
+          false,
+          false,
+          'inventory',
+          session.role === CompanyRole.SUPPLIER
+            ? 'ingredient'
+            : session.role === CompanyRole.MANUFACTURER
+              ? 'product'
+              : undefined,
+        )
+      : { warehouses: [], positions: [], shipments: [], productStock: [], productPositions: [] };
+    // readLogistics can see public chain records; only return this company's inventory.
+    logistics.positions = logistics.positions.filter(
+      (p) =>
+        admin ||
+        (session.role === CompanyRole.DISTRIBUTOR
+          ? same(p.distributor, actor)
+          : session.role === CompanyRole.SUPPLIER && same(p.supplier, actor)),
+    );
+    const batches = new Map<string, { kind: number; batch: ChainRecord }>();
+    for (const p of logistics.positions)
+      if (!batches.has(p.batchId))
+        batches.set(p.batchId, { kind: 1, batch: await this.catalogueBatch(1, p.batchId) });
+    const productPositions: ChainRecord[] = [];
+    for (const p of logistics.productPositions) {
+      const batch = batches.get(p.batchId)?.batch ?? (await this.catalogueBatch(2, p.batchId));
+      if (
+        !admin &&
+        !(session.role === CompanyRole.DISTRIBUTOR && same(p.distributor, actor)) &&
+        !(session.role === CompanyRole.MANUFACTURER && same(batch.manufacturer, actor))
+      )
+        continue;
+      batches.set(p.batchId, { kind: 2, batch });
+      productPositions.push({ ...p, quantity: p.available, unit: this.batchUnit(batch.unit) });
+    }
+    logistics.productPositions = productPositions;
+    if (session.role === CompanyRole.DISTRIBUTOR || admin) {
+      for (const p of logistics.productStock)
+        if (!batches.has(p.batchId))
+          batches.set(p.batchId, { kind: 2, batch: await this.catalogueBatch(2, p.batchId) });
+    } else logistics.productStock = [];
+    const catalogue = await Promise.all(
+      [...batches].map(async ([batchId, { kind, batch }]) => ({
+        ...(await this.discoverBatch(kind, batchId, batch)),
+        kind,
+        seller: kind === 1 ? batch.supplier : batch.manufacturer,
+        batches: [batchId],
+        unit: this.batchUnit(batch.unit),
+        active: Number(batch.status) === 1 && Number(batch.expiresAt) > Date.now() / 1000,
+        batchDetails: [{ batchId, ...batch }],
+      })),
+    );
+    const wallets = [
+      ...new Set([
+        actor,
+        ...catalogue.map((i) => i.seller),
+        ...logistics.positions.flatMap((p) => [p.supplier, p.distributor]),
+        ...productPositions.map((p) => p.distributor),
+      ]),
+    ];
+    const identities = (await this.directory?.resolveMany(wallets)) ?? [];
+    const name = (wallet: string) =>
+      identities.find((i) => same(i.walletAddress, wallet))?.companyName;
+    return {
+      actor,
+      role: session.role,
+      chainId: this.gateway.chainId,
+      ordersAddress: this.gateway.address,
+      warehouseSupported,
+      orders: [],
+      shipments: [],
+      locations: [],
+      catalogue: catalogue.map((i) => ({ ...i, sellerName: name(i.seller) })),
+      logistics: {
+        ...logistics,
+        positions: logistics.positions.map((p) => ({
+          ...p,
+          supplierName: name(p.supplier),
+          distributorName: name(p.distributor),
+        })),
+        productPositions: productPositions.map((p) => ({
+          ...p,
+          distributorName: name(p.distributor),
+        })),
+      },
+    };
+  }
+
+  private async buildState(
+    session: Awaited<ReturnType<OrdersService['session']>>,
+    scope?: 'supplier-inventory' | 'shipment-workspace',
+    detailOrderId?: string,
+  ) {
+    const shipmentOnly = scope === 'shipment-workspace';
     const detailOrder = detailOrderId
       ? await this.gateway.read('orders', 'getOrder', [detailOrderId])
       : undefined;
@@ -2185,12 +2325,82 @@ export class OrdersService {
       inventoryOnly ? [] : this.gateway.events('custody', 'OrderTransferLinked'),
       inventoryOnly ? [] : this.gateway.events('custody', 'InventoryInitialized'),
     ]);
+    const approvedReceiptsSupported =
+      Number(await this.optionalRead('orders', 'approvedReceiptPolicy')) === 1;
+    const ingredientDeliverySupported =
+      Number(await this.optionalRead('orders', 'ingredientDeliveryPolicy')) === 1;
+    const warehouseSupported =
+      ingredientDeliverySupported &&
+      Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1;
+    const shipmentReviewSupported =
+      !inventoryOnly &&
+      warehouseSupported &&
+      Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1;
+    const fulfilmentSupported =
+      !inventoryOnly &&
+      warehouseSupported &&
+      Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) === 2;
+    const productDeliverySupported =
+      !inventoryOnly && Number(await this.optionalRead('custody', 'productDeliveryPolicy')) === 1;
+    const logistics = warehouseSupported
+      ? await readLogistics(
+          this.gateway,
+          session.address,
+          session.role === CompanyRole.SYSTEM_ADMIN,
+          shipmentReviewSupported,
+          productDeliverySupported,
+          inventoryOnly,
+          shipmentOnly ? 'shipments' : 'workspace',
+        )
+      : undefined;
+    const focusedOrders = new Map<string, ChainRecord>();
+    const focusedBatches = new Set<string>();
+    if (shipmentOnly) {
+      // Resolve only batches used by this company's orders, rather than the whole catalogue.
+      for (const event of orderEvents) {
+        if (
+          session.role !== CompanyRole.SYSTEM_ADMIN &&
+          session.role !== CompanyRole.DISTRIBUTOR &&
+          event.buyer &&
+          event.seller &&
+          !same(event.buyer, session.address) &&
+          !same(event.seller, session.address)
+        )
+          continue;
+        const order = await this.gateway.read('orders', 'getOrder', [event.orderId]);
+        if (
+          !same(order.buyer, session.address) &&
+          !same(order.seller, session.address) &&
+          session.role !== CompanyRole.SYSTEM_ADMIN
+        ) {
+          if (session.role !== CompanyRole.DISTRIBUTOR) continue;
+          const [ingredient, product] = await Promise.all([
+            this.optionalRead('delivery', 'get', [event.orderId]),
+            this.optionalRead('productDelivery', 'get', [event.orderId]),
+          ]);
+          if (
+            !same(ingredient?.distributor, session.address) &&
+            !same(product?.distributor, session.address)
+          )
+            continue;
+        }
+        focusedOrders.set(event.orderId, order);
+        focusedBatches.add(order.proposedBatch);
+        const requested = approvedReceiptsSupported
+          ? await this.optionalRead('orders', 'requestedBatch', [event.orderId])
+          : undefined;
+        if (requested) focusedBatches.add(requested);
+      }
+      // Include intake and product transfers that do not have a buyer order.
+      for (const shipment of logistics?.shipments ?? []) focusedBatches.add(shipment.batchId);
+    }
     if (detailOrderId) for (const listing of listings) detailBatches.add(listing.batchId);
     const listedCatalogue = await Promise.all(
       [
         ...new Set(
           listings
             .filter((entry) => !inventoryOnly || same(entry.seller, session.address))
+            .filter((entry) => !shipmentOnly || focusedBatches.has(entry.batchId))
             .map((entry) => entry.itemId),
         ),
       ].map(async (itemId) => {
@@ -2199,7 +2409,12 @@ export class OrdersService {
           return null;
         const batches = [
           ...new Set(
-            listings.filter((entry) => entry.itemId === itemId).map((entry) => entry.batchId),
+            listings
+              .filter(
+                (entry) =>
+                  entry.itemId === itemId && (!shipmentOnly || focusedBatches.has(entry.batchId)),
+              )
+              .map((entry) => entry.batchId),
           ),
         ];
         const batchDetails = await Promise.all(
@@ -2210,7 +2425,7 @@ export class OrdersService {
               [batchId],
             );
             const inventory =
-              Number(item.kind) === 2
+              Number(item.kind) === 2 && !shipmentOnly
                 ? await readProductInventorySnapshot(
                     this.gateway,
                     batchId,
@@ -2236,9 +2451,9 @@ export class OrdersService {
                     productionLocation: await this.gateway.read('products', 'productionLocation', [
                       batchId,
                     ]),
-                    ingredientLinks: await this.gateway.read('products', 'getIngredientLinks', [
-                      batchId,
-                    ]),
+                    ingredientLinks: shipmentOnly
+                      ? undefined
+                      : await this.gateway.read('products', 'getIngredientLinks', [batchId]),
                   }),
             };
           }),
@@ -2256,6 +2471,7 @@ export class OrdersService {
         if (inventoryOnly && !same(event.supplier, session.address)) continue;
         const batchId = event.batchId ?? event.productBatchId;
         if (!batchId) continue;
+        if (shipmentOnly && !focusedBatches.has(batchId)) continue;
         if (detailOrderId && !detailBatches.has(batchId)) continue;
         const batch = await this.catalogueBatch(kind, batchId);
         if (inventoryOnly && !same(batch.supplier, session.address)) continue;
@@ -2275,7 +2491,7 @@ export class OrdersService {
           continue;
         }
         const inventory =
-          kind === 2
+          kind === 2 && !shipmentOnly
             ? await readProductInventorySnapshot(
                 this.gateway,
                 batchId,
@@ -2319,42 +2535,15 @@ export class OrdersService {
                     productionLocation: await this.gateway.read('products', 'productionLocation', [
                       batchId,
                     ]),
-                    ingredientLinks: await this.gateway.read('products', 'getIngredientLinks', [
-                      batchId,
-                    ]),
+                    ingredientLinks: shipmentOnly
+                      ? undefined
+                      : await this.gateway.read('products', 'getIngredientLinks', [batchId]),
                   }),
             },
           ],
         } as any);
       }
     }
-    const approvedReceiptsSupported =
-      Number(await this.optionalRead('orders', 'approvedReceiptPolicy')) === 1;
-    const ingredientDeliverySupported =
-      Number(await this.optionalRead('orders', 'ingredientDeliveryPolicy')) === 1;
-    const warehouseSupported =
-      ingredientDeliverySupported &&
-      Number(await this.optionalRead('delivery', 'custodyPolicy')) === 1;
-    const shipmentReviewSupported =
-      !inventoryOnly &&
-      warehouseSupported &&
-      Number(await this.optionalRead('delivery', 'reviewPolicy')) === 1;
-    const fulfilmentSupported =
-      !inventoryOnly &&
-      warehouseSupported &&
-      Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) === 2;
-    const productDeliverySupported =
-      !inventoryOnly && Number(await this.optionalRead('custody', 'productDeliveryPolicy')) === 1;
-    const logistics = warehouseSupported
-      ? await readLogistics(
-          this.gateway,
-          session.address,
-          session.role === CompanyRole.SYSTEM_ADMIN,
-          shipmentReviewSupported,
-          productDeliverySupported,
-          inventoryOnly,
-        )
-      : undefined;
     if (inventoryOnly) {
       const actor = session.address;
       const stockOrders: ChainRecord[] = [];
@@ -2501,7 +2690,10 @@ export class OrdersService {
         });
     }
     for (const event of orderEvents) {
-      const order = await this.gateway.read('orders', 'getOrder', [event.orderId]);
+      if (shipmentOnly && !focusedOrders.has(event.orderId)) continue;
+      const order =
+        focusedOrders.get(event.orderId) ??
+        (await this.gateway.read('orders', 'getOrder', [event.orderId]));
       const custody = warehouseSupported
         ? await this.gateway.read('delivery', 'custodyOrders', [event.orderId])
         : undefined;
@@ -2531,13 +2723,17 @@ export class OrdersService {
         same(actor, productDelivery?.distributor) ||
         same(actor, custodyPosition?.distributor);
       if (!involved) continue;
-      const details = await this.readOptionalPrivateRecord({
-        cid: order.detailsCid,
-        contentHash: order.detailsHash,
-        id: event.orderId,
-        owner: order.buyer,
-      });
-      const decision = await this.loadRequestDecision(event.orderId, order.seller);
+      const details = shipmentOnly
+        ? undefined
+        : await this.readOptionalPrivateRecord({
+            cid: order.detailsCid,
+            contentHash: order.detailsHash,
+            id: event.orderId,
+            owner: order.buyer,
+          });
+      const decision = shipmentOnly
+        ? await this.optionalRead('orders', 'requestDecision', [event.orderId])
+        : await this.loadRequestDecision(event.orderId, order.seller);
       const deliveryReceivingLocation =
         typeof details?.receivingLocation === 'string' &&
         same(
@@ -2559,7 +2755,9 @@ export class OrdersService {
             }
           : undefined,
         ...order,
-        deliveryReceivingLocation,
+        deliveryReceivingLocation: shipmentOnly
+          ? (productDelivery?.toLocation ?? delivery?.toLocation ?? custody?.receivingLocation)
+          : deliveryReceivingLocation,
         productDelivery:
           productDelivery && Number(productDelivery.mode) > 0 ? productDelivery : undefined,
         productDeliveryQr:
@@ -2574,14 +2772,18 @@ export class OrdersService {
             ? undefined
             : details,
         delivery: delivery && Number(delivery.stage) > 0 ? delivery : undefined,
-        evidenceIds: await this.gateway.read('orders', 'getOrderEvidence', [event.orderId]),
+        evidenceIds: shipmentOnly
+          ? undefined
+          : await this.gateway.read('orders', 'getOrderEvidence', [event.orderId]),
         decision:
           (same(actor, delivery?.distributor) ||
             same(actor, custodyPosition?.distributor) ||
             same(actor, productDelivery?.distributor)) &&
           decision
             ? { status: decision.status, recordedAt: decision.recordedAt }
-            : decision,
+            : shipmentOnly && decision
+              ? { status: decision.status, recordedAt: decision.recordedAt }
+              : decision,
         requestedBatch: approvedReceiptsSupported
           ? await this.gateway.read('orders', 'requestedBatch', [event.orderId])
           : undefined,
@@ -2669,7 +2871,7 @@ export class OrdersService {
           []),
       ]),
     ];
-    const directoryCompanies = (await this.directory?.list()) ?? [];
+    const directoryCompanies = shipmentOnly ? [] : ((await this.directory?.list()) ?? []);
     const identities =
       (await this.directory?.resolveMany([
         ...new Set([...wallets, ...directoryCompanies.map((company) => company.walletAddress)]),
@@ -2680,7 +2882,7 @@ export class OrdersService {
       identities.find((identity) => same(identity.walletAddress, wallet))?.role;
     const logoWallets = new Set<string>();
     await Promise.all(
-      identities.map(async (identity) => {
+      (shipmentOnly ? [] : identities).map(async (identity) => {
         const logo = await this.hasCompanyLogo(identity.walletAddress, identity.applicationId);
         if (logo) logoWallets.add(identity.walletAddress.toLowerCase());
       }),
@@ -2868,6 +3070,7 @@ export class OrdersService {
   async prepare(sessionId: string | undefined, input: OrderAction) {
     const session = await this.session(sessionId);
     this.summaryReader?.invalidate();
+    this.displaySnapshots.invalidate();
     const operationKey = id(
       `${this.gateway.chainId}:${this.gateway.address}:${session.address.toLowerCase()}:${input.operationId}`,
     );

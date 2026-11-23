@@ -4,6 +4,7 @@ import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle2, Package, Plus, RefreshCw, Truck, Upload } from 'lucide-react';
+import { ReadModelStatus, useReadModelRefresh } from './ReadModelStatus';
 import { decodeShipmentQr } from '@tracechain/shared';
 import {
   getOrders,
@@ -141,7 +142,24 @@ export function ShipmentsWorkspace({
     stop = useRef<() => void>(undefined),
     cameraAttempt = useRef(0),
     scanner = useRef(new ZxingTransferQrReader());
-  const load = useCallback(async () => setData(await getOrders()), []);
+  const focusedList =
+    view === 'shipments' && !selected && !selectedDeliveryOrder && !reviewDeliveryOrderId;
+  const load = useCallback(
+    async (refresh = false) =>
+      setData(await getOrders(focusedList ? 'shipment-workspace' : undefined, { refresh })),
+    [focusedList],
+  );
+  useReadModelRefresh(data, load, (cause) => {
+    setError(reportError(cause, 'Shipment refresh unavailable.'));
+    setData((current) =>
+      current?.readModel
+        ? {
+            ...current,
+            readModel: { ...current.readModel, refreshing: false, refreshFailed: true },
+          }
+        : current,
+    );
+  });
   useEffect(() => {
     void load().catch((cause) => setError(cause.message));
     const timer = setInterval(() => {
@@ -209,7 +227,7 @@ export function ShipmentsWorkspace({
     await submitProductionTransaction(prepared.transaction, data!.actor);
     setNotice('Transaction confirmed.');
     try {
-      await load();
+      await load(true);
     } catch {
       throw new Error('Confirmed, but refresh failed. Refresh this page; do not submit again.');
     }
@@ -755,7 +773,7 @@ export function ShipmentsWorkspace({
               variant="outline"
               icon={<RefreshCw size={16} />}
               disabled={busy}
-              onClick={() => void run(load)}
+              onClick={() => void run(() => load(true))}
             >
               Refresh
             </Btn>
@@ -795,6 +813,7 @@ export function ShipmentsWorkspace({
       )}
       {error && <Alert type="error" message={error} />}{' '}
       {notice && <Alert type="success" message={notice} />}
+      <ReadModelStatus state={data} />
       {!data.shipmentReviewSupported && (
         <Alert
           type="warning"

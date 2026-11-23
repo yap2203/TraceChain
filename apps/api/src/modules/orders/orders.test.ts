@@ -485,6 +485,21 @@ describe('private custody and company proof inbox', () => {
         expect(result.catalogue[0].custodyPositions[0]).not.toHaveProperty('reserved');
       }
       if (privateCount === 0) expect(result.logistics?.productPositions).toHaveLength(0);
+      f.gateway.events.mockClear();
+      const focused = await f.service.state('session', 'custody-inventory');
+      expect(focused.logistics?.positions).toHaveLength(privateCount);
+      expect(focused.catalogue).toHaveLength(privateCount);
+      expect(
+        f.gateway.events.mock.calls.some(([, event]) =>
+          [
+            'OrderRequested',
+            'OrderTransferLinked',
+            'RoadShipmentDispatched',
+            'ItemListed',
+          ].includes(event),
+        ),
+      ).toBe(false);
+      expect(focused.orders).toEqual([]);
     },
   );
   it('lists only exact participants’ company proof requests without credential payloads', async () => {
@@ -2478,7 +2493,7 @@ describe('Paginated order summaries', () => {
     try {
       clock.mockReturnValue(base);
       await request(f.app).get('/api/orders?scope=order-list').expect(200);
-      clock.mockReturnValue(base + 6000);
+      clock.mockReturnValue(base + 121000);
       f.gateway.events.mockRejectedValueOnce(new Error('RPC busy'));
       const failed = await request(f.app).get('/api/orders?scope=order-list').expect(503);
       expect(failed.body.orders).toBeUndefined();
@@ -2487,5 +2502,63 @@ describe('Paginated order summaries', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+// Focused screens must not rebuild the catalogue or private evidence merely to show rows.
+describe('Focused display snapshots', () => {
+  it('avoids unrelated catalogue and branding reads for shipment lists, reuses snapshots and refreshes explicitly', async () => {
+    const f = fixture();
+    await request(f.app).get('/api/orders?scope=shipment-workspace').expect(200);
+    expect(f.gateway.read.mock.calls.some(([, method]) => method === 'getCompanyBranding')).toBe(
+      false,
+    );
+    const calls = f.gateway.read.mock.calls.length;
+    const repeat = await request(f.app).get('/api/orders?scope=shipment-workspace').expect(200);
+    expect(f.gateway.read.mock.calls.length).toBe(calls);
+    expect(repeat.body.readModel).toMatchObject({ stale: false, refreshing: false });
+    await request(f.app).get('/api/orders?scope=shipment-workspace&refresh=1').expect(200);
+    expect(f.gateway.read.mock.calls.length).toBeGreaterThan(calls);
+    f.auth.getSession.mockResolvedValue({
+      authenticated: true,
+      authorizationReady: false,
+      address: buyer,
+      role: CompanyRole.MANUFACTURER,
+    });
+    await request(f.app).get('/api/orders?scope=shipment-workspace').expect(403);
+  });
+
+  it('skips all order reads for custody inventory and still rechecks authorization on repeat loads', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    const started = performance.now();
+    await f.service.state('session');
+    const fullMs = performance.now() - started;
+    const fullReads = f.gateway.read.mock.calls.length;
+    const fullEvents = f.gateway.events.mock.calls.length;
+    f.gateway.read.mockClear();
+    f.gateway.events.mockClear();
+    const focusedStarted = performance.now();
+    await request(f.app).get('/api/orders?scope=custody-inventory').expect(200);
+    const focusedMs = performance.now() - focusedStarted;
+    const focusedReads = f.gateway.read.mock.calls.length;
+    const focusedEvents = f.gateway.events.mock.calls.length;
+    expect(focusedReads).toBeLessThan(fullReads);
+    expect(f.gateway.events.mock.calls.some(([, event]) => event === 'OrderRequested')).toBe(false);
+    f.gateway.read.mockClear();
+    const repeatStarted = performance.now();
+    await request(f.app).get('/api/orders?scope=custody-inventory').expect(200);
+    const repeatMs = performance.now() - repeatStarted;
+    expect(f.gateway.read).not.toHaveBeenCalled();
+    console.info('Local empty-custody display benchmark (mock gateway, not Sepolia)', {
+      fullMs: Math.round(fullMs),
+      focusedMs: Math.round(focusedMs),
+      repeatMs: Math.round(repeatMs),
+      fullReads,
+      focusedReads,
+      fullEvents,
+      focusedEvents,
+    });
+    f.auth.getSession.mockResolvedValue({ authenticated: false, authorizationReady: false });
+    await request(f.app).get('/api/orders?scope=custody-inventory').expect(403);
   });
 });

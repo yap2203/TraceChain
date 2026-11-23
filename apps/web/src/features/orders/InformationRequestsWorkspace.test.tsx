@@ -134,6 +134,17 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
+it('loads the information inbox without loading the entire orders workspace', async () => {
+  const result = await api.requests();
+  api.requests.mockResolvedValue({ ...result, actor: supplier });
+  render(
+    <MemoryRouter>
+      <InformationRequestsWorkspace role="supplier" initialDirection="received" />
+    </MemoryRouter>,
+  );
+  await screen.findByText('Warehouse Company');
+  expect(api.orders).not.toHaveBeenCalled();
+});
 it.each(['received', 'sent'] as const)(
   'keeps the %s sidebar page fixed without embedding the other direction',
   async (direction) => {

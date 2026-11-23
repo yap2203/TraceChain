@@ -9,10 +9,19 @@ These are gateway timings, excluding authenticated HTTP/browser and IPFS renderi
 caller-dependent simulations remain individual. Set the flag to `false` to use ordinary reads.
 
 **Orders loading:** Supplier, Manufacturer and Retailer request lists now load paginated summaries
-before fetching a selected order's full context. Display snapshots last five seconds; Refresh data
-and confirmed writes force fresh reads. Authorization and stock decisions remain current. Shared
+before fetching a selected order's full context. Company-scoped display snapshots are fresh for five
+seconds, then can render while one background refresh runs (maximum saved-data age: two minutes).
+The screen labels the last update and refresh failures. Refresh data and confirmed writes force fresh
+reads. Authorization and stock decisions remain current. Shared
 catalogue images defer downloads until near the viewport, and encrypted IPFS reads coalesce while
 in flight. See [measurements, cache scope and live timing checks](docs/ORDERS_LOADING_PERFORMANCE.md).
+Shipment lists use `GET /api/orders?scope=shipment-workspace`; custody inventory uses
+`scope=custody-inventory` and skips orders, evidence and shipment histories. Shipment lists load only
+relevant catalogue batches and defer private order notes/decisions, evidence and company logos.
+Opening a shipment or composing a transfer retains the existing full action context. Company-information
+inboxes no longer load the Orders workspace just to list messages; legacy context loads on opening
+a record. Snapshots live only in bounded API memory and rebuild after restart; no database,
+new snapshot file or contract redeployment is required.
 Protected Orders, operations and ingredient authorization checks now skip company-name/IPFS
 enrichment; on-chain authorization remains fresh. Directory lookups are scoped to the requested
 wallets, and small encrypted IPFS envelopes are reused for 30 seconds (never plaintext or permissions).

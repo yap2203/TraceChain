@@ -15,6 +15,7 @@ export interface SupplierStock {
   requestCount: number;
 }
 export interface OrdersState {
+  readModel?: { updatedAt: string; stale: boolean; refreshing: boolean; refreshFailed: boolean };
   pagination?: { page: number; pageSize: number; total: number; counts: Record<string, number> };
   productDeliverySupported?: boolean;
   fulfilmentSupported?: boolean;
@@ -77,7 +78,12 @@ export interface OrderListOptions {
   refresh?: boolean;
 }
 export const getOrders = (
-  scope?: 'supplier-inventory' | 'order-list' | 'order-detail',
+  scope?:
+    | 'supplier-inventory'
+    | 'order-list'
+    | 'order-detail'
+    | 'shipment-workspace'
+    | 'custody-inventory',
   options: OrderListOptions = {},
 ) => {
   const query = new URLSearchParams(scope ? { scope } : {});

@@ -2,6 +2,44 @@
 
 ## Multicall follow-up
 
+### Focused screens and background display refresh
+
+The latest change removes another source of full `/orders` requests:
+
+- Shipment **lists** use `scope=shipment-workspace`. Only batches referenced by the company's
+  orders/intake/product transfers are enriched. They omit private order notes, decision documents,
+  evidence documents, unrelated product inventory/ingredient links and company-logo downloads.
+  Opening a shipment/delivery or composing a transfer still loads the existing full action context.
+- Custody inventory uses `scope=custody-inventory`, reading its warehouse positions and product
+  balances without order, listing or road-shipment scans. Supplier and Manufacturer ownership and
+  Distributor custody are filtered server-side before returning inventory or enriching its batches.
+- Company-information inboxes use their dedicated endpoint without loading the Orders workspace.
+  Legacy company-proof context is fetched only when a record opens (order detail where applicable).
+- Summary, shipment-list and inventory snapshots are fresh for five seconds after completion. For
+  up to two minutes they can return immediately while one background refresh runs. The UI labels
+  saved data, refresh failures and update time, then polls only while refresh is pending. There is
+  failure backoff and no overlapping poll. Explicit Refresh waits for a current read. Preparation
+  invalidates affected service snapshots, and confirmed-write UI reloads bypass them.
+- Authorization and deployment checks run **before every snapshot read**. No cached list is used
+  for permissions, proof verification or transaction/stock preflight. Keys include chain, deployment,
+  wallet and role. There are at most 64 entries per reader; returned values are cloned. No private
+  snapshot files or database were added. Existing event-index checkpoint/reorg handling runs on
+  refresh; snapshots themselves are display data, not a claim of a latest-block result.
+
+Re-ran the existing 40-order / 20-batch mock workload: full workspace cold/repeat **2,649 / 2,652 ms**,
+205 getter reads and 9 event queries each; summary cold/repeat **414 / 6 ms**, 103 / 0 getter reads
+and 2 / 0 event queries. Both use zero IPFS downloads in this fixture. The summary cold improvement
+was already implemented previously; this iteration extends its reuse beyond five seconds through
+background refresh. A separate empty-custody fixture reduced 11 getter reads / 11 event queries to
+1 / 0, then 0 / 0 on repeat. Mock authorization has no RPC latency; these are **not live Sepolia,
+authenticated browser-paint or Pinata measurements**. The tests prove immediate stale rows while
+a deferred refresh remains pending, failure labelling, hard expiry, invalidation and company isolation.
+
+Remaining costs: initial loads after API restart, full shipment/transfer details, other legacy full
+workspace callers, metadata searches, live authorization and slow/throttled RPC or IPFS. No persistent
+read model or startup prewarming has been added. Re-test the normal Orders/Shipments/Inventory screens
+with the same signed-in wallet; compare initial visit, navigation back and explicit Refresh separately.
+
 The alternative to serialized getter requests is enabled through `RPC_MULTICALL_ENABLED=true`.
 It uses the [official existing Sepolia Multicall3 deployment](https://github.com/mds1/multicall3/blob/main/deployments.json)
 at `0xcA11bde05977b3631167028862bE2a173976CA11`. The adapter checks runtime hash
