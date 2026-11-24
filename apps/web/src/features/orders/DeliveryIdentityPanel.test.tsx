@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ identity: vi.fn(), selective: vi.fn(), full: vi.fn() }));
 vi.mock('./orders.api', () => ({ deliveryIdentity: mocks.identity }));
@@ -117,7 +117,7 @@ it('uses locked required toggles, readable optional claims and a review modal be
   expect(requiredCompanyId.getAttribute('aria-checked')).toBe('true');
   expect(requiredCompanyId).toHaveProperty('disabled', true);
   expect(requiredRole).toHaveProperty('disabled', true);
-  expect(screen.getByText('Supplier')).toBeTruthy();
+  expect(screen.getAllByText('Supplier').length).toBeGreaterThan(0);
   expect(screen.getByText('3 of 6 fields will be shared')).toBeTruthy();
   expect(
     screen.getByRole('switch', { name: 'Share Wallet address' }).closest('.evidence-claim-row')
@@ -171,13 +171,73 @@ it('shows a neutral not-requested state without presenting refresh as the primar
   renderSupplierPanel();
   expect((await screen.findAllByText('Not requested')).length).toBeGreaterThan(0);
   expect(
-    screen.getByText('No company evidence has been requested for this custody offer.'),
+    screen.getByText(
+      'Request verified company information from the supplier before collecting or dispatching this stock.',
+    ),
   ).toBeTruthy();
-  expect(screen.getByText('No action required')).toBeTruthy();
-  const refresh = screen.getByRole('button', { name: 'Refresh status' });
-  expect(refresh.className).toContain('bg-transparent');
+  expect(screen.queryByRole('button', { name: 'Refresh status' })).toBeNull();
   const raw = screen.getByText('NOT_REQUESTED');
   expect(raw.closest('details')?.hasAttribute('open')).toBe(false);
+});
+
+it('opens a two-step company evidence request for the distributor', async () => {
+  const custodyDeadline = Math.floor(Date.now() / 1000) + 7_200;
+  mocks.identity.mockResolvedValue({ status: 'NOT_REQUESTED' });
+  render(
+    <DeliveryIdentityPanel
+      order={{
+        orderId: 'custody-offer-1',
+        seller: 'supplier',
+        expiresAt: custodyDeadline,
+        delivery: { identityChallenge: 'challenge', distributor: 'distributor' },
+      }}
+      data={{
+        actor: 'distributor',
+        role: 'DISTRIBUTOR',
+        orders: [],
+        catalogue: [],
+        locations: [],
+        shipments: [],
+        companies: [
+          { wallet: 'supplier', companyName: 'Rimba Cocoa Ingredients', role: 'SUPPLIER' },
+          { wallet: 'distributor', companyName: 'Bayu Food Logistics', role: 'DISTRIBUTOR' },
+        ],
+      }}
+      onChanged={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+  fireEvent.click(await screen.findByRole('button', { name: 'Create evidence request' }));
+  expect(screen.getByText('Step 1 of 2 · Configure request')).toBeTruthy();
+  expect(screen.getByText('Bayu Food Logistics · Distributor')).toBeTruthy();
+  expect(screen.getByText('Rimba Cocoa Ingredients · Supplier')).toBeTruthy();
+  expect(screen.getByText('4 fields selected')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Review request' })).toHaveProperty('disabled', true);
+  fireEvent.change(screen.getByLabelText('Presentation deadline *'), {
+    target: { value: '2099-01-01T12:00' },
+  });
+  fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
+  expect(screen.getByText(/selected evidence deadline is after the custody offer deadline/i)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Use custody offer deadline' }));
+  expect(screen.getByText('Step 2 of 2 · Review and submit')).toBeTruthy();
+  expect(screen.getByRole('heading', { name: /Required/ })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Back to edit' }));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Internal company ID' }));
+  const classification = screen.getByRole('group', {
+    name: 'Internal company ID requirement',
+  });
+  fireEvent.click(within(classification).getByRole('button', { name: 'Required' }));
+  fireEvent.click(within(classification).getByRole('button', { name: 'Optional' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Submit request' }));
+  await waitFor(() =>
+    expect(mocks.identity.mock.calls.some(([, input]) => input.action === 'request')).toBe(true),
+  );
+  const request = mocks.identity.mock.calls.find(([, input]) => input.action === 'request')![1];
+  expect(new Set(request.requiredClaims).size).toBe(request.requiredClaims.length);
+  expect(new Set(request.optionalClaims).size).toBe(request.optionalClaims.length);
+  expect(request.requiredClaims.some((claim: string) => request.optionalClaims.includes(claim))).toBe(false);
+  expect(request.optionalClaims).toContain('companyId');
+  expect(request.expiresAt).toBeLessThanOrEqual(custodyDeadline);
 });
 
 it('shows a clear review action for a pending request', async () => {

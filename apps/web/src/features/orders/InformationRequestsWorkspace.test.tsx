@@ -51,7 +51,7 @@ vi.mock('../production-flow/CompanyIdentityProofAction', () => ({
   CompanyIdentityProofAction: () => <p>Company presenter</p>,
 }));
 import { InformationRequestsWorkspace } from './InformationRequestsWorkspace';
-import { workspaceNavigation } from '../workspaces/workspace-navigation';
+import { workspaceNavigation, workspaceNavigationGroups } from '../workspaces/workspace-navigation';
 const supplier = '0x1000000000000000000000000000000000000001',
   distributor = '0x2000000000000000000000000000000000000002',
   shipment = '0x' + 'a'.repeat(64);
@@ -159,15 +159,15 @@ it.each(['received', 'sent'] as const)(
     expect(
       screen.queryByText(direction === 'received' ? 'Manufacturer Company' : 'Warehouse Company'),
     ).toBeNull();
-    expect(screen.queryByRole('navigation', { name: 'Company proof direction' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Received requests' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Sent requests' })).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Evidence request direction' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Requests to me' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Requests I sent' })).toBeNull();
   },
 );
-it('provides separate received and sent information requests for participating companies', () => {
+it('provides one Evidence Exchange navigation entry for participating companies', () => {
   for (const role of ['supplier', 'manufacturer', 'distributor', 'retailer'] as const) {
     expect(workspaceNavigation[role].some(([id]) => id === 'requests')).toBe(true);
-    expect(workspaceNavigation[role].some(([id]) => id === 'sent-requests')).toBe(true);
+    expect(workspaceNavigationGroups(role).flatMap((group) => group.items).some(([id]) => id === 'sent-requests')).toBe(false);
   }
 });
 it('separates sent and received company proof requests and opens the correct existing manager', async () => {
@@ -180,8 +180,8 @@ it('separates sent and received company proof requests and opens the correct exi
   expect(screen.queryByText('Manufacturer Company')).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
   expect(screen.getByText('Delivery proof manager: ' + shipment)).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Received requests' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Sent requests' }));
+  fireEvent.click(screen.getByRole('link', { name: 'Evidence Exchange' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Requests I sent' }));
   expect(await screen.findByText('Manufacturer Company')).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
   expect(screen.getByText('Order proof manager')).toBeTruthy();
@@ -316,11 +316,19 @@ it('shows readable custody-offer context, compact tabs and collapsed technical d
       </InformationRequestsWorkspace>
     </MemoryRouter>,
   );
-  expect(await screen.findByRole('heading', { name: 'Company evidence request' })).toBeTruthy();
+  expect(await screen.findByRole('heading', { name: 'Request company evidence' })).toBeTruthy();
+  expect(
+    screen.getByText(
+      'Request verified company information before continuing this custody offer.',
+    ),
+  ).toBeTruthy();
+  expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).textContent).toContain(
+    'Evidence ExchangeRequests I sentCustody offerRequest company evidence',
+  );
   expect(await screen.findByText('Unsweetened Cocoa Powder')).toBeTruthy();
   expect(screen.getAllByText('Bayu Food Logistics').length).toBeGreaterThan(0);
   expect(screen.getByText('8 kg')).toBeTruthy();
-  expect(screen.getByText('Awaiting acceptance')).toBeTruthy();
+  expect(screen.getAllByText('Awaiting acceptance').length).toBeGreaterThan(0);
   expect(screen.getByRole('link', { name: 'View custody offer' }).getAttribute('href')).toContain(
     '/supplier/transfers?offerId=',
   );

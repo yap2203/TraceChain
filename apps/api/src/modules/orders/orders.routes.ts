@@ -9,6 +9,7 @@ import { evidenceRequestSchema } from '../production-flow/production-flow.schema
 import { logisticsActionSchema } from './logistics.schema.js';
 import { CustodyOfferError } from './custody-offers.js';
 import { timeOrderRead } from '../blockchain/read-timing.js';
+import { COMPANY_EVIDENCE_CLAIM_IDS } from '@tracechain/shared';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
   const router = Router();
@@ -336,16 +337,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       service.prepareLogistics(session, logisticsActionSchema.parse(request.body)),
     ),
   );
-  const claim = z.enum([
-    'companyId',
-    'companyName',
-    'companyRegistrationNumber',
-    'registrationCountry',
-    'role',
-    'walletAddress',
-    'id',
-    'applicationReference',
-  ]);
+  const claim = z.enum(COMPANY_EVIDENCE_CLAIM_IDS);
   const identityInput = z.discriminatedUnion('action', [
     z
       .object({
@@ -353,10 +345,18 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
         purpose: z.string().trim().min(1).max(500),
         expiresAt: z.number().int().positive(),
         required: z.boolean(),
-        requiredClaims: z.array(claim).max(7),
-        optionalClaims: z.array(claim).max(7),
+        requiredClaims: z.array(claim).max(COMPANY_EVIDENCE_CLAIM_IDS.length),
+        optionalClaims: z.array(claim).max(COMPANY_EVIDENCE_CLAIM_IDS.length),
       })
-      .strict(),
+      .strict()
+      .superRefine((input, ctx) => {
+        if (new Set(input.requiredClaims).size !== input.requiredClaims.length)
+          ctx.addIssue({ code: 'custom', path: ['requiredClaims'], message: 'Claim identifiers must be unique.' });
+        if (new Set(input.optionalClaims).size !== input.optionalClaims.length)
+          ctx.addIssue({ code: 'custom', path: ['optionalClaims'], message: 'Claim identifiers must be unique.' });
+        if (input.requiredClaims.some((key) => input.optionalClaims.includes(key)))
+          ctx.addIssue({ code: 'custom', path: ['optionalClaims'], message: 'A claim cannot be both Required and Optional.' });
+      }),
     z
       .object({ action: z.literal('present'), presentation: z.string().min(100).max(300000) })
       .strict(),

@@ -81,22 +81,22 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
       />
     );
   if (tab === 'requests' || tab === 'sent-requests') {
-    const direction = tab === 'sent-requests' ? 'sent' : 'received';
+    const direction = tab === 'sent-requests' ? 'sent' : undefined;
     return (
       <InformationRequestsWorkspace key={tab} role={role} initialDirection={direction}>
-        {role === 'supplier' && direction === 'received' ? (
+        {role === 'supplier' ? (
           discReq ? (
             <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />
           ) : (
             <InformationRequests onRespond={setDiscReq} initialDirection="received" hideDirection />
           )
-        ) : role === 'manufacturer' && direction === 'sent' ? (
+        ) : role === 'manufacturer' ? (
           <IngredientEvidence
             onNav={nav}
             hideComposer={!params.get('batchId')}
             initialBatchId={params.get('batchId') ?? undefined}
           />
-        ) : role === 'retailer' && direction === 'sent' ? (
+        ) : role === 'retailer' ? (
           <RetailerEvidenceRequests
             embedded
             initialProductBatchId={params.get('productBatchId') ?? undefined}

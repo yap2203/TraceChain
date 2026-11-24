@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   act: vi.fn(),
   prepare: vi.fn(),
   sign: vi.fn(),
+  identity: vi.fn(),
 }));
 vi.mock('./orders.api', () => ({
   getCustodyOffers: api.list,
@@ -16,6 +17,7 @@ vi.mock('./orders.api', () => ({
   createCustodyOffer: api.create,
   actCustodyOffer: api.act,
   prepareCustodyOffer: api.prepare,
+  deliveryIdentity: api.identity,
 }));
 vi.mock('../production-flow/production-flow.transaction', () => ({
   submitProductionTransaction: api.sign,
@@ -64,6 +66,7 @@ beforeEach(() => {
   });
   api.prepare.mockResolvedValue({ transaction: { to: 'registry' }, resultId: 'shipment' });
   api.sign.mockResolvedValue({});
+  api.identity.mockResolvedValue({ status: 'NOT_REQUESTED' });
 });
 afterEach(() => {
   cleanup();
@@ -102,6 +105,13 @@ it('requires Distributor acceptance then explicit pickup scheduling without movi
   );
   expect(api.prepare).not.toHaveBeenCalled();
   expect(api.sign).not.toHaveBeenCalled();
+});
+it('opens the custody company-evidence request in a modal without leaving the offer', async () => {
+  show();
+  fireEvent.click(await screen.findByRole('button', { name: 'Request sender company evidence' }));
+  expect(await screen.findByRole('dialog', { name: /Request company evidence/ })).toBeTruthy();
+  expect(screen.getAllByText('Actual Supplier').length).toBeGreaterThan(0);
+  expect(screen.getByRole('heading', { name: 'Distributor custody request' })).toBeTruthy();
 });
 it('presents the Supplier custody request detail as a compact workflow', async () => {
   api.orders.mockResolvedValue({

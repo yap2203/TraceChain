@@ -2,13 +2,17 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 export function Modal({
   title,
   children,
+  footer,
   onClose,
   width = 520,
+  className = '',
 }: {
-  title: string;
+  title: ReactNode;
   children: ReactNode;
+  footer?: ReactNode;
   onClose: () => void;
   width?: number;
+  className?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -27,7 +31,7 @@ export function Modal({
   }, []);
   return (
     <dialog
-      className="workspace-dialog"
+      className={`workspace-dialog ${className}`}
       ref={dialog}
       aria-labelledby={titleId}
       onClick={(event) => {
@@ -56,6 +60,7 @@ export function Modal({
         <div className="workspace-dialog__body" data-modal-scroll-region="true">
           {children}
         </div>
+        {footer && <footer className="workspace-dialog__footer">{footer}</footer>}
       </div>
     </dialog>
   );

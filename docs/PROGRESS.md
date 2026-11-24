@@ -1801,3 +1801,37 @@ The Admin application, credential, access-control, discrepancy, and audit screen
 - Reused the current registration state callbacks, duplicate-submit lock, frozen input and retry behavior. Submission/confirmation uncertainty is separately labelled; no changes to API, contracts, credential claims or MetaMask transaction sequence.
 - Validation: all 28 Supplier batch/list/transaction tests passed, including review/submitted payload consistency, image/price retention, earlier-step editing, three attachments across two certifications, preview, pending confirmation and existing rejection/stale-read/duplicate-submit cases. Frontend typecheck and production build passed (existing bundle-size and third-party directive warnings remain).
 - Responsive CSS uses single-column mobile form/review grids and wrapping file/action layouts. Real desktop/mobile visual inspection, keyboard/browser behavior and live MetaMask/IPFS transaction acceptance still require manual testing; no public writes were performed. README and ingredient creation guide updated.
+## 2026-11-24 — Evidence Exchange UI consolidation
+
+- Replaced the two visible Received/Sent request sidebar entries with one Evidence Exchange entry;
+  legacy sent-request URLs remain valid for existing links.
+- Added shared Company Role and Ingredient claim catalogues with stable identifiers and credential
+  paths, plus a reusable searchable checkbox selector with Required/Optional classification.
+- Added a reusable request-review modal and connected the delivery Company Role proof flow to an
+  explicit requester-chosen deadline instead of its former hidden 30-minute deadline.
+- Updated Manufacturer and Retailer ingredient request forms to use the same claim selector and
+  added requested/required field counts to Evidence Exchange summaries.
+- No contract or deployment change was made. Durable cross-device notification read state and
+  disclosure preferences remain blocked by the absence of a private mutable reference discoverable
+  from the current deployed registries; no localStorage or machine-local substitute was introduced.
+- Redesigned the custody-offer company-evidence route with an Evidence Exchange breadcrumb, concise
+  custody context, separate evidence status, responsive 4/8-column desktop layout and a clear
+  not-requested state. Request creation no longer competes with a redundant page-level refresh.
+- Replaced the inline company-proof request form with a two-step Configure/Review dialog. The dialog
+  keeps its header and actions visible, identifies both companies and roles, summarizes required and
+  optional claims, and keeps evidence sharing explicitly separate from custody acceptance and stock
+  movement. Existing request, IPFS, MetaMask and on-chain workflows are unchanged.
+- Fixed Required/Optional claim overlap at the shared selector and normalized every company-proof
+  payload from one canonical classification map before submission. Backend overlap and duplicate
+  validation remains fail-closed.
+- Custody company-evidence requests now compare their presentation deadline with the custody-offer
+  deadline. A later selection shows an explicit warning and requires the requester to confirm using
+  the earlier custody deadline before review and submission.
+- Evidence-request creation now stays in context: custody offers, orders, ingredient deliveries,
+  product deliveries and traceability open the shared two-step request modal instead of navigating
+  to the Evidence Exchange. Existing Evidence Exchange screens remain available for received/sent
+  request management and responses.
+- Removed recurring frontend blockchain polling from Orders, custody inventory, receipt and shipment
+  workspaces. These screens load on entry, refresh after confirmed writes and expose manual Refresh;
+  they no longer issue background RPC reads while idle. The ingredient-delivery deadline clock still
+  updates locally and does not call the API.

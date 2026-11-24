@@ -1,8 +1,11 @@
 import { signCompanyPresentation } from '../production-flow/company-presentation';
-import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
+import {
+  CompanyRequestFields,
+  normalizeCompanyRequestFields,
+} from '../production-flow/CompanyRequestFields';
 import {
   COMPANY_ALWAYS_CLAIMS,
-  companyDisclosureGroup,
+  COMPANY_EVIDENCE_CLAIMS,
   toggleCompanyDisclosure,
 } from '@tracechain/shared';
 import { BackNavigation } from '../../components/ui/BackNavigation';
@@ -42,7 +45,8 @@ import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPane
 import { getEvidenceDetails, prepareEvidenceRequest } from '../production-flow/production-flow.api';
 import { CatalogueBrowser, CatalogueSkeleton } from './CatalogueBrowser';
 import { SupplierStockSummary } from './SupplierStockSummary';
-import { ReadModelStatus, useReadModelRefresh } from './ReadModelStatus';
+import { ReadModelStatus } from './ReadModelStatus';
+import { EvidenceRequestModal } from './EvidenceRequestModal';
 import { IngredientDeliveryPanel } from './IngredientDeliveryPanel';
 import { ProductDeliveryPanel } from './ProductDeliveryPanel';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
@@ -102,8 +106,10 @@ export function OrdersPage({
   const [pendingDecision, setPendingDecision] = useState<1 | 2>();
   const [decisionReason, setDecisionReason] = useState('');
   const [receiptConfirmed, setReceiptConfirmed] = useState(false);
+  const [companyRequestOpen, setCompanyRequestOpen] = useState(false);
   useEffect(() => {
     setReceiptConfirmed(false);
+    setCompanyRequestOpen(false);
   }, [selected]);
   const [form, setForm] = useState<Record<string, string>>({
     quantity: '',
@@ -172,30 +178,6 @@ export function OrdersPage({
       listLoadStart.current = undefined;
     }
   }, [data, loading]);
-  const hasActiveDelivery = data?.orders.some(
-    (entry) =>
-      (entry.delivery && Number(entry.delivery.stage) < 5) ||
-      (entry.productDelivery && Number(entry.productDelivery.stage) < 5),
-  );
-  const backgroundLoad = useCallback(() => load(false), [load]);
-  useReadModelRefresh(data, backgroundLoad, (cause) => {
-    setError(orderError(cause));
-    setData((current) =>
-      current?.readModel
-        ? {
-            ...current,
-            readModel: { ...current.readModel, refreshing: false, refreshFailed: true },
-          }
-        : current,
-    );
-  });
-  useEffect(() => {
-    if (!hasActiveDelivery) return;
-    const timer = setInterval(() => {
-      void load(false).catch((cause) => setError(orderError(cause)));
-    }, 15000);
-    return () => clearInterval(timer);
-  }, [hasActiveDelivery, load]);
   useEffect(() => {
     if (!initialBatchId || !data) return;
     const entry = data.catalogue.find((item) =>
@@ -901,13 +883,15 @@ export function OrdersPage({
                       <Btn
                         variant="outline"
                         disabled={!activeOrder}
-                        onClick={() =>
-                          navigate(
-                            workspacePath(role, 'sent-requests') +
-                              '?orderId=' +
-                              encodeURIComponent(order.orderId),
-                          )
-                        }
+                        onClick={() => {
+                          setForm((current) => ({
+                            ...current,
+                            purpose:
+                              current.purpose ||
+                              'Verify the requesting company before approving this order',
+                          }));
+                          setCompanyRequestOpen(true);
+                        }}
                       >
                         Request company evidence
                       </Btn>
@@ -1075,18 +1059,17 @@ export function OrdersPage({
                           disabled={busy || !form.purpose?.trim() || !form.identityDeadline}
                           onClick={() =>
                             void run(async () => {
+                              const claims = normalizeCompanyRequestFields(
+                                requiredClaims,
+                                optionalIdentityClaims,
+                              );
                               const result = await orderIdentity(order.orderId, {
                                 action: 'request',
                                 purpose: form.purpose,
                                 expiresAt: Math.floor(Date.parse(form.identityDeadline) / 1000),
                                 required: false,
-                                requiredClaims: [
-                                  ...new Set([
-                                    ...COMPANY_ALWAYS_CLAIMS,
-                                    ...companyDisclosureGroup(requiredClaims),
-                                  ]),
-                                ],
-                                optionalClaims: optionalIdentityClaims,
+                                requiredClaims: claims.required,
+                                optionalClaims: claims.optional,
                               });
                               await sign(result.transaction);
                             })
@@ -1271,6 +1254,66 @@ export function OrdersPage({
             </OrderDetailSurface>
           )}
         </>
+      )}
+      {companyRequestOpen && data && order && (
+        <EvidenceRequestModal
+          evidenceType="Company identity"
+          requester={
+            data.companies?.find((company) => same(company.wallet, order.seller))?.companyName ??
+            'Your company'
+          }
+          requesterRole={
+            data.companies?.find((company) => same(company.wallet, order.seller))?.role ??
+            data.role
+          }
+          recipient={
+            data.companies?.find((company) => same(company.wallet, order.buyer))?.companyName ??
+            'Requesting company'
+          }
+          recipientRole={
+            data.companies?.find((company) => same(company.wallet, order.buyer))?.role
+          }
+          reference={order.orderId}
+          catalogue={COMPANY_EVIDENCE_CLAIMS}
+          required={requiredClaims}
+          optional={optionalIdentityClaims}
+          purpose={form.purpose ?? ''}
+          deadline={form.identityDeadline ?? ''}
+          contextDeadline={Number(order.expiresAt)}
+          contextDeadlineLabel="order"
+          busy={busy}
+          separationNote="Evidence sharing does not approve the order or move stock."
+          onClose={() => setCompanyRequestOpen(false)}
+          onChange={(value) => {
+            const claims = normalizeCompanyRequestFields(value.required, value.optional);
+            setRequiredClaims(claims.required);
+            setOptionalIdentityClaims(claims.optional);
+            setForm((current) => ({
+              ...current,
+              purpose: value.purpose,
+              identityDeadline: value.deadline,
+            }));
+          }}
+          onSubmit={() =>
+            void run(async () => {
+              const claims = normalizeCompanyRequestFields(
+                requiredClaims,
+                optionalIdentityClaims,
+              );
+              const result = await orderIdentity(order.orderId, {
+                action: 'request',
+                purpose: form.purpose,
+                expiresAt: Math.floor(Date.parse(form.identityDeadline) / 1000),
+                required: false,
+                requiredClaims: claims.required,
+                optionalClaims: claims.optional,
+              });
+              await sign(result.transaction);
+              setCompanyRequestOpen(false);
+              setNotice('Company evidence requested. The buyer can now review and respond.');
+            })
+          }
+        />
       )}
     </div>
   );

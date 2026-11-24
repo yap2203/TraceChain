@@ -1,5 +1,29 @@
-import { COMPANY_ALWAYS_CLAIMS, companyDisclosureGroup } from '@tracechain/shared';
-import { SelectField } from '../workspaces/shared/ui';
+import { COMPANY_ALWAYS_CLAIMS, COMPANY_EVIDENCE_CLAIMS, companyDisclosureGroup } from '@tracechain/shared';
+import {
+  classifyEvidenceClaims,
+  evidenceClaimLists,
+  EvidenceClaimSelector,
+} from './EvidenceClaimSelector';
+
+export function normalizeCompanyRequestFields(required: string[], optional: string[]) {
+  const registrationKeys = ['companyRegistrationNumber', 'registrationCountry'];
+  const registrationRequired = required.some((key) => registrationKeys.includes(key));
+  const registrationOptional =
+    !registrationRequired && optional.some((key) => registrationKeys.includes(key));
+  const fields = classifyEvidenceClaims(
+    COMPANY_EVIDENCE_CLAIMS.map((claim) => claim.id),
+    [
+      ...COMPANY_ALWAYS_CLAIMS,
+      ...required.filter((key) => !registrationKeys.includes(key)),
+      ...(registrationRequired ? companyDisclosureGroup(['companyRegistrationNumber']) : []),
+    ],
+    [
+      ...optional.filter((key) => !registrationKeys.includes(key)),
+      ...(registrationOptional ? companyDisclosureGroup(['companyRegistrationNumber']) : []),
+    ],
+  );
+  return evidenceClaimLists(fields);
+}
 export function CompanyRequestFields({
   required,
   optional,
@@ -10,43 +34,20 @@ export function CompanyRequestFields({
   onChange: (required: string[], optional: string[]) => void;
 }) {
   return (
-    <fieldset className="grid min-w-0 gap-3 rounded-lg border border-solid border-ws-border p-4">
-      <legend>Company identity disclosure</legend>
-      <p>
-        Always included: company name, approved role, wallet and subject DID, issuer, credential
-        reference, holder binding and validity. Registration number and country are shared together.
-      </p>
-      {[
-        ['companyRegistrationNumber', 'Registration number and registration country'],
-        ['companyId', 'Internal company ID'],
-      ].map(([key, label]) => (
-        <SelectField
-          key={key}
-          label={label}
-          value={required.includes(key) ? 'required' : optional.includes(key) ? 'optional' : 'none'}
-          options={[
-            { value: 'none', label: 'Not requested' },
-            { value: 'optional', label: 'Optional' },
-            { value: 'required', label: 'Required' },
-          ]}
-          onChange={(choice) => {
-            const group = companyDisclosureGroup([key]);
-            onChange(
-              [
-                ...new Set([
-                  ...COMPANY_ALWAYS_CLAIMS,
-                  ...required.filter((k) => !group.includes(k)),
-                  ...(choice === 'required' ? group : []),
-                ]),
-              ],
-              [
-                ...optional.filter((k) => !group.includes(k)),
-                ...(choice === 'optional' ? group : []),
-              ],
-            );
-          }}
-        />
-      ))}
-    </fieldset>
+    <div className="company-request-fields">
+      <EvidenceClaimSelector
+        catalogue={COMPANY_EVIDENCE_CLAIMS.filter((claim) => !COMPANY_ALWAYS_CLAIMS.includes(claim.id as never))}
+        required={required.filter((claim) => !COMPANY_ALWAYS_CLAIMS.includes(claim as never))}
+        optional={optional}
+        onChange={(nextRequired, nextOptional) => {
+          const normalized = normalizeCompanyRequestFields(nextRequired, nextOptional);
+          onChange(normalized.required, normalized.optional);
+        }}
+      />
+      <details className="evidence-automatic-fields">
+        <summary>Automatically included for verification</summary>
+        <p>Subject DID, wallet binding, approved role, company name, credential reference, issuer proof, request ID, verifier, purpose, challenge and deadline are included by the current proof protocol.</p>
+      </details>
+    </div>
   );
 }

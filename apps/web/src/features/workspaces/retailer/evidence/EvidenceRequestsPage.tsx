@@ -1,8 +1,10 @@
 import {
   CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
+  INGREDIENT_EVIDENCE_CLAIMS,
   type IngredientRequestPolicy,
 } from '@tracechain/shared';
 import { IngredientRequestPolicyFields } from '../../../production-flow/IngredientRequestPolicyFields';
+import { EvidenceClaimSelector } from '../../../production-flow/EvidenceClaimSelector';
 import { reportError } from '../../../../components/ui/feedback';
 import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
 import { getSharedCertificationDocument } from '../../../production-flow/production-flow.api';
@@ -316,31 +318,12 @@ export function RetailerEvidenceRequests({
               }))
             }
           />
-          <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
-            <legend>Requested claims</legend>
-            {claimOptions.map(([name, label]) => (
-              <label
-                key={name}
-                className="my-2 grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]"
-              >
-                <span>{label}</span>
-                <select
-                  aria-label={`${label} requirement`}
-                  value={choices[name] ?? 'none'}
-                  onChange={(event) =>
-                    setChoices((current) => ({
-                      ...current,
-                      [name]: event.target.value as 'none' | 'optional' | 'required',
-                    }))
-                  }
-                >
-                  <option value="none">Not requested</option>
-                  <option value="optional">Optional</option>
-                  <option value="required">Required</option>
-                </select>
-              </label>
-            ))}
-          </fieldset>
+          <EvidenceClaimSelector
+            catalogue={INGREDIENT_EVIDENCE_CLAIMS.filter((claim) => claimOptions.some(([id]) => id === claim.id))}
+            required={claimOptions.map(([id]) => id).filter((id) => choices[id] === 'required')}
+            optional={claimOptions.map(([id]) => id).filter((id) => choices[id] === 'optional')}
+            onChange={(required, optional) => setChoices(Object.fromEntries(claimOptions.map(([id]) => [id, required.includes(id) ? 'required' : optional.includes(id) ? 'optional' : 'none'])))}
+          />
           <Input label="Reason" value={reason} onChange={setReason} required />
           <Input label="Response deadline" type="date" value={dueAt} onChange={setDueAt} required />
           <Btn

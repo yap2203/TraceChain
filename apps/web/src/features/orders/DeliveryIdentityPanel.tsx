@@ -1,8 +1,7 @@
 import { signCompanyPresentation } from '../production-flow/company-presentation';
-import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
 import {
   COMPANY_ALWAYS_CLAIMS,
-  companyDisclosureGroup,
+  COMPANY_EVIDENCE_CLAIMS,
   toggleCompanyDisclosure,
 } from '@tracechain/shared';
 import { reportError } from '../../components/ui/feedback';
@@ -14,24 +13,38 @@ import {
   Badge,
   Btn,
   ClaimRow,
-  Input,
   Modal,
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
+import { EvidenceRequestModal } from './EvidenceRequestModal';
+import { normalizeCompanyRequestFields } from '../production-flow/CompanyRequestFields';
+import {
+  classifyEvidenceClaims,
+  evidenceClaimLists,
+  type ClaimClassification,
+} from '../production-flow/EvidenceClaimSelector';
 
 export function DeliveryIdentityPanel({
   order,
   data,
   onChanged,
   requestedBy,
+  hideRefresh = false,
+  requestOnly = false,
+  onRequestClose,
+  requestContextLabel = 'custody offer',
 }: {
   order: OrderRecord;
   data: OrdersState;
   onChanged: () => Promise<void>;
   requestedBy?: string;
+  hideRefresh?: boolean;
+  requestOnly?: boolean;
+  onRequestClose?: () => void;
+  requestContextLabel?: string;
 }) {
   const sellerLabel = order.productDelivery ? 'Manufacturer' : 'Supplier';
   const supplier = data.actor.toLowerCase() === order.seller.toLowerCase();
@@ -40,12 +53,17 @@ export function DeliveryIdentityPanel({
   const [purpose, setPurpose] = useState(
     'Verify seller company identity before collecting or dispatching these goods',
   );
-  const [requiredRequestClaims, setRequiredRequestClaims] = useState<string[]>([
-    ...COMPANY_ALWAYS_CLAIMS,
-  ]);
-  const [claims, setClaims] = useState<string[]>([]);
+  const [requestFields, setRequestFields] = useState<Record<string, ClaimClassification>>(() =>
+    classifyEvidenceClaims(
+      COMPANY_EVIDENCE_CLAIMS.map((claim) => claim.id),
+      COMPANY_ALWAYS_CLAIMS,
+      [],
+    ),
+  );
   const [selected, setSelected] = useState<string[]>([]);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(requestOnly);
+  const [deadline, setDeadline] = useState('');
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
@@ -59,15 +77,21 @@ export function DeliveryIdentityPanel({
         if (active) {
           setStatus(result);
           if (result.purpose) setPurpose(result.purpose);
-          if (result.optionalClaims) setClaims(result.optionalClaims);
+          if (result.requiredClaims || result.optionalClaims)
+            setRequestFields(
+              classifyEvidenceClaims(
+                COMPANY_EVIDENCE_CLAIMS.map((claim) => claim.id),
+                result.requiredClaims ?? COMPANY_ALWAYS_CLAIMS,
+                result.optionalClaims ?? [],
+              ),
+            );
         }
       })
       .catch((cause) => {
-        if (
-          active &&
-          !/not found|not requested|request company identity first/i.test(cause.message)
-        )
-          setError(cause.message);
+        if (!active) return;
+        if (/not found|not requested|request company identity first/i.test(cause.message))
+          setStatus({ status: 'NOT_REQUESTED' });
+        else setError(cause.message);
       });
     return () => {
       active = false;
@@ -98,6 +122,11 @@ export function DeliveryIdentityPanel({
   const failed = ['DECLINED', 'REJECTED', 'EXPIRED', 'UNAVAILABLE'].includes(rawStatus);
   const recipient =
     requestedBy ?? companyName(data, order.delivery.distributor) ?? 'Counterparty company';
+  const evidenceHolder = companyName(data, order.seller) ?? sellerLabel;
+  const requesterCompany = companyName(data, data.actor) ?? requestedBy ?? 'Your company';
+  const requesterRole = companyRole(data, data.actor) ?? String(data.role ?? '');
+  const holderRole = companyRole(data, order.seller) ?? sellerLabel;
+  const requestClaims = evidenceClaimLists(requestFields);
   const claimValues: Record<string, unknown> = material
     ? (material.claims ?? material.credential?.credentialSubject ?? {})
     : {};
@@ -113,6 +142,12 @@ export function DeliveryIdentityPanel({
     (claim) => claim in claimValues && claimValueAvailable(claimValues[claim]),
   );
   const expiresAt = Number(material?.expiresAt ?? status?.expiresAt ?? 0);
+  const requestedRequired = Array.isArray(status?.requiredClaims)
+    ? status.requiredClaims.length
+    : undefined;
+  const requestedOptional = Array.isArray(status?.optionalClaims)
+    ? status.optionalClaims.length
+    : undefined;
   const expired = rawStatus === 'EXPIRED' || (expiresAt > 0 && expiresAt <= Date.now() / 1000);
   const expiryBadge = rawStatus === 'EXPIRED' ? undefined : expiryStatus(expiresAt, expired);
   const declineRequest = () =>
@@ -141,6 +176,84 @@ export function DeliveryIdentityPanel({
       setMaterial(undefined);
       setNotice('Company proof sent securely to the assigned Distributor.');
     });
+  const closeRequest = () => {
+    setRequestOpen(false);
+    onRequestClose?.();
+  };
+  const requestDialog = requestOpen && (
+    <EvidenceRequestModal
+      evidenceType="Company identity"
+      requester={requesterCompany}
+      requesterRole={formatRole(requesterRole)}
+      recipient={evidenceHolder}
+      recipientRole={formatRole(holderRole)}
+      reference={order.orderId}
+      catalogue={COMPANY_EVIDENCE_CLAIMS}
+      required={requestClaims.required}
+      optional={requestClaims.optional}
+      purpose={purpose}
+      deadline={deadline}
+      contextDeadline={Number(order.expiresAt)}
+      contextDeadlineLabel={requestContextLabel}
+      busy={busy}
+      onClose={closeRequest}
+      onChange={(value) => {
+        setRequestFields(
+          classifyEvidenceClaims(
+            COMPANY_EVIDENCE_CLAIMS.map((claim) => claim.id),
+            [...COMPANY_ALWAYS_CLAIMS, ...value.required],
+            value.optional,
+          ),
+        );
+        setPurpose(value.purpose);
+        setDeadline(value.deadline);
+      }}
+      onSubmit={() => void run(async () => {
+        const expiresAt = Math.floor(Date.parse(deadline) / 1000);
+        const payload = normalizeCompanyRequestFields(
+          requestClaims.required,
+          requestClaims.optional,
+        );
+        await submit(await deliveryIdentity(order.orderId, {
+          action: 'request',
+          purpose: purpose.trim(),
+          expiresAt,
+          required: true,
+          requiredClaims: payload.required,
+          optionalClaims: payload.optional,
+        }));
+        closeRequest();
+        setNotice(`${sellerLabel} evidence requested through encrypted IPFS references.`);
+      })}
+    />
+  );
+  if (requestOnly) {
+    if (error)
+      return (
+        <Modal title="Request company evidence" onClose={closeRequest} width={520}>
+          <Alert type="error" message={error} />
+        </Modal>
+      );
+    if (!status)
+      return (
+        <Modal title="Request company evidence" onClose={closeRequest} width={520}>
+          <p role="status">Checking the current evidence-request status…</p>
+        </Modal>
+      );
+    if (rawStatus !== 'NOT_REQUESTED')
+      return (
+        <Modal title="Company evidence" onClose={closeRequest} width={520}>
+          <div className="grid gap-[14px]">
+            <Badge label={proofStatusLabel(rawStatus)} variant={proofStatusVariant(rawStatus)} />
+            <p>{proofStatusExplanation(rawStatus)}</p>
+            <div className="action-row justify-end">
+              <Btn variant="outline" onClick={closeRequest}>Close</Btn>
+            </div>
+          </div>
+        </Modal>
+      );
+    return requestDialog;
+  }
   return (
     <section className="company-evidence-card" aria-label={`${sellerLabel} company evidence`}>
       <header className="company-evidence-card__heading">
@@ -154,30 +267,40 @@ export function DeliveryIdentityPanel({
         </div>
       </header>
       <dl className="company-evidence-card__facts">
-        <div>
-          <dt>Requested by</dt>
-          <dd>{recipient}</dd>
-        </div>
-        <div>
-          <dt>Purpose</dt>
-          <dd>{material?.purpose ?? status?.purpose ?? 'Optional delivery check'}</dd>
-        </div>
-        <div>
-          <dt>Expires</dt>
-          <dd>{expiresAt ? formatEvidenceDate(expiresAt) : 'Not recorded'}</dd>
-        </div>
+        <div><dt>{supplier ? 'Requested by' : 'Recipient company'}</dt><dd>{supplier ? recipient : evidenceHolder}</dd></div>
+        <div><dt>Recipient role</dt><dd>{holderRole}</dd></div>
+        <div><dt>Related custody reference</dt><dd>{shortEvidenceReference(order.orderId)}</dd></div>
         <div>
           <dt>Evidence type</dt>
           <dd>Company identity</dd>
         </div>
         <div>
+          <dt>{rawStatus === 'NOT_REQUESTED' ? 'Suggested purpose' : 'Purpose'}</dt>
+          <dd>{material?.purpose ?? status?.purpose ?? purpose}</dd>
+        </div>
+        <div>
           <dt>Status</dt>
           <dd>{proofStatusLabel(rawStatus)}</dd>
         </div>
+        {rawStatus !== 'NOT_REQUESTED' && requestedRequired !== undefined && (
+          <div>
+            <dt>Requested fields</dt>
+            <dd>
+              {requestedRequired + (requestedOptional ?? 0)} fields · {requestedRequired} required
+              {requestedOptional !== undefined ? ` · ${requestedOptional} optional` : ''}
+            </dd>
+          </div>
+        )}
+        {rawStatus !== 'NOT_REQUESTED' && <div><dt>Deadline</dt><dd>{expiresAt ? formatEvidenceDate(expiresAt) : 'Not recorded'}</dd></div>}
+        {status?.verifiedAt && <div><dt>Verified</dt><dd>{formatEvidenceDate(status.verifiedAt)}</dd></div>}
       </dl>
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
-      <div className="company-evidence-card__next">
+      {rawStatus === 'NOT_REQUESTED' ? (
+        <p className="company-evidence-card__empty-copy">
+          Request verified company information from the supplier before collecting or dispatching this stock.
+        </p>
+      ) : <div className="company-evidence-card__next">
         <div>
           <span>What this means</span>
           <p>{proofStatusExplanation(rawStatus)}</p>
@@ -186,23 +309,9 @@ export function DeliveryIdentityPanel({
           <span>Next required action</span>
           <strong>{proofNextAction(rawStatus, supplier)}</strong>
         </div>
-      </div>
-      {!supplier && (
+      </div>}
+      {!supplier && rawStatus === 'NOT_REQUESTED' && (
         <div className="company-evidence-card__request-form">
-          <Input
-            label={`Why is ${sellerLabel} company evidence needed?`}
-            value={purpose}
-            onChange={setPurpose}
-            maxLength={500}
-          />
-          <CompanyRequestFields
-            required={requiredRequestClaims}
-            optional={claims}
-            onChange={(required, optional) => {
-              setRequiredRequestClaims(required);
-              setClaims(optional);
-            }}
-          />
           <div className="company-evidence-card__actions action-row">
             <Btn
               disabled={
@@ -213,31 +322,9 @@ export function DeliveryIdentityPanel({
                   !!order.delivery.identityChallenge &&
                   !/^0x0+$/.test(order.delivery.identityChallenge))
               }
-              onClick={() =>
-                void run(async () => {
-                  const expiresAt = Math.min(
-                    Math.floor(Date.now() / 1000) + 1800,
-                    Number(order.expiresAt),
-                  );
-                  await submit(
-                    await deliveryIdentity(order.orderId, {
-                      action: 'request',
-                      purpose: purpose.trim(),
-                      expiresAt,
-                      required: true,
-                      requiredClaims: requiredRequestClaims,
-                      optionalClaims: companyDisclosureGroup(claims),
-                    }),
-                  );
-                  setNotice(
-                    `${sellerLabel} evidence requested through encrypted IPFS references. If requested, verification is required before pickup or dispatch.`,
-                  );
-                })
-              }
+              onClick={() => setRequestOpen(true)}
             >
-              {status?.status === 'REQUESTED'
-                ? 'Complete company evidence request'
-                : `Request ${sellerLabel} Company Role VP`}
+              Create evidence request
             </Btn>
             {['PRESENTED', 'VERIFIED'].includes(status?.status) && (
               <Btn
@@ -255,7 +342,13 @@ export function DeliveryIdentityPanel({
               </Btn>
             )}
           </div>
+          {requestDialog}
         </div>
+      )}
+      {!supplier && rawStatus === 'NOT_REQUESTED' && (
+        <p className="company-evidence-separation-note">
+          Evidence sharing does not accept the custody offer or move stock.
+        </p>
       )}
       {supplier && status?.status === 'REQUESTED' && !material && (
         <div className="company-evidence-card__footer">
@@ -425,7 +518,7 @@ export function DeliveryIdentityPanel({
           </div>
         </div>
       )}
-      {!(supplier && status?.status === 'REQUESTED') && (
+      {!hideRefresh && rawStatus !== 'NOT_REQUESTED' && !(supplier && status?.status === 'REQUESTED') && (
         <div className="company-evidence-card__secondary-actions">
           <Btn
             size="sm"
@@ -639,6 +732,21 @@ function companyName(data: OrdersState, wallet?: string) {
   if (!wallet) return undefined;
   return data.companies?.find((company) => company.wallet.toLowerCase() === wallet.toLowerCase())
     ?.companyName;
+}
+
+function companyRole(data: OrdersState, wallet?: string) {
+  if (!wallet) return undefined;
+  return data.companies?.find((company) => company.wallet.toLowerCase() === wallet.toLowerCase())
+    ?.role;
+}
+
+function formatRole(value?: string) {
+  if (!value) return 'Registered company';
+  return value.toLocaleLowerCase().replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function shortEvidenceReference(value: string) {
+  return value.length > 20 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
 }
 
 function formatEvidenceDate(value: string | number) {

@@ -293,6 +293,11 @@ export class OrdersService {
         direction: same(record.requester, session.address) ? 'received' : 'sent',
         company: company?.companyName ?? counterparty,
         purpose: record.identityProof.purpose,
+        requestedFieldsCount: new Set([
+          ...(record.identityProof.requiredClaims ?? []),
+          ...(record.identityProof.optionalClaims ?? []),
+        ]).size,
+        requiredFieldsCount: new Set(record.identityProof.requiredClaims ?? []).size,
         expiresAt: record.identityProof.expiresAt,
         status,
       });

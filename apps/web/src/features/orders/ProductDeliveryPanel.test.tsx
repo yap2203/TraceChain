@@ -5,6 +5,7 @@ import { encodeShipmentQr } from '@tracechain/shared';
 const m = vi.hoisted(() => ({ prepare: vi.fn(), sign: vi.fn(), decode: vi.fn() }));
 vi.mock('./orders.api', () => ({
   prepareLogistics: m.prepare,
+  deliveryIdentity: vi.fn(async () => ({ status: 'NOT_REQUESTED' })),
   getPickupPlan: vi.fn(async () => ({
     plan: {
       pickupAt: Math.floor(Date.now() / 1000) + 300,
@@ -127,7 +128,8 @@ describe('Manufacturer Distributor Retailer product delivery', () => {
         expect.objectContaining({ action: 'product-order-respond', accept: false }),
       ),
     );
-    expect(screen.getByRole('link', { name: /Manage Manufacturer company evidence/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Request Manufacturer company evidence' }));
+    expect(await screen.findByRole('dialog', { name: /Request company evidence/ })).toBeTruthy();
   });
   it('unlocks direct pickup only after scanning the exact QR image and explicit physical confirmation', async () => {
     const qr = encodeShipmentQr({

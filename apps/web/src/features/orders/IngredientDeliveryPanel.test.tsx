@@ -186,6 +186,9 @@ describe('Ingredient delivery handoff', () => {
   it('lets only the assigned Distributor respond without showing receipt controls', async () => {
     mount(carrier, 2);
     expect(screen.queryByRole('button', { name: 'Confirm receipt with MetaMask' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Request Supplier company evidence' }));
+    expect(await screen.findByRole('dialog', { name: /Request company evidence/ })).toBeTruthy();
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
     fireEvent.click(screen.getByRole('button', { name: 'Accept delivery' }));
     await waitFor(() =>
       expect(mocks.prepare).toHaveBeenCalledWith(

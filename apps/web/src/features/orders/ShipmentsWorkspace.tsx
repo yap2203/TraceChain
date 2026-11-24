@@ -4,7 +4,7 @@ import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle2, Package, Plus, RefreshCw, Truck, Upload } from 'lucide-react';
-import { ReadModelStatus, useReadModelRefresh } from './ReadModelStatus';
+import { ReadModelStatus } from './ReadModelStatus';
 import { decodeShipmentQr } from '@tracechain/shared';
 import {
   getOrders,
@@ -149,24 +149,9 @@ export function ShipmentsWorkspace({
       setData(await getOrders(focusedList ? 'shipment-workspace' : undefined, { refresh })),
     [focusedList],
   );
-  useReadModelRefresh(data, load, (cause) => {
-    setError(reportError(cause, 'Shipment refresh unavailable.'));
-    setData((current) =>
-      current?.readModel
-        ? {
-            ...current,
-            readModel: { ...current.readModel, refreshing: false, refreshFailed: true },
-          }
-        : current,
-    );
-  });
   useEffect(() => {
     void load().catch((cause) => setError(cause.message));
-    const timer = setInterval(() => {
-      void load().catch((cause) => setError(cause.message));
-    }, 15000);
     return () => {
-      clearInterval(timer);
       cameraAttempt.current++;
       stop.current?.();
     };

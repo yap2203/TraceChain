@@ -14,6 +14,7 @@ import { prepareOrder, prepareLogistics, type OrdersState, type OrderRecord } fr
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { workspacePath } from '../workspaces/workspace-paths';
 import { PickupPlanPanel } from './PickupPlanPanel';
+import { DeliveryIdentityPanel } from './DeliveryIdentityPanel';
 
 const labels = [
   'Not scheduled',
@@ -56,6 +57,7 @@ export function IngredientDeliveryPanel({
     [scanned, setScanned] = useState('');
   const [custodyPosition, setCustodyPosition] = useState('');
   const [pickupReady, setPickupReady] = useState(false);
+  const [requestEvidence, setRequestEvidence] = useState(false);
   const [location, setLocation] = useState(
     order.deliveryReceivingLocation ?? order.details?.receivingLocation ?? '',
   );
@@ -380,18 +382,32 @@ export function IngredientDeliveryPanel({
         </Btn>
       )}
       {(supplier || distributor) && [2, 3].includes(stage) && (
-        <a
-          href={
-            workspacePath(
-              supplier ? 'supplier' : 'distributor',
-              supplier ? 'requests' : 'sent-requests',
-            ) +
-            '?context=delivery&referenceId=' +
-            encodeURIComponent(order.orderId)
-          }
-        >
-          Manage Supplier company proof in Information requests
-        </a>
+        distributor ? (
+          <Btn variant="outline" onClick={() => setRequestEvidence(true)}>
+            Request Supplier company evidence
+          </Btn>
+        ) : (
+          <a
+            href={
+              workspacePath('supplier', 'requests') +
+              '?context=delivery&referenceId=' +
+              encodeURIComponent(order.orderId)
+            }
+          >
+            Manage requested company evidence
+          </a>
+        )
+      )}
+      {requestEvidence && (
+        <DeliveryIdentityPanel
+          requestOnly
+          requestContextLabel="ingredient delivery"
+          data={data}
+          order={order}
+          onChanged={onChanged}
+          requestedBy={delivery?.distributorName}
+          onRequestClose={() => setRequestEvidence(false)}
+        />
       )}
       {stage >= 3 && stage <= 4 && (
         <PickupPlanPanel

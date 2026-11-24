@@ -225,6 +225,8 @@ export interface CompanyProofRequestRow {
   direction: 'sent' | 'received';
   company: string;
   purpose: string;
+  requestedFieldsCount?: number;
+  requiredFieldsCount?: number;
   requestedAt?: string | number;
   expiresAt: number;
   status: string;

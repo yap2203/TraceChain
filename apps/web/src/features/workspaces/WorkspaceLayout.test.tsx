@@ -44,7 +44,7 @@ describe('workspace navigation and guidance', () => {
       const ids = workspaceNavigationGroups(role).flatMap((group) => group.items.map(([id]) => id));
       expect(ids[0]).toBe('overview');
       expect(new Set(ids).size).toBe(ids.length);
-      expect([...ids].sort()).toEqual(workspaceNavigation[role].map(([id]) => id).sort());
+      expect(workspaceNavigation[role].map(([id]) => id)).toEqual(expect.arrayContaining(ids));
     }
   });
   it('preserves canonical links and marks the active page', () => {
@@ -58,7 +58,7 @@ describe('workspace navigation and guidance', () => {
   it.each(['supplier', 'manufacturer', 'distributor', 'retailer'] as const)(
     'highlights only the exact information-request page for %s',
     (role) => {
-      for (const page of ['requests', 'sent-requests']) {
+      for (const page of ['requests']) {
         const view = show(page, role);
         const nav = screen.getByRole('navigation', { name: /navigation$/ });
         const active = within(nav)
@@ -83,8 +83,8 @@ describe('workspace navigation and guidance', () => {
   it('uses role-specific sidebar destinations instead of a page guidance panel', () => {
     show('orders');
     expect(screen.queryByText('How to use this page')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Received requests' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: 'Sent requests' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Evidence Exchange' })).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Sent requests' })).toBeNull();
   });
   it('closes mobile navigation with Escape and restores focus and scroll', () => {
     show();

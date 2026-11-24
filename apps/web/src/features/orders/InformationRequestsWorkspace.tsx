@@ -1,7 +1,10 @@
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
-import { CompanyRequestFields } from '../production-flow/CompanyRequestFields';
-import { reportError } from '../../components/ui/feedback';
+import {
+  CompanyRequestFields,
+  normalizeCompanyRequestFields,
+} from '../production-flow/CompanyRequestFields';
+import { notify, reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -9,6 +12,7 @@ import {
   ArrowRight,
   ChevronRight,
   Clock3,
+  Copy,
   Inbox,
   PackageSearch,
   RefreshCw,
@@ -67,7 +71,9 @@ export function InformationRequestsWorkspace({
     [loading, setLoading] = useState(true),
     [search, setSearch] = useState(''),
     [status, setStatus] = useState<'all' | 'pending' | 'verified' | 'unavailable'>('all'),
-    [selectedDirection, setDirection] = useState<'received' | 'sent'>('received');
+    [selectedDirection, setDirection] = useState<'received' | 'sent'>(
+      params.get('direction') === 'sent' ? 'sent' : 'received',
+    );
   const direction = initialDirection ?? selectedDirection;
   const reference = params.get('referenceId') ?? params.get('orderId') ?? '',
     context = params.get('context') ?? 'order';
@@ -128,6 +134,7 @@ export function InformationRequestsWorkspace({
       Boolean(params.get('batchId') || params.get('productBatchId')));
   const requestDetail = Boolean(reference && !showEvidence);
   const custodyDetail = requestDetail && context === 'custody';
+  const evidenceExchangePath = `${workspacePath(role, 'requests')}?direction=sent`;
   const directionRows = useMemo(
     () => rows.filter((row) => row.direction === direction),
     [direction, rows],
@@ -150,15 +157,11 @@ export function InformationRequestsWorkspace({
     <div className={`information-requests-page${requestDetail ? ' is-detail' : ''}`}>
       {requestDetail && (
         <nav className="information-request-breadcrumb" aria-label="Breadcrumb">
-          <button
-            type="button"
-            onClick={() => {
-              setParams({});
-              void load();
-            }}
-          >
-            Received requests
-          </button>
+          <Link to={evidenceExchangePath}>
+            Evidence Exchange
+          </Link>
+          <ChevronRight size={14} aria-hidden="true" />
+          <Link to={evidenceExchangePath}>Requests I sent</Link>
           <ChevronRight size={14} aria-hidden="true" />
           {custodyDetail ? (
             <Link to={custodyOfferPath(role, reference)}>Custody offer</Link>
@@ -166,33 +169,61 @@ export function InformationRequestsWorkspace({
             <span>{contextLabel(context as CompanyProofRequestRow['context'])}</span>
           )}
           <ChevronRight size={14} aria-hidden="true" />
-          <span aria-current="page">Company evidence</span>
+          <span aria-current="page">
+            {custodyDetail ? 'Request company evidence' : 'Company evidence'}
+          </span>
         </nav>
       )}
       <SectionTitle
         title={
           requestDetail
-            ? 'Company evidence request'
+            ? custodyDetail
+              ? 'Request company evidence'
+              : 'Company evidence request'
             : initialDirection
-              ? `${initialDirection === 'received' ? 'Received' : 'Sent'} information requests`
-              : 'Information requests'
+              ? 'Evidence Exchange'
+              : 'Evidence Exchange'
         }
         sub={
           requestDetail
             ? custodyDetail
-              ? 'Review and respond to evidence requests for this custody offer.'
+              ? 'Request verified company information before continuing this custody offer.'
               : 'Review and respond to this company evidence request.'
-            : 'Review and respond to company or ingredient evidence requests.'
+            : 'Request, share and review verifiable company and ingredient evidence.'
         }
         action={
-          <Btn
-            variant="outline"
-            icon={<RefreshCw size={16} />}
-            disabled={loading}
-            onClick={() => void load()}
-          >
-            Refresh
-          </Btn>
+          requestDetail ? (
+            <div className="information-request-header-actions">
+              <Badge
+                label={proofStatusLabel(selected?.status ?? 'NOT_REQUESTED')}
+                variant={proofStatusVariant(selected?.status ?? 'NOT_REQUESTED')}
+              />
+              {selected && (
+                <button
+                  type="button"
+                  className="information-request-refresh"
+                  aria-label="Refresh evidence request status"
+                  title="Refresh evidence request status"
+                  disabled={loading}
+                  onClick={() => void load()}
+                >
+                  <RefreshCw size={16} aria-hidden="true" />
+                </button>
+              )}
+              <Link className="information-request-back-link" to={evidenceExchangePath}>
+                Back to Evidence Exchange
+              </Link>
+            </div>
+          ) : (
+            <Btn
+              variant="outline"
+              icon={<RefreshCw size={16} />}
+              disabled={loading}
+              onClick={() => void load()}
+            >
+              Refresh
+            </Btn>
+          )
         }
       />
       {children && (
@@ -267,20 +298,26 @@ export function InformationRequestsWorkspace({
       ) : (
         <>
           {!initialDirection && (
-            <nav className="workspace-secondary-tabs" aria-label="Company proof direction">
+            <nav className="workspace-secondary-tabs" aria-label="Evidence request direction">
               <Btn
                 variant={direction === 'received' ? 'primary' : 'outline'}
                 aria-pressed={direction === 'received'}
-                onClick={() => setDirection('received')}
+                onClick={() => {
+                  setDirection('received');
+                  setParams({ direction: 'received' });
+                }}
               >
-                Received requests
+                Requests to me
               </Btn>
               <Btn
                 variant={direction === 'sent' ? 'primary' : 'outline'}
                 aria-pressed={direction === 'sent'}
-                onClick={() => setDirection('sent')}
+                onClick={() => {
+                  setDirection('sent');
+                  setParams({ direction: 'sent' });
+                }}
               >
-                Sent requests
+                Requests I sent
               </Btn>
             </nav>
           )}
@@ -291,7 +328,7 @@ export function InformationRequestsWorkspace({
                 : 'Track information your company has requested from others.'}
             </p>
             <Input
-              label="Search company requests"
+              label="Search evidence requests"
               type="search"
               icon={<Search size={16} />}
               value={search}
@@ -347,7 +384,7 @@ export function InformationRequestsWorkspace({
                   title={
                     directionRows.length
                       ? 'No requests match these filters'
-                      : 'No company proof requests'
+                      : 'No evidence requests'
                   }
                   sub={
                     directionRows.length
@@ -525,7 +562,12 @@ function InformationRequestCard({
         </div>
         <div>
           <dt>Evidence requested</dt>
-          <dd>Company identity</dd>
+          <dd>
+            Company identity · {row.requestedFieldsCount ?? 'Unknown'} fields
+            {typeof row.requiredFieldsCount === 'number'
+              ? ` · ${row.requiredFieldsCount} required`
+              : ''}
+          </dd>
         </div>
         <div>
           <dt>Next action</dt>
@@ -633,8 +675,17 @@ function CustodyCompanyProof({
   const batch = item?.batchDetails?.find((entry: { batchId?: string }) =>
     same(entry.batchId, offer.batchId),
   );
+  const batchReference = batch?.batchReference ?? item?.batchReference ?? shortReference(offer.batchId);
+  const copyOfferId = async () => {
+    try {
+      await navigator.clipboard.writeText(offer.offerId);
+      notify('Custody offer ID copied.', 'success');
+    } catch {
+      notify('Custody offer ID could not be copied.', 'error');
+    }
+  };
   return (
-    <div className="custody-evidence-detail">
+    <div className="custody-evidence-detail custody-evidence-layout">
       <Card className="custody-evidence-context">
         <div className="custody-evidence-context__heading">
           <span>
@@ -643,7 +694,12 @@ function CustodyCompanyProof({
           <div>
             <small>Custody offer</small>
             <h3>{offer.itemName || item?.name || 'Registered stock'}</h3>
-            <p>{batch?.batchReference ?? item?.batchReference ?? shortReference(offer.batchId)}</p>
+            <p>
+              <code title={offer.offerId}>{shortReference(offer.offerId)}</code>
+              <button type="button" onClick={() => void copyOfferId()} aria-label="Copy custody offer ID">
+                <Copy size={13} aria-hidden="true" /> Copy ID
+              </button>
+            </p>
           </div>
           <Badge
             label={offerStatusLabel(offer.status)}
@@ -652,7 +708,11 @@ function CustodyCompanyProof({
         </div>
         <dl className="custody-evidence-context__facts">
           <div>
-            <dt>Requesting company</dt>
+            <dt>Evidence holder</dt>
+            <dd>{offer.senderName}</dd>
+          </div>
+          <div>
+            <dt>Your company</dt>
             <dd>{offer.distributorName}</dd>
           </div>
           <div>
@@ -662,8 +722,12 @@ function CustodyCompanyProof({
             </dd>
           </div>
           <div>
-            <dt>Reference</dt>
-            <dd>{shortReference(offer.offerId)}</dd>
+            <dt>Related reference</dt>
+            <dd>{batchReference}</dd>
+          </div>
+          <div>
+            <dt>Custody status</dt>
+            <dd>{offerStatusLabel(offer.status)}</dd>
           </div>
         </dl>
         <div className="custody-evidence-context__actions">
@@ -684,10 +748,6 @@ function CustodyCompanyProof({
           ]}
         />
       </Card>
-      <Alert
-        type="info"
-        message="Evidence verification and custody acceptance are separate. Sharing evidence does not accept or move the stock."
-      />
       <DeliveryIdentityPanel
         data={data}
         order={{
@@ -699,6 +759,7 @@ function CustodyCompanyProof({
           ...(offer.kind === 2 ? { productDelivery: delivery } : {}),
         }}
         requestedBy={offer.distributorName}
+        hideRefresh
         onChanged={load}
       />
     </div>
@@ -760,12 +821,13 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
     setBusy(true);
     setError('');
     try {
+      const normalized = normalizeCompanyRequestFields(required, optional);
       const result = verify
         ? await verifyCompanyIdentityProof(requestId)
         : await requestCompanyIdentityProof(requestId, {
             purpose,
-            requiredClaims: required,
-            optionalClaims: optional,
+            requiredClaims: normalized.required,
+            optionalClaims: normalized.optional,
             ...(deadline ? { expiresAt: Math.floor(Date.parse(deadline) / 1000) } : {}),
           });
       if (result.transaction && result.actorWallet)

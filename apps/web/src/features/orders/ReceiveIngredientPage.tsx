@@ -47,10 +47,6 @@ export function ReceiveIngredientPage() {
       return;
     }
     void load().catch((cause) => setError(cause.message));
-    const timer = setInterval(() => {
-      void load().catch((cause) => setError(cause.message));
-    }, 15000);
-    return () => clearInterval(timer);
   }, [allowed, auth.state.address, load]);
   const order = data?.orders.find((entry) => entry.orderId.toLowerCase() === orderId.toLowerCase());
   return (

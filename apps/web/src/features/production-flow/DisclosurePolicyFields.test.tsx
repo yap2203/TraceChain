@@ -7,7 +7,7 @@ import { CompanyRequestFields } from './CompanyRequestFields';
 import { IngredientRequestPolicyFields } from './IngredientRequestPolicyFields';
 import { IngredientClaimValue } from './IngredientClaimValue';
 afterEach(cleanup);
-it('requests registration number and country together while keeping company identity mandatory', () => {
+it('uses checkbox selection and keeps grouped registration claims together', () => {
   function Form() {
     const [r, setR] = useState<string[]>([...COMPANY_ALWAYS_CLAIMS]);
     const [o, setO] = useState<string[]>([]);
@@ -27,21 +27,17 @@ it('requests registration number and country together while keeping company iden
     );
   }
   render(<Form />);
-  fireEvent.change(screen.getByLabelText('Registration number and registration country'), {
-    target: { value: 'required' },
-  });
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Company registration number' }));
+  expect(screen.getByLabelText('optional').textContent).toBe(
+    'companyRegistrationNumber,registrationCountry',
+  );
+  fireEvent.click(screen.getAllByRole('button', { name: 'Required' })[0]);
   expect(screen.getByLabelText('required').textContent).toContain(
     'companyRegistrationNumber,registrationCountry',
   );
   expect(screen.getByLabelText('required').textContent).toContain('companyName');
-  fireEvent.change(screen.getByLabelText('Registration number and registration country'), {
-    target: { value: 'optional' },
-  });
-  expect(screen.getByLabelText('optional').textContent).toBe(
-    'companyRegistrationNumber,registrationCountry',
-  );
-  expect(screen.getByLabelText('required').textContent).not.toContain('registrationCountry');
-  expect(screen.queryByText('applicationReference')).toBeNull();
+  expect(screen.getByLabelText('optional').textContent).toBe('');
+  expect(screen.getByRole('checkbox', { name: 'Application reference' })).toBeTruthy();
 });
 it('uses shared request templates and explicit unknown-allergen policy', () => {
   function Form() {

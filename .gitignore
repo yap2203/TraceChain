@@ -76,6 +76,7 @@ typechain-types/
 
 # Editor and operating-system files
 .idea/
+.claude/
 .vscode/*
 !.vscode/extensions.json
 *.swp

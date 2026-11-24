@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CURRENT_INGREDIENT_REQUEST_CLAIMS } from '@tracechain/shared';
+import { COMPANY_EVIDENCE_CLAIM_IDS, CURRENT_INGREDIENT_REQUEST_CLAIMS } from '@tracechain/shared';
 import { requestDateSchema } from '../../config/input-validation.js';
 
 const bytes32 = z.string().regex(/^0x[0-9a-fA-F]{64}$/);
@@ -10,25 +10,27 @@ export const companyProofRequestSchema = z
     purpose: z.string().trim().min(1).max(500).optional(),
     expiresAt: z.number().int().positive().optional(),
     requiredClaims: z
-      .array(
-        z.enum([
-          'companyName',
-          'role',
-          'walletAddress',
-          'id',
-          'companyRegistrationNumber',
-          'registrationCountry',
-          'companyId',
-        ]),
-      )
-      .max(7)
+      .array(z.enum(COMPANY_EVIDENCE_CLAIM_IDS))
+      .max(COMPANY_EVIDENCE_CLAIM_IDS.length)
       .default([]),
     optionalClaims: z
-      .array(z.enum(['companyRegistrationNumber', 'registrationCountry', 'companyId']))
-      .max(3)
+      .array(z.enum(COMPANY_EVIDENCE_CLAIM_IDS))
+      .max(COMPANY_EVIDENCE_CLAIM_IDS.length)
       .default([]),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    for (const key of ['requiredClaims', 'optionalClaims'] as const) {
+      if (new Set(input[key]).size !== input[key].length)
+        ctx.addIssue({ code: 'custom', path: [key], message: 'Claim identifiers must be unique.' });
+    }
+    if (input.requiredClaims.some((claim) => input.optionalClaims.includes(claim)))
+      ctx.addIssue({
+        code: 'custom',
+        path: ['optionalClaims'],
+        message: 'A claim cannot be both Required and Optional.',
+      });
+  });
 export const productionIngredientsQuerySchema = z
   .object({ location: bytes32.optional(), purpose: z.literal('production').optional() })
   .strict();
@@ -61,6 +63,10 @@ export const evidenceRequestSchema = z
   })
   .strict()
   .superRefine((input, ctx) => {
+    if (new Set(input.claims).size !== input.claims.length)
+      ctx.addIssue({ code: 'custom', path: ['claims'], message: 'Claim identifiers must be unique.' });
+    if (new Set(input.requiredClaims).size !== input.requiredClaims.length)
+      ctx.addIssue({ code: 'custom', path: ['requiredClaims'], message: 'Required claim identifiers must be unique.' });
     if (
       input.claims.some(
         (key) => !CURRENT_INGREDIENT_REQUEST_CLAIMS.some(([claim]) => claim === key),

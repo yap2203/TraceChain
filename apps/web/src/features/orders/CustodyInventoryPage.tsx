@@ -7,7 +7,7 @@ import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { reportError } from '../../components/ui/feedback';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
 import { getOrders, type OrderRecord, type OrdersState } from './orders.api';
-import { ReadModelStatus, useReadModelRefresh } from './ReadModelStatus';
+import { ReadModelStatus } from './ReadModelStatus';
 import { formatOperationalQuantity } from '../workspaces/shared/operational-format';
 import {
   Alert,
@@ -76,9 +76,6 @@ export function CustodyInventoryPage({
     }
   }, []);
 
-  useReadModelRefresh(data, load, (cause) =>
-    setError(reportError(cause, 'Inventory refresh unavailable.')),
-  );
   useEffect(() => {
     void load();
   }, [load]);

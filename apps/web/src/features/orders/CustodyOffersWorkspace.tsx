@@ -48,6 +48,7 @@ import {
 } from '../workspaces/shared/ui';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { workspacePath } from '../workspaces/workspace-paths';
+import { DeliveryIdentityPanel } from './DeliveryIdentityPanel';
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const local = (offset = 0) => {
   const date = new Date(Date.now() + offset);
@@ -84,6 +85,8 @@ function CustodyRequestDetail({
   run,
   setNotice,
   locationLabel,
+  data,
+  onChanged,
 }: {
   offer: CustodyOffer;
   role: WorkspaceRole;
@@ -104,7 +107,10 @@ function CustodyRequestDetail({
   run: (action: () => Promise<void>) => Promise<void>;
   setNotice: (value: string) => void;
   locationLabel: (location: string) => string;
+  data: OrdersState;
+  onChanged: () => Promise<void>;
 }) {
+  const [requestEvidence, setRequestEvidence] = useState(false);
   const currentStage: Partial<Record<CustodyOffer['status'], number>> = {
     REQUESTED: 1,
     ACCEPTED: 2,
@@ -260,19 +266,42 @@ function CustodyRequestDetail({
               </span>
               <p>{nextAction}</p>
             </div>
-            {['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
+            {receiver && ['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
+              <Btn
+                variant="outline"
+                onClick={() => setRequestEvidence(true)}
+              >
+                Request sender company evidence
+              </Btn>
+            )}
+            {!receiver && ['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
               <Link
                 className="workspace-custody-detail__evidence-link"
-                to={
-                  workspacePath(role, receiver ? 'sent-requests' : 'requests') +
-                  '?' +
-                  new URLSearchParams({ context: 'custody', referenceId: offer.offerId })
-                }
+                to={workspacePath(role, 'requests') + '?' + new URLSearchParams({ context: 'custody', referenceId: offer.offerId })}
               >
-                {receiver
-                  ? 'Request or verify sender company evidence'
-                  : 'Manage requested company evidence'}
+                Manage requested company evidence
               </Link>
+            )}
+            {requestEvidence && (
+              <DeliveryIdentityPanel
+                requestOnly
+                data={data}
+                order={{
+                  orderId: offer.offerId,
+                  seller: offer.sender,
+                  buyer: offer.distributor,
+                  expiresAt: offer.expiresAt,
+                  proposedBatch: offer.batchId,
+                  delivery: {
+                    distributor: offer.distributor,
+                    batchId: offer.batchId,
+                    identityChallenge: '',
+                  },
+                }}
+                requestedBy={offer.distributorName}
+                onChanged={onChanged}
+                onRequestClose={() => setRequestEvidence(false)}
+              />
             )}
             {receiver && offer.status === 'REQUESTED' && (
               <div className="workspace-location-actions action-row">
@@ -633,6 +662,8 @@ export function CustodyOffersWorkspace({
           run={run}
           setNotice={setNotice}
           locationLabel={label}
+          data={data}
+          onChanged={load}
         />
       ) : (
         <>

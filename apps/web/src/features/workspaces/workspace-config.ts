@@ -26,7 +26,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     navigation: nav('admin', [
       ['applications', 'Applications', 'applications'],
       ['credentials', 'Manage companies', 'credentials'],
-      ['information-requests', 'Information requests', 'evidence'],
+      ['information-requests', 'Evidence Exchange', 'evidence'],
     ]),
   },
   supplier: {
@@ -36,7 +36,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
       ['ingredients', 'Ingredients', 'ingredients'],
       ['credentials', 'Credentials', 'credentials'],
       ['inventory', 'Custody inventory', 'inventory'],
-      ['information-requests', 'Information requests', 'evidence'],
+      ['information-requests', 'Evidence Exchange', 'evidence'],
     ]),
   },
   manufacturer: {
@@ -44,7 +44,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     organisation: 'Manufacturer organisation',
     navigation: nav('manufacturer', [
       ['inventory', 'Custody inventory', 'inventory'],
-      ['information-requests', 'Information requests', 'evidence'],
+      ['information-requests', 'Evidence Exchange', 'evidence'],
       ['product-batches', 'Product batches', 'boxes'],
       ['transfers', 'Transfers', 'transfers'],
     ]),
@@ -55,7 +55,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
     navigation: nav('distributor', [
       ['shipments', 'Shipments', 'transfers'],
       ['inventory', 'Inventory', 'inventory'],
-      ['information-requests', 'Information requests', 'evidence'],
+      ['information-requests', 'Evidence Exchange', 'evidence'],
       ['transfers', 'Transfers', 'transfers'],
     ]),
   },
@@ -67,7 +67,7 @@ export const workspaces: Record<WorkspaceKey, WorkspaceDefinition> = {
       ['incoming-products', 'Incoming products', 'boxes'],
       ['traceability', 'Traceability', 'scan'],
       ['reports', 'Reports', 'reports'],
-      ['information-requests', 'Information requests', 'evidence'],
+      ['information-requests', 'Evidence Exchange', 'evidence'],
     ]),
   },
 };

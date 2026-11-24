@@ -1,7 +1,12 @@
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { FileSearch, RefreshCw, Route } from 'lucide-react';
+import {
+  CURRENT_INGREDIENT_REQUEST_CLAIMS,
+  INGREDIENT_EVIDENCE_CLAIMS,
+  type IngredientRequestPolicy,
+} from '@tracechain/shared';
 import {
   getBusinessTraceability,
   type BusinessTraceability,
@@ -17,10 +22,19 @@ import {
   SelectField,
   TechnicalDetails,
 } from '../workspaces/shared/ui';
-import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { recordStatuses, shortChainId } from '../workspaces/shared/operational-format';
 import { CatalogueImage, CompanyAvatar } from '../orders/CatalogueMedia';
+import { EvidenceRequestModal } from '../orders/EvidenceRequestModal';
+import { IngredientRequestPolicyFields } from '../production-flow/IngredientRequestPolicyFields';
+import {
+  classifyEvidenceClaims,
+  evidenceClaimLists,
+  type ClaimClassification,
+} from '../production-flow/EvidenceClaimSelector';
+import { prepareEvidenceRequest } from '../production-flow/production-flow.api';
+import { completePreparedWorkflow } from '../production-flow/production-flow.transaction';
+import { reportError } from '../../components/ui/feedback';
 
 const fields: Record<string, string> = {
   name: 'Ingredient',
@@ -50,7 +64,6 @@ function valueFor(key: string, value: unknown) {
 }
 export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const [data, setData] = useState<BusinessTraceability>();
   const [error, setError] = useState(''),
     [loading, setLoading] = useState(true),
@@ -58,6 +71,18 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
   const backward = role === 'retailer';
   const [activeStage, setActiveStage] = useState(role === 'retailer' ? 'retail' : 'source');
   const [routeId, setRouteId] = useState('');
+  const [evidenceTarget, setEvidenceTarget] = useState<OrderRecord>();
+  const [evidencePurpose, setEvidencePurpose] = useState('Ingredient traceability verification');
+  const [evidenceDeadline, setEvidenceDeadline] = useState('');
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const [policy, setPolicy] = useState<IngredientRequestPolicy>({
+    policyVersion: 2,
+    template: 'custom',
+  });
+  const claimIds = CURRENT_INGREDIENT_REQUEST_CLAIMS.map(([id]) => id);
+  const [evidenceFields, setEvidenceFields] = useState<Record<string, ClaimClassification>>(() =>
+    classifyEvidenceClaims(claimIds, ['countryOfOrigin', 'expiryDate'], ['productionDate']),
+  );
   const kind = params.get('kind') ?? undefined,
     batchId = params.get('batchId') ?? undefined;
   useEffect(() => {
@@ -89,16 +114,7 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
   const stage = stages.find((entry) => entry.id === activeStage) ?? stages[0];
   const recordedFacts = stages.flatMap((entry) => entry.records);
   const latestFact = recordedFacts[recordedFacts.length - 1];
-  const evidence = (ingredient: OrderRecord) =>
-    navigate(
-      workspacePath(role, 'sent-requests') +
-        '?' +
-        new URLSearchParams({
-          tab: 'evidence',
-          batchId: ingredient.batchId,
-          ...(route?.productBatchId ? { productBatchId: route.productBatchId } : {}),
-        }),
-    );
+  const evidenceClaims = evidenceClaimLists(evidenceFields);
   return (
     <div className="workspace-flow-page">
       <SectionTitle
@@ -306,7 +322,7 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
                           <Btn
                             variant="outline"
                             icon={<FileSearch size={16} />}
-                            onClick={() => evidence(record)}
+                            onClick={() => setEvidenceTarget(record)}
                           >
                             Request ingredient evidence
                           </Btn>
@@ -329,6 +345,61 @@ export function TraceabilityWorkspace({ role }: { role: WorkspaceRole }) {
             )}
           </>
         )
+      )}
+      {evidenceTarget && (
+        <EvidenceRequestModal
+          title="Request ingredient evidence"
+          evidenceType="Ingredient evidence"
+          credentialType="Supplier Ingredient Credential"
+          requester="Your company"
+          requesterRole={role}
+          recipient={String(evidenceTarget.supplier ?? 'Original Supplier')}
+          recipientRole="Supplier"
+          reference={evidenceTarget.batchId}
+          catalogue={INGREDIENT_EVIDENCE_CLAIMS.filter((claim) =>
+            claimIds.some((id) => id === claim.id),
+          )}
+          required={evidenceClaims.required}
+          optional={evidenceClaims.optional}
+          purpose={evidencePurpose}
+          deadline={evidenceDeadline}
+          busy={evidenceBusy}
+          configuration={
+            <IngredientRequestPolicyFields
+              policy={policy}
+              onChange={setPolicy}
+              onRequirements={(required) =>
+                setEvidenceFields(classifyEvidenceClaims(claimIds, required, []))
+              }
+            />
+          }
+          separationNote="Requesting evidence does not change ownership, stock, or order status."
+          onClose={() => setEvidenceTarget(undefined)}
+          onChange={(value) => {
+            setEvidenceFields(classifyEvidenceClaims(claimIds, value.required, value.optional));
+            setEvidencePurpose(value.purpose);
+            setEvidenceDeadline(value.deadline);
+          }}
+          onSubmit={() => {
+            setEvidenceBusy(true);
+            setError('');
+            void completePreparedWorkflow(() =>
+              prepareEvidenceRequest({
+                batchId: evidenceTarget.batchId,
+                claims: [...evidenceClaims.required, ...evidenceClaims.optional],
+                requiredClaims: evidenceClaims.required,
+                policy,
+                dueAt: new Date(evidenceDeadline).toISOString(),
+                operationId: crypto.randomUUID(),
+                productBatchId: route?.productBatchId ?? undefined,
+                reason: evidencePurpose.trim(),
+              }),
+            )
+              .then(() => setEvidenceTarget(undefined))
+              .catch((cause) => setError(reportError(cause, 'The evidence request failed.')))
+              .finally(() => setEvidenceBusy(false));
+          }}
+        />
       )}
     </div>
   );

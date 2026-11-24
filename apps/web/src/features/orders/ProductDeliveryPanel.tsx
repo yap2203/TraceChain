@@ -21,6 +21,7 @@ import { prepareLogistics, type OrdersState, type OrderRecord } from './orders.a
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { workspacePath } from '../workspaces/workspace-paths';
 import { PickupPlanPanel } from './PickupPlanPanel';
+import { DeliveryIdentityPanel } from './DeliveryIdentityPanel';
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const localTime = (offset = 0) => {
   const d = new Date(Date.now() + offset);
@@ -68,6 +69,7 @@ export function ProductDeliveryPanel({
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const [pickupReady, setPickupReady] = useState(false);
+  const [requestEvidence, setRequestEvidence] = useState(false);
   const lock = useRef(false),
     video = useRef<HTMLVideoElement>(null),
     reader = useRef(new ZxingTransferQrReader()),
@@ -360,15 +362,34 @@ export function ProductDeliveryPanel({
         </div>
       )}
       {r && stage >= 2 && stage <= 3 && (carrier || manufacturer) && (
-        <a
-          href={
-            workspacePath(role, carrier ? 'sent-requests' : 'requests') +
-            '?context=delivery&referenceId=' +
-            encodeURIComponent(order.orderId)
-          }
-        >
-          Manage Manufacturer company evidence in Information requests
-        </a>
+        carrier ? (
+          <Btn variant="outline" onClick={() => setRequestEvidence(true)}>
+            Request Manufacturer company evidence
+          </Btn>
+        ) : (
+          <a href={`/manufacturer/information-requests?context=delivery&referenceId=${encodeURIComponent(order.orderId)}`}>
+            Manage requested company evidence
+          </a>
+        )
+      )}
+      {requestEvidence && (
+        <DeliveryIdentityPanel
+          requestOnly
+          requestContextLabel="product delivery"
+          data={data}
+          order={{
+            ...order,
+            delivery: {
+              ...r,
+              batchId: order.requestedBatch,
+              distributor: r?.distributor,
+              identityChallenge: r?.identityChallenge ?? '',
+            },
+          }}
+          onChanged={onChanged}
+          requestedBy={r?.distributorName}
+          onRequestClose={() => setRequestEvidence(false)}
+        />
       )}
       {r && Number(r.mode) === 1 && stage >= 3 && stage <= 4 && (
         <PickupPlanPanel

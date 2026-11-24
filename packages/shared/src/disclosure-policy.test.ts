@@ -9,7 +9,25 @@ import {
   expandIngredientRequestedClaims,
   isRetiredIngredientClaim,
   visibleIngredientClaims,
+  COMPANY_EVIDENCE_CLAIMS,
+  INGREDIENT_EVIDENCE_CLAIMS,
+  validateEvidenceClaimSelection,
 } from './disclosure-policy.js';
+it('publishes stable claim catalogues and rejects unknown or duplicate selections', () => {
+  expect(COMPANY_EVIDENCE_CLAIMS.find((claim) => claim.id === 'walletAddress')?.credentialPath).toBe(
+    'credentialSubject.walletAddress',
+  );
+  expect(INGREDIENT_EVIDENCE_CLAIMS.find((claim) => claim.id === 'expiryDate')?.group).toBe(
+    'Dates and quantity',
+  );
+  expect(validateEvidenceClaimSelection(['companyName', 'role'], COMPANY_EVIDENCE_CLAIMS)).toBe(
+    true,
+  );
+  expect(validateEvidenceClaimSelection(['companyName', 'companyName'], COMPANY_EVIDENCE_CLAIMS)).toBe(
+    false,
+  );
+  expect(validateEvidenceClaimSelection(['unknown'], COMPANY_EVIDENCE_CLAIMS)).toBe(false);
+});
 it('keeps processing and quality claims out of new form choices without removing legacy support', () => {
   const choices = CURRENT_INGREDIENT_REQUEST_CLAIMS.map(([key]) => key);
   expect(choices).toContain('productionDate');

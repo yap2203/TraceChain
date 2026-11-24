@@ -1,8 +1,10 @@
 import {
   CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
+  INGREDIENT_EVIDENCE_CLAIMS,
   type IngredientRequestPolicy,
 } from '@tracechain/shared';
 import { IngredientRequestPolicyFields } from '../../../production-flow/IngredientRequestPolicyFields';
+import { EvidenceClaimSelector } from '../../../production-flow/EvidenceClaimSelector';
 import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
 import { getSharedCertificationDocument } from '../../../production-flow/production-flow.api';
 import { reportError } from '../../../../components/ui/feedback';
@@ -346,38 +348,12 @@ export function IngredientEvidence({
                 }))
               }
             />
-            <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: 12 }}>
-              <legend style={{ color: T.navy, fontWeight: 700 }}>Requested claims</legend>
-              <div style={{ fontSize: 12, color: T.text2, marginBottom: 10 }}>
-                Batch identity, ingredient name, Supplier wallet and credential ID are always
-                shared. Choose whether each additional claim is required or optional for the
-                Supplier.
-              </div>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {selectableClaims.map(([name, label]) => (
-                  <label
-                    key={name}
-                    className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_150px]"
-                  >
-                    <span>{label}</span>
-                    <select
-                      aria-label={`${label} requirement`}
-                      value={claimChoices[name] ?? 'none'}
-                      onChange={(event) =>
-                        setClaimChoices((current) => ({
-                          ...current,
-                          [name]: event.target.value as 'required' | 'optional' | 'none',
-                        }))
-                      }
-                    >
-                      <option value="none">Not requested</option>
-                      <option value="optional">Optional</option>
-                      <option value="required">Required</option>
-                    </select>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+            <EvidenceClaimSelector
+              catalogue={INGREDIENT_EVIDENCE_CLAIMS.filter((claim) => selectableClaims.some(([id]) => id === claim.id))}
+              required={selectableClaims.map(([id]) => id).filter((id) => claimChoices[id] === 'required')}
+              optional={selectableClaims.map(([id]) => id).filter((id) => claimChoices[id] === 'optional')}
+              onChange={(required, optional) => setClaimChoices(Object.fromEntries(selectableClaims.map(([id]) => [id, required.includes(id) ? 'required' : optional.includes(id) ? 'optional' : 'none'])))}
+            />
             <Alert
               type="info"
               message="The request details and random challenge are encrypted before upload. Only their hashes and encrypted content reference are recorded on chain."

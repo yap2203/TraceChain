@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const api = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('../orders/orders.api', () => ({ getBusinessTraceability: api.get }));
@@ -68,10 +68,6 @@ const data = {
     },
   ],
 };
-function Location() {
-  const location = useLocation();
-  return <output aria-label="Current route">{location.pathname + location.search}</output>;
-}
 beforeEach(() => api.get.mockResolvedValue(structuredClone(data)));
 it.each(['supplier', 'manufacturer', 'distributor', 'retailer'] as const)(
   'shows one stage flow without direction buttons for %s',
@@ -118,7 +114,6 @@ it('opens a Retailer evidence request with the exact product and ingredient cont
   render(
     <MemoryRouter>
       <TraceabilityWorkspace role="retailer" />
-      <Location />
     </MemoryRouter>,
   );
   await screen.findByText('No activity has been recorded for this stage.');
@@ -129,10 +124,10 @@ it('opens a Retailer evidence request with the exact product and ingredient cont
   ).toContain('Retailer receipt');
   fireEvent.click(screen.getByRole('button', { name: /Supplier.*Records available/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Request ingredient evidence' }));
-  const route = screen.getByLabelText('Current route').textContent!;
-  expect(route).toContain('/retailer/information-requests/sent');
-  expect(route).toContain('batchId=' + ingredient);
-  expect(route).toContain('productBatchId=' + product);
+  expect(screen.getByRole('dialog', { name: /Request ingredient evidence/ })).toBeTruthy();
+  expect(screen.getByText('Supplier Ingredient Credential')).toBeTruthy();
+  expect(screen.getByText(ingredient)).toBeTruthy();
+  expect(screen.getAllByText('Actual Supplier').length).toBeGreaterThan(0);
 });
 it('shows an empty state or an outage instead of invented traceability', async () => {
   api.get.mockResolvedValueOnce({ roots: [], root: null, routes: [] });

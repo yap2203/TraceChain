@@ -38,7 +38,7 @@ vi.mock('../../../production-flow/CompanyIdentityProofAction', () => ({
   ),
 }));
 import { ManufacturerInformationRequests } from './ManufacturerInformationRequests';
-import { workspaceNavigation } from '../../workspace-navigation';
+import { workspaceNavigationGroups } from '../../workspace-navigation';
 import { workspacePage, workspacePath } from '../../workspace-paths';
 const actor = 'manufacturer';
 beforeEach(() => {
@@ -129,12 +129,12 @@ describe('Manufacturer information request management', () => {
     expect(screen.getByText(/No received information requests/)).toBeTruthy();
   });
   it('replaces Manufacturer Browse navigation and keeps old evidence links usable', () => {
-    const labels = workspaceNavigation.manufacturer.map(([, label]) => label);
+    const labels = workspaceNavigationGroups('manufacturer').flatMap((group) => group.items.map(([, label]) => label));
     expect(labels).toContain('My products');
     expect(labels).toContain('Ingredient orders');
     expect(labels).toContain('Incoming product orders');
-    expect(labels).toContain('Received requests');
-    expect(labels).toContain('Sent requests');
+    expect(labels).toContain('Evidence Exchange');
+    expect(labels).not.toContain('Sent requests');
     expect(labels).not.toContain('Browse & requests');
     expect(workspacePage('manufacturer', 'ingredient-evidence')).toBe('sent-requests');
     expect(workspacePath('manufacturer', 'evidence')).toBe('/manufacturer/information-requests');

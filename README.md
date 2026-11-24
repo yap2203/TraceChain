@@ -1052,13 +1052,28 @@ For local testing, start `npx hardhat node` from `packages/contracts`, deploy th
 The role sidebars separate incoming/outgoing orders, custody offers, warehouse arrivals and outbound
 deliveries. Retailer shipments contain products only. Administrator navigation contains company
 administration, permissions, discrepancies and audit rather than operational ordering.
-Received/Sent Information requests are distinct destinations.
-The Sent evidence lists contain only outgoing evidence requests and their responses; incoming
-company-proof response controls are managed on Received requests rather than embedded in Sent.
+Evidence requests share one Evidence Exchange destination with separate incoming and outgoing tabs.
+The outgoing evidence list contains only requests created by the current company and their responses; incoming
+company-proof response controls are managed in Evidence Exchange rather than embedded in order pages.
+
+### Evidence Exchange
+
+Company workspaces expose one **Evidence Exchange** navigation entry. Its **Requests to me** and
+**Requests I sent** tabs reuse the existing on-chain request references and encrypted IPFS payloads.
+Company delivery proofs now open a shared request dialog with an explicit purpose, future
+presentation deadline, searchable credential fields, Required/Optional classification, and a
+review step before the request transaction. Ingredient request screens use the same claim selector.
+
+The current Company Identity SD-JWT protocol still includes its version-2 binding fields (company
+name, role, wallet and subject DID) in every proof. Existing credentials must remain compatible;
+making those legacy clear-text fields selectively disclosable requires a versioned credential
+replacement path. Request read/unread state and cross-device disclosure preferences are not stored
+in browser storage. The deployed contracts do not currently expose a private, discoverable mutable
+reference for those two records, so they are intentionally not simulated with local state.
 Company-proof details do not embed general order navigation. Loading pages use the shared centered
 spinner; dismissible notifications show success or readable errors instead of raw RPC/JSON payloads.
 Success notifications disappear after 4 seconds; error notifications after 7 seconds. Only the exact
-current sidebar page is highlighted, including separate Received and Sent request destinations.
+current sidebar page is highlighted, including the single Evidence Exchange destination.
 Workspace modals dismiss on backdrop clicks or Escape. Confirmed registration and logout return to
 Login. Supplier traceability is forward-only; Retailer traceability is backward-only.
 Traceability has one stage flow per role, without direction-switch buttons. Manufacturer and
