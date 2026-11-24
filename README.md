@@ -1,5 +1,75 @@
 # TraceChain
 
+## Backend multi-RPC reads
+
+The API can route ordinary reads and event logs through different providers without changing
+MetaMask transaction signing or redeploying contracts. Ordinary reads use `primary -> secondary ->
+emergency` sequential failover. `eth_getLogs` uses the dedicated log endpoint and its explicitly
+configured fallback. A transient 429, timeout, connection reset, 502/503/504, provider-overload or
+malformed batch response can open that endpoint's process-local circuit; Solidity reverts, invalid
+input, valid empty results and business-rule failures do not fail over. No request is raced or sent
+to every provider.
+
+Recommended Sepolia FYP backend values:
+
+```dotenv
+CHAIN_RPC_PRIMARY_URL=https://eth-sepolia.g.alchemy.com/v2/<ALCHEMY_KEY>
+CHAIN_RPC_SECONDARY_URL=https://sepolia.infura.io/v3/<INFURA_KEY>
+CHAIN_RPC_EMERGENCY_URL=
+CHAIN_LOG_RPC_URL=https://sepolia.infura.io/v3/<INFURA_KEY>
+CHAIN_LOG_FALLBACK_URL=
+CHAIN_EVENT_START_BLOCK=<TRACECHAIN_DEPLOYMENT_BLOCK>
+CHAIN_EVENT_PAGE_SIZE=5000
+CHAIN_EVENT_FALLBACK_PAGE_SIZE=10
+CHAIN_EVENT_CONFIRMATIONS=2
+RPC_MULTICALL_ENABLED=true
+RPC_READ_CONCURRENCY=4
+RPC_BULK_READ_CONCURRENCY=1
+RPC_BATCH_MAX_COUNT=10
+RPC_BATCH_STALL_TIME_MS=10
+RPC_MIN_REQUEST_INTERVAL_MS=100
+RPC_BULK_MIN_REQUEST_INTERVAL_MS=1000
+RPC_READ_MAX_RETRIES=1
+RPC_RETRY_BASE_DELAY_MS=1000
+RPC_ENDPOINT_COOLDOWN_MS=30000
+RPC_REQUEST_TIMEOUT_MS=15000
+```
+
+Get the Alchemy HTTPS URL from an Alchemy Sepolia app and the Infura HTTPS URL from an Infura
+Ethereum/Sepolia project. Never paste either key into chat or a `VITE_` variable. Obtain the suite's
+first deployment block from the earliest TraceChain contract creation transaction in the Sepolia
+explorer; `npm run configure:sepolia` also writes the verified value. `CHAIN_RPC_URL` remains supported
+as the single-provider fallback and as the existing browser/Hardhat URL. If it is browser-visible,
+use a domain-restricted key rather than a privileged backend key.
+
+Single-provider configuration remains:
+
+```dotenv
+CHAIN_RPC_URL=https://example.invalid/sepolia
+CHAIN_RPC_PRIMARY_URL=
+CHAIN_RPC_SECONDARY_URL=
+CHAIN_RPC_EMERGENCY_URL=
+CHAIN_LOG_RPC_URL=
+CHAIN_LOG_FALLBACK_URL=
+```
+
+Local Hardhat remains:
+
+```dotenv
+CHAIN_ID=31337
+CHAIN_RPC_URL=http://127.0.0.1:8545
+CHAIN_EVENT_CONFIRMATIONS=0
+RPC_MULTICALL_ENABLED=false
+```
+
+An emergency provider is added only with `CHAIN_RPC_EMERGENCY_URL`; it is not used for historical
+logs unless it is also explicitly placed in `CHAIN_LOG_FALLBACK_URL`. After changing these backend
+variables, restart the TraceChain API (or restart `npm run dev`). Startup validates safe provider
+labels, chain ID, head freshness, deployed bytecode and log compatibility without printing URLs.
+`GET /api/health` shows safe per-label health and failover counters, while Orders responses expose
+aggregate request timing through `Server-Timing`. Multi-RPC reduces throttling impact but does not
+guarantee sub-second Sepolia cold loads.
+
 **Sepolia read aggregation:** `RPC_MULTICALL_ENABLED=true` groups selected TraceChain getters through
 the existing, runtime-code-pinned Multicall3 deployment. No new contract deployment is required.
 The active configuration uses two transports, 200 ms ordinary pacing and 1,200 ms log pacing.
