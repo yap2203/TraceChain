@@ -151,7 +151,6 @@ export class OrderSummaryReader {
     const warehouse =
       Number(ingredient) === 1 &&
       Number(await this.gateway.read('delivery', 'custodyPolicy')) === 1;
-    const items = new Map<string, Promise<ChainRecord>>();
     const batches = new Map<string, Set<string>>();
     for (const entry of listed)
       if (entry.itemId && entry.batchId) {
@@ -169,104 +168,124 @@ export class OrderSummaryReader {
         (!e.buyer && !e.seller),
     );
     const unique = [...new Map(candidates.map((e) => [e.orderId, e])).values()];
-    const rows: ChainRecord[] = [];
-    let cursor = 0;
-    await Promise.all(
-      Array.from({ length: Math.min(4, unique.length) }, async () => {
-        while (cursor < unique.length) {
-          const event = unique[cursor++];
-          const order = await this.gateway.read('orders', 'getOrder', [event.orderId]);
-          const [decision, received, delivery, productDelivery, custody] = await Promise.all([
-            this.optional('orders', 'requestDecision', [event.orderId]),
-            Number(approved) === 1
-              ? this.gateway.read('orders', 'approvedReceivedQuantity', [event.orderId])
+
+    // Phase 1: fetch every order in parallel. The multicall layer aggregates these
+    // into aggregate3 RPCs, so one round-trip covers all orders instead of per-order
+    // sequential round-trips inside limited-concurrency workers.
+    const orders = await Promise.all(
+      unique.map((event) => this.gateway.read('orders', 'getOrder', [event.orderId])),
+    );
+
+    // Phase 2: fetch all dependent reads for every order in parallel. Each order's
+    // five reads run together, and all orders run together — cross-order deduplication
+    // at the multicall transport layer collapses duplicate selectors into one call.
+    const prepared = await Promise.all(
+      orders.map(async (order, index) => {
+        const event = unique[index];
+        const [decision, received, delivery, productDelivery, custody] = await Promise.all([
+          this.optional('orders', 'requestDecision', [event.orderId]),
+          Number(approved) === 1
+            ? this.gateway.read('orders', 'approvedReceivedQuantity', [event.orderId])
+            : undefined,
+          Number(ingredient) === 1
+            ? this.gateway.read('delivery', 'get', [event.orderId])
+            : undefined,
+          Number(product) === 1
+            ? this.gateway.read('productDelivery', 'get', [event.orderId])
+            : undefined,
+          warehouse ? this.gateway.read('delivery', 'custodyOrders', [event.orderId]) : undefined,
+        ]);
+        return { order, event, decision, received, delivery, productDelivery, custody };
+      }),
+    );
+
+    // Phase 3: authorization filter. Only authorized orders proceed to item reads.
+    const authorized = prepared.filter(
+      ({ order, delivery, productDelivery }) =>
+        admin ||
+        same(order.buyer, actor) ||
+        same(order.seller, actor) ||
+        same(delivery?.distributor, actor) ||
+        same(productDelivery?.distributor, actor),
+    );
+
+    // Phase 4: fetch every item in parallel, deduplicated by itemId so shared items
+    // across multiple orders cost a single contract read.
+    const items = new Map<string, Promise<ChainRecord>>();
+    const getItem = (itemId: string) => {
+      let item = items.get(itemId);
+      if (!item) {
+        item = this.gateway.read('orders', 'getItem', [itemId]);
+        items.set(itemId, item!);
+      }
+      return item!;
+    };
+    const rows = await Promise.all(
+      authorized.map(async ({ order, event, decision, received, delivery, productDelivery, custody }) => {
+        const value = await getItem(order.itemId);
+        const knownBatches = [...(batches.get(order.itemId) ?? [])];
+        const imageBatch =
+          order.proposedBatch && !/^0x0+$/.test(order.proposedBatch)
+            ? order.proposedBatch
+            : knownBatches.length === 1
+              ? knownBatches[0]
+              : undefined;
+        return {
+          // Explicit whitelist: never include details CID, decrypted notes, evidence or documents.
+          orderId: event.orderId,
+          orderReference: event.orderId,
+          buyer: order.buyer,
+          seller: order.seller,
+          itemId: order.itemId,
+          proposedBatch: order.proposedBatch,
+          requested: order.requested,
+          allocated: order.allocated,
+          dispatched: order.dispatched,
+          status: order.status,
+          expiresAt: order.expiresAt,
+          identityChallenge: order.identityChallenge,
+          identityCredentialHash: order.identityCredentialHash,
+          identityValidUntil: order.identityValidUntil,
+          decision: decision
+            ? { status: decision.status, recordedAt: decision.recordedAt }
+            : undefined,
+          approvedReceivedQuantity: received,
+          requestedBlock: event.blockNumber,
+          updatedAt: decision?.recordedAt,
+          custodyOrder:
+            custody?.positionId && !/^0x0+$/.test(String(custody.positionId))
+              ? {
+                  dispatched: custody.dispatched,
+                  received: custody.received,
+                }
               : undefined,
-            Number(ingredient) === 1
-              ? this.gateway.read('delivery', 'get', [event.orderId])
+          delivery:
+            Number(delivery?.stage) > 0
+              ? {
+                  stage: delivery.stage,
+                  distributor: delivery.distributor,
+                  assignmentDeadline: delivery.assignmentDeadline,
+                }
               : undefined,
-            Number(product) === 1
-              ? this.gateway.read('productDelivery', 'get', [event.orderId])
+          productDelivery:
+            Number(productDelivery?.mode) > 0
+              ? {
+                  mode: productDelivery.mode,
+                  stage: productDelivery.stage,
+                  distributor: productDelivery.distributor,
+                }
               : undefined,
-            warehouse ? this.gateway.read('delivery', 'custodyOrders', [event.orderId]) : undefined,
-          ]);
-          if (
-            !admin &&
-            !same(order.buyer, actor) &&
-            !same(order.seller, actor) &&
-            !same(delivery?.distributor, actor) &&
-            !same(productDelivery?.distributor, actor)
-          )
-            continue;
-          let item = items.get(order.itemId);
-          if (!item) {
-            item = this.gateway.read('orders', 'getItem', [order.itemId]);
-            items.set(order.itemId, item!);
-          }
-          const value = await item!;
-          const knownBatches = [...(batches.get(order.itemId) ?? [])];
-          const imageBatch =
-            order.proposedBatch && !/^0x0+$/.test(order.proposedBatch)
-              ? order.proposedBatch
-              : knownBatches.length === 1
-                ? knownBatches[0]
-                : undefined;
-          rows.push({
-            // Explicit whitelist: never include details CID, decrypted notes, evidence or documents.
-            orderId: event.orderId,
-            orderReference: event.orderId,
-            buyer: order.buyer,
-            seller: order.seller,
+          item: {
             itemId: order.itemId,
-            proposedBatch: order.proposedBatch,
-            requested: order.requested,
-            allocated: order.allocated,
-            dispatched: order.dispatched,
-            status: order.status,
-            expiresAt: order.expiresAt,
-            identityChallenge: order.identityChallenge,
-            identityCredentialHash: order.identityCredentialHash,
-            identityValidUntil: order.identityValidUntil,
-            decision: decision
-              ? { status: decision.status, recordedAt: decision.recordedAt }
+            name: value.name,
+            kind: value.kind,
+            unit: decodeBytes32String(value.unit),
+            batches: imageBatch ? [imageBatch] : [],
+            imagePath: imageBatch
+              ? `/catalogue/${Number(value.kind) === 1 ? 'ingredients' : 'products'}/${imageBatch}/image`
               : undefined,
-            approvedReceivedQuantity: received,
-            requestedBlock: event.blockNumber,
-            updatedAt: decision?.recordedAt,
-            custodyOrder:
-              custody?.positionId && !/^0x0+$/.test(String(custody.positionId))
-                ? {
-                    dispatched: custody.dispatched,
-                    received: custody.received,
-                  }
-                : undefined,
-            delivery:
-              Number(delivery?.stage) > 0
-                ? {
-                    stage: delivery.stage,
-                    distributor: delivery.distributor,
-                    assignmentDeadline: delivery.assignmentDeadline,
-                  }
-                : undefined,
-            productDelivery:
-              Number(productDelivery?.mode) > 0
-                ? {
-                    mode: productDelivery.mode,
-                    stage: productDelivery.stage,
-                    distributor: productDelivery.distributor,
-                  }
-                : undefined,
-            item: {
-              itemId: order.itemId,
-              name: value.name,
-              kind: value.kind,
-              unit: decodeBytes32String(value.unit),
-              batches: imageBatch ? [imageBatch] : [],
-              imagePath: imageBatch
-                ? `/catalogue/${Number(value.kind) === 1 ? 'ingredients' : 'products'}/${imageBatch}/image`
-                : undefined,
-            },
-          });
-        }
+          },
+        };
       }),
     );
     const identities =

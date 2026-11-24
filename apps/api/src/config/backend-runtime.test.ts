@@ -2,6 +2,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
+import { createServer as createHttpServer } from 'node:http';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
@@ -315,6 +316,32 @@ it('serves existing encrypted application documents after app restart and denies
 
 it('starts and restarts the actual API process from environment secrets without any Admin action', async () => {
   const f = await fixture();
+  const rpc = createHttpServer((request, response) => {
+    let body = '';
+    request.on('data', (chunk) => (body += chunk));
+    request.on('end', () => {
+      const input = JSON.parse(body);
+      const reply = (entry: any) => ({
+        jsonrpc: '2.0',
+        id: entry.id,
+        result:
+          entry.method === 'eth_chainId'
+            ? '0xaa36a7'
+            : entry.method === 'eth_blockNumber'
+              ? '0x64'
+              : entry.method === 'eth_getLogs'
+                ? []
+                : '0x1234',
+      });
+      response.setHeader('content-type', 'application/json');
+      response.end(JSON.stringify(Array.isArray(input) ? input.map(reply) : reply(input)));
+    });
+  });
+  rpc.listen(0, '127.0.0.1');
+  await once(rpc, 'listening');
+  const rpcPort = (rpc.address() as any).port;
+  f.environment.CHAIN_RPC_URL = `http://127.0.0.1:${rpcPort}`;
+  f.environment.SEPOLIA_RPC_URL = f.environment.CHAIN_RPC_URL;
   for (let restart = 0; restart < 2; restart++) {
     const socket = createServer().listen(0);
     await once(socket, 'listening');
@@ -369,6 +396,7 @@ it('starts and restarts the actual API process from environment secrets without 
     await once(child, 'exit');
     children.delete(child);
   }
+  await new Promise<void>((resolve) => rpc.close(() => resolve()));
 }, 35000);
 
 it('exits before listening when a startup secret is invalid, without logging the supplied value', async () => {

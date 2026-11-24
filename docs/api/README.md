@@ -164,9 +164,16 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 | `SIWE_URI`                       | `http://localhost:5173`  | Expected ERC-4361 URI                             |
 | `CHAIN_ID`                       | `31337`                  | Active contract and SIWE chain ID                 |
 | `CHAIN_NAME`                     | `TraceChain Local`       | Browser-visible network name                      |
-| `CHAIN_RPC_URL`                  | Placeholder URL          | Ledger used for authorization reads               |
+| `CHAIN_RPC_URL`                  | Placeholder URL          | Legacy/single-provider and browser chain URL      |
+| `CHAIN_RPC_PRIMARY_URL`          | Optional backend URL     | Preferred ordinary-read endpoint                  |
+| `CHAIN_RPC_SECONDARY_URL`        | Optional backend URL     | Ordinary-read failover                            |
+| `CHAIN_RPC_EMERGENCY_URL`        | Optional backend URL     | Last ordinary-read failover                       |
+| `CHAIN_LOG_RPC_URL`              | Optional backend URL     | Dedicated `eth_getLogs` endpoint                  |
+| `CHAIN_LOG_FALLBACK_URL`         | Optional backend URL     | Explicit log failover                             |
+| `CHAIN_EVENT_START_BLOCK`        | Empty                    | Suite deployment lower bound or auto-discovery    |
 | `CHAIN_EVENT_CONFIRMATIONS`      | `2`                      | Confirmations before events enter the index       |
 | `CHAIN_EVENT_PAGE_SIZE`          | `5000`                   | Blocks per incremental event query                |
+| `CHAIN_EVENT_FALLBACK_PAGE_SIZE` | `10`                     | Blocks per fallback log query                     |
 | `RPC_READ_CONCURRENCY`           | `8`                      | Concurrent RPC transport ceiling                  |
 | `RPC_BULK_READ_CONCURRENCY`      | `6`                      | Bulk-log ceiling reserving normal capacity        |
 | `RPC_BATCH_MAX_COUNT`            | `20`                     | Safe JSON-RPC read batch size                     |
@@ -174,6 +181,8 @@ Copy the repository-root `.env.example` to the repository-root `.env`. The API l
 | `RPC_MIN_REQUEST_INTERVAL_MS`    | `10`                     | Delay between transport starts                    |
 | `RPC_READ_MAX_RETRIES`           | `2`                      | Idempotent read retry count                       |
 | `RPC_RETRY_BASE_DELAY_MS`        | `1000`                   | Initial rate-limit backoff                        |
+| `RPC_ENDPOINT_COOLDOWN_MS`       | `30000`                  | Open-circuit cooldown before one recovery probe   |
+| `RPC_REQUEST_TIMEOUT_MS`         | `15000`                  | Per-transport request timeout                     |
 | `OPERATIONAL_READ_CONCURRENCY`   | `8`                      | Dashboard record worker count                     |
 | `CHAIN_CURRENCY_SYMBOL`          | `ETH`                    | Browser-visible native token symbol               |
 | `STAKEHOLDER_REGISTRY_ADDRESS`   | Zero-address placeholder | Deployed stakeholder registry                     |

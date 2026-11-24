@@ -6,6 +6,12 @@ The root `.env` selects `CHAIN_ID=11155111`, `CHAIN_NAME=Sepolia` and a configur
 Sepolia `CHAIN_RPC_URL`. Hardhat explicitly checks chain 11155111 and reads this same
 RPC; use its encrypted production keystore for the deployment key:
 
+The API's optional `CHAIN_RPC_PRIMARY_URL`, `CHAIN_RPC_SECONDARY_URL`,
+`CHAIN_RPC_EMERGENCY_URL`, `CHAIN_LOG_RPC_URL` and `CHAIN_LOG_FALLBACK_URL` affect
+read routing only. They do not change Ignition deployment or MetaMask transaction
+broadcasting. Keep `CHAIN_RPC_URL` configured for Hardhat and never put deployment
+private keys in any RPC variable.
+
 ```powershell
 npm exec --workspace @tracechain/contracts -- hardhat keystore set SEPOLIA_PRIVATE_KEY
 npm run deploy:sepolia

@@ -5,7 +5,12 @@ import {
   type JsonRpcPayload,
   type JsonRpcResult,
 } from 'ethers';
-import { countRead } from './read-timing.js';
+import {
+  countRead,
+  currentConfirmedReadBlock,
+  recordRpcEndpoint,
+  setConfirmedReadBlock,
+} from './read-timing.js';
 import { MulticallReads } from './multicall-reads.js';
 
 const providers = new Map<string, JsonRpcProvider>();
@@ -40,6 +45,32 @@ export interface RpcPerformanceMetrics {
   retries: number;
   transports: number;
   batchFallbacks: number;
+  failovers: number;
+  circuitOpens: number;
+  endpoints: Record<string, RpcEndpointMetrics>;
+}
+
+export interface RpcEndpointMetrics {
+  logicalRequests: number;
+  transports: number;
+  batches: number;
+  multicallBatches: number;
+  multicallReads: number;
+  deduplicatedRequests: number;
+  successes: number;
+  rateLimitErrors: number;
+  timeouts: number;
+  retries: number;
+  failoverIn: number;
+  failoverOut: number;
+  circuitOpens: number;
+  requestDurationMs: number;
+  averageDurationMs: number;
+  queueWaitMs: number;
+  rollingDurationMs: number;
+  lastObservedBlock?: number;
+  lastSuccessAt?: string;
+  health: 'healthy' | 'open' | 'probing' | 'unknown';
 }
 
 export interface RpcTransportConfiguration {
@@ -52,13 +83,19 @@ export interface RpcTransportConfiguration {
   maxRetries: number;
   minRequestIntervalMs: number;
   retryBaseDelayMs: number;
+  requestTimeoutMs?: number;
 }
 
 const metrics: RpcPerformanceMetrics = emptyMetrics();
 
 /** A process-local snapshot suitable for diagnostics and regression benchmarks. */
 export function getRpcPerformanceMetrics(): RpcPerformanceMetrics {
-  return { ...metrics };
+  return {
+    ...metrics,
+    endpoints: Object.fromEntries(
+      Object.entries(metrics.endpoints).map(([label, value]) => [label, { ...value }]),
+    ),
+  };
 }
 
 /** Test/benchmark helper; production code should normally retain process-lifetime totals. */
@@ -69,26 +106,78 @@ export function resetRpcPerformanceMetrics() {
 /** One measured transport per configured network, shared by all API contract gateways. */
 export function blockchainProvider(url: string, chainId: number): JsonRpcProvider {
   const configuration = rpcConfiguration(chainId);
-  const key = `${chainId}:${url}:${JSON.stringify(configuration)}`;
+  const endpointConfiguration = resolveEndpointConfiguration(url);
+  const key = `${chainId}:${JSON.stringify(endpointConfiguration)}:${JSON.stringify(configuration)}`;
   let provider = providers.get(key);
   if (!provider) {
-    provider = new ApiRpcProvider(
-      url,
-      chainId,
-      {
-        staticNetwork: true,
-        batchMaxCount: configuration.batchMaxCount,
-        batchStallTime: configuration.batchStallTimeMs,
-      },
-      configuration,
-    );
+    provider = endpointConfiguration.multi
+      ? new MultiRpcProvider(endpointConfiguration, chainId, configuration)
+      : new ApiRpcProvider(
+          endpointConfiguration.primary,
+          chainId,
+          {
+            staticNetwork: true,
+            batchMaxCount: configuration.batchMaxCount,
+            batchStallTime: configuration.batchStallTimeMs,
+          },
+          configuration,
+          'primary',
+        );
     providers.set(key, provider);
   }
   return provider;
 }
 
+export async function validateBlockchainRpcStartup(
+  url: string,
+  chainId: number,
+  contractAddresses: string[],
+) {
+  try {
+    const provider = blockchainProvider(url, chainId);
+    if (provider instanceof MultiRpcProvider) {
+      await provider.validate(contractAddresses);
+      return;
+    }
+    const [actualChain, block] = await Promise.all([
+      provider.send('eth_chainId', []),
+      provider.send('eth_blockNumber', []),
+    ]);
+    if (Number(BigInt(String(actualChain))) !== chainId)
+      throw new Error(
+        'RPC_STARTUP_FAILED: The primary endpoint is configured for the wrong chain.',
+      );
+    const latest = Number(BigInt(String(block)));
+    for (const address of contractAddresses)
+      if ((await provider.getCode(address, latest)) === '0x')
+        throw new Error('RPC_STARTUP_FAILED: Required contract bytecode is missing.');
+    if (contractAddresses[0])
+      await provider.send('eth_getLogs', [
+        {
+          address: contractAddresses[0],
+          fromBlock: `0x${latest.toString(16)}`,
+          toBlock: `0x${latest.toString(16)}`,
+        },
+      ]);
+  } catch (cause) {
+    if (cause instanceof Error && cause.message.startsWith('RPC_')) throw cause;
+    throw new Error(
+      'RPC_STARTUP_FAILED: The configured RPC endpoints could not be validated. Check provider availability, chain ID and deployed contract addresses.',
+    );
+  }
+}
+
+export function registerRpcMulticallTarget(provider: JsonRpcProvider, address: string) {
+  const candidate = provider as JsonRpcProvider & {
+    registerMulticallTarget?: (target: string) => void;
+  };
+  candidate.registerMulticallTarget?.(address);
+}
+
 export class ApiRpcProvider extends JsonRpcProvider {
-  registerMulticallTarget(address: string) { this.multicall?.registerTarget(address); }
+  registerMulticallTarget(address: string) {
+    this.multicall?.registerTarget(address);
+  }
   private readonly multicall?: MulticallReads;
   private readonly inFlight = new Map<string, Promise<JsonRpcResult>>();
   private batchDisabledUntil = 0;
@@ -100,9 +189,10 @@ export class ApiRpcProvider extends JsonRpcProvider {
     network: number,
     options: JsonRpcApiProviderOptions = {},
     configuration: RpcTransportConfiguration = rpcConfiguration(network),
+    readonly endpointLabel = 'primary',
   ) {
     const connection = new FetchRequest(url);
-    connection.timeout = 15_000;
+    connection.timeout = configuration.requestTimeoutMs ?? 15_000;
     // Keep retry ownership here, including writes (which must never be resubmitted).
     connection.retryFunc = async () => false;
     connection.processFunc = async (_request, response) => {
@@ -124,6 +214,7 @@ export class ApiRpcProvider extends JsonRpcProvider {
     super(connection, network, options);
     this.configuration = configuration;
     this.scheduler = new PriorityRpcScheduler(configuration);
+    endpointMetrics(endpointLabel);
     if (network === 11155111 && configuration.multicallEnabled) {
       const targets = new Set(
         [
@@ -145,6 +236,8 @@ export class ApiRpcProvider extends JsonRpcProvider {
         (count) => {
           metrics.multicallBatches++;
           metrics.multicallReads += count;
+          endpointMetrics(this.endpointLabel).multicallBatches++;
+          endpointMetrics(this.endpointLabel).multicallReads += count;
         },
       );
     }
@@ -175,9 +268,11 @@ export class ApiRpcProvider extends JsonRpcProvider {
       const pending = this.inFlight.get(key);
       if (pending) {
         metrics.deduplicatedRequests += 1;
+        endpointMetrics(this.endpointLabel).deduplicatedRequests += 1;
         promises.set(payload.id, pending);
       } else if (fresh.has(key)) {
         metrics.deduplicatedRequests += 1;
+        endpointMetrics(this.endpointLabel).deduplicatedRequests += 1;
       } else fresh.set(key, payload);
     }
 
@@ -222,7 +317,10 @@ export class ApiRpcProvider extends JsonRpcProvider {
             );
             return individual.flat();
           });
-      if (useBatch) metrics.batches += 1;
+      if (useBatch) {
+        metrics.batches += 1;
+        endpointMetrics(this.endpointLabel).batches += 1;
+      }
       for (const [key, payload] of group) {
         const pending = operation.then((results) => {
           const result =
@@ -268,6 +366,7 @@ export class ApiRpcProvider extends JsonRpcProvider {
     logicalRequests: number,
   ): Promise<Array<JsonRpcResult>> {
     metrics.logicalRequests += logicalRequests;
+    endpointMetrics(this.endpointLabel).logicalRequests += logicalRequests;
     const original = Array.isArray(payload) ? payload : [payload];
     const completed = new Map<number | string, JsonRpcResult>();
     let pending = original;
@@ -282,6 +381,8 @@ export class ApiRpcProvider extends JsonRpcProvider {
     for (let attempt = 0; ; attempt++) {
       let measured: ScheduledResult<Array<JsonRpcResult>>;
       metrics.transports += 1;
+      endpointMetrics(this.endpointLabel).transports += 1;
+      recordRpcEndpoint(this.endpointLabel);
       countRead('rpc');
       try {
         const current = pending.length === 1 ? pending[0] : pending;
@@ -289,15 +390,28 @@ export class ApiRpcProvider extends JsonRpcProvider {
       } catch (error) {
         if (!read || !isThrottled(error)) throw error;
         metrics.rateLimitErrors += 1;
+        endpointMetrics(this.endpointLabel).rateLimitErrors += 1;
+        if (isTimeout(error)) endpointMetrics(this.endpointLabel).timeouts += 1;
         if (attempt >= this.configuration.maxRetries || retryAfterDelay(error) > 60_000)
           throw error;
         metrics.retries += 1;
+        endpointMetrics(this.endpointLabel).retries += 1;
         await pause(attempt, error);
         continue;
       }
       metrics.queueWaitMs += measured.queueWaitMs;
       metrics.maxQueueWaitMs = Math.max(metrics.maxQueueWaitMs, measured.queueWaitMs);
       metrics.requestDurationMs += measured.durationMs;
+      const endpoint = endpointMetrics(this.endpointLabel);
+      endpoint.requestDurationMs += measured.durationMs;
+      endpoint.queueWaitMs += measured.queueWaitMs;
+      endpoint.rollingDurationMs = endpoint.rollingDurationMs
+        ? endpoint.rollingDurationMs * 0.8 + measured.durationMs * 0.2
+        : measured.durationMs;
+      endpoint.lastSuccessAt = new Date().toISOString();
+      endpoint.successes += 1;
+      endpoint.averageDurationMs = endpoint.requestDurationMs / endpoint.successes;
+      endpoint.health = 'healthy';
       if (!read) return measured.value;
       let replies = measured.value;
       // Some endpoints return bare {code,message} errors or id:null errors for an
@@ -332,12 +446,381 @@ export class ApiRpcProvider extends JsonRpcProvider {
       const combined = () => original.map((entry) => completed.get(entry.id)!).filter(Boolean);
       if (!retryIds.size) return combined();
       metrics.rateLimitErrors += 1;
+      endpointMetrics(this.endpointLabel).rateLimitErrors += 1;
       if (attempt >= this.configuration.maxRetries) return combined();
       // Retrying successful entries increases provider pressure and delays unrelated reads.
       pending = pending.filter((entry) => retryIds.has(entry.id));
       metrics.retries += 1;
+      endpointMetrics(this.endpointLabel).retries += 1;
       await pause(attempt);
     }
+  }
+}
+
+type EndpointLabel = 'primary' | 'secondary' | 'emergency' | 'logs-primary' | 'logs-fallback';
+
+interface RpcEndpointConfiguration {
+  primary: string;
+  secondary?: string;
+  emergency?: string;
+  logsPrimary?: string;
+  logsFallback?: string;
+  multi: boolean;
+}
+
+interface EndpointState {
+  label: EndpointLabel;
+  provider: ApiRpcProvider;
+  consecutiveFailures: number;
+  unhealthyUntil: number;
+  probe?: Promise<boolean>;
+  lastObservedBlock?: number;
+}
+
+/**
+ * Method-aware provider pool. Endpoint transports retain the existing batching,
+ * scheduling, partial retry and Multicall implementation; this wrapper only
+ * chooses which healthy transport should perform a read.
+ */
+export class MultiRpcProvider extends JsonRpcProvider {
+  private readonly ordinary: EndpointState[];
+  private readonly logs: EndpointState[];
+  private readonly cooldownMs = integerEnvironment(
+    'RPC_ENDPOINT_COOLDOWN_MS',
+    30_000,
+    1_000,
+    3_600_000,
+  );
+  private readonly fallbackLogPageSize = integerEnvironment(
+    'CHAIN_EVENT_FALLBACK_PAGE_SIZE',
+    10,
+    1,
+    100_000,
+  );
+
+  constructor(
+    endpoints: RpcEndpointConfiguration,
+    private readonly expectedChainId: number,
+    configuration: RpcTransportConfiguration,
+  ) {
+    super(endpoints.primary, expectedChainId, { staticNetwork: true, batchMaxCount: 1 });
+    const ordinaryCount = 1 + Number(!!endpoints.secondary) + Number(!!endpoints.emergency);
+    const logCount = endpoints.logsPrimary ? 1 + Number(!!endpoints.logsFallback) : ordinaryCount;
+    const create = (label: EndpointLabel, url: string, maxRetries: number): EndpointState => ({
+      label,
+      provider: new ApiRpcProvider(
+        url,
+        expectedChainId,
+        {
+          staticNetwork: true,
+          batchMaxCount: configuration.batchMaxCount,
+          batchStallTime: configuration.batchStallTimeMs,
+        },
+        { ...configuration, maxRetries },
+        label,
+      ),
+      consecutiveFailures: 0,
+      unhealthyUntil: 0,
+    });
+    this.ordinary = [
+      create('primary', endpoints.primary, ordinaryCount > 1 ? 0 : configuration.maxRetries),
+      ...(endpoints.secondary ? [create('secondary', endpoints.secondary, 0)] : []),
+      ...(endpoints.emergency ? [create('emergency', endpoints.emergency, 0)] : []),
+    ];
+    this.logs = endpoints.logsPrimary
+      ? [
+          create(
+            'logs-primary',
+            endpoints.logsPrimary,
+            logCount > 1 ? 0 : configuration.maxRetries,
+          ),
+          ...(endpoints.logsFallback ? [create('logs-fallback', endpoints.logsFallback, 0)] : []),
+        ]
+      : this.ordinary;
+  }
+
+  registerMulticallTarget(address: string) {
+    for (const endpoint of new Set([...this.ordinary, ...this.logs]))
+      endpoint.provider.registerMulticallTarget(address);
+  }
+
+  override async _send(payload: JsonRpcPayload | JsonRpcPayload[]) {
+    let entries = Array.isArray(payload) ? payload : [payload];
+    // Backend writes are not expected, but if one reaches this provider it is
+    // sent to the primary exactly once and never failed over.
+    if (entries.some((entry) => !reads.has(entry.method)))
+      return this.ordinary[0].provider._send(payload);
+    if (
+      entries.some(
+        (entry) =>
+          entry.method === 'eth_call' &&
+          Array.isArray(entry.params) &&
+          (entry.params.length < 2 || entry.params[1] === 'latest'),
+      )
+    ) {
+      let confirmed = currentConfirmedReadBlock();
+      if (confirmed === undefined) {
+        const headReply = (
+          await this.route(
+            [{ jsonrpc: '2.0', id: -9_999_999, method: 'eth_blockNumber', params: [] }],
+            this.ordinary,
+            false,
+          )
+        )[0];
+        if (typeof headReply.result === 'string') {
+          const confirmations = integerEnvironment(
+            'CHAIN_EVENT_CONFIRMATIONS',
+            this.expectedChainId === 31_337 ? 0 : 2,
+            0,
+            1_000,
+          );
+          confirmed = Math.max(0, Number(BigInt(headReply.result)) - confirmations);
+          setConfirmedReadBlock(confirmed);
+        }
+      }
+      if (confirmed !== undefined) {
+        const tag = `0x${confirmed.toString(16)}`;
+        entries = entries.map((entry) =>
+          entry.method === 'eth_call' && Array.isArray(entry.params)
+            ? { ...entry, params: [entry.params[0], tag] }
+            : entry,
+        );
+      }
+    }
+    const ordinary = entries.filter((entry) => entry.method !== 'eth_getLogs');
+    const logs = entries.filter((entry) => entry.method === 'eth_getLogs');
+    const results = [
+      ...(ordinary.length ? await this.route(ordinary, this.ordinary, false) : []),
+      ...(logs.length ? await this.route(logs, this.logs, true) : []),
+    ];
+    return entries.map((entry) => {
+      const result = results.find((candidate) => candidate.id === entry.id);
+      if (!result) throw new Error('The RPC provider pool omitted a response.');
+      return result;
+    });
+  }
+
+  /** Validate all configured endpoints without revealing their URLs. */
+  async validate(contractAddresses: string[] = []) {
+    const unique = [...new Set([...this.ordinary, ...this.logs])];
+    const observations = await Promise.all(
+      unique.map(async (endpoint) => {
+        try {
+          const [chain, block] = await Promise.all([
+            endpoint.provider.send('eth_chainId', []),
+            endpoint.provider.send('eth_blockNumber', []),
+          ]);
+          if (Number(BigInt(String(chain))) !== this.expectedChainId)
+            throw new Error('wrong chain');
+          const latest = Number(BigInt(String(block)));
+          endpoint.lastObservedBlock = latest;
+          endpointMetrics(endpoint.label).lastObservedBlock = latest;
+          for (const address of contractAddresses)
+            if ((await endpoint.provider.getCode(address, latest)) === '0x')
+              throw new Error('required contract bytecode is missing');
+          if (
+            (endpoint.label.startsWith('logs-') || this.logs === this.ordinary) &&
+            contractAddresses[0]
+          )
+            await endpoint.provider.send('eth_getLogs', [
+              {
+                address: contractAddresses[0],
+                fromBlock: `0x${latest.toString(16)}`,
+                toBlock: `0x${latest.toString(16)}`,
+              },
+            ]);
+          return { endpoint, latest, usable: true };
+        } catch (cause) {
+          this.openCircuit(endpoint, cause, true);
+          return { endpoint, latest: -1, usable: false };
+        }
+      }),
+    );
+    const best = Math.max(...observations.map((entry) => entry.latest));
+    for (const observation of observations)
+      if (observation.usable && best - observation.latest > 5) {
+        this.openCircuit(observation.endpoint, new Error('stale endpoint'), true);
+        observation.usable = false;
+      }
+    if (!this.ordinary.some((endpoint) => endpoint.unhealthyUntil <= Date.now()))
+      throw new Error('RPC_STARTUP_FAILED: No usable ordinary-read provider is configured.');
+    if (!this.logs.some((endpoint) => endpoint.unhealthyUntil <= Date.now()))
+      throw new Error(
+        'RPC_LOG_STARTUP_FAILED: No usable log provider or compatible log fallback is configured.',
+      );
+  }
+
+  override destroy() {
+    for (const endpoint of new Set([...this.ordinary, ...this.logs])) endpoint.provider.destroy();
+    super.destroy();
+  }
+
+  private async route(entries: JsonRpcPayload[], endpoints: EndpointState[], logRead: boolean) {
+    const completed = new Map<number | string, JsonRpcResult>();
+    let pending = entries;
+    let lastFailure: unknown;
+    for (let index = 0; index < endpoints.length && pending.length; index++) {
+      const endpoint = endpoints[index];
+      if (!(await this.available(endpoint))) continue;
+      const requiredBlock = requiredReadBlock(pending);
+      if (requiredBlock !== undefined && !(await this.hasReached(endpoint, requiredBlock)))
+        continue;
+      if (index > 0) {
+        metrics.failovers += 1;
+        endpointMetrics(endpoint.label).failoverIn += 1;
+      }
+      recordRpcEndpoint(endpoint.label, index > 0);
+      try {
+        const replies = await this.sendToEndpoint(
+          endpoint,
+          pending,
+          logRead && endpoint.label === 'logs-fallback',
+        );
+        const retry = new Set<number | string>();
+        for (const request of pending) {
+          const reply = replies.find((candidate) => candidate.id === request.id);
+          if (!reply || isTransientFailure(reply)) retry.add(request.id);
+          else {
+            completed.set(request.id, reply);
+            this.recordSuccess(endpoint, request, reply);
+          }
+        }
+        if (!retry.size) {
+          pending = [];
+          break;
+        }
+        lastFailure = replies.find(isTransientFailure) ?? new Error('Malformed RPC response.');
+        this.openCircuit(endpoint, lastFailure);
+        endpointMetrics(endpoint.label).failoverOut += 1;
+        pending = pending.filter((entry) => retry.has(entry.id));
+      } catch (cause) {
+        if (!isTransientFailure(cause)) throw cause;
+        lastFailure = cause;
+        this.openCircuit(endpoint, cause);
+        endpointMetrics(endpoint.label).failoverOut += 1;
+      }
+    }
+    if (pending.length) {
+      if (lastFailure instanceof Error) throw lastFailure;
+      for (const request of pending)
+        completed.set(request.id, {
+          jsonrpc: '2.0',
+          id: request.id,
+          error: rpcError(lastFailure) ?? {
+            code: -32000,
+            message: 'All configured RPC providers are temporarily unavailable.',
+          },
+        } as unknown as JsonRpcResult);
+    }
+    return entries.map((entry) => completed.get(entry.id)!).filter(Boolean);
+  }
+
+  private async sendToEndpoint(
+    endpoint: EndpointState,
+    entries: JsonRpcPayload[],
+    splitLogs: boolean,
+  ) {
+    if (!splitLogs) return endpoint.provider._send(entries.length === 1 ? entries[0] : entries);
+    const results: JsonRpcResult[] = [];
+    for (const entry of entries) results.push(await this.sendSplitLog(endpoint, entry));
+    return results;
+  }
+
+  private async sendSplitLog(endpoint: EndpointState, entry: JsonRpcPayload) {
+    const filter = (Array.isArray(entry.params) ? entry.params[0] : {}) as Record<string, unknown>;
+    const from = parseBlockNumber(filter.fromBlock);
+    const to = parseBlockNumber(filter.toBlock);
+    if (from === undefined || to === undefined || to < from)
+      return (await endpoint.provider._send(entry))[0];
+    const logs: unknown[] = [];
+    for (let start = from; start <= to; start += this.fallbackLogPageSize) {
+      const reply = (
+        await endpoint.provider._send({
+          ...entry,
+          params: [
+            {
+              ...filter,
+              fromBlock: `0x${start.toString(16)}`,
+              toBlock: `0x${Math.min(to, start + this.fallbackLogPageSize - 1).toString(16)}`,
+            },
+          ],
+        })
+      )[0];
+      if (rpcError(reply)) return { ...reply, id: entry.id };
+      if (Array.isArray(reply.result)) logs.push(...reply.result);
+    }
+    return { jsonrpc: '2.0', id: entry.id, result: deduplicateRawLogs(logs) } as JsonRpcResult;
+  }
+
+  private async available(endpoint: EndpointState) {
+    if (!endpoint.unhealthyUntil) return true;
+    if (endpoint.unhealthyUntil > Date.now()) return false;
+    if (!endpoint.probe) {
+      endpointMetrics(endpoint.label).health = 'probing';
+      endpoint.probe = this.probe(endpoint).finally(() => {
+        endpoint.probe = undefined;
+      });
+    }
+    return endpoint.probe;
+  }
+
+  private async hasReached(endpoint: EndpointState, requiredBlock: number) {
+    if ((endpoint.lastObservedBlock ?? -1) >= requiredBlock) return true;
+    try {
+      const value = await endpoint.provider.send('eth_blockNumber', []);
+      const latest = Number(BigInt(String(value)));
+      endpoint.lastObservedBlock = latest;
+      endpointMetrics(endpoint.label).lastObservedBlock = latest;
+      return latest >= requiredBlock;
+    } catch (cause) {
+      if (isTransientFailure(cause)) this.openCircuit(endpoint, cause);
+      return false;
+    }
+  }
+
+  private async probe(endpoint: EndpointState) {
+    try {
+      const [chain, block] = await Promise.all([
+        endpoint.provider.send('eth_chainId', []),
+        endpoint.provider.send('eth_blockNumber', []),
+      ]);
+      const latest = Number(BigInt(String(block)));
+      const best = Math.max(
+        0,
+        ...[...this.ordinary, ...this.logs].map((item) => item.lastObservedBlock ?? 0),
+      );
+      if (Number(BigInt(String(chain))) !== this.expectedChainId || best - latest > 5)
+        throw new Error('RPC endpoint health probe failed.');
+      endpoint.unhealthyUntil = 0;
+      endpoint.consecutiveFailures = 0;
+      endpoint.lastObservedBlock = latest;
+      const observed = endpointMetrics(endpoint.label);
+      observed.health = 'healthy';
+      observed.lastObservedBlock = latest;
+      return true;
+    } catch (cause) {
+      this.openCircuit(endpoint, cause, true);
+      return false;
+    }
+  }
+
+  private recordSuccess(endpoint: EndpointState, request: JsonRpcPayload, reply: JsonRpcResult) {
+    endpoint.consecutiveFailures = 0;
+    if (request.method === 'eth_blockNumber' && typeof reply.result === 'string') {
+      endpoint.lastObservedBlock = Number(BigInt(reply.result));
+      endpointMetrics(endpoint.label).lastObservedBlock = endpoint.lastObservedBlock;
+    }
+  }
+
+  private openCircuit(endpoint: EndpointState, cause: unknown, decisive = false) {
+    endpoint.consecutiveFailures += 1;
+    if (!decisive && !isImmediatelyDecisive(cause) && endpoint.consecutiveFailures < 2) return;
+    const retryAfter = Math.min(60_000, retryAfterDelay(cause));
+    endpoint.unhealthyUntil = Date.now() + Math.max(this.cooldownMs, retryAfter);
+    const observed = endpointMetrics(endpoint.label);
+    observed.health = 'open';
+    observed.circuitOpens += 1;
+    metrics.circuitOpens += 1;
   }
 }
 
@@ -452,7 +935,34 @@ function rpcConfiguration(chainId: number): RpcTransportConfiguration {
       10_000,
     ),
     retryBaseDelayMs: integerEnvironment('RPC_RETRY_BASE_DELAY_MS', 1_000, 1, 60_000),
+    requestTimeoutMs: integerEnvironment('RPC_REQUEST_TIMEOUT_MS', 15_000, 1_000, 120_000),
   };
+}
+
+function resolveEndpointConfiguration(fallbackUrl: string): RpcEndpointConfiguration {
+  const primary = process.env.CHAIN_RPC_PRIMARY_URL?.trim() || fallbackUrl;
+  const secondary = optionalUrl('CHAIN_RPC_SECONDARY_URL');
+  const emergency = optionalUrl('CHAIN_RPC_EMERGENCY_URL');
+  const logsPrimary = optionalUrl('CHAIN_LOG_RPC_URL');
+  const logsFallback = optionalUrl('CHAIN_LOG_FALLBACK_URL');
+  return {
+    primary,
+    secondary,
+    emergency,
+    logsPrimary,
+    logsFallback,
+    multi: !!(secondary || emergency || logsPrimary || logsFallback),
+  };
+}
+
+function optionalUrl(name: string) {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  try {
+    return new URL(value).toString();
+  } catch {
+    throw new Error(`${name} must be a valid URL.`);
+  }
 }
 
 function integerEnvironment(name: string, fallback: number, minimum: number, maximum: number) {
@@ -482,7 +992,33 @@ function emptyMetrics(): RpcPerformanceMetrics {
     retries: 0,
     transports: 0,
     batchFallbacks: 0,
+    failovers: 0,
+    circuitOpens: 0,
+    endpoints: {},
   };
+}
+
+function endpointMetrics(label: string): RpcEndpointMetrics {
+  return (metrics.endpoints[label] ??= {
+    logicalRequests: 0,
+    transports: 0,
+    batches: 0,
+    multicallBatches: 0,
+    multicallReads: 0,
+    deduplicatedRequests: 0,
+    successes: 0,
+    rateLimitErrors: 0,
+    timeouts: 0,
+    retries: 0,
+    failoverIn: 0,
+    failoverOut: 0,
+    circuitOpens: 0,
+    requestDurationMs: 0,
+    averageDurationMs: 0,
+    queueWaitMs: 0,
+    rollingDurationMs: 0,
+    health: 'unknown',
+  });
 }
 
 function isThrottled(value: unknown): boolean {
@@ -515,6 +1051,80 @@ function isThrottled(value: unknown): boolean {
     isThrottled(error.cause) ||
     isThrottled(error.info?.error)
   );
+}
+
+function isTimeout(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const error = value as { code?: unknown; message?: string; error?: unknown; cause?: unknown };
+  return (
+    ['ETIMEDOUT', 'TIMEOUT', 'UND_ERR_CONNECT_TIMEOUT'].includes(String(error.code)) ||
+    /timed? ?out|timeout/i.test(error.message ?? '') ||
+    isTimeout(error.error) ||
+    isTimeout(error.cause)
+  );
+}
+
+function isTransientFailure(value: unknown): boolean {
+  return (
+    isThrottled(value) ||
+    value instanceof UncorrelatedBatchError ||
+    (!!value &&
+      typeof value === 'object' &&
+      /malformed|omitted.*response|invalid json|unexpected end of json/i.test(
+        String((value as { message?: unknown }).message ?? ''),
+      ))
+  );
+}
+
+function isImmediatelyDecisive(value: unknown) {
+  return isRpcRateLimitError(value) || isTimeout(value) || isBatchTransportFailure(value);
+}
+
+function isBatchTransportFailure(value: unknown) {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    /malformed|omitted.*response|invalid json|unexpected end of json/i.test(
+      String((value as { message?: unknown }).message ?? ''),
+    )
+  );
+}
+
+function parseBlockNumber(value: unknown) {
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
+  if (typeof value === 'string' && /^0x[0-9a-f]+$/i.test(value)) return Number(BigInt(value));
+  return undefined;
+}
+
+function requiredReadBlock(entries: JsonRpcPayload[]) {
+  let required: number | undefined;
+  for (const entry of entries) {
+    if (entry.method !== 'eth_call' || !Array.isArray(entry.params)) continue;
+    const block = parseBlockNumber(entry.params[1]);
+    if (block !== undefined) required = Math.max(required ?? 0, block);
+  }
+  return required;
+}
+
+function deduplicateRawLogs(values: unknown[]) {
+  const seen = new Set<string>();
+  return values
+    .filter((value): value is Record<string, unknown> => !!value && typeof value === 'object')
+    .sort((left, right) => {
+      const block =
+        Number(BigInt(String(left.blockNumber ?? '0'))) -
+        Number(BigInt(String(right.blockNumber ?? '0')));
+      return (
+        block ||
+        Number(BigInt(String(left.logIndex ?? '0'))) - Number(BigInt(String(right.logIndex ?? '0')))
+      );
+    })
+    .filter((log) => {
+      const key = `${log.blockHash ?? ''}:${log.transactionHash ?? ''}:${log.logIndex ?? ''}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 export function isRpcRateLimitError(value: unknown): boolean {

@@ -2,6 +2,13 @@
 
 ## Repository and implementation
 
+- Use method-aware sequential multi-RPC reads (user-confirmed 2026-11-24): Alchemy is the preferred
+  ordinary-read endpoint, Infura is the dedicated event-log endpoint and ordinary failover, and an
+  explicitly configured third provider may be emergency ordinary-read capacity. Keep MetaMask as the
+  only user transaction signer/broadcaster; never race, quorum or fan out writes. Preserve the existing
+  batching, Multicall, incremental event indexes and scoped display snapshots. Endpoint health and
+  circuit state remain rebuildable process memory; no database or contract redeployment is required.
+
 - After the recovery-bundle password was lost, the user explicitly requested a fresh test identity
   (2026-11-23). Create it in an isolated data profile with fresh environment keys and preserve the
   previous environment/data/bundles. Treat this as new issuance, never recovery or continuity of the

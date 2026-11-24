@@ -1,4 +1,4 @@
-import { blockchainProvider, ApiRpcProvider } from '../blockchain/rpc-provider.js';
+import { blockchainProvider, registerRpcMulticallTarget } from '../blockchain/rpc-provider.js';
 import { queryContractEvents } from '../blockchain/contract-events.js';
 import { readFileSync } from 'node:fs';
 import { Contract, Interface, JsonRpcProvider } from 'ethers';
@@ -45,7 +45,22 @@ function plain(value: any, outputs?: readonly any[]): any {
   return Array.from(value, (entry) => plain(entry));
 }
 export class EthersOrdersGateway implements OrdersGateway {
+  private deploymentVerification?: Promise<void>;
   async assertDeployment() {
+    if (!this.deploymentVerification) {
+      this.deploymentVerification = this.verifyDeployment();
+      void this.deploymentVerification.catch(() => {
+        this.deploymentVerification = undefined;
+      });
+    }
+    return this.deploymentVerification;
+  }
+  /** Explicit diagnostic recheck; normal requests share the cached promise. */
+  async recheckDeployment() {
+    this.deploymentVerification = undefined;
+    return this.assertDeployment();
+  }
+  private async verifyDeployment() {
     if (Number(BigInt(await this.provider.send('eth_chainId', []))) !== this.chainId)
       throw new Error('Wrong RPC chain.');
     if ((await this.provider.getCode(this.address)) === '0x')
@@ -104,8 +119,8 @@ export class EthersOrdersGateway implements OrdersGateway {
         this.provider,
       );
       this.contracts.set(name, contract);
-      if ((name === 'delivery' || name === 'productDelivery') && this.provider instanceof ApiRpcProvider)
-        this.provider.registerMulticallTarget(String(contract.target));
+      if (name === 'delivery' || name === 'productDelivery')
+        registerRpcMulticallTarget(this.provider, String(contract.target));
     }
     return contract;
   }

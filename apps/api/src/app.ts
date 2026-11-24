@@ -8,6 +8,7 @@ import {
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import { getRpcPerformanceMetrics } from './modules/blockchain/rpc-provider.js';
 
 import { env } from './config/env.js';
 import { loadBlockchainEnvironment } from './config/blockchain-env.js';
@@ -619,9 +620,29 @@ export function createApp({
   });
 
   app.get('/api/health', (_request, response) => {
+    const rpc = getRpcPerformanceMetrics();
     response.json({
       status: 'ok',
       service: 'tracechain-api',
+      rpc: {
+        failovers: rpc.failovers,
+        circuitOpens: rpc.circuitOpens,
+        endpoints: Object.fromEntries(
+          Object.entries(rpc.endpoints).map(([label, endpoint]) => [
+            label,
+            {
+              health: endpoint.health,
+              lastObservedBlock: endpoint.lastObservedBlock,
+              rollingDurationMs: Math.round(endpoint.rollingDurationMs),
+              averageDurationMs: Math.round(endpoint.averageDurationMs),
+              rateLimitErrors: endpoint.rateLimitErrors,
+              timeouts: endpoint.timeouts,
+              failoverIn: endpoint.failoverIn,
+              failoverOut: endpoint.failoverOut,
+            },
+          ]),
+        ),
+      },
     });
   });
 

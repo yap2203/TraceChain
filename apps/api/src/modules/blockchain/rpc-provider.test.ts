@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JsonRpcProvider, type JsonRpcPayload } from 'ethers';
 import {
   ApiRpcProvider,
+  MultiRpcProvider,
   getRpcPerformanceMetrics,
   resetRpcPerformanceMetrics,
   isRpcRateLimitError,
@@ -10,8 +11,13 @@ import {
 
 describe('Shared API RPC transport', () => {
   it('recognizes nested provider rate limits without confusing ordinary reverts', () => {
-    expect(isRpcRateLimitError({code:'SERVER_ERROR',error:{code:429,message:'The RPC provider is rate limited.'}})).toBe(true);
-    expect(isRpcRateLimitError({code:3,message:'execution reverted'})).toBe(false);
+    expect(
+      isRpcRateLimitError({
+        code: 'SERVER_ERROR',
+        error: { code: 429, message: 'The RPC provider is rate limited.' },
+      }),
+    ).toBe(true);
+    expect(isRpcRateLimitError({ code: 3, message: 'execution reverted' })).toBe(false);
   });
   const providers: ApiRpcProvider[] = [];
   beforeEach(() => {
@@ -389,5 +395,209 @@ describe('Shared API RPC transport', () => {
     await vi.runAllTimersAsync();
     await Promise.all(reads);
     expect(times[1] - times[0]).toBeGreaterThanOrEqual(1000);
+  });
+});
+
+describe('Multi-RPC routing', () => {
+  const created: MultiRpcProvider[] = [];
+  const configuration: RpcTransportConfiguration = {
+    batchMaxCount: 10,
+    batchStallTimeMs: 0,
+    bulkConcurrency: 1,
+    concurrency: 4,
+    maxRetries: 1,
+    minRequestIntervalMs: 0,
+    bulkMinRequestIntervalMs: 0,
+    retryBaseDelayMs: 1,
+    requestTimeoutMs: 1_000,
+  };
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetRpcPerformanceMetrics();
+    vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '0');
+    vi.stubEnv('RPC_ENDPOINT_COOLDOWN_MS', '1000');
+  });
+  afterEach(() => {
+    created.forEach((provider) => provider.destroy());
+    created.length = 0;
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+  function pool(logs = false) {
+    const provider = new MultiRpcProvider(
+      {
+        primary: 'http://primary.invalid',
+        secondary: 'http://secondary.invalid',
+        logsPrimary: logs ? 'http://logs.invalid' : undefined,
+        logsFallback: logs ? 'http://logs-fallback.invalid' : undefined,
+        multi: true,
+      },
+      11155111,
+      configuration,
+    );
+    created.push(provider);
+    return provider;
+  }
+  const call = (id = 1, method = 'eth_getBalance'): JsonRpcPayload => ({
+    jsonrpc: '2.0',
+    id,
+    method,
+    params: ['0x0000000000000000000000000000000000000001', 'latest'],
+  });
+  it('uses the primary only when it succeeds', async () => {
+    const labels: string[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      labels.push((this as ApiRpcProvider).endpointLabel);
+      const entry = input as JsonRpcPayload;
+      return [{ jsonrpc: '2.0', id: entry.id, result: '0x1' }];
+    });
+    const result = pool()._send(call());
+    await vi.runAllTimersAsync();
+    expect((await result)[0].result).toBe('0x1');
+    expect(labels).toEqual(['primary']);
+  });
+  it('fails over immediately from a primary rate limit to the secondary', async () => {
+    const labels: string[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      const label = (this as ApiRpcProvider).endpointLabel;
+      labels.push(label);
+      const entry = input as JsonRpcPayload;
+      return label === 'primary'
+        ? ([{ jsonrpc: '2.0', id: entry.id, error: { code: -32005, message: 'limit' } }] as any)
+        : [{ jsonrpc: '2.0', id: entry.id, result: '0x2' }];
+    });
+    const result = pool()._send(call());
+    await vi.runAllTimersAsync();
+    expect((await result)[0].result).toBe('0x2');
+    expect(labels).toEqual(['primary', 'secondary']);
+    expect(getRpcPerformanceMetrics()).toMatchObject({ failovers: 1, circuitOpens: 1 });
+  });
+  it('restores an open circuit after one successful cooldown probe', async () => {
+    let primaryBusinessCalls = 0;
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      const label = (this as ApiRpcProvider).endpointLabel;
+      const entries = Array.isArray(input) ? input : [input];
+      return entries.map((entry) => {
+        if (entry.method === 'eth_chainId')
+          return { jsonrpc: '2.0', id: entry.id, result: '0xaa36a7' };
+        if (entry.method === 'eth_blockNumber')
+          return { jsonrpc: '2.0', id: entry.id, result: '0x64' };
+        if (label === 'primary' && primaryBusinessCalls++ === 0)
+          return { jsonrpc: '2.0', id: entry.id, error: { code: -32005, message: 'limit' } };
+        return { jsonrpc: '2.0', id: entry.id, result: label === 'primary' ? '0x1' : '0x2' };
+      }) as any;
+    });
+    const provider = pool();
+    const first = provider._send(call(1));
+    await vi.runAllTimersAsync();
+    expect((await first)[0].result).toBe('0x2');
+    await vi.advanceTimersByTimeAsync(1_000);
+    const recovered = provider._send(call(2));
+    await vi.runAllTimersAsync();
+    expect((await recovered)[0].result).toBe('0x1');
+    expect(getRpcPerformanceMetrics().endpoints.primary.health).toBe('healthy');
+  });
+  it('does not fail over a valid Solidity revert', async () => {
+    const labels: string[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      labels.push((this as ApiRpcProvider).endpointLabel);
+      const entry = input as JsonRpcPayload;
+      return [
+        { jsonrpc: '2.0', id: entry.id, error: { code: 3, message: 'execution reverted' } },
+      ] as any;
+    });
+    const result = pool()._send(call());
+    await vi.runAllTimersAsync();
+    expect((await result)[0]).toHaveProperty('error');
+    expect(labels).toEqual(['primary']);
+  });
+  it('routes logs to the dedicated endpoint without ordinary-provider traffic', async () => {
+    const labels: string[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      labels.push((this as ApiRpcProvider).endpointLabel);
+      const entry = input as JsonRpcPayload;
+      return [{ jsonrpc: '2.0', id: entry.id, result: [] }];
+    });
+    const result = pool(true)._send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_getLogs',
+      params: [{ fromBlock: '0x1', toBlock: '0x2' }],
+    });
+    await vi.runAllTimersAsync();
+    await result;
+    expect(labels).toEqual(['logs-primary']);
+  });
+  it('splits the exact remaining log range for a smaller fallback and orders results', async () => {
+    vi.stubEnv('CHAIN_EVENT_FALLBACK_PAGE_SIZE', '10');
+    const ranges: Array<[string, string]> = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      const label = (this as ApiRpcProvider).endpointLabel;
+      const entry = input as JsonRpcPayload;
+      if (label === 'logs-primary')
+        return [{ jsonrpc: '2.0', id: entry.id, error: { code: -32005, message: 'limit' } }] as any;
+      const filter = (entry.params as any[])[0];
+      ranges.push([filter.fromBlock, filter.toBlock]);
+      return [
+        {
+          jsonrpc: '2.0',
+          id: entry.id,
+          result: [
+            {
+              blockNumber: filter.fromBlock,
+              logIndex: '0x0',
+              blockHash: `hash-${filter.fromBlock}`,
+              transactionHash: `tx-${filter.fromBlock}`,
+            },
+          ],
+        },
+      ];
+    });
+    const result = pool(true)._send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_getLogs',
+      params: [{ fromBlock: '0x1', toBlock: '0x19' }],
+    });
+    await vi.runAllTimersAsync();
+    expect((await result)[0].result).toHaveLength(3);
+    expect(ranges).toEqual([
+      ['0x1', '0xa'],
+      ['0xb', '0x14'],
+      ['0x15', '0x19'],
+    ]);
+  });
+  it('never fails over a transaction broadcast', async () => {
+    const labels: string[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      labels.push((this as ApiRpcProvider).endpointLabel);
+      const entry = input as JsonRpcPayload;
+      return [{ jsonrpc: '2.0', id: entry.id, error: { code: -32005, message: 'limit' } }] as any;
+    });
+    const result = pool()._send(call(1, 'eth_sendRawTransaction'));
+    await vi.runAllTimersAsync();
+    await result;
+    expect(labels).toEqual(['primary']);
+  });
+  it('rejects wrong-chain endpoints during startup validation without leaking URLs', async () => {
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      const entries = Array.isArray(input) ? input : [input];
+      return entries.map((entry) => ({
+        jsonrpc: '2.0',
+        id: entry.id,
+        result:
+          entry.method === 'eth_chainId'
+            ? '0x1'
+            : entry.method === 'eth_blockNumber'
+              ? '0x64'
+              : '0x1234',
+      })) as any;
+    });
+    const validation = pool().validate();
+    const rejected = expect(validation).rejects.toThrow('No usable ordinary-read provider');
+    await vi.runAllTimersAsync();
+    await rejected;
+    expect(JSON.stringify(getRpcPerformanceMetrics())).not.toContain('primary.invalid');
   });
 });

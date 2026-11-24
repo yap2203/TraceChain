@@ -1,5 +1,42 @@
 # Project Progress
 
+## 2026-11-24 - Parallelized OrderSummary reads
+
+- Restructured OrderSummaryReader.read() (apps/api/src/modules/orders/order-summaries.ts) from per-order sequential
+  processing into four parallel phases: Phase 1 fetches every order's getOrder in parallel; Phase 2 fetches all
+  dependent reads (requestDecision, approvedReceivedQuantity, delivery.get, productDelivery.get, custodyOrders)
+  for every order in parallel; Phase 3 applies the authorization filter; Phase 4 fetches every item's getItem
+  in parallel, deduplicated by itemId. This collapses roughly ceil(N/4) x 7 sequential RPC rounds per order
+  down to about 4 sequential rounds total regardless of order count, leveraging the existing Multicall3
+  aggregate3 transport batching (RPC_MULTICALL_ENABLED) within each phase.
+- API typecheck passed across all workspaces (shared, ssi, api, web, contracts).
+- Validation: Orders-related API tests should be re-run against this change; no live Sepolia/RPC timing claimed yet.
+
+## 2026-11-24 - Method-aware multi-RPC reads
+
+- Extended the shared API transport with sequential `primary -> secondary -> emergency` ordinary-read
+  failover and dedicated `logs-primary -> logs-fallback` routing. Existing single `CHAIN_RPC_URL` and
+  local Hardhat configurations remain supported. MetaMask writes are never retried or fanned out.
+- Added safe-labelled process-local endpoint health, cooldown circuits, one recovery probe, chain/head
+  validation, stale-head rejection, bounded fallback, per-endpoint metrics and `/api/health` diagnostics.
+  Provider URLs and keys are not returned or logged.
+- Kept JSON-RPC batching, in-flight deduplication, partial retry, Multicall3, priority scheduling,
+  incremental event indexes and scoped display snapshots. Fallback log reads split exact ranges into
+  the configured smaller page size and deterministically deduplicate results.
+- Orders API reads pin related latest `eth_call` operations to one confirmed block in request context;
+  fallback endpoints must have reached that block. Orders deployment verification now shares one
+  cached promise and clears it after failure for a later retry.
+- Added the documented backend endpoint, event-page, cooldown and timeout variables. No contract,
+  ABI, credential, chain data, database or public deployment changed.
+- Validation: API suite 516/516 passed, web suite 421/421 passed, blockchain suite 119/119 passed,
+  Orders suite 187/187 passed and authentication suite 20/20 passed. API/web typechecks and production
+  builds passed. The deterministic mock Orders workload remained 40 orders / 20 batches: 2,653 ms cold
+  and 2,532 ms repeat, 205 contract reads, 9 event queries and 0 IPFS downloads per uncached request.
+  The configured single Sepolia endpoint passed the final read-only startup check with 9 transports,
+  0 retries and 0 failovers. No multi-provider Sepolia credentials were configured, so no live failover
+  timing or sub-second claim was made; the provider mock verifies a 20-read batch in one transport and
+  primary-to-secondary failover.
+
 ## 2026-11-23 - Cross-site production SIWE sessions
 
 - Production SIWE cookies now use `SameSite=None; Secure` for separate cross-site frontend/API
@@ -217,7 +254,6 @@
 - Validation passed: 293 scoped API tests, 160 scoped frontend tests (including login), all 29 SSI tests
   and all 74 local contract tests. Root build and all-workspace typecheck passed. Web retains bundle-size
   and third-party directive warnings; no physical MetaMask/live Pinata end-to-end run is claimed.
-
 
 ## 2026-11-22 - Cross-device confirmed business records
 

@@ -56,9 +56,18 @@ const selectors = new Set(
     'productionLocation(bytes32)',
     'isUsable(bytes32)',
     'isTransferable(bytes32)',
-    'get(bytes32)', 'getPosition(bytes32)', 'custodyOrders(bytes32)', 'warehouses(bytes32)',
-    'deliveryArranged(bytes32)', 'custodyPolicy()', 'reviewPolicy()', 'fulfilmentPolicy()',
-    'ingredientDelivery()', 'productDelivery()', 'locationOwner(bytes32)', 'locationStock(bytes32,bytes32)',
+    'get(bytes32)',
+    'getPosition(bytes32)',
+    'custodyOrders(bytes32)',
+    'warehouses(bytes32)',
+    'deliveryArranged(bytes32)',
+    'custodyPolicy()',
+    'reviewPolicy()',
+    'fulfilmentPolicy()',
+    'ingredientDelivery()',
+    'productDelivery()',
+    'locationOwner(bytes32)',
+    'locationStock(bytes32,bytes32)',
   ].map((signature) => id(signature).slice(0, 10)),
 );
 
@@ -79,7 +88,9 @@ export class MulticallReads {
     private recordBatch: (count: number) => void,
   ) {}
 
-  registerTarget(address: string) { this.targets.add(address.toLowerCase()); }
+  registerTarget(address: string) {
+    this.targets.add(address.toLowerCase());
+  }
 
   private eligible(payload: JsonRpcPayload) {
     const params = payload.params as unknown[];
@@ -87,7 +98,8 @@ export class MulticallReads {
     return (
       payload.method === 'eth_call' &&
       params?.length === 2 &&
-      params[1] === 'latest' &&
+      (params[1] === 'latest' ||
+        (typeof params[1] === 'string' && /^0x[0-9a-f]+$/i.test(params[1]))) &&
       !!tx &&
       Object.keys(tx).every((key) => key === 'to' || key === 'data') &&
       typeof tx.to === 'string' &&
@@ -136,60 +148,73 @@ export class MulticallReads {
 
   private async flush() {
     const queue = this.queue.splice(0);
+    const byBlock = new Map<string, Pending[]>();
+    for (const entry of queue) {
+      const block = String((entry.payload.params as unknown[])[1]);
+      const entries = byBlock.get(block) ?? [];
+      entries.push(entry);
+      byBlock.set(block, entries);
+    }
     // Bound aggregate execution and payload size. Each logical call retains its own result/error.
-    for (let start = 0; start < queue.length; start += 32) {
-      const group = queue.slice(start, start + 32);
-      try {
-        if (group.length === 1 || !(await this.verified())) {
-          await Promise.all(
-            group.map(async (entry) => {
-              try {
-                entry.resolve(await this.single(entry.payload));
-              } catch (error) {
-                entry.reject(error);
-              }
-            }),
-          );
-          continue;
+    for (const sameBlockQueue of byBlock.values()) {
+      for (let start = 0; start < sameBlockQueue.length; start += 32) {
+        const group = sameBlockQueue.slice(start, start + 32);
+        try {
+          if (group.length === 1 || !(await this.verified())) {
+            await Promise.all(
+              group.map(async (entry) => {
+                try {
+                  entry.resolve(await this.single(entry.payload));
+                } catch (error) {
+                  entry.reject(error);
+                }
+              }),
+            );
+            continue;
+          }
+          const calls = group.map((entry) => {
+            const [tx] = entry.payload.params as Array<{ to: string; data: string }>;
+            return { target: tx.to, allowFailure: true, callData: tx.data };
+          });
+          const response = await this.single({
+            jsonrpc: '2.0',
+            id: this.nextId--,
+            method: 'eth_call',
+            params: [
+              {
+                to: MULTICALL_ADDRESS,
+                data: multicallInterface.encodeFunctionData('aggregate3', [calls]),
+              },
+              (group[0].payload.params as unknown[])[1],
+            ],
+          });
+          const raw = response as unknown as Record<string, unknown>;
+          if ('error' in raw) {
+            for (const entry of group)
+              entry.resolve({ ...raw, id: entry.payload.id } as unknown as JsonRpcResult);
+            continue;
+          }
+          const [results] = multicallInterface.decodeFunctionResult('aggregate3', response.result);
+          if (results.length !== group.length)
+            throw new Error('Multicall returned an incomplete read response.');
+          this.recordBatch(group.length);
+          group.forEach((entry, index) => {
+            const result = results[index].success
+              ? { jsonrpc: '2.0', id: entry.payload.id, result: results[index].returnData }
+              : {
+                  jsonrpc: '2.0',
+                  id: entry.payload.id,
+                  error: {
+                    code: 3,
+                    message: 'execution reverted',
+                    data: results[index].returnData,
+                  },
+                };
+            entry.resolve(result as unknown as JsonRpcResult);
+          });
+        } catch (error) {
+          for (const entry of group) entry.reject(error);
         }
-        const calls = group.map((entry) => {
-          const [tx] = entry.payload.params as Array<{ to: string; data: string }>;
-          return { target: tx.to, allowFailure: true, callData: tx.data };
-        });
-        const response = await this.single({
-          jsonrpc: '2.0',
-          id: this.nextId--,
-          method: 'eth_call',
-          params: [
-            {
-              to: MULTICALL_ADDRESS,
-              data: multicallInterface.encodeFunctionData('aggregate3', [calls]),
-            },
-            'latest',
-          ],
-        });
-        const raw = response as unknown as Record<string, unknown>;
-        if ('error' in raw) {
-          for (const entry of group)
-            entry.resolve({ ...raw, id: entry.payload.id } as unknown as JsonRpcResult);
-          continue;
-        }
-        const [results] = multicallInterface.decodeFunctionResult('aggregate3', response.result);
-        if (results.length !== group.length)
-          throw new Error('Multicall returned an incomplete read response.');
-        this.recordBatch(group.length);
-        group.forEach((entry, index) => {
-          const result = results[index].success
-            ? { jsonrpc: '2.0', id: entry.payload.id, result: results[index].returnData }
-            : {
-                jsonrpc: '2.0',
-                id: entry.payload.id,
-                error: { code: 3, message: 'execution reverted', data: results[index].returnData },
-              };
-          entry.resolve(result as unknown as JsonRpcResult);
-        });
-      } catch (error) {
-        for (const entry of group) entry.reject(error);
       }
     }
   }

@@ -93,6 +93,28 @@ it('preserves a failed getter as a revert without fabricating a successful autho
   expect(replies[1]).toMatchObject({ id: 2, error: { code: 3, data: '0x11' } });
 });
 
+it('aggregates only calls pinned to the same explicit confirmed block', async () => {
+  const f = fixture();
+  const at = (id: number, block: string) => ({
+    ...payload(id),
+    params: [payload(id).params![0], block],
+  });
+  const result = Promise.all([
+    f.reader.read(at(1, '0x64') as JsonRpcPayload),
+    f.reader.read(at(2, '0x64') as JsonRpcPayload),
+    f.reader.read(at(3, '0x65') as JsonRpcPayload),
+  ]);
+  await vi.runAllTimersAsync();
+  await result;
+  const aggregates = f.send.mock.calls
+    .map(([entry]) => entry)
+    .filter(
+      (entry) => entry.method === 'eth_call' && (entry.params as any[])[0].to === MULTICALL_ADDRESS,
+    );
+  expect(aggregates).toHaveLength(1);
+  expect((aggregates[0].params as any[])[1]).toBe('0x64');
+});
+
 it('falls back to individual reads if the runtime code does not match the pinned deployment', async () => {
   const f = fixture('0x');
   const result = Promise.all([f.reader.read(payload(1)), f.reader.read(payload(2))]);
