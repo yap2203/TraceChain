@@ -3469,7 +3469,7 @@
 .shipment-card__facts dt,
 .shipment-card__next span {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .shipment-card__facts dd {
@@ -3541,7 +3541,7 @@
 .information-request-card__heading span,
 .information-request-card__party small {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .information-request-card__heading h3 {
@@ -3616,7 +3616,7 @@
 
 .information-request-card__facts dt {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .information-request-card__facts dd {
@@ -3698,7 +3698,7 @@
 
 .workspace-location-heading span {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace-location-heading > span:last-child {
@@ -3718,7 +3718,7 @@
 
 .workspace-location-usage dt {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .workspace-location-usage dd {
@@ -3825,7 +3825,7 @@
 
 .received-product-card__company small {
   color: var(--c-text-2);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .received-product-card__company strong {
@@ -3836,7 +3836,7 @@
 
 .received-product-card__facts dt {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .received-product-card__facts dd {
@@ -4165,7 +4165,7 @@
 
 .traceability-item-summary__facts dt {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .traceability-item-summary__facts dd {
@@ -4212,7 +4212,7 @@
 .audit-record-card__heading span,
 .audit-record-card dt {
   color: var(--c-text-3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .audit-record-card__heading h3 {

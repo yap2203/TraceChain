@@ -13,6 +13,12 @@ The latest change removes another source of full `/orders` requests:
 - Custody inventory uses `scope=custody-inventory`, reading its warehouse positions and product
   balances without order, listing or road-shipment scans. Supplier and Manufacturer ownership and
   Distributor custody are filtered server-side before returning inventory or enriching its batches.
+- Manufacturer/Distributor/Retailer overviews, Retailer evidence requests and product history use
+  `scope=catalogue`: item listings and registered batches with metadata, seller names and logos only.
+  No order, shipment, transfer, logistics, location, product-inventory or ingredient-link reads.
+  Distributors fall back to the full build because their catalogue visibility comes from orders and
+  custody. Same 40-order / 20-batch mock workload: full 2,675 ms / 205 reads / 9 event queries vs
+  catalogue 166 ms / 44 reads / 3 event queries cold, 4 ms / 0 reads repeat; identical 20 rows.
 - Company-information inboxes use their dedicated endpoint without loading the Orders workspace.
   Legacy company-proof context is fetched only when a record opens (order detail where applicable).
 - Summary, shipment-list and inventory snapshots are fresh for five seconds after completion. For
@@ -76,12 +82,12 @@ The same authenticated-session double, deployment double and deterministic set o
 2 ms (Windows timer scheduling affects actual elapsed time). Measurements go through Express and
 Supertest, including serialization. This is a synthetic regression workload, not a Sepolia benchmark.
 
-| Path / load | API elapsed | Mock contract reads | Event gateway queries | IPFS downloads | Rows returned |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Previous complete workspace, cold | 2,674 ms | 205 | 9 | 0 | 40 |
-| Previous complete workspace, repeat | 2,544 ms | 205 | 9 | 0 | 40 |
-| Summary first page, cold | 419 ms | 103 | 2 | 0 | 20 |
-| Summary first page, repeat within 5 seconds | 7 ms | 0 | 0 | 0 | 20 |
+| Path / load                                 | API elapsed | Mock contract reads | Event gateway queries | IPFS downloads | Rows returned |
+| ------------------------------------------- | ----------: | ------------------: | --------------------: | -------------: | ------------: |
+| Previous complete workspace, cold           |    2,674 ms |                 205 |                     9 |              0 |            40 |
+| Previous complete workspace, repeat         |    2,544 ms |                 205 |                     9 |              0 |            40 |
+| Summary first page, cold                    |      419 ms |                 103 |                     2 |              0 |            20 |
+| Summary first page, repeat within 5 seconds |        7 ms |                   0 |                     0 |              0 |            20 |
 
 Cold API time fell approximately 84%; mock contract reads fell approximately 50%.
 Gateway event-query counts are **not** raw RPC log-scan counts: the real gateway's existing index
@@ -150,6 +156,7 @@ and concurrent ingredient-list requests share a wallet-session-scoped pending re
 Two live read-only provider samples returned HTTP 200: eth_chainId 902 ms and eth_blockNumber
 301 ms. This is not an endpoint benchmark or a throughput guarantee. Live authenticated before/after
 endpoint timing remains unmeasured; the above Network values are user-provided observations.
+
 - Authenticated in-flight order/media requests are scoped to the wallet-session generation and
   discarded after session changes. Responses are not retained as a frontend completed-data cache.
 - Shared RPC transport owns bounded read retries, honors numeric/date HTTP `Retry-After`, and

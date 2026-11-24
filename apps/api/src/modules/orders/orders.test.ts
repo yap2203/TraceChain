@@ -2394,7 +2394,7 @@ describe('Orders list performance workload', () => {
       const response = await request(f.app)
         .get(process.env.ORDERS_BENCHMARK_PATH || '/api/orders')
         .expect(200);
-      expect(response.body.orders.length).toBeGreaterThan(0);
+      expect(response.body.orders.length + response.body.catalogue.length).toBeGreaterThan(0);
       console.log(
         JSON.stringify({
           workload: '40 orders / 20 catalogue batches',
@@ -2405,6 +2405,7 @@ describe('Orders list performance workload', () => {
           ipfsDownloads: 0,
           localDecryptions: f.store.decrypt.mock.calls.length,
           rows: response.body.orders.length,
+          catalogueRows: response.body.catalogue.length,
         }),
       );
     }
@@ -2560,5 +2561,54 @@ describe('Focused display snapshots', () => {
     });
     f.auth.getSession.mockResolvedValue({ authenticated: false, authorizationReady: false });
     await request(f.app).get('/api/orders?scope=custody-inventory').expect(403);
+  });
+
+  const catalogueView = (catalogue: Record<string, unknown>[]) =>
+    catalogue.map(({ itemId, name, batches, imagePath, category, unit, sellerName, kind }) => ({
+      itemId,
+      name,
+      batches,
+      imagePath,
+      category,
+      unit,
+      sellerName,
+      kind,
+    }));
+
+  it('serves catalogue display rows without order, shipment, transfer or location reads', async () => {
+    const f = fixture();
+    const full = await f.service.state('session');
+    const fullReads = f.gateway.read.mock.calls.length;
+    const fullEvents = f.gateway.events.mock.calls.length;
+    f.gateway.read.mockClear();
+    f.gateway.events.mockClear();
+    const scoped = await request(f.app).get('/api/orders?scope=catalogue').expect(200);
+    expect(catalogueView(scoped.body.catalogue)).toEqual(catalogueView(full.catalogue));
+    expect(scoped.body.catalogue.length).toBeGreaterThan(0);
+    expect(scoped.body.orders).toEqual([]);
+    const methods = f.gateway.read.mock.calls.map(([, method]) => method);
+    for (const skipped of ['getOrder', 'getShipment', 'getTransfer', 'getOrderEvidence'])
+      expect(methods).not.toContain(skipped);
+    const events = f.gateway.events.mock.calls.map(([, event]) => event);
+    for (const skipped of ['OrderRequested', 'LocationRegistered', 'ShipmentDispatched'])
+      expect(events).not.toContain(skipped);
+    console.info('Local catalogue-scope benchmark (mock gateway, not Sepolia)', {
+      fullReads,
+      catalogueReads: methods.length,
+      fullEvents,
+      catalogueEvents: events.length,
+    });
+    f.gateway.read.mockClear();
+    await request(f.app).get('/api/orders?scope=catalogue').expect(200);
+    expect(f.gateway.read).not.toHaveBeenCalled();
+    f.auth.getSession.mockResolvedValue({ authenticated: false, authorizationReady: false });
+    await request(f.app).get('/api/orders?scope=catalogue').expect(403);
+  });
+
+  it('keeps the full order-derived catalogue for Distributors', async () => {
+    const f = fixture(buyer, true, CompanyRole.DISTRIBUTOR);
+    const full = await f.service.state('session');
+    const scoped = await request(f.app).get('/api/orders?scope=catalogue').expect(200);
+    expect(catalogueView(scoped.body.catalogue)).toEqual(catalogueView(full.catalogue));
   });
 });

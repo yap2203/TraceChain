@@ -86,7 +86,10 @@ reads. Authorization and stock decisions remain current. Shared
 catalogue images defer downloads until near the viewport, and encrypted IPFS reads coalesce while
 in flight. See [measurements, cache scope and live timing checks](docs/ORDERS_LOADING_PERFORMANCE.md).
 Shipment lists use `GET /api/orders?scope=shipment-workspace`; custody inventory uses
-`scope=custody-inventory` and skips orders, evidence and shipment histories. Shipment lists load only
+`scope=custody-inventory` and skips orders, evidence and shipment histories. Role overviews, Retailer
+evidence requests and product history use `scope=catalogue` for item names and images only, skipping
+order, shipment, transfer, logistics and location reads (Distributors keep the full, order-derived
+catalogue). Shipment lists load only
 relevant catalogue batches and defer private order notes/decisions, evidence and company logos.
 Opening a shipment or composing a transfer retains the existing full action context. Company-information
 inboxes no longer load the Orders workspace just to list messages; legacy context loads on opening

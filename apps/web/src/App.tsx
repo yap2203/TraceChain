@@ -4,10 +4,23 @@ import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
 import LoginPage from './features/auth/LoginPage';
-import { RegisterCompanyPage } from './features/registration/RegisterCompanyPage';
-import { ProductTraceabilityPage } from './features/product-traceability';
-import { ReceiveTransferPage } from './features/custody-transfers/ReceiveTransferPage';
 
+// Lazy so login/QR visitors don't download the phone-input (~900 KB source) or QR-scanner code.
+const RegisterCompanyPage = lazy(() =>
+  import('./features/registration/RegisterCompanyPage').then((module) => ({
+    default: module.RegisterCompanyPage,
+  })),
+);
+const ProductTraceabilityPage = lazy(() =>
+  import('./features/product-traceability').then((module) => ({
+    default: module.ProductTraceabilityPage,
+  })),
+);
+const ReceiveTransferPage = lazy(() =>
+  import('./features/custody-transfers/ReceiveTransferPage').then((module) => ({
+    default: module.ReceiveTransferPage,
+  })),
+);
 const WorkspaceApp = lazy(() => import('./features/workspaces/WorkspaceApp'));
 const ReceiveShipmentPage = lazy(() =>
   import('./features/orders/ReceiveShipmentPage').then((module) => ({
@@ -27,9 +40,30 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate replace to="/login" />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register-company" element={<RegisterCompanyPage />} />
-        <Route path="/trace/product" element={<ProductTraceabilityPage />} />
-        <Route path="/receive/transfer" element={<ReceiveTransferPage />} />
+        <Route
+          path="/register-company"
+          element={
+            <Suspense fallback={<LoadingIndicator fullScreen label="Loading registration…" />}>
+              <RegisterCompanyPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/trace/product"
+          element={
+            <Suspense fallback={<LoadingIndicator fullScreen label="Loading product…" />}>
+              <ProductTraceabilityPage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/receive/transfer"
+          element={
+            <Suspense fallback={<LoadingIndicator fullScreen label="Loading transfer…" />}>
+              <ReceiveTransferPage />
+            </Suspense>
+          }
+        />
         <Route
           path="/receive/shipment"
           element={

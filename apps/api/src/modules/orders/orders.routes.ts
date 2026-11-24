@@ -104,7 +104,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       return service.state(
         session,
         z
-          .enum(['supplier-inventory', 'shipment-workspace', 'custody-inventory'])
+          .enum(['supplier-inventory', 'shipment-workspace', 'custody-inventory', 'catalogue'])
           .optional()
           .parse(request.query.scope),
         undefined,

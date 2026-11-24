@@ -83,7 +83,8 @@ export const getOrders = (
     | 'order-list'
     | 'order-detail'
     | 'shipment-workspace'
-    | 'custody-inventory',
+    | 'custody-inventory'
+    | 'catalogue',
   options: OrderListOptions = {},
 ) => {
   const query = new URLSearchParams(scope ? { scope } : {});

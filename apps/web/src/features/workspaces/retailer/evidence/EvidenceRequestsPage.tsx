@@ -94,7 +94,7 @@ export function RetailerEvidenceRequests({
     const [available, current, orders] = await Promise.all([
       listRetailerEvidenceOptions(),
       listEvidenceRequests(),
-      getOrders(),
+      getOrders('catalogue'),
     ]);
     setOptions(available.options);
     if (initialProductBatchId && initialIngredientBatchId) {

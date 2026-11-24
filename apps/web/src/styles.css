@@ -207,8 +207,8 @@
   }
   .brand small {
     @apply mt-[0.15rem];
-    color: #687995;
-    @apply text-[length:0.64rem] tracking-[0.18em] uppercase;
+    color: var(--color-text-muted);
+    @apply text-[length:0.7rem] tracking-[0.18em] uppercase;
   }
   .hero-copy {
     @apply mt-[clamp(2.8rem,_7vh,_5rem)];
@@ -339,8 +339,8 @@
   }
   .card-heading {
     @apply flex items-center justify-between gap-[1rem] mb-[1.1rem];
-    color: #4c6989;
-    @apply text-[length:0.62rem] tracking-[0.06em] uppercase;
+    color: var(--color-text-muted);
+    @apply text-[length:0.7rem] tracking-[0.06em] uppercase;
   }
   .live-indicator {
     @apply inline-flex items-center gap-[0.4rem];
@@ -376,7 +376,7 @@
     color: #568abc;
   }
   .network-panel dd {
-    color: #244e72;
+    color: var(--color-text-muted);
     @apply text-right;
   }
   .network-panel .network-name {
@@ -410,8 +410,8 @@
   }
   .wallet-row small {
     @apply mt-[0.08rem];
-    color: #244e72;
-    @apply text-[length:0.69rem];
+    color: var(--color-text-muted);
+    @apply text-[length:0.75rem];
   }
   .connect-button,
   .logout-button,
@@ -795,8 +795,8 @@
     color: #00ef98;
   }
   .security-footer a {
-    @apply ml-[auto];
-    color: #08d6ed;
+    @apply ml-[auto] inline-flex items-center min-h-[32px];
+    color: var(--color-primary);
     @apply font-bold no-underline;
   }
   .site-footer {
@@ -814,13 +814,13 @@
   }
   .site-footer > p {
     @apply m-[0];
-    color: #5e7087;
-    @apply text-[length:0.72rem] leading-[1.6] text-center;
+    color: var(--color-text-muted);
+    @apply text-[length:0.8rem] leading-[1.6] text-center;
   }
   .site-footer > a {
     justify-self: end;
-    color: #71869e;
-    @apply text-[length:0.72rem] no-underline;
+    color: var(--color-text-muted);
+    @apply inline-flex items-center min-h-[32px] text-[length:0.8rem] no-underline;
   }
   @keyframes reveal {
     from {

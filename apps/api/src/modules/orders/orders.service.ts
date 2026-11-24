@@ -2138,12 +2138,12 @@ export class OrdersService {
   }
   async state(
     sessionId?: string,
-    scope?: 'supplier-inventory' | 'shipment-workspace' | 'custody-inventory',
+    scope?: 'supplier-inventory' | 'shipment-workspace' | 'custody-inventory' | 'catalogue',
     detailOrderId?: string,
     refresh = false,
   ) {
     const session = await this.session(sessionId);
-    if (scope === 'shipment-workspace' || scope === 'custody-inventory') {
+    if (scope === 'shipment-workspace' || scope === 'custody-inventory' || scope === 'catalogue') {
       const key = `${this.gateway.chainId}:${this.gateway.address.toLowerCase()}:${session.address.toLowerCase()}:${session.role}:${scope}`;
       const snapshot = await this.displaySnapshots.get(
         key,
@@ -2270,10 +2270,13 @@ export class OrdersService {
 
   private async buildState(
     session: Awaited<ReturnType<OrdersService['session']>>,
-    scope?: 'supplier-inventory' | 'shipment-workspace',
+    scope?: 'supplier-inventory' | 'shipment-workspace' | 'catalogue',
     detailOrderId?: string,
   ) {
     const shipmentOnly = scope === 'shipment-workspace';
+    // Catalogue display only: skip order, shipment, transfer, logistics and location reads.
+    // Distributor catalogue visibility is derived from those records, so it keeps the full build.
+    const catalogueOnly = scope === 'catalogue' && session.role !== CompanyRole.DISTRIBUTOR;
     const detailOrder = detailOrderId
       ? await this.gateway.read('orders', 'getOrder', [detailOrderId])
       : undefined;
@@ -2320,15 +2323,17 @@ export class OrdersService {
         .then((events) =>
           detailOrder ? events.filter((e) => same(e.itemId, detailOrder.itemId)) : events,
         ),
-      this.gateway
-        .events('orders', 'OrderRequested')
-        .then((events) =>
-          detailOrderId ? events.filter((e) => same(e.orderId, detailOrderId)) : events,
-        ),
-      inventoryOnly ? [] : this.gateway.events('orders', 'LocationRegistered'),
-      inventoryOnly ? [] : this.gateway.events('orders', 'ShipmentDispatched'),
-      inventoryOnly ? [] : this.gateway.events('custody', 'OrderTransferLinked'),
-      inventoryOnly ? [] : this.gateway.events('custody', 'InventoryInitialized'),
+      catalogueOnly
+        ? []
+        : this.gateway
+            .events('orders', 'OrderRequested')
+            .then((events) =>
+              detailOrderId ? events.filter((e) => same(e.orderId, detailOrderId)) : events,
+            ),
+      inventoryOnly || catalogueOnly ? [] : this.gateway.events('orders', 'LocationRegistered'),
+      inventoryOnly || catalogueOnly ? [] : this.gateway.events('orders', 'ShipmentDispatched'),
+      inventoryOnly || catalogueOnly ? [] : this.gateway.events('custody', 'OrderTransferLinked'),
+      inventoryOnly || catalogueOnly ? [] : this.gateway.events('custody', 'InventoryInitialized'),
     ]);
     const approvedReceiptsSupported =
       Number(await this.optionalRead('orders', 'approvedReceiptPolicy')) === 1;
@@ -2347,17 +2352,18 @@ export class OrdersService {
       Number(await this.optionalRead('delivery', 'fulfilmentPolicy')) === 2;
     const productDeliverySupported =
       !inventoryOnly && Number(await this.optionalRead('custody', 'productDeliveryPolicy')) === 1;
-    const logistics = warehouseSupported
-      ? await readLogistics(
-          this.gateway,
-          session.address,
-          session.role === CompanyRole.SYSTEM_ADMIN,
-          shipmentReviewSupported,
-          productDeliverySupported,
-          inventoryOnly,
-          shipmentOnly ? 'shipments' : 'workspace',
-        )
-      : undefined;
+    const logistics =
+      warehouseSupported && !catalogueOnly
+        ? await readLogistics(
+            this.gateway,
+            session.address,
+            session.role === CompanyRole.SYSTEM_ADMIN,
+            shipmentReviewSupported,
+            productDeliverySupported,
+            inventoryOnly,
+            shipmentOnly ? 'shipments' : 'workspace',
+          )
+        : undefined;
     const focusedOrders = new Map<string, ChainRecord>();
     const focusedBatches = new Set<string>();
     if (shipmentOnly) {
@@ -2430,7 +2436,7 @@ export class OrdersService {
               [batchId],
             );
             const inventory =
-              Number(item.kind) === 2 && !shipmentOnly
+              Number(item.kind) === 2 && !shipmentOnly && !catalogueOnly
                 ? await readProductInventorySnapshot(
                     this.gateway,
                     batchId,
@@ -2456,9 +2462,10 @@ export class OrdersService {
                     productionLocation: await this.gateway.read('products', 'productionLocation', [
                       batchId,
                     ]),
-                    ingredientLinks: shipmentOnly
-                      ? undefined
-                      : await this.gateway.read('products', 'getIngredientLinks', [batchId]),
+                    ingredientLinks:
+                      shipmentOnly || catalogueOnly
+                        ? undefined
+                        : await this.gateway.read('products', 'getIngredientLinks', [batchId]),
                   }),
             };
           }),
@@ -2496,7 +2503,7 @@ export class OrdersService {
           continue;
         }
         const inventory =
-          kind === 2 && !shipmentOnly
+          kind === 2 && !shipmentOnly && !catalogueOnly
             ? await readProductInventorySnapshot(
                 this.gateway,
                 batchId,
@@ -2540,9 +2547,10 @@ export class OrdersService {
                     productionLocation: await this.gateway.read('products', 'productionLocation', [
                       batchId,
                     ]),
-                    ingredientLinks: shipmentOnly
-                      ? undefined
-                      : await this.gateway.read('products', 'getIngredientLinks', [batchId]),
+                    ingredientLinks:
+                      shipmentOnly || catalogueOnly
+                        ? undefined
+                        : await this.gateway.read('products', 'getIngredientLinks', [batchId]),
                   }),
             },
           ],
@@ -2643,7 +2651,7 @@ export class OrdersService {
     const listingBatches: ChainRecord[] = [];
     const listingKind =
       session.role === CompanyRole.SUPPLIER ? 1 : session.role === CompanyRole.MANUFACTURER ? 2 : 0;
-    if (listingKind) {
+    if (listingKind && !catalogueOnly) {
       const registered = await this.gateway.events(
         listingKind === 1 ? 'ingredients' : 'products',
         listingKind === 1 ? 'IngredientBatchRegistered' : 'ProductCreated',
@@ -2876,7 +2884,8 @@ export class OrdersService {
           []),
       ]),
     ];
-    const directoryCompanies = shipmentOnly ? [] : ((await this.directory?.list()) ?? []);
+    const directoryCompanies =
+      shipmentOnly || catalogueOnly ? [] : ((await this.directory?.list()) ?? []);
     const identities =
       (await this.directory?.resolveMany([
         ...new Set([...wallets, ...directoryCompanies.map((company) => company.walletAddress)]),

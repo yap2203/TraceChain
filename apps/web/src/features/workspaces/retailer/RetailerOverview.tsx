@@ -15,7 +15,7 @@ export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
   const { data, error, loading } = useOperationalData();
   const [orders, setOrders] = useState<OrdersState>();
   useEffect(() => {
-    void getOrders()
+    void getOrders('catalogue')
       .then(setOrders)
       .catch(() => undefined);
   }, []);

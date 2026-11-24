@@ -1,5 +1,46 @@
 # Project Progress
 
+## 2026-11-25 - UI readability and accessibility refinement (theme colors unchanged)
+
+- Audited login, registration and product trace in Chrome at 1440 px and 500 px with a WCAG AA
+  contrast / tap-target / overflow script. Login had text at 2.0:1 contrast and 8.8-10 px labels.
+- Public pages: five off-token dim colors now use the existing `--color-text-muted` token; micro
+  labels raised to >= 0.7rem, field labels to 0.75rem; footer and security links have 32 px targets.
+  Registration country label now uses the shared field label; step labels no longer draw masking
+  boxes (connector is a flex item).
+- Workspaces: text inputs/selects/textareas regained a visible keyboard focus ring (`outline-none`
+  overrode the global focus style) plus a teal focus border. Buttons get consistent minimum heights
+  (28/32/38/44 px); badges, table headers, field hints and nine card labels have a 12 px minimum.
+- Result: zero contrast, tap-target or overflow findings on the three public pages. Workspace screens
+  were not rendered (they require a MetaMask SIWE session). Web typecheck and 427/427 tests passed.
+
+## 2026-11-25 - Catalogue-only Orders scope
+
+- User reported the unscoped `GET /api/orders` taking 40+ s live (2.4 kB response). Thirteen pages
+  still called it; five only use catalogue display fields.
+- Added `scope=catalogue` (snapshot-cached like other focused scopes): skips OrderRequested,
+  location, shipment and transfer events, logistics, listing eligibility, product inventory,
+  ingredient links and the full directory. Distributors keep the full build (visibility is
+  order-derived). Switched the three role overviews, Retailer evidence requests and product history.
+- Mock 40-order / 20-batch workload: cold 2,675 -> 166 ms, reads 205 -> 44, event queries 9 -> 3;
+  repeat 2,595 -> 4 ms with 0 reads; identical catalogue rows. Live Sepolia timing not re-measured.
+- Validation: API typecheck + 518/518 tests, web typecheck + 427/427 tests passed. New tests assert
+  identical catalogue rows, skipped order/shipment/transfer reads, repeat cache and 403 recheck.
+- Remaining full-state callers: Product batches/create/detail (need locations), Receive pages,
+  custody offers and information-request pages (need orders).
+
+## 2026-11-25 - Route-level code splitting for public pages
+
+- Measured the production build: the entry chunk was 1,090 kB (288 kB gzip) and every first visit
+  loaded 424 kB gzip of JS. Sourcemap analysis showed the registration-only phone input stack
+  (libphonenumber-js, country-flag-icons, react-phone-number-input) and the QR scanner/camera code
+  were bundled into or preloaded by the login page.
+- `App.tsx` now lazy-loads `/register-company`, `/trace/product` and `/receive/transfer` like the
+  existing workspace and receive routes. Login remains eager.
+- Same `vite build`, gzip of `index.html` entry + modulepreloads: JS 424.0 -> 261.5 kB (-38%),
+  CSS 19.3 -> 15.1 kB. The remainder is react-dom, react-router and the login's ethers subset.
+- Validation: web typecheck passed; web suite 427/427 passed. No browser/Lighthouse timing claimed.
+
 ## 2026-11-24 - Parallelized OrderSummary reads
 
 - Restructured OrderSummaryReader.read() (apps/api/src/modules/orders/order-summaries.ts) from per-order sequential
@@ -1801,6 +1842,7 @@ The Admin application, credential, access-control, discrepancy, and audit screen
 - Reused the current registration state callbacks, duplicate-submit lock, frozen input and retry behavior. Submission/confirmation uncertainty is separately labelled; no changes to API, contracts, credential claims or MetaMask transaction sequence.
 - Validation: all 28 Supplier batch/list/transaction tests passed, including review/submitted payload consistency, image/price retention, earlier-step editing, three attachments across two certifications, preview, pending confirmation and existing rejection/stale-read/duplicate-submit cases. Frontend typecheck and production build passed (existing bundle-size and third-party directive warnings remain).
 - Responsive CSS uses single-column mobile form/review grids and wrapping file/action layouts. Real desktop/mobile visual inspection, keyboard/browser behavior and live MetaMask/IPFS transaction acceptance still require manual testing; no public writes were performed. README and ingredient creation guide updated.
+
 ## 2026-11-24 — Evidence Exchange UI consolidation
 
 - Replaced the two visible Received/Sent request sidebar entries with one Evidence Exchange entry;

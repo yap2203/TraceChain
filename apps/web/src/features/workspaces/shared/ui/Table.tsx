@@ -10,7 +10,7 @@ export function Table({ headers, children }: { headers: string[]; children: Reac
             {headers.map((h) => (
               <th
                 key={h}
-                className="px-[16px] py-[10px] text-left text-[11px] text-ws-text2 font-semibold tracking-[0.05em] uppercase whitespace-nowrap border-b [border-bottom-style:solid] border-ws-border"
+                className="px-[16px] py-[10px] text-left text-[12px] text-ws-text2 font-semibold tracking-[0.05em] uppercase whitespace-nowrap border-b [border-bottom-style:solid] border-ws-border"
               >
                 {h}
               </th>

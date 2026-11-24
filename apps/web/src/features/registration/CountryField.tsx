@@ -1,3 +1,4 @@
+import { RequiredLabel } from '../../components/ui/RequiredLabel';
 import flags from 'react-phone-number-input/flags';
 import type { Country } from 'react-phone-number-input';
 import { ingredientCountryCodes } from '@tracechain/shared';
@@ -29,9 +30,8 @@ export function CountryField({
 }) {
   return (
     <div className="grid min-w-0 gap-2">
-      <span>
-        {label}
-        {required && <span className="text-ws-red"> *</span>}
+      <span className="field__label">
+        <RequiredLabel label={label} required={required} />
       </span>
       <RegistrationCountrySelect
         variant="field"

@@ -60,7 +60,7 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
     }
     setLoading(true);
     void Promise.all([
-      getOrders(),
+      getOrders('catalogue'),
       Promise.all(
         batchIds.map(async (batchId) => ({
           batchId,

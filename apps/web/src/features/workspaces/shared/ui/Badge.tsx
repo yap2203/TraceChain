@@ -49,7 +49,7 @@ export function Badge({
   const s = BADGE[variant] ?? BADGE.default;
   return (
     <span
-      className={`inline-flex items-center gap-[5px] rounded-[20px] font-semibold tracking-[0.03em] whitespace-nowrap ${size === 'xs' ? 'px-[6px] py-[1px] text-[10px]' : 'px-[10px] py-[3px] text-[11px]'}`}
+      className={`inline-flex items-center gap-[5px] rounded-[20px] font-semibold tracking-[0.03em] whitespace-nowrap ${size === 'xs' ? 'px-[6px] py-[1px] text-[11px]' : 'px-[10px] py-[3px] text-[12px]'}`}
       style={{
         background: s.bg,
         color: s.color,

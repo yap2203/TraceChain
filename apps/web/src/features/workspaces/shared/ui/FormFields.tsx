@@ -3,7 +3,7 @@ import { openDatePicker } from '../../../../components/ui/date-picker';
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 
 const inputClasses =
-  'min-w-0 max-w-full w-full bg-ws-surface border border-solid border-ws-border2 rounded-[8px] px-[12px] py-[9px] text-[13px] text-ws-text outline-none transition-[border-color] duration-150 ease-[ease]';
+  'min-w-0 max-w-full w-full bg-ws-surface border border-solid border-ws-border2 rounded-[8px] px-[12px] py-[9px] text-[13px] text-ws-text focus:border-ws-teal transition-[border-color] duration-150 ease-[ease]';
 
 export function FormField({
   label,
@@ -32,7 +32,7 @@ export function FormField({
         <div
           id={descriptionId}
           role={error ? 'alert' : undefined}
-          className={`text-[11px] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
+          className={`text-[12px] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
         >
           {error || hint}
         </div>
