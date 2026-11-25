@@ -20,6 +20,7 @@ import {
   InventoryFact,
   InventorySummaryCard,
   InventoryViewToggle,
+  LoadFailed,
   SectionTitle,
   SelectField,
   TechnicalDetails,
@@ -91,7 +92,7 @@ export function CustodyInventoryPage({
 
   if (!data)
     return error ? (
-      <Alert type="error" message={error} />
+      <LoadFailed message={error} onRetry={() => void load()} />
     ) : (
       <LoadingIndicator page label="Reading your authorized custody inventory…" />
     );

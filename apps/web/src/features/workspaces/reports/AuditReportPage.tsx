@@ -76,7 +76,7 @@ export default function AuditReport() {
   return (
     <div>
       <SectionTitle
-        title="On-chain Audit Report"
+        title="On-chain audit report"
         sub={
           loading
             ? 'Reading records from the configured TraceChain contracts...'
@@ -258,7 +258,7 @@ function Summary({ data, loading }: { data: OperationalData; loading: boolean })
             key={label}
             style={{ background: T.surface2, borderRadius: 8, padding: '12px 14px' }}
           >
-            <div style={{ color: T.text2, fontSize: 11 }}>{label}</div>
+            <div style={{ color: T.text2, fontSize: 12 }}>{label}</div>
             <div style={{ color: T.navy, fontSize: 22, fontWeight: 700, marginTop: 3 }}>
               {loading ? '...' : value}
             </div>

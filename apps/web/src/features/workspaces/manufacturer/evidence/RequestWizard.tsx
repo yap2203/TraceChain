@@ -116,18 +116,18 @@ export function RequestWizard({
                 >
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13, color: T.text }}>{s.name}</div>
-                    <div style={{ fontFamily: MONO, fontSize: 10, color: T.teal, marginTop: 2 }}>
+                    <div style={{ fontFamily: MONO, fontSize: 11, color: T.teal, marginTop: 2 }}>
                       {s.did}
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, color: T.text3, marginBottom: 3 }}>
+                    <div style={{ fontSize: 11, color: T.text3, marginBottom: 3 }}>
                       Role Credential
                     </div>
                     <Badge label={s.credStatus} variant={s.credStatus} />
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6, fontSize: 11, color: T.green }}>
+                <div style={{ display: 'flex', gap: 6, fontSize: 12, color: T.green }}>
                   <CheckCircle2 size={12} style={{ marginTop: 1 }} />
                   Supplier identity verified · DID resolved
                 </div>
@@ -156,7 +156,7 @@ export function RequestWizard({
                     }}
                   >
                     <div style={{ fontSize: 13, color: T.text }}>{b.name}</div>
-                    <div style={{ fontFamily: MONO, fontSize: 11, color: T.text2 }}>{b.id}</div>
+                    <div style={{ fontFamily: MONO, fontSize: 12, color: T.text2 }}>{b.id}</div>
                   </div>
                 ))}
               </div>
@@ -202,7 +202,7 @@ export function RequestWizard({
                     <span style={{ fontSize: 13, color: T.text }}>{c.name}</span>
                     <span
                       style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: 600,
                         padding: '2px 8px',
                         borderRadius: 5,
@@ -271,7 +271,7 @@ export function RequestWizard({
                       <span
                         key={n}
                         style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           padding: '3px 9px',
                           borderRadius: 12,
                           background: T.amberBg,
@@ -296,7 +296,7 @@ export function RequestWizard({
                       <span
                         key={n}
                         style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           padding: '3px 9px',
                           borderRadius: 12,
                           background: T.tealLight,

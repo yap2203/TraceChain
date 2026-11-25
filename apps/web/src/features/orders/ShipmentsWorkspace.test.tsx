@@ -300,10 +300,8 @@ describe('unified warehouse shipments', () => {
     expect(await screen.findByRole('button', { name: 'Accept custody delivery' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Reject custody delivery' })).toBeTruthy();
     expect(
-      screen.getByRole('link', {
-        name: 'Manage Supplier credential request in Information requests',
-      }),
-    ).toBeTruthy();
+      screen.queryByRole('link', { name: /Manage Supplier credential request/ }),
+    ).toBeNull();
     expect(screen.queryByRole('button', { name: 'Scan package QR' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Reject custody delivery' }));
     await waitFor(() =>

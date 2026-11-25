@@ -106,7 +106,7 @@ export function ReviewAndConfirmReceipt({
               display: 'flex',
               alignItems: 'center',
               gap: 5,
-              fontSize: 11,
+              fontSize: 12,
               color: T.green,
               fontWeight: 600,
             }}
@@ -139,7 +139,7 @@ export function ReviewAndConfirmReceipt({
                   key={r.label}
                   style={{ padding: '9px 0', borderBottom: `1px solid ${T.border}` }}
                 >
-                  <div style={{ fontSize: 11, color: T.text2, marginBottom: 3 }}>{r.label}</div>
+                  <div style={{ fontSize: 12, color: T.text2, marginBottom: 3 }}>{r.label}</div>
                   <div
                     style={{
                       fontSize: 12.5,
@@ -159,7 +159,7 @@ export function ReviewAndConfirmReceipt({
             <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 12 }}>
               Verification
             </div>
-            <div style={{ fontSize: 11.5, color: T.text3, marginBottom: 10 }}>
+            <div style={{ fontSize: 12.5, color: T.text3, marginBottom: 10 }}>
               A successful QR scan does not confirm the physical goods are correct.
             </div>
             <VerifyRow
@@ -238,7 +238,7 @@ export function ReviewAndConfirmReceipt({
                   }}
                 >
                   Usable quantity: {usable} units
-                  <span style={{ fontSize: 11, fontWeight: 400, color: T.text2, marginLeft: 12 }}>
+                  <span style={{ fontSize: 12, fontWeight: 400, color: T.text2, marginLeft: 12 }}>
                     ({received} received − {damaged} damaged − {rejected} rejected)
                   </span>
                 </div>
@@ -331,7 +331,7 @@ export function ReviewAndConfirmReceipt({
           <Card>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 600,
                 color: T.text2,
                 textTransform: 'uppercase',
@@ -344,7 +344,7 @@ export function ReviewAndConfirmReceipt({
             <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
               <QRPlaceholder transferId={transfer.id} size={130} />
             </div>
-            <div style={{ fontSize: 11, color: T.text3, textAlign: 'center', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: T.text3, textAlign: 'center', lineHeight: 1.5 }}>
               This QR is specific to this shipment.
               <br />
               Separate from the product traceability QR.
@@ -359,7 +359,7 @@ export function ReviewAndConfirmReceipt({
               border: `1px solid ${T.border}`,
             }}
           >
-            <div style={{ fontSize: 11, color: T.text3, marginBottom: 6 }}>Quick Summary</div>
+            <div style={{ fontSize: 12, color: T.text3, marginBottom: 6 }}>Quick Summary</div>
             {[
               { label: 'Dispatched', value: `${transfer.qty}`, color: T.text },
               { label: 'Received', value: received || '—', color: T.text },

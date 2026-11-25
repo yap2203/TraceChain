@@ -4,8 +4,11 @@ import { openExistingIssuer, BackendStartupError } from './config/backend-runtim
 import { loadCredentialStoragePublicEnvironment } from './config/credential-storage-env.js';
 import { loadBlockchainEnvironment } from './config/blockchain-env.js';
 import { validateBlockchainRpcStartup } from './modules/blockchain/rpc-provider.js';
+import { configureEventIndexStore } from './modules/blockchain/contract-events.js';
+import { dataDirectory } from './config/data-directory.js';
 
 try {
+  configureEventIndexStore(dataDirectory());
   await openExistingIssuer();
   loadCredentialStoragePublicEnvironment();
   const blockchain = loadBlockchainEnvironment();

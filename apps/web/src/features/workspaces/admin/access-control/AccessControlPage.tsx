@@ -18,8 +18,9 @@ const operationalRoles = ['Supplier', 'Manufacturer', 'Distributor', 'Retailer']
 const roleColors: Record<string, string> = {
   Supplier: T.teal,
   Manufacturer: T.navy,
-  Distributor: '#0369A1',
-  Retailer: '#7C3AED',
+  // Fixed hues blended with the theme text colour so they stay readable in dark and light themes.
+  Distributor: 'color-mix(in srgb, #0369A1 65%, var(--c-text))',
+  Retailer: 'color-mix(in srgb, #7C3AED 65%, var(--c-text))',
 };
 export default function AccessControl({ section }: { section?: Tab } = {}) {
   const [tab, setTab] = useState<Tab>(section ?? 'roles');
@@ -85,13 +86,18 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
             : 'Compare the permissions available to each role.'
         }
       />
+      {error && (
+        <div className="mb-[16px]">
+          <Alert type="error" message={error} />
+        </div>
+      )}
       {!section && (
         <nav className="workspace-choice-tabs" aria-label="Access control sections">
           <button aria-pressed={active === 'roles'} onClick={() => setTab('roles')}>
-            Role Permissions
+            Role permissions
           </button>
           <button aria-pressed={active === 'matrix'} onClick={() => setTab('matrix')}>
-            Permission Matrix
+            Permission matrix
           </button>
         </nav>
       )}
@@ -105,7 +111,6 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
       ) : (
         <MatrixView permissions={permissions} />
       )}
-      {error && <Alert type="error" message={error} />}
     </div>
   );
 }
@@ -145,8 +150,11 @@ function RoleView({
               style={{
                 padding: '14px 16px',
                 borderRadius: 8,
-                border: `1px solid ${selected === index ? `${roleColors[roleName]}60` : T.border}`,
-                background: selected === index ? `${roleColors[roleName]}10` : T.surface,
+                border: `1px solid ${selected === index ? `color-mix(in srgb, ${roleColors[roleName]} 38%, transparent)` : T.border}`,
+                background:
+                  selected === index
+                    ? `color-mix(in srgb, ${roleColors[roleName]} 6%, transparent)`
+                    : T.surface,
                 cursor: 'pointer',
                 fontFamily: UI,
                 textAlign: 'left',
@@ -163,7 +171,7 @@ function RoleView({
                 </span>
                 <span
                   style={{
-                    fontSize: 11,
+                    fontSize: 12,
                     color: T.text2,
                     background: T.surface2,
                     borderRadius: 10,
@@ -173,11 +181,11 @@ function RoleView({
                   {count}
                 </span>
               </div>
-              <div style={{ fontSize: 11, color: T.text2, marginTop: 4 }}>
+              <div style={{ fontSize: 12, color: T.text2, marginTop: 4 }}>
                 {permissions.filter((permission) => permission.roles[String(index + 2)]).length}{' '}
                 permissions
               </div>
-              <div style={{ fontSize: 10, color: roleColors[roleName], marginTop: 6 }}>
+              <div style={{ fontSize: 11, color: roleColors[roleName], marginTop: 6 }}>
                 {destinations[roleName] === 'End of chain'
                   ? 'End of chain'
                   : `→ ${destinations[roleName]}`}
@@ -201,7 +209,7 @@ function RoleView({
             </div>
           </div>
           <div>
-            <div style={{ fontSize: 10, color: T.text2, textTransform: 'uppercase' }}>
+            <div style={{ fontSize: 11, color: T.text2, textTransform: 'uppercase' }}>
               Transfers to
             </div>
             <div style={{ fontSize: 12, color, marginTop: 4 }}>{destinations[name]}</div>
@@ -209,7 +217,7 @@ function RoleView({
         </div>
         <div
           style={{
-            fontSize: 11,
+            fontSize: 12,
             color: T.text2,
             textTransform: 'uppercase',
             letterSpacing: '0.07em',
@@ -219,6 +227,11 @@ function RoleView({
           Permissions
         </div>
         <div style={{ display: 'grid', gap: 8 }}>
+          {permissions.length === 0 && (
+            <p style={{ margin: 0, fontSize: 13, color: T.text2 }}>
+              No permissions are available to configure yet.
+            </p>
+          )}
           {permissions.map((permission) => {
             const allowed = permission.roles[String(roleNumber)];
             return (
@@ -229,8 +242,8 @@ function RoleView({
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   padding: '12px 16px',
-                  background: allowed ? `${color}08` : T.surface2,
-                  border: `1px solid ${allowed ? `${color}30` : T.border}`,
+                  background: allowed ? `color-mix(in srgb, ${color} 3%, transparent)` : T.surface2,
+                  border: `1px solid ${allowed ? `color-mix(in srgb, ${color} 19%, transparent)` : T.border}`,
                   borderRadius: 7,
                 }}
               >
@@ -238,7 +251,7 @@ function RoleView({
                   <div style={{ fontSize: 13, fontWeight: 500, color: allowed ? T.text : T.text2 }}>
                     {permissionLabels[permission.name] ?? permission.name}
                   </div>
-                  <div style={{ fontSize: 11, color: T.text2, marginTop: 2 }}>
+                  <div style={{ fontSize: 12, color: T.text2, marginTop: 2 }}>
                     Enforced by the deployed smart contracts
                   </div>
                 </div>
@@ -281,7 +294,7 @@ function MatrixView({ permissions }: { permissions: RolePermissionRecord[] }) {
   return (
     <Card style={{ overflow: 'hidden' }}>
       <div style={{ padding: '16px 20px', borderBottom: `1px solid ${T.border}` }}>
-        <div style={{ fontWeight: 600, fontSize: 14, color: T.navy }}>Permission Matrix</div>
+        <div style={{ fontWeight: 600, fontSize: 14, color: T.navy }}>Permissions by role</div>
         <div style={{ fontSize: 12, color: T.text2, marginTop: 4 }}>
           Overview of which roles can perform each on-chain operation.
         </div>
@@ -298,7 +311,7 @@ function MatrixView({ permissions }: { permissions: RolePermissionRecord[] }) {
                     padding: '12px 16px',
                     color: roleColors[name],
                     textTransform: 'uppercase',
-                    fontSize: 11,
+                    fontSize: 12,
                   }}
                 >
                   {name}
@@ -313,7 +326,7 @@ function MatrixView({ permissions }: { permissions: RolePermissionRecord[] }) {
                   <div style={{ fontSize: 13, fontWeight: 500 }}>
                     {permissionLabels[permission.name] ?? permission.name}
                   </div>
-                  <div style={{ fontSize: 11, color: T.text2 }}>Smart-contract enforced</div>
+                  <div style={{ fontSize: 12, color: T.text2 }}>Smart-contract enforced</div>
                 </td>
                 {[2, 3, 4, 5].map((roleNumber, index) => (
                   <td key={roleNumber} style={{ padding: '13px 16px', textAlign: 'center' }}>

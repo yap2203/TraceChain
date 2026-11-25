@@ -1,6 +1,7 @@
 ﻿import { ArrowRight } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import type { WorkspaceRole } from './workspace-navigation';
+import { workspacePath } from './workspace-paths';
 
 const startingPoints: Record<WorkspaceRole, readonly (readonly [string, string, string])[]> = {
   admin: [
@@ -34,28 +35,22 @@ const startingPoints: Record<WorkspaceRole, readonly (readonly [string, string, 
   ],
 };
 
-export function WorkspaceGuide({
-  role,
-  page,
-  pathForPage,
-}: {
-  role: WorkspaceRole;
-  page: string;
-  pathForPage: (page: string) => string;
-}) {
-  if (page === 'overview')
-    return (
-      <section className="workspace-start" aria-label="Quick actions">
-        {startingPoints[role].map(([id, label, description]) => (
-          <Link key={id} to={pathForPage(id)}>
-            <strong>
-              {label}
-              <ArrowRight size={16} aria-hidden="true" />
-            </strong>
-            <span>{description}</span>
-          </Link>
-        ))}
-      </section>
-    );
-  return null;
+/** Overview quick actions, rendered by each overview directly under its page title. */
+export function WorkspaceGuide() {
+  const role = useLocation().pathname.split('/')[1] as WorkspaceRole;
+  const points = startingPoints[role];
+  if (!points) return null;
+  return (
+    <section className="workspace-start" aria-label="Quick actions">
+      {points.map(([id, label, description]) => (
+        <Link key={id} to={workspacePath(role, id)}>
+          <strong>
+            {label}
+            <ArrowRight size={16} aria-hidden="true" />
+          </strong>
+          <span>{description}</span>
+        </Link>
+      ))}
+    </section>
+  );
 }

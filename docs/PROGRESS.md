@@ -1,5 +1,43 @@
 # Project Progress
 
+## 2026-11-26 - Custody flow fixes from live Supplier → Distributor test
+
+- Custody evidence gate (accept/schedule/handoff) now uses the recorded company-proof outcome
+  (registry status in shared mode) instead of re-verifying the 5-minute presentation, which made
+  every step more than 5 minutes after verification fail. Evidence Exchange rows no longer turn
+  "Unavailable" after 5 minutes for the same reason. Regression test in custody-offers.test.ts.
+- Custody offer pages: one name ("Custody offer") across list, detail, back link and buttons;
+  next-action text addressed to the viewer (instruction on their turn, waiting message otherwise);
+  expired/rejected offers keep the steps they reached; all create-form fields marked required;
+  offer expiry limited to before the batch expiry, with a hint.
+- Warehouse arrivals: no company-evidence links (evidence is handled on the custody offer);
+  origin and route show the offer's location names instead of location hashes; vehicle form
+  hidden after receipt. Pages reload again 30 s after a confirmed transaction because chain
+  events count only after the confirmation window.
+- Event reads: one shared paged scan per contract plus an on-disk index (approved A+B);
+  live Supplier ingredients 22.5 s/failing → 11.4 s cold, 5.2 s warm; 0 rate-limit errors.
+- Validation: web typecheck + 427/427 tests, API typecheck + 523/523 tests. Distributor pages
+  verified in a live browser; Supplier form changes covered by tests, not yet seen live.
+
+## 2026-11-25 - Workspace consistency pass (all roles, theme colors unchanged)
+
+- Crawled all 55 workspace pages across the five roles in a local test browser (session response
+  stubbed in the browser only; no app or API change) and checked title placement, type scale,
+  contrast, tap targets and overflow.
+- Overviews (all roles): page title now comes first, then quick actions, then load errors. Quick
+  actions moved from `WorkspaceLayout` into the overview pages.
+- Inventory, shipment and arrival pages: a failed first load now shows the error with a Try again
+  button (`LoadFailed`) instead of a bare message.
+- Toasts: a message already on screen is not stacked again (inline alerts re-announce on reload).
+- Copy: sentence-case titles ("My company identity", "On-chain audit report", "Registry audit
+  report", permission tabs); Supplier incoming orders titled "Incoming ingredient orders".
+- Type: workspace 11 px text raised to 12 px and 10 px to 11 px across 32 files (extra-small badge
+  unchanged).
+- Admin role permissions: Distributor/Retailer role colours blend with the theme text colour (5.0:1
+  dark theme, readable in light); fixed invalid `var(--c-teal)60` hex-alpha strings that hid the
+  selected-role highlight; error alert moved under the title; empty permission list explained.
+- Validation: web typecheck and 427/427 tests passed. Not verified with live data or a real wallet.
+
 ## 2026-11-25 - UI readability and accessibility refinement (theme colors unchanged)
 
 - Audited login, registration and product trace in Chrome at 1440 px and 500 px with a WCAG AA

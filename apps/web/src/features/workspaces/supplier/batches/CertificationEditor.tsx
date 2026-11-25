@@ -15,10 +15,15 @@ export interface CertificationFileDraft {
 export interface CertificationDraft extends Omit<IngredientCertification, 'documents'> {
   files: CertificationFileDraft[];
 }
-export const certificationEntries = (drafts: CertificationDraft[]): IngredientCertification[] =>
+// "This batch" always covers the batch being registered, so its reference is not typed.
+export const certificationEntries = (
+  drafts: CertificationDraft[],
+  batchReference: string,
+): IngredientCertification[] =>
   drafts.map(({ files, ...entry }) => ({
     ...entry,
-    scopeReference: entry.scopeReference?.trim() || undefined,
+    scopeReference:
+      entry.scope === 'This batch' ? batchReference : entry.scopeReference?.trim() || undefined,
     documents: files.flatMap((file) => (file.document ? [file.document] : [])),
   }));
 export function certificationError(entries: CertificationDraft[]) {
@@ -29,7 +34,7 @@ export function certificationError(entries: CertificationDraft[]) {
   for (const entry of entries) {
     if (!entry.name.trim() || !entry.issuer.trim() || !entry.reference.trim())
       return 'Each certification needs a name, issuer and certificate reference.';
-    if (entry.scope !== 'Company' && !entry.scopeReference?.trim())
+    if (entry.scope !== 'Company' && entry.scope !== 'This batch' && !entry.scopeReference?.trim())
       return 'Identify the facility, ingredient or batch covered by each certification.';
     if (!entry.noExpiry && !entry.expiryDate)
       return 'Enter certification expiry or select No expiry stated.';
@@ -84,10 +89,12 @@ export function CertificationEditor({
   showErrors = false,
   disabled = false,
   readOnly = false,
+  batchReference = '',
 }: {
   entries: CertificationDraft[];
   setEntries: Dispatch<SetStateAction<CertificationDraft[]>>;
   operationId: string;
+  batchReference?: string;
   sourceFile?: File;
   showErrors?: boolean;
   disabled?: boolean;
@@ -280,9 +287,14 @@ export function CertificationEditor({
                     label: value,
                   }))}
                 />
-                {entry.scope !== 'Company' && (
+                {entry.scope === 'This batch' && (
+                  <p className="text-[12px] text-ws-text2 m-0">
+                    Covers this batch{batchReference.trim() ? ` (${batchReference.trim()})` : ''}.
+                  </p>
+                )}
+                {entry.scope !== 'Company' && entry.scope !== 'This batch' && (
                   <Input
-                    label="Covered facility / ingredient / batch reference"
+                    label="Covered facility / ingredient reference"
                     value={entry.scopeReference ?? ''}
                     onChange={(scopeReference) => patch(entry.id, { scopeReference })}
                     required
@@ -339,7 +351,10 @@ export function CertificationEditor({
                 ['Issuer', entry.issuer],
                 ['Certificate reference', entry.reference],
                 ['Scope', entry.scope],
-                ['Covered reference', entry.scopeReference],
+                [
+                  'Covered reference',
+                  entry.scope === 'This batch' ? batchReference : entry.scopeReference,
+                ],
                 ['Issue date', entry.issueDate],
                 ['Expiry', entry.noExpiry ? 'No expiry stated' : entry.expiryDate],
               ].map(([label, value]) => (

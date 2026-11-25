@@ -33,7 +33,7 @@ export function RequestDetail({
             {req.overdue && (
               <span
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   background: T.redBg,
                   color: T.red,
                   border: `1px solid color-mix(in srgb, ${T.red} 19%, transparent)`,
@@ -83,7 +83,7 @@ export function RequestDetail({
                     borderBottom: `1px solid ${T.border}`,
                   }}
                 >
-                  <div style={{ fontSize: 11, color: T.text3, width: 120, flexShrink: 0 }}>
+                  <div style={{ fontSize: 12, color: T.text3, width: 120, flexShrink: 0 }}>
                     {r.label}
                   </div>
                   <div style={{ fontSize: 13, color: T.text }}>{r.value}</div>
@@ -112,7 +112,7 @@ export function RequestDetail({
                   <span style={{ fontSize: 13, color: T.text }}>{c.name}</span>
                   <span
                     style={{
-                      fontSize: 11,
+                      fontSize: 12,
                       fontWeight: 600,
                       color: c.req === 'required' ? T.amber : T.teal,
                     }}

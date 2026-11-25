@@ -470,6 +470,36 @@ describe('custody offer, acceptance, pickup and handoff', () => {
       });
     },
   );
+  it('gates custody steps on the recorded company verification without re-verifying the presentation', async () => {
+    const f = fixture();
+    const { offer } = await f.offers.create('s', input);
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+    const outcome = { status: 'PRESENTED', presenterWallet: source };
+    const flow = {
+      companyIdentityProofOutcome: vi.fn(async () => outcome),
+      getCompanyIdentityProofStatus: vi.fn(),
+    };
+    const service = new OrdersService(
+      f.auth as any,
+      f.gateway,
+      f.store as any,
+      { ...f.repo, findEvidence: async () => ({ identityProof: {} }) } as any,
+      flow as any,
+    );
+    const accept = () => service.actCustodyOffer('s', offer.offerId, { action: 'accept' });
+    await expect(accept()).rejects.toMatchObject({ code: 'COMPANY_PROOF_REQUIRED' });
+    Object.assign(outcome, { status: 'VERIFIED', presenterWallet: foreign });
+    await expect(accept()).rejects.toMatchObject({ code: 'COMPANY_PROOF_REQUIRED' });
+    outcome.presenterWallet = source;
+    await accept();
+    await service.actCustodyOffer('s', offer.offerId, {
+      action: 'schedule',
+      pickupAt: Math.floor(Date.now() / 1000) + 600,
+    });
+    // The outcome is read for the offer's verifier; the short-lived presentation is never re-verified.
+    expect(flow.companyIdentityProofOutcome).toHaveBeenCalledWith(expect.any(String), carrier);
+    expect(flow.getCompanyIdentityProofStatus).not.toHaveBeenCalled();
+  });
   it.each([1, 2] as const)(
     'coordinates kind %s without moving stock until the original sender confirms handoff',
     async (kind) => {

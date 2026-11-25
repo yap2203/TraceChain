@@ -3,6 +3,7 @@ import { ClipboardList, Database, Network, ShieldCheck } from 'lucide-react';
 import { chainConfig } from '../../../config/chain';
 import { Alert, Btn, Card, EmptyState, SectionTitle, StatCard, T } from '../shared/ui';
 import { useChainApplications } from './applications/useChainApplications';
+import { WorkspaceGuide } from '../WorkspaceGuide';
 
 export function AdminOverview({ onNav }: { onNav: (tab: string) => void }) {
   const { applications, error, loading, reload } = useChainApplications();
@@ -16,6 +17,7 @@ export function AdminOverview({ onNav }: { onNav: (tab: string) => void }) {
         title="Company approvals"
         sub="Monitor registrations and open the applications that need your review."
       />
+      <WorkspaceGuide />
       <div className="workspace-metrics">
         <StatCard
           label="Applications"

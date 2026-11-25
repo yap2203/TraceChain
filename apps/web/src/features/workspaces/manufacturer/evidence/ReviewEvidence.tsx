@@ -102,7 +102,7 @@ export function ReviewEvidence({
                         style={{
                           padding: '8px 12px',
                           textAlign: 'left',
-                          fontSize: 11,
+                          fontSize: 12,
                           color: T.text2,
                           fontWeight: 600,
                           letterSpacing: '0.05em',
@@ -127,7 +127,7 @@ export function ReviewEvidence({
                         <td style={{ padding: '10px 12px' }}>
                           <span
                             style={{
-                              fontSize: 11,
+                              fontSize: 12,
                               fontWeight: 600,
                               color: c.req === 'required' ? T.amber : T.teal,
                             }}
@@ -183,7 +183,7 @@ export function ReviewEvidence({
                     borderBottom: `1px solid ${T.border}`,
                   }}
                 >
-                  <div style={{ fontSize: 11, color: T.text3, width: 160, flexShrink: 0 }}>
+                  <div style={{ fontSize: 12, color: T.text3, width: 160, flexShrink: 0 }}>
                     {r.label}
                   </div>
                   <div
@@ -239,7 +239,7 @@ export function ReviewEvidence({
                   borderBottom: `1px solid ${T.border}`,
                 }}
               >
-                <div style={{ fontSize: 11, color: T.text3, width: 100, flexShrink: 0 }}>
+                <div style={{ fontSize: 12, color: T.text3, width: 100, flexShrink: 0 }}>
                   {r.label}
                 </div>
                 <div style={{ fontSize: 13, color: T.text }}>{r.value}</div>

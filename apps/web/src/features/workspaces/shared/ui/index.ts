@@ -15,6 +15,7 @@ export { TR } from './Table';
 export { TD } from './Table';
 export { HashChip } from './HashChip';
 export { Alert } from './Alert';
+export { LoadFailed } from './LoadFailed';
 export { Modal } from './Modal';
 export { TxModal } from './TransactionModal';
 export { StepProgress } from './StepProgress';

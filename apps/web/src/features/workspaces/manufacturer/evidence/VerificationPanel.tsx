@@ -178,7 +178,7 @@ export function VerificationPanel({
             </Btn>
           </div>
           {!canAccept && (
-            <div style={{ fontSize: 11, color: T.amber, textAlign: 'center' }}>
+            <div style={{ fontSize: 12, color: T.amber, textAlign: 'center' }}>
               Required information is missing — acceptance is not available.
             </div>
           )}

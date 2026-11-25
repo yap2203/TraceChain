@@ -26,7 +26,7 @@ export function TechnicalDetails({ fields }: { fields: TechnicalField[] }) {
       <dl style={{ display: 'grid', gap: 10, margin: '12px 0 0' }}>
         {visible.map((field) => (
           <div key={field.label} style={{ display: 'grid', gap: 4 }}>
-            <dt style={{ color: T.text2, fontSize: 11 }}>{field.label}</dt>
+            <dt style={{ color: T.text2, fontSize: 12 }}>{field.label}</dt>
             <dd
               style={{
                 display: 'flex',

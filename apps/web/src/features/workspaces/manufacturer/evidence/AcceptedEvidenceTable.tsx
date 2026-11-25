@@ -45,7 +45,7 @@ export function AcceptedEvidenceTable({
                         style={{
                           padding: '10px 14px',
                           textAlign: 'left',
-                          fontSize: 11,
+                          fontSize: 12,
                           color: T.text2,
                           fontWeight: 600,
                           letterSpacing: '0.05em',
@@ -76,7 +76,7 @@ export function AcceptedEvidenceTable({
                         style={{
                           padding: '11px 14px',
                           fontFamily: MONO,
-                          fontSize: 11,
+                          fontSize: 12,
                           color: T.text2,
                         }}
                       >
@@ -89,7 +89,7 @@ export function AcceptedEvidenceTable({
                         style={{
                           padding: '11px 14px',
                           fontFamily: MONO,
-                          fontSize: 11,
+                          fontSize: 12,
                           color: T.teal,
                         }}
                       >
@@ -99,7 +99,7 @@ export function AcceptedEvidenceTable({
                         style={{
                           padding: '11px 14px',
                           fontFamily: MONO,
-                          fontSize: 11,
+                          fontSize: 12,
                           color: T.text2,
                         }}
                       >
@@ -109,7 +109,7 @@ export function AcceptedEvidenceTable({
                         style={{
                           padding: '11px 14px',
                           fontFamily: MONO,
-                          fontSize: 11,
+                          fontSize: 12,
                           color: T.text2,
                         }}
                       >
@@ -121,7 +121,7 @@ export function AcceptedEvidenceTable({
                       <td style={{ padding: '11px 14px' }}>
                         <span
                           style={{
-                            fontSize: 11.5,
+                            fontSize: 12.5,
                             fontWeight: 600,
                             color: AVAIL_COLOR[a.availability],
                           }}

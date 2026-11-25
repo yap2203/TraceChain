@@ -44,10 +44,10 @@ export function TechnicalDetails({ req }: { req: EvidenceRequest }) {
                 alignItems: 'center',
               }}
             >
-              <div style={{ fontSize: 11, color: T.text3, width: 130, flexShrink: 0 }}>
+              <div style={{ fontSize: 12, color: T.text3, width: 130, flexShrink: 0 }}>
                 {row.label}
               </div>
-              <div style={{ fontFamily: MONO, fontSize: 11, color: T.text2, flex: 1 }}>
+              <div style={{ fontFamily: MONO, fontSize: 12, color: T.text2, flex: 1 }}>
                 {row.value}
               </div>
               {row.value !== '—' && (
@@ -66,7 +66,7 @@ export function TechnicalDetails({ req }: { req: EvidenceRequest }) {
               )}
             </div>
           ))}
-          <div style={{ fontSize: 11, color: T.text3, marginTop: 10, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 12, color: T.text3, marginTop: 10, lineHeight: 1.6 }}>
             No hash comparison is shown for selectively disclosed presentations. A full hash
             comparison requires the complete credential.
           </div>

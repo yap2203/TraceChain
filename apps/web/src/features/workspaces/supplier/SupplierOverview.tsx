@@ -4,7 +4,6 @@ import { Boxes, ClipboardList, PackageCheck, ShieldCheck } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { useOperationalData } from '../../blockchain/useOperationalData';
-import { Alert } from '../shared/ui';
 import { formatOperationalQuantity } from '../shared/operational-format';
 import {
   StakeholderOverviewLayout,
@@ -79,9 +78,8 @@ export function SupplierOverview({ onNav }: { onNav: (tab: string) => void }) {
 
   return (
     <>
-      {batchError && <Alert type="error" message={batchError} />}
-      {operationalError && <Alert type="error" message={operationalError} />}
       <StakeholderOverviewLayout
+        errors={[batchError, operationalError]}
         title="Supplier overview"
         description="Monitor ingredient availability, evidence requests and recent registered batches."
         metrics={[

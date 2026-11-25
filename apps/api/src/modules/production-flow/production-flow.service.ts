@@ -1429,6 +1429,19 @@ export class ProductionFlowService {
     };
   }
 
+  /**
+   * Recorded company-proof outcome for later workflow gates. The short-lived presentation was
+   * verified cryptographically when the status became VERIFIED; shared requests read the status
+   * from the hash-checked registry reference, so the on-chain review must be confirmed.
+   */
+  async companyIdentityProofOutcome(requestId: string, participant: string) {
+    const workflow = await this.requireWorkflow(requestId, participant);
+    return {
+      status: workflow.identityProof?.status,
+      presenterWallet: workflow.identityProof?.presenterWallet,
+    };
+  }
+
   async declineCompanyIdentityProof(sessionId: string | undefined, requestId: string) {
     const session = await this.requireIdentitySession(sessionId, requestId, true);
     const workflow = await this.requireWorkflow(requestId, session.address);
@@ -3750,7 +3763,6 @@ function sameAddress(left: string, right: string) {
     return false;
   }
 }
-
 
 function normalizeHash(value: string) {
   return value.replace(/^0x/i, '').toLowerCase();

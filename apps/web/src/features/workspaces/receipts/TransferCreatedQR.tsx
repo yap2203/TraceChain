@@ -70,7 +70,7 @@ export function TransferCreatedQR({
                   borderBottom: `1px solid ${T.border}`,
                 }}
               >
-                <div style={{ fontSize: 11, color: T.text3, width: 160, flexShrink: 0 }}>
+                <div style={{ fontSize: 12, color: T.text3, width: 160, flexShrink: 0 }}>
                   {r.label}
                 </div>
                 <div
@@ -87,7 +87,7 @@ export function TransferCreatedQR({
               </div>
             ))}
             <div style={{ display: 'flex', gap: 12, padding: '8px 0' }}>
-              <div style={{ fontSize: 11, color: T.text3, width: 160, flexShrink: 0 }}>Status</div>
+              <div style={{ fontSize: 12, color: T.text3, width: 160, flexShrink: 0 }}>Status</div>
               <Badge label="Awaiting Receipt" variant="transfer-pending" />
             </div>
           </div>
@@ -97,7 +97,7 @@ export function TransferCreatedQR({
           <div style={{ textAlign: 'center' }}>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 12,
                 fontWeight: 600,
                 color: T.text2,
                 textTransform: 'uppercase',
@@ -118,7 +118,7 @@ export function TransferCreatedQR({
               </div>
             )}
             <div
-              style={{ fontSize: 10, color: T.text3, marginTop: 8, maxWidth: 160, lineHeight: 1.5 }}
+              style={{ fontSize: 11, color: T.text3, marginTop: 8, maxWidth: 160, lineHeight: 1.5 }}
             >
               Ask the receiving company to scan this code and confirm the quantity received.
             </div>

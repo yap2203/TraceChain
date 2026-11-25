@@ -78,7 +78,7 @@ export function ReceiptDialogs({
                   borderBottom: `1px solid ${T.border}`,
                 }}
               >
-                <div style={{ fontSize: 11, color: T.text3, width: 150, flexShrink: 0 }}>
+                <div style={{ fontSize: 12, color: T.text3, width: 150, flexShrink: 0 }}>
                   {r.label}
                 </div>
                 <div

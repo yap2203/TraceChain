@@ -79,6 +79,14 @@ export const ingredientBatchRequestSchema = z
         path: ['certificationEntries'],
         message: 'Use unique entries/files, at most 20 documents and 20 MB total.',
       });
+    // A "This batch" certification is only usable as evidence when it names this batch.
+    for (const [index, entry] of (input.certificationEntries ?? []).entries())
+      if (entry.scope === 'This batch' && entry.scopeReference !== input.batchReference)
+        context.addIssue({
+          code: 'custom',
+          path: ['certificationEntries', index, 'scopeReference'],
+          message: `A "This batch" certification must cover batch reference ${input.batchReference}.`,
+        });
     if (input.originDetails && (!input.allergen || !input.operationId))
       context.addIssue({
         code: 'custom',

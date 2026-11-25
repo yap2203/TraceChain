@@ -147,7 +147,7 @@ export function IngredientBatchDetail({
           <div className="workspace-review-grid">
             {details.map(([label, value]) => (
               <div key={label} style={{ padding: '10px 0', borderBottom: `1px solid ${T.border}` }}>
-                <div style={{ fontSize: 11, color: T.text2, marginBottom: 3 }}>{label}</div>
+                <div style={{ fontSize: 12, color: T.text2, marginBottom: 3 }}>{label}</div>
                 <div style={{ fontSize: 13, fontWeight: 500, color: T.navy }}>{value}</div>
               </div>
             ))}

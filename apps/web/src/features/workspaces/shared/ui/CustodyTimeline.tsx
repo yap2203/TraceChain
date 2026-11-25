@@ -50,9 +50,9 @@ export function CustodyTimeline({
             <div style={{ fontWeight: 600, fontSize: 13, color: T.navy }}>{step.org}</div>
             <div style={{ fontSize: 12, color: T.text2, marginTop: 2 }}>{step.action}</div>
             {step.qty && (
-              <div style={{ fontSize: 11, color: T.text3, marginTop: 2 }}>{step.qty}</div>
+              <div style={{ fontSize: 12, color: T.text3, marginTop: 2 }}>{step.qty}</div>
             )}
-            <div style={{ fontSize: 11, color: T.text3, marginTop: 2 }}>{step.date}</div>
+            <div style={{ fontSize: 12, color: T.text3, marginTop: 2 }}>{step.date}</div>
           </div>
         </div>
       ))}

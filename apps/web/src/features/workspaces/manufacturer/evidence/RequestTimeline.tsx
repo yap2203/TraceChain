@@ -31,7 +31,7 @@ export function RequestTimeline({ events }: { events: TimelineEvent[] }) {
           </div>
           <div style={{ flex: 1, paddingBottom: 4 }}>
             <div style={{ fontSize: 12.5, color: T.text }}>{e.event}</div>
-            <div style={{ fontSize: 10.5, color: T.text3, marginTop: 2, fontFamily: MONO }}>
+            <div style={{ fontSize: 11.5, color: T.text3, marginTop: 2, fontFamily: MONO }}>
               {e.date}
             </div>
           </div>

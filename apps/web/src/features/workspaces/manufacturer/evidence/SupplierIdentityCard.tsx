@@ -38,10 +38,10 @@ export function SupplierIdentityCard({
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{name}</div>
-        <div style={{ fontFamily: MONO, fontSize: 10, color: T.text2, marginTop: 2 }}>{did}</div>
+        <div style={{ fontFamily: MONO, fontSize: 11, color: T.text2, marginTop: 2 }}>{did}</div>
       </div>
       <div>
-        <div style={{ fontSize: 10, color: T.text3, marginBottom: 3 }}>Role Credential</div>
+        <div style={{ fontSize: 11, color: T.text3, marginBottom: 3 }}>Role Credential</div>
         <Badge label={credStatus} variant={credStatus as any} />
       </div>
     </div>

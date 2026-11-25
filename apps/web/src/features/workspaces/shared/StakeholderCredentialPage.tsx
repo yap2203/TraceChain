@@ -87,7 +87,7 @@ export function StakeholderCredentialPage({
   if (!data)
     return (
       <div>
-        <SectionTitle title="My Company Identity" sub="Company Digital Identity Card" />
+        <SectionTitle title="My company identity" sub="Company digital identity card" />
         <Alert type="error" message={error || 'No credential is available for this wallet.'} />
         <Btn style={{ marginTop: 12 }} variant="outline" onClick={() => void load()}>
           Retry
@@ -101,7 +101,7 @@ export function StakeholderCredentialPage({
   return (
     <div>
       <SectionTitle
-        title="My Company Identity"
+        title="My company identity"
         sub="Your company identity, credential status and verification results."
         action={
           <div className="action-row">
@@ -176,7 +176,7 @@ export function StakeholderCredentialPage({
             value={identity.lifecycleStatus === 'ACTIVE' ? 'Authorized' : 'Not authorized'}
           />
           <StatusRow label="Registry updated" value={formatDateTime(identity.updatedAt)} plain />
-          <p style={{ color: T.text3, fontSize: 11, margin: '12px 0 0' }}>
+          <p style={{ color: T.text3, fontSize: 12, margin: '12px 0 0' }}>
             Lifecycle status comes from the deployed registries and remains separate from
             cryptographic VC verification.
           </p>
@@ -223,12 +223,12 @@ export function StakeholderCredentialPage({
                       <div style={{ fontWeight: 600, fontSize: 12, color: T.text }}>
                         {check.label}
                       </div>
-                      <div style={{ fontSize: 11, color: T.text3 }}>{check.detail}</div>
+                      <div style={{ fontSize: 12, color: T.text3 }}>{check.detail}</div>
                     </div>
                   </div>
                 ))}
               </div>
-              <div style={{ color: T.text3, fontSize: 11, marginTop: 12 }}>
+              <div style={{ color: T.text3, fontSize: 12, marginTop: 12 }}>
                 Verified at {formatDateTime(verification.verifiedAt)}
               </div>
             </>
@@ -355,7 +355,7 @@ function StatusRow({
     >
       <span style={{ fontSize: 12, color: T.text2 }}>{label}</span>
       {plain ? (
-        <span style={{ fontSize: 11, color: T.text3 }}>{value}</span>
+        <span style={{ fontSize: 12, color: T.text3 }}>{value}</span>
       ) : (
         <Badge
           label={value}
@@ -391,8 +391,8 @@ function TechnicalValue({
         alignItems: 'center',
       }}
     >
-      <span style={{ fontSize: 11, color: T.text3 }}>{label}</span>
-      <code style={{ fontFamily: MONO, fontSize: 11, overflowWrap: 'anywhere' }}>
+      <span style={{ fontSize: 12, color: T.text3 }}>{label}</span>
+      <code style={{ fontFamily: MONO, fontSize: 12, overflowWrap: 'anywhere' }}>
         {value || 'Unavailable'}
       </code>
       {onCopy && value && value !== 'Unavailable' && (

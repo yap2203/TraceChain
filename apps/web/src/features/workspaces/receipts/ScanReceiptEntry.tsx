@@ -217,7 +217,7 @@ export function ScanReceiptEntry({
         )}
 
         <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 11, color: T.text3, marginBottom: 6 }}>Demo — quick load:</div>
+          <div style={{ fontSize: 12, color: T.text3, marginBottom: 6 }}>Demo — quick load:</div>
           <div style={{ display: 'flex', gap: 6 }}>
             {Object.keys(TRANSFERS)
               .filter((k) => {
@@ -237,7 +237,7 @@ export function ScanReceiptEntry({
                     background: T.surface2,
                     cursor: 'pointer',
                     fontFamily: MONO,
-                    fontSize: 10,
+                    fontSize: 11,
                     color: T.teal,
                   }}
                 >

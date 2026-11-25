@@ -120,6 +120,8 @@ function CustodyRequestDetail({
   };
   const activeStage = currentStage[offer.status];
   const terminal = offer.status === 'REJECTED' || offer.status === 'EXPIRED';
+  // A closed offer keeps the steps it reached: sent always, accept + pickup when a pickup was set.
+  const reachedBeforeClose = offer.pickupAt ? 3 : 1;
   const steps = [
     { actor: offer.senderName, icon: <Send size={30} />, label: 'Offer sent' },
     {
@@ -141,26 +143,36 @@ function CustodyRequestDetail({
   ].map((step, index) => ({
     ...step,
     state:
-      offer.status === 'RECEIVED' || (!terminal && activeStage !== undefined && index < activeStage)
+      offer.status === 'RECEIVED' ||
+      (terminal ? index < reachedBeforeClose : activeStage !== undefined && index < activeStage)
         ? ('complete' as const)
         : !terminal && index === activeStage
           ? ('current' as const)
           : ('pending' as const),
   }));
+  // Speak to the viewer: an instruction on their turn, a waiting message otherwise.
   const nextAction =
     offer.status === 'REQUESTED'
-      ? `${offer.distributorName} is reviewing the custody offer.`
+      ? receiver
+        ? 'Review this offer, then accept or reject it.'
+        : `Waiting for ${offer.distributorName} to accept or reject the offer.`
       : offer.status === 'ACCEPTED'
-        ? `${offer.distributorName} accepted the offer and must arrange pickup.`
+        ? receiver
+          ? 'Choose the pickup time for this stock.'
+          : `Waiting for ${offer.distributorName} to arrange the pickup time.`
         : offer.status === 'SCHEDULED'
-          ? `${offer.senderName} must confirm the physical handoff at pickup.`
+          ? receiver
+            ? `Waiting for ${offer.senderName} to confirm the handoff at pickup.`
+            : 'Hand the goods over at pickup, then confirm the handoff below.'
           : offer.status === 'DISPATCHED'
-            ? `${offer.distributorName} must scan the shipment and confirm warehouse receipt.`
+            ? receiver
+              ? 'Scan the shipment QR at your warehouse to confirm receipt.'
+              : `Waiting for ${offer.distributorName} to confirm warehouse receipt.`
             : offer.status === 'RECEIVED'
               ? 'Warehouse receipt is complete.'
               : offer.status === 'REJECTED'
                 ? 'This custody offer was rejected.'
-                : 'This custody offer expired.';
+                : 'This custody offer expired before the handoff.';
   const NextIcon =
     offer.status === 'REQUESTED'
       ? Hourglass
@@ -267,17 +279,18 @@ function CustodyRequestDetail({
               <p>{nextAction}</p>
             </div>
             {receiver && ['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
-              <Btn
-                variant="outline"
-                onClick={() => setRequestEvidence(true)}
-              >
+              <Btn variant="outline" onClick={() => setRequestEvidence(true)}>
                 Request sender company evidence
               </Btn>
             )}
             {!receiver && ['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
               <Link
                 className="workspace-custody-detail__evidence-link"
-                to={workspacePath(role, 'requests') + '?' + new URLSearchParams({ context: 'custody', referenceId: offer.offerId })}
+                to={
+                  workspacePath(role, 'requests') +
+                  '?' +
+                  new URLSearchParams({ context: 'custody', referenceId: offer.offerId })
+                }
               >
                 Manage requested company evidence
               </Link>
@@ -422,6 +435,8 @@ function CustodyRequestDetail({
                         });
                         await submitProductionTransaction(prepared.transaction, actor);
                         setConfirmed(false);
+                        // Chain events count after the confirmation window; refresh once it passes.
+                        setTimeout(() => void onChanged().catch(() => undefined), 30_000);
                         setNotice(
                           'Physical handoff recorded. The Distributor scans receipt at its warehouse.',
                         );
@@ -469,7 +484,7 @@ function CustodyRequestDetail({
         <div className="workspace-custody-detail__technical">
           <TechnicalDetails
             fields={[
-              { label: 'Custody request', value: offer.offerId },
+              { label: 'Custody offer', value: offer.offerId },
               { label: 'Batch', value: offer.batchId },
               { label: 'Source location', value: offer.fromLocation },
               { label: 'Warehouse location', value: offer.toLocation },
@@ -532,7 +547,7 @@ export function CustodyOffersWorkspace({
       await action();
       await load();
     } catch (cause) {
-      setError(reportError(cause, 'The custody request could not be updated.'));
+      setError(reportError(cause, 'The custody offer could not be updated.'));
     } finally {
       setBusy(false);
     }
@@ -552,6 +567,10 @@ export function CustodyOffersWorkspace({
   const warehouses = data?.logistics?.warehouses ?? [];
   const chosenWarehouse = warehouses.find((site) => same(site.location, warehouse));
   const selectedItem = stock.find((item) => same(item.batchId, batch));
+  const batchExpiresAt = Number(
+    selectedItem?.batchDetails?.find((entry: { batchId?: string }) => same(entry.batchId, batch))
+      ?.expiresAt ?? 0,
+  );
   const selectedProductStock =
     kind === 2
       ? data?.logistics?.productStock?.find((item) => same(item.batchId, batch))
@@ -598,15 +617,15 @@ export function CustodyOffersWorkspace({
   return (
     <section
       className="workspace-flow-page"
-      aria-label={receiver ? 'Custody requests' : 'Send stock into custody'}
+      aria-label={receiver ? 'Custody offers' : 'Send stock into custody'}
     >
       {params.get('offerId') ? (
         <header className="workspace-custody-detail-header">
           <BackNavigation to={workspacePath(role, receiver ? 'intake' : 'transfers')}>
-            Custody requests
+            {receiver ? 'Custody offers' : 'Send to custody'}
           </BackNavigation>
           <div className="workspace-custody-detail-header__title-row">
-            <h2>Distributor custody request</h2>
+            <h2>Custody offer</h2>
             <Btn
               variant="outline"
               icon={<RefreshCw size={16} />}
@@ -619,7 +638,7 @@ export function CustodyOffersWorkspace({
         </header>
       ) : (
         <SectionTitle
-          title={receiver ? 'Custody requests' : 'Send stock to Distributor custody'}
+          title={receiver ? 'Custody offers' : 'Send stock to Distributor custody'}
           action={
             <Btn
               variant="outline"
@@ -632,7 +651,7 @@ export function CustodyOffersWorkspace({
           }
           sub={
             receiver
-              ? 'Review the offer, then arrange pickup. Warehouse receipt is confirmed separately.'
+              ? 'Review offers from Suppliers and Manufacturers, arrange pickup, then confirm warehouse receipt.'
               : 'Choose your stock and a Distributor warehouse. The Distributor accepts and schedules pickup first.'
           }
         />
@@ -640,7 +659,7 @@ export function CustodyOffersWorkspace({
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
       {loading ? (
-        <LoadingIndicator page label="Loading custody requests…" />
+        <LoadingIndicator page label="Loading custody offers…" />
       ) : selected && data ? (
         <CustodyRequestDetail
           offer={selected}
@@ -673,6 +692,7 @@ export function CustodyOffersWorkspace({
               <div className="workspace-offer-form">
                 <SelectField
                   label="Your stock"
+                  required
                   value={batch}
                   onChange={setBatch}
                   options={[
@@ -686,6 +706,7 @@ export function CustodyOffersWorkspace({
                 <div className="workspace-offer-field">
                   <SelectField
                     label="Pickup location"
+                  required
                     value={from}
                     onChange={setFrom}
                     options={[
@@ -705,6 +726,7 @@ export function CustodyOffersWorkspace({
                 </div>
                 <SelectField
                   label="Distributor warehouse"
+                  required
                   value={warehouse}
                   onChange={setWarehouse}
                   options={[
@@ -727,6 +749,14 @@ export function CustodyOffersWorkspace({
                   onChange={setDeadline}
                   required
                   min={local()}
+                  max={batchExpiresAt ? local(batchExpiresAt * 1000 - Date.now()) : undefined}
+                  hint={
+                    batchExpiresAt
+                      ? 'Must be before the batch expires on ' +
+                        new Date(batchExpiresAt * 1000).toLocaleString() +
+                        '.'
+                      : undefined
+                  }
                 />
               </div>
               <div className="action-row">
@@ -738,7 +768,8 @@ export function CustodyOffersWorkspace({
                     !from ||
                     !chosenWarehouse ||
                     !/^[1-9]\d*$/.test(quantity) ||
-                    !(Date.parse(deadline) > Date.now())
+                    !(Date.parse(deadline) > Date.now()) ||
+                    (!!batchExpiresAt && Date.parse(deadline) >= batchExpiresAt * 1000)
                   }
                   onClick={() =>
                     void run(async () => {
@@ -771,7 +802,7 @@ export function CustodyOffersWorkspace({
             {!visible.length ? (
               <EmptyState
                 icon={receiver ? <Inbox size={38} /> : <Package size={38} />}
-                title="No custody requests"
+                title="No custody offers"
                 sub={
                   receiver
                     ? 'Offers from Suppliers and Manufacturers will appear here.'
@@ -797,7 +828,7 @@ export function CustodyOffersWorkspace({
                           setPickup('');
                         }}
                       >
-                        View request
+                        View offer
                       </Btn>
                     </TD>
                   </TR>

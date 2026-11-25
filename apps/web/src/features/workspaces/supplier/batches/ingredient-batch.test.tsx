@@ -146,9 +146,8 @@ describe('Supplier ingredient batch workflow', () => {
       fireEvent.change(within(card).getByLabelText(/Certificate reference/), {
         target: { value: `CERT-${index}` },
       });
-      fireEvent.change(within(card).getByLabelText(/Covered facility/), {
-        target: { value: 'COCOA-2026-001' },
-      });
+      // "This batch" takes the batch reference automatically; there is nothing to type.
+      expect(within(card).getByText(/Covers this batch/)).toBeTruthy();
       fireEvent.click(within(card).getByLabelText('No expiry stated'));
       const files = Array.from(
         { length: index + 1 },

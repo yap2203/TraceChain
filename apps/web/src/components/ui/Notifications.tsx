@@ -27,7 +27,12 @@ export function Notifications() {
     const receive = (event: Event) => {
       const detail = (event as CustomEvent).detail as { message: string; type: NoticeType };
       const id = ++nextId;
-      setNotices((current) => [...current.slice(-3), { ...detail, id }]);
+      // A message already on screen is not stacked again (inline alerts re-announce on each load).
+      setNotices((current) =>
+        current.some((item) => item.type === detail.type && item.message === detail.message)
+          ? current
+          : [...current.slice(-3), { ...detail, id }],
+      );
       const timer = setTimeout(
         () => {
           setNotices((current) => current.filter((item) => item.id !== id));

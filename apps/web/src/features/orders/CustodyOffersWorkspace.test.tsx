@@ -82,8 +82,8 @@ function show(receiver = true) {
 it('requires Distributor acceptance then explicit pickup scheduling without moving inventory', async () => {
   show();
   await screen.findByText('Actual ingredient');
-  expect(screen.getByRole('heading', { name: 'Distributor custody request' })).toBeTruthy();
-  expect(screen.getByRole('link', { name: 'Custody requests' }).getAttribute('href')).toBe(
+  expect(screen.getByRole('heading', { name: 'Custody offer' })).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Custody offers' }).getAttribute('href')).toBe(
     '/distributor/intake',
   );
   expect(screen.getByRole('region', { name: 'Transfer details' })).toBeTruthy();
@@ -111,7 +111,7 @@ it('opens the custody company-evidence request in a modal without leaving the of
   fireEvent.click(await screen.findByRole('button', { name: 'Request sender company evidence' }));
   expect(await screen.findByRole('dialog', { name: /Request company evidence/ })).toBeTruthy();
   expect(screen.getAllByText('Actual Supplier').length).toBeGreaterThan(0);
-  expect(screen.getByRole('heading', { name: 'Distributor custody request' })).toBeTruthy();
+  expect(screen.getByRole('heading', { name: 'Custody offer' })).toBeTruthy();
 });
 it('presents the Supplier custody request detail as a compact workflow', async () => {
   api.orders.mockResolvedValue({
@@ -124,8 +124,8 @@ it('presents the Supplier custody request detail as a compact workflow', async (
   });
   show(false);
 
-  await screen.findByRole('heading', { name: 'Distributor custody request' });
-  expect(screen.getByRole('link', { name: 'Custody requests' }).getAttribute('href')).toBe(
+  await screen.findByRole('heading', { name: 'Custody offer' });
+  expect(screen.getByRole('link', { name: 'Send to custody' }).getAttribute('href')).toBe(
     '/supplier/transfers',
   );
   expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
@@ -168,7 +168,7 @@ it('keeps expired Distributor requests visible without actionable workflow contr
   show(false);
 
   expect(await screen.findByText('Expired')).toBeTruthy();
-  expect(screen.getByText('This custody offer expired.')).toBeTruthy();
+  expect(screen.getByText('This custody offer expired before the handoff.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Accept custody offer' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Confirm pickup time' })).toBeNull();
 });
@@ -182,7 +182,7 @@ it('keeps the sender waiting until pickup is arranged and exposes only sender ha
     logistics: { warehouses: [] },
   });
   const view = show(false);
-  await screen.findByText('Actual Distributor is reviewing the custody offer.');
+  await screen.findByText('Waiting for Actual Distributor to accept or reject the offer.');
   expect(screen.queryByRole('button', { name: 'Accept custody offer' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
   view.unmount();
@@ -233,10 +233,10 @@ it('shows the validated Manufacturer balance for the selected production pickup 
     </MemoryRouter>,
   );
 
-  fireEvent.change(await screen.findByLabelText('Your stock'), {
+  fireEvent.change(await screen.findByLabelText(/^Your stock/), {
     target: { value: 'fresh-product' },
   });
-  fireEvent.change(screen.getByLabelText('Pickup location'), { target: { value: 'factory' } });
+  fireEvent.change(screen.getByLabelText(/^Pickup location/), { target: { value: 'factory' } });
 
   expect((await screen.findByText(/Available at this pickup location:/)).textContent).toBe(
     'Available at this pickup location: 123 units',

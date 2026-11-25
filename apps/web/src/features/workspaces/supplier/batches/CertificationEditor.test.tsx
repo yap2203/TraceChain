@@ -20,7 +20,7 @@ function Harness() {
       />
       <output aria-label="Saved entry IDs">{entries.map((entry) => entry.id).join(',')}</output>
       <output aria-label="Stored document counts">
-        {certificationEntries(entries)
+        {certificationEntries(entries, 'BATCH-1')
           .map((entry) => entry.documents.length)
           .join(',')}
       </output>

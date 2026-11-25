@@ -111,7 +111,7 @@ export function AppDetail({
       }
       setApproving(false);
       notify(
-        'Company credential approved and activated. The company can access it from My Company Identity.',
+        'Company credential approved and activated. The company can access it from My company identity.',
         'success',
       );
       await onChanged();
@@ -191,7 +191,7 @@ export function AppDetail({
             }}
           >
             <span style={{ color: T.text2, fontSize: 12 }}>{label}</span>
-            <code style={{ color: T.text, fontSize: 11, overflowWrap: 'anywhere' }}>{value}</code>
+            <code style={{ color: T.text, fontSize: 12, overflowWrap: 'anywhere' }}>{value}</code>
           </div>
         ))}
       </Card>

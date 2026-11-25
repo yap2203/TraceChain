@@ -1,21 +1,46 @@
-import type { BaseContract, EventLog, Log, Provider } from 'ethers';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { EventLog, Log, type BaseContract, type Provider } from 'ethers';
 import { countRead } from './read-timing.js';
 
 const DEFAULT_PAGE_SIZE = 5_000;
 const deploymentBlocks = new WeakMap<Provider, Map<string, Promise<number>>>();
-const eventIndexes = new WeakMap<Provider, Map<string, EventIndex>>();
+const contractIndexes = new WeakMap<Provider, Map<string, ContractIndex>>();
 
-interface EventIndex {
+/** Plain, JSON-safe copy of a confirmed log; public chain data only. */
+interface StoredLog {
+  address: string;
+  blockNumber: number;
+  blockHash: string;
+  transactionHash: string;
+  transactionIndex: number;
+  index: number;
+  data: string;
+  topics: string[];
+  removed: boolean;
+}
+
+/** One index per contract: every event type shares the same paged scan. */
+interface ContractIndex {
   checkpointHash?: string;
   fromBlock: number;
   lastProcessedBlock: number;
-  logs: Array<EventLog | Log>;
-  pending?: Promise<Array<EventLog | Log>>;
+  logs: StoredLog[];
+  pending?: Promise<void>;
+  restored?: Promise<void>;
+  saving?: Promise<void>;
+}
+
+let storeDirectory: string | undefined;
+
+/** Enables the on-disk index so API restarts do not rescan history. Unset keeps it in memory. */
+export function configureEventIndexStore(directory: string | undefined) {
+  storeDirectory = directory;
 }
 
 /**
- * Read complete confirmed event history through an incremental process-local index.
- * A restart safely rebuilds the index; later requests fetch only newly confirmed blocks.
+ * Read complete confirmed event history through an incremental per-contract index.
+ * All filters on a contract share one scan; matching happens locally on the stored topics.
  */
 export async function queryContractEvents(
   contract: BaseContract,
@@ -32,22 +57,30 @@ export async function queryContractEvents(
   const confirmations = local ? 0 : integerEnvironment('CHAIN_EVENT_CONFIRMATIONS', 2, 0, 1_000);
   const confirmedHead = Math.max(0, rawHead - confirmations);
   const fromBlock = await eventStartBlock(provider, address, rawHead, confirmedHead, local);
-  const key = `${network.chainId}:${address.toLowerCase()}:${fromBlock}:${await filterKey(event)}`;
-  let providerIndexes = eventIndexes.get(provider);
-  if (!providerIndexes) eventIndexes.set(provider, (providerIndexes = new Map()));
+  const key = `${network.chainId}-${address.toLowerCase()}-${fromBlock}`;
+  let providerIndexes = contractIndexes.get(provider);
+  if (!providerIndexes) contractIndexes.set(provider, (providerIndexes = new Map()));
   let index = providerIndexes.get(key);
   if (!index) {
     index = { fromBlock, lastProcessedBlock: fromBlock - 1, logs: [] };
+    if (!local && storeDirectory) index.restored = restoreIndex(index, key, storeDirectory);
     providerIndexes.set(key, index);
   }
-  if (index.pending) return index.pending;
-  const operation = refreshEventIndex(contract, event, provider, index, confirmedHead, local);
-  index.pending = operation;
-  try {
-    return await operation;
-  } finally {
-    if (index.pending === operation) index.pending = undefined;
+  await index.restored;
+  if (!index.pending) {
+    const operation = refreshContractIndex(contract, provider, index, confirmedHead, local, key);
+    index.pending = operation;
+    void operation.then(
+      () => clearPending(index, operation),
+      () => clearPending(index, operation),
+    );
   }
+  await index.pending;
+  return matchingEvents(contract, provider, index.logs, await topicFilter(event));
+}
+
+function clearPending(index: ContractIndex, operation: Promise<void>) {
+  if (index.pending === operation) index.pending = undefined;
 }
 
 async function latestBlockNumber(provider: Provider) {
@@ -58,33 +91,32 @@ async function latestBlockNumber(provider: Provider) {
   return provider.getBlockNumber();
 }
 
-async function refreshEventIndex(
+async function refreshContractIndex(
   contract: BaseContract,
-  event: Parameters<BaseContract['queryFilter']>[0],
   provider: Provider,
-  index: EventIndex,
+  index: ContractIndex,
   confirmedHead: number,
   local: boolean,
+  key: string,
 ) {
   if (confirmedHead < index.lastProcessedBlock) resetIndex(index);
   if (index.lastProcessedBlock >= index.fromBlock && index.checkpointHash) {
     const checkpoint = await provider.getBlock(index.lastProcessedBlock);
     if (!checkpoint?.hash || checkpoint.hash !== index.checkpointHash) resetIndex(index);
   }
-  if (confirmedHead < index.fromBlock) return [...index.logs];
+  if (confirmedHead < index.fromBlock) return;
   const start = Math.max(index.fromBlock, index.lastProcessedBlock + 1);
-  if (start > confirmedHead) return [...index.logs];
+  if (start > confirmedHead) return;
   const pageSize = integerEnvironment('CHAIN_EVENT_PAGE_SIZE', DEFAULT_PAGE_SIZE, 1, 100_000);
-  const additions: Array<EventLog | Log> = [];
+  const additions: StoredLog[] = [];
   for (let pageStart = start; pageStart <= confirmedHead; pageStart += pageSize) {
     countRead('scans');
-    additions.push(
-      ...(await contract.queryFilter(
-        event,
-        pageStart,
-        Math.min(pageStart + pageSize - 1, confirmedHead),
-      )),
+    const page = await contract.queryFilter(
+      '*',
+      pageStart,
+      Math.min(pageStart + pageSize - 1, confirmedHead),
     );
+    additions.push(...page.map(storedLog));
   }
   const checkpoint = await provider.getBlock(confirmedHead);
   if (!checkpoint?.hash && !local)
@@ -92,7 +124,107 @@ async function refreshEventIndex(
   index.logs = deduplicateLogs([...index.logs, ...additions]);
   index.lastProcessedBlock = confirmedHead;
   index.checkpointHash = checkpoint?.hash ?? `local:${confirmedHead}`;
-  return [...index.logs];
+  if (!local && storeDirectory) persistIndex(index, key, storeDirectory);
+}
+
+function storedLog(log: Log | EventLog): StoredLog {
+  return {
+    address: log.address,
+    blockNumber: log.blockNumber,
+    blockHash: log.blockHash,
+    transactionHash: log.transactionHash,
+    transactionIndex: log.transactionIndex,
+    index: log.index,
+    data: log.data,
+    topics: [...(log.topics ?? [])],
+    removed: Boolean(log.removed),
+  };
+}
+
+async function topicFilter(event: Parameters<BaseContract['queryFilter']>[0]) {
+  const candidate = event as unknown as {
+    getTopicFilter?: () => Promise<Array<null | string | string[]>>;
+    topics?: Array<null | string | string[]>;
+  };
+  return candidate.getTopicFilter ? await candidate.getTopicFilter() : (candidate.topics ?? []);
+}
+
+function sameTopic(left: string | undefined, right: string) {
+  return !!left && left.toLowerCase() === right.toLowerCase();
+}
+
+function matchingEvents(
+  contract: BaseContract,
+  provider: Provider,
+  logs: StoredLog[],
+  filter: Array<null | string | string[]>,
+) {
+  return logs
+    .filter((log) =>
+      filter.every((expected, position) =>
+        expected == null
+          ? true
+          : Array.isArray(expected)
+            ? expected.some((topic) => sameTopic(log.topics[position], topic))
+            : sameTopic(log.topics[position], expected),
+      ),
+    )
+    .map((stored) => {
+      const log = new Log(stored as never, provider);
+      // Mirrors ethers' queryFilter: undecodable logs are returned as plain logs.
+      try {
+        const fragment = contract.interface.getEvent(stored.topics[0]!);
+        return fragment ? new EventLog(log, contract.interface, fragment) : log;
+      } catch {
+        return log;
+      }
+    });
+}
+
+async function restoreIndex(index: ContractIndex, key: string, directory: string) {
+  try {
+    const saved = JSON.parse(await readFile(indexFile(directory, key), 'utf8')) as Partial<
+      ContractIndex & { version: number }
+    >;
+    if (
+      saved.version !== 1 ||
+      saved.fromBlock !== index.fromBlock ||
+      !Number.isSafeInteger(saved.lastProcessedBlock) ||
+      typeof saved.checkpointHash !== 'string' ||
+      !Array.isArray(saved.logs)
+    )
+      return;
+    // The checkpoint is re-verified against the chain before the next scan; a reorg rebuilds.
+    index.lastProcessedBlock = saved.lastProcessedBlock!;
+    index.checkpointHash = saved.checkpointHash;
+    index.logs = saved.logs;
+  } catch {
+    // Missing or unreadable files rebuild from the chain.
+  }
+}
+
+function persistIndex(index: ContractIndex, key: string, directory: string) {
+  const snapshot = JSON.stringify({
+    version: 1,
+    fromBlock: index.fromBlock,
+    lastProcessedBlock: index.lastProcessedBlock,
+    checkpointHash: index.checkpointHash,
+    logs: index.logs,
+  });
+  index.saving = (index.saving ?? Promise.resolve())
+    .then(async () => {
+      const file = indexFile(directory, key);
+      await mkdir(join(directory, 'event-index'), { recursive: true });
+      await writeFile(`${file}.tmp`, snapshot);
+      await rename(`${file}.tmp`, file);
+    })
+    .catch(() => {
+      // A failed save only costs a rescan after the next restart.
+    });
+}
+
+function indexFile(directory: string, key: string) {
+  return join(directory, 'event-index', `${key}.json`);
 }
 
 async function eventStartBlock(
@@ -138,36 +270,23 @@ async function findDeploymentBlock(provider: Provider, address: string, latest: 
   return low;
 }
 
-async function filterKey(event: Parameters<BaseContract['queryFilter']>[0]) {
-  const candidate = event as unknown as {
-    args?: unknown[];
-    fragment?: { topicHash?: string };
-    getTopicFilter?: () => Promise<unknown[]>;
-    topics?: unknown[];
-  };
-  const topics = candidate.getTopicFilter
-    ? await candidate.getTopicFilter()
-    : (candidate.args ?? candidate.topics ?? []);
-  return JSON.stringify([candidate.fragment?.topicHash ?? String(event), topics]);
-}
-
-function deduplicateLogs(logs: Array<EventLog | Log>) {
+function deduplicateLogs(logs: StoredLog[]) {
   const seen = new Set<string>();
   return logs
     .sort((left, right) =>
       left.blockNumber === right.blockNumber
-        ? Number(left.index ?? 0) - Number(right.index ?? 0)
+        ? left.index - right.index
         : left.blockNumber - right.blockNumber,
     )
     .filter((log) => {
-      const key = `${log.blockHash ?? ''}:${log.transactionHash ?? ''}:${log.index ?? ''}:${log.blockNumber}`;
+      const key = `${log.blockHash}:${log.transactionHash}:${log.index}:${log.blockNumber}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
 }
 
-function resetIndex(index: EventIndex) {
+function resetIndex(index: ContractIndex) {
   index.checkpointHash = undefined;
   index.lastProcessedBlock = index.fromBlock - 1;
   index.logs = [];

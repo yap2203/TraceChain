@@ -32,6 +32,7 @@ import {
   Card,
   EmptyState,
   Input,
+  LoadFailed,
   SectionTitle,
   SelectField,
   StatusTimeline,
@@ -211,6 +212,8 @@ export function ShipmentsWorkspace({
   const sign = async (prepared: Awaited<ReturnType<typeof prepareOrder>>) => {
     await submitProductionTransaction(prepared.transaction, data!.actor);
     setNotice('Transaction confirmed.');
+    // Chain events count after the confirmation window; refresh once it passes.
+    setTimeout(() => void load(true).catch(() => undefined), 30_000);
     try {
       await load(true);
     } catch {
@@ -409,7 +412,13 @@ export function ShipmentsWorkspace({
     return (
       <>
         {error ? (
-          <Alert type="error" message={error} />
+          <LoadFailed
+            message={error}
+            onRetry={() => {
+              setError('');
+              void load().catch((cause) => setError(cause.message));
+            }}
+          />
         ) : (
           <LoadingIndicator page label="Reading shipment and custody records…" />
         )}
@@ -488,16 +497,6 @@ export function ShipmentsWorkspace({
           message="Verify the requested Supplier company proof before accepting custody."
         />
       )}
-      <a
-        className="workspace-custody-detail__evidence-link"
-        href={
-          workspacePath(role, 'sent-requests') +
-          '?context=delivery&referenceId=' +
-          encodeURIComponent(shipment.shipmentId)
-        }
-      >
-        Manage Supplier credential request
-      </a>
       <div className="workspace-location-actions action-row">
         <Btn
           variant="outline"
@@ -1468,8 +1467,8 @@ export function ShipmentsWorkspace({
               ? deliveryManufacturerName
               : (shipment.recipientName ?? short(shipment.recipient))
           }
-          sourceName={label(shipment.fromLocation)}
-          destinationName={label(shipment.toLocation)}
+          sourceName={linkedCustodyOffer?.fromLocationName ?? label(shipment.fromLocation)}
+          destinationName={linkedCustodyOffer?.toLocationName ?? label(shipment.toLocation)}
           qrVerified={!!checked}
           busy={busy}
           title={
@@ -1521,23 +1520,9 @@ export function ShipmentsWorkspace({
                   instruction="Attach to this shipment. The intended recipient scans this label before confirming physical receipt."
                 />
               )}
-              {intake && data.shipmentReviewSupported && Number(shipment.status) < 3 && (
-                <a
-                  className="workspace-custody-detail__evidence-link"
-                  href={
-                    workspacePath(role, 'sent-requests') +
-                    (linkedCustodyOffer
-                      ? '?context=custody&referenceId='
-                      : '?context=delivery&referenceId=') +
-                    encodeURIComponent(linkedCustodyOffer?.offerId ?? shipment.shipmentId)
-                  }
-                >
-                  Manage Supplier credential request in Information requests
-                </a>
-              )}
               {role === 'distributor' &&
                 shipment.kind === 'ingredient' &&
-                Number(shipment.status) < 4 &&
+                Number(shipment.status) < 3 &&
                 same(shipment.recipient, data.actor) &&
                 Number(shipment.custodyDecision) === 1 && (
                   <section className="workspace-arrival-panel" aria-label="Vehicle record">

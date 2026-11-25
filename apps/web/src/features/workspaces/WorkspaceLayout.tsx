@@ -11,7 +11,6 @@ import {
   workspaceNavigationGroups,
   type WorkspaceRole,
 } from './workspace-navigation';
-import { WorkspaceGuide } from './WorkspaceGuide';
 import './workspace.css';
 import { CompanyAvatar } from '../orders/CatalogueMedia';
 
@@ -184,7 +183,6 @@ export function WorkspaceLayout({
             </button>
           </header>
           <main id="workspace-content" className="workspace-content" key={`${role}/${page}`}>
-            {identity && <WorkspaceGuide role={role} page={page} pathForPage={pathForPage} />}
             {children}
           </main>
         </div>

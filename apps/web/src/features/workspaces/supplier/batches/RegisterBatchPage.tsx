@@ -167,7 +167,7 @@ export function RegisterBatch({
           ? 'Unknown'
           : `${allergen.kind === 'mayContain' ? 'May contain' : 'Contains'}: ${draft.allergenDetails}`,
     certifications: legacyCerts,
-    certificationEntries: certificationEntries(entries),
+    certificationEntries: certificationEntries(entries, draft.reference.trim()),
     ...(draft.price
       ? { price: draft.price, currency: draft.currency, priceBasis: draft.priceBasis }
       : {}),
@@ -731,6 +731,7 @@ export function RegisterBatch({
                     )}
                     <div data-error={Boolean(errors.certifications)}>
                       <CertificationEditor
+                        batchReference={draft.reference}
                         entries={entries}
                         setEntries={setEntries}
                         operationId={operationId}
@@ -962,6 +963,7 @@ export function RegisterBatch({
                         </p>
                       )}
                       <CertificationEditor
+                        batchReference={draft.reference}
                         entries={entries}
                         setEntries={setEntries}
                         operationId={operationId}

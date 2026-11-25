@@ -57,7 +57,7 @@ describe('on-chain audit report', () => {
       },
     ];
     render(<AuditReport />);
-    expect(screen.getByText('On-chain Audit Report')).toBeTruthy();
+    expect(screen.getByText('On-chain audit report')).toBeTruthy();
     expect(screen.getByText('On-chain Manufacturer')).toBeTruthy();
     expect(screen.getByText('250 units')).toBeTruthy();
     expect(screen.queryByText('Milk Chocolate')).toBeNull();

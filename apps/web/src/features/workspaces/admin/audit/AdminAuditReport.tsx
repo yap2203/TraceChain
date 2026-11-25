@@ -109,7 +109,7 @@ export default function AdminAuditReport() {
   return (
     <div>
       <SectionTitle
-        title="Registry Audit Report"
+        title="Registry audit report"
         sub={
           loading
             ? 'Reading authoritative registries...'

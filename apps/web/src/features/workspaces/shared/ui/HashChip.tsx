@@ -21,7 +21,7 @@ export function HashChip({ value, full }: { value: string; full?: boolean }) {
         padding: '2px 8px',
       }}
     >
-      <span style={{ fontFamily: MONO, fontSize: 11, color: T.teal }}>{display}</span>
+      <span style={{ fontFamily: MONO, fontSize: 12, color: T.teal }}>{display}</span>
       <button
         onClick={copy}
         style={{
@@ -29,7 +29,7 @@ export function HashChip({ value, full }: { value: string; full?: boolean }) {
           border: 'none',
           cursor: 'pointer',
           color: copied ? T.green : T.text3,
-          fontSize: 11,
+          fontSize: 12,
           padding: 0,
           lineHeight: 1,
         }}

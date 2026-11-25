@@ -49,8 +49,8 @@ describe('individual company permissions UI', () => {
   });
   it('keeps only role permissions and the matrix in Access Control', async () => {
     render(<AccessControl />);
-    expect(await screen.findByText('Role Permissions')).toBeTruthy();
-    expect(screen.getByText('Permission Matrix')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Role permissions' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Permission matrix' })).toBeTruthy();
     expect(screen.queryByText('Individual Permissions')).toBeNull();
     expect(mocks.getPersonalPermissions).not.toHaveBeenCalled();
   });

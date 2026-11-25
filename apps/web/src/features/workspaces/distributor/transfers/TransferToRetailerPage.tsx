@@ -277,7 +277,7 @@ export function DistributorTransferToRetailer({ onBack }: { onBack: () => void }
                       variant={transfer.status === 1 ? 'pending' : 'active'}
                     />
                   </div>
-                  <div style={{ color: T.text2, fontSize: 11, marginTop: 4 }}>
+                  <div style={{ color: T.text2, fontSize: 12, marginTop: 4 }}>
                     {transfer.quantity} units · expected {chainDate(transfer.expectedAt)}
                   </div>
                   <TechnicalDetails

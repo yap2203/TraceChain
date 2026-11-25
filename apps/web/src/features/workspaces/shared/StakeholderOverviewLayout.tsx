@@ -2,7 +2,8 @@ import type { ReactNode } from 'react';
 import { BellRing, Clock3 } from 'lucide-react';
 
 import { CatalogueImage, CompanyAvatar } from '../../orders/CatalogueMedia';
-import { Badge, Btn, EmptyState, InventorySummaryCard, SectionTitle, TechnicalDetails } from './ui';
+import { Alert, Badge, Btn, EmptyState, InventorySummaryCard, SectionTitle, TechnicalDetails } from './ui';
+import { WorkspaceGuide } from '../WorkspaceGuide';
 import type { BadgeVariant } from './ui/Badge';
 
 export interface OverviewMetric {
@@ -34,6 +35,7 @@ export function StakeholderOverviewLayout({
   recent,
   emptyAttention,
   emptyRecent,
+  errors = [],
 }: {
   title: string;
   description: string;
@@ -42,10 +44,15 @@ export function StakeholderOverviewLayout({
   recent: OverviewRecord[];
   emptyAttention: string;
   emptyRecent: string;
+  errors?: Array<string | undefined>;
 }) {
   return (
     <div className="stakeholder-overview">
       <SectionTitle title={title} sub={description} />
+      <WorkspaceGuide />
+      {errors.filter(Boolean).map((error) => (
+        <Alert key={error} type="error" message={error!} />
+      ))}
       <div className="stakeholder-overview__metrics" aria-label="Workspace summary">
         {metrics.slice(0, 4).map((metric) => (
           <InventorySummaryCard key={metric.label} {...metric} />

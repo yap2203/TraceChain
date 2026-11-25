@@ -47,8 +47,8 @@ export function CompanyCard({
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 13, color: T.navy }}>{name}</div>
-        <div style={{ fontSize: 11, color: T.text2 }}>{role}</div>
-        <div style={{ fontFamily: MONO, fontSize: 10, color: T.text3, marginTop: 2 }}>{did}</div>
+        <div style={{ fontSize: 12, color: T.text2 }}>{role}</div>
+        <div style={{ fontFamily: MONO, fontSize: 11, color: T.text3, marginTop: 2 }}>{did}</div>
       </div>
       <Badge label={status} variant={status} />
     </div>

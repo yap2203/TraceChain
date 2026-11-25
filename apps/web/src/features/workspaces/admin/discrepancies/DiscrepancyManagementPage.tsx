@@ -132,7 +132,7 @@ export default function DiscrepancyManagementPage() {
                 }}
               >
                 <div>
-                  <div style={{ color: T.text2, fontSize: 11 }}>{item.productReference}</div>
+                  <div style={{ color: T.text2, fontSize: 12 }}>{item.productReference}</div>
                   <h3 style={{ margin: '3px 0 0', color: T.text, fontSize: 16 }}>
                     {item.productName}
                   </h3>
@@ -243,7 +243,7 @@ export default function DiscrepancyManagementPage() {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ padding: 12, borderRadius: 8, background: T.surface2 }}>
-      <div style={{ color: T.text2, fontSize: 10, textTransform: 'uppercase' }}>{label}</div>
+      <div style={{ color: T.text2, fontSize: 11, textTransform: 'uppercase' }}>{label}</div>
       <div style={{ marginTop: 5, color: T.text, fontSize: 15, fontWeight: 700 }}>{value}</div>
     </div>
   );

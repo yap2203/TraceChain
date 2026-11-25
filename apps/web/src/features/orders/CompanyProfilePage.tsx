@@ -77,6 +77,8 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
     try {
       await action();
       await load();
+      // Chain events count after the confirmation window; refresh once it passes.
+      setTimeout(() => void load(), 30_000);
     } catch (cause) {
       setError(reportError(cause, 'The change could not be completed.'));
     } finally {
@@ -336,7 +338,7 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
                   })
                 }
               >
-                {busy ? 'Waiting for confirmationâ€¦' : 'Save location'}
+                {busy ? 'Waiting for confirmation…' : 'Save location'}
               </Btn>
             </div>
           </div>

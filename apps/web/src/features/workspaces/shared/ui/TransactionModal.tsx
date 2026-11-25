@@ -25,7 +25,7 @@ export function TxModal({
               {title}
             </div>
             <div style={{ fontSize: 13, color: T.text2 }}>Previewing the confirmation state…</div>
-            <div style={{ fontSize: 11, color: T.text3, marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: T.text3, marginTop: 6 }}>
               This may take a few seconds
             </div>
           </>

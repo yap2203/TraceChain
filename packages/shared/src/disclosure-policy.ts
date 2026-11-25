@@ -19,14 +19,54 @@ export const COMPANY_EVIDENCE_CLAIM_IDS = [
   'applicationReference',
 ] as const;
 export const COMPANY_EVIDENCE_CLAIMS: readonly EvidenceClaimDefinition[] = [
-  { id: 'companyName', label: 'Company name', group: 'Company information', credentialPath: 'credentialSubject.companyName' },
-  { id: 'companyRegistrationNumber', label: 'Company registration number', group: 'Company information', credentialPath: 'credentialSubject.companyRegistrationNumber' },
-  { id: 'registrationCountry', label: 'Registration country', group: 'Company information', credentialPath: 'credentialSubject.registrationCountry' },
-  { id: 'role', label: 'Approved role', group: 'Company information', credentialPath: 'credentialSubject.role' },
-  { id: 'companyId', label: 'Internal company ID', group: 'Company information', credentialPath: 'credentialSubject.companyId' },
-  { id: 'walletAddress', label: 'Associated wallet address', group: 'Identity information', credentialPath: 'credentialSubject.walletAddress' },
-  { id: 'id', label: 'Subject DID', group: 'Identity information', credentialPath: 'credentialSubject.id' },
-  { id: 'applicationReference', label: 'Application reference', group: 'Identity information', credentialPath: 'credentialSubject.applicationReference' },
+  {
+    id: 'companyName',
+    label: 'Company name',
+    group: 'Company information',
+    credentialPath: 'credentialSubject.companyName',
+  },
+  {
+    id: 'companyRegistrationNumber',
+    label: 'Company registration number',
+    group: 'Company information',
+    credentialPath: 'credentialSubject.companyRegistrationNumber',
+  },
+  {
+    id: 'registrationCountry',
+    label: 'Registration country',
+    group: 'Company information',
+    credentialPath: 'credentialSubject.registrationCountry',
+  },
+  {
+    id: 'role',
+    label: 'Approved role',
+    group: 'Company information',
+    credentialPath: 'credentialSubject.role',
+  },
+  {
+    id: 'companyId',
+    label: 'Internal company ID',
+    group: 'Company information',
+    credentialPath: 'credentialSubject.companyId',
+  },
+  {
+    id: 'walletAddress',
+    label: 'Associated wallet address',
+    group: 'Identity information',
+    credentialPath: 'credentialSubject.walletAddress',
+  },
+  {
+    id: 'id',
+    label: 'Subject DID',
+    group: 'Identity information',
+    credentialPath: 'credentialSubject.id',
+  },
+  {
+    id: 'applicationReference',
+    label: 'Application reference',
+    group: 'Identity information',
+    credentialPath: 'credentialSubject.applicationReference',
+  },
 ] as const;
 export const COMPANY_ALWAYS_CLAIMS = ['companyName', 'role', 'walletAddress', 'id'] as const;
 export const COMPANY_REGISTRATION_GROUP = [
@@ -126,23 +166,108 @@ export const CURRENT_INGREDIENT_REQUEST_CLAIMS = INGREDIENT_REQUEST_CLAIMS.filte
     [key, key === 'productionDate' ? 'Production date (Supplier reported)' : label] as const,
 );
 export const INGREDIENT_EVIDENCE_CLAIMS: readonly EvidenceClaimDefinition[] = [
-  { id: 'ingredientName', label: 'Ingredient name', group: 'Batch identity', credentialPath: 'credentialSubject.ingredientName' },
-  { id: 'batchId', label: 'Batch ID', group: 'Batch identity', credentialPath: 'credentialSubject.batchId' },
-  { id: 'batchReference', label: 'Batch reference', group: 'Batch identity', credentialPath: 'credentialSubject.batchReference' },
-  { id: 'category', label: 'Category', group: 'Batch identity', credentialPath: 'credentialSubject.category' },
-  { id: 'supplierWallet', label: 'Supplier wallet', group: 'Batch identity', credentialPath: 'credentialSubject.supplierWallet' },
-  { id: 'countryOfOrigin', label: 'Country of origin', group: 'Origin', credentialPath: 'credentialSubject.originDetails.countryCode' },
-  { id: 'originRegion', label: 'State or region', group: 'Origin', credentialPath: 'credentialSubject.originDetails.region' },
-  { id: 'originCity', label: 'City or district', group: 'Origin', credentialPath: 'credentialSubject.originDetails.city' },
-  { id: 'exactSourceFacility', label: 'Source facility', group: 'Origin', credentialPath: 'credentialSubject.originDetails.sourceFacility' },
-  { id: 'privateOriginAddress', label: 'Private source address', group: 'Origin', credentialPath: 'credentialSubject.originDetails.privateAddress' },
-  { id: 'productionDate', label: 'Production date', group: 'Dates and quantity', credentialPath: 'credentialSubject.productionDate' },
-  { id: 'expiryDate', label: 'Expiry date', group: 'Dates and quantity', credentialPath: 'credentialSubject.expiryDate' },
-  { id: 'quantity', label: 'Quantity', group: 'Dates and quantity', credentialPath: 'credentialSubject.quantity' },
-  { id: 'unit', label: 'Unit', group: 'Dates and quantity', credentialPath: 'credentialSubject.unit' },
-  { id: 'allergenDeclaration', label: 'Allergen declaration', group: 'Safety and evidence', credentialPath: 'credentialSubject.allergen' },
-  { id: 'certifications', label: 'Certifications', group: 'Safety and evidence', credentialPath: 'credentialSubject.certificationEntries' },
-  { id: 'certificationDocuments', label: 'Certification documents', group: 'Safety and evidence', credentialPath: 'encryptedAttachments.certifications' },
+  {
+    id: 'ingredientName',
+    label: 'Ingredient name',
+    group: 'Batch identity',
+    credentialPath: 'credentialSubject.ingredientName',
+  },
+  {
+    id: 'batchId',
+    label: 'Batch ID',
+    group: 'Batch identity',
+    credentialPath: 'credentialSubject.batchId',
+  },
+  {
+    id: 'batchReference',
+    label: 'Batch reference',
+    group: 'Batch identity',
+    credentialPath: 'credentialSubject.batchReference',
+  },
+  {
+    id: 'category',
+    label: 'Category',
+    group: 'Batch identity',
+    credentialPath: 'credentialSubject.category',
+  },
+  {
+    id: 'supplierWallet',
+    label: 'Supplier wallet',
+    group: 'Batch identity',
+    credentialPath: 'credentialSubject.supplierWallet',
+  },
+  {
+    id: 'countryOfOrigin',
+    label: 'Country of origin',
+    group: 'Origin',
+    credentialPath: 'credentialSubject.originDetails.countryCode',
+  },
+  {
+    id: 'originRegion',
+    label: 'State or region',
+    group: 'Origin',
+    credentialPath: 'credentialSubject.originDetails.region',
+  },
+  {
+    id: 'originCity',
+    label: 'City or district',
+    group: 'Origin',
+    credentialPath: 'credentialSubject.originDetails.city',
+  },
+  {
+    id: 'exactSourceFacility',
+    label: 'Source facility',
+    group: 'Origin',
+    credentialPath: 'credentialSubject.originDetails.sourceFacility',
+  },
+  {
+    id: 'privateOriginAddress',
+    label: 'Private source address',
+    group: 'Origin',
+    credentialPath: 'credentialSubject.originDetails.privateAddress',
+  },
+  {
+    id: 'productionDate',
+    label: 'Production date',
+    group: 'Dates and quantity',
+    credentialPath: 'credentialSubject.productionDate',
+  },
+  {
+    id: 'expiryDate',
+    label: 'Expiry date',
+    group: 'Dates and quantity',
+    credentialPath: 'credentialSubject.expiryDate',
+  },
+  {
+    id: 'quantity',
+    label: 'Quantity',
+    group: 'Dates and quantity',
+    credentialPath: 'credentialSubject.quantity',
+  },
+  {
+    id: 'unit',
+    label: 'Unit',
+    group: 'Dates and quantity',
+    credentialPath: 'credentialSubject.unit',
+  },
+  {
+    id: 'allergenDeclaration',
+    label: 'Allergen declaration',
+    group: 'Safety and evidence',
+    credentialPath: 'credentialSubject.allergen',
+  },
+  {
+    id: 'certifications',
+    label: 'Certifications',
+    group: 'Safety and evidence',
+    credentialPath: 'credentialSubject.certificationEntries',
+  },
+  {
+    id: 'certificationDocuments',
+    label: 'Certification documents',
+    group: 'Safety and evidence',
+    credentialPath: 'encryptedAttachments.certifications',
+  },
 ] as const;
 
 export function evidenceClaimIds(catalogue: readonly EvidenceClaimDefinition[]): string[] {
@@ -154,7 +279,9 @@ export function validateEvidenceClaimSelection(
   catalogue: readonly EvidenceClaimDefinition[],
 ): boolean {
   const supported = new Set(evidenceClaimIds(catalogue));
-  return new Set(selected).size === selected.length && selected.every((claim) => supported.has(claim));
+  return (
+    new Set(selected).size === selected.length && selected.every((claim) => supported.has(claim))
+  );
 }
 export const INGREDIENT_REQUEST_TEMPLATES = {
   custom: { label: 'Custom request', required: [] },
@@ -281,10 +408,19 @@ export function ingredientDisclosureErrors(
           entry.expiryDate >= at.toISOString().slice(0, 10))) &&
       (!entry.issueDate || String(entry.issueDate) <= at.toISOString().slice(0, 10)),
   );
-  if (requirements.includes('certifications') && !matching.length)
-    errors.push(
-      'A certification matching the requested type, scope and batch reference is required.',
+  if (requirements.includes('certifications') && !matching.length) {
+    // Name the actual mismatch so the Supplier can tell what to correct.
+    const wrongBatch = certificationEntries.find(
+      (entry) => entry.scope === 'This batch' && entry.scopeReference !== batchReference,
     );
+    errors.push(
+      wrongBatch
+        ? `The certification covers batch reference ${String(wrongBatch.scopeReference)}, not ${batchReference}, so it cannot be used for this batch.`
+        : rule?.name || rule?.scope
+          ? `A certification${rule.name ? ` named ${rule.name}` : ''}${rule.scope ? ` with scope ${rule.scope}` : ''} that is valid today is required.`
+          : 'A certification that is valid today is required.',
+    );
+  }
   const documents = Object.entries(payload)
     .filter(([key]) => key.startsWith('certificationDocuments_'))
     .map(([, v]) => v as { certificationId?: string });

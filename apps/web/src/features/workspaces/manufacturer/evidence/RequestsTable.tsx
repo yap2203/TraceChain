@@ -48,7 +48,7 @@ export function RequestsTable({
                         style={{
                           padding: '10px 14px',
                           textAlign: 'left',
-                          fontSize: 11,
+                          fontSize: 12,
                           color: T.text2,
                           fontWeight: 600,
                           letterSpacing: '0.05em',
@@ -89,7 +89,7 @@ export function RequestsTable({
                           style={{
                             padding: '11px 14px',
                             fontFamily: MONO,
-                            fontSize: 11.5,
+                            fontSize: 12.5,
                             color: T.teal,
                             whiteSpace: 'nowrap',
                           }}
@@ -121,7 +121,7 @@ export function RequestsTable({
                           style={{
                             padding: '11px 14px',
                             fontFamily: MONO,
-                            fontSize: 11,
+                            fontSize: 12,
                             color: T.text2,
                           }}
                         >
@@ -134,7 +134,7 @@ export function RequestsTable({
                           style={{
                             padding: '11px 14px',
                             fontFamily: MONO,
-                            fontSize: 11,
+                            fontSize: 12,
                             color: T.text2,
                             whiteSpace: 'nowrap',
                           }}
@@ -145,7 +145,7 @@ export function RequestsTable({
                           <div
                             style={{
                               fontFamily: MONO,
-                              fontSize: 11,
+                              fontSize: 12,
                               color: r.overdue && r.status === 'awaiting' ? T.red : T.text2,
                             }}
                           >

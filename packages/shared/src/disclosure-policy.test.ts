@@ -14,18 +14,18 @@ import {
   validateEvidenceClaimSelection,
 } from './disclosure-policy.js';
 it('publishes stable claim catalogues and rejects unknown or duplicate selections', () => {
-  expect(COMPANY_EVIDENCE_CLAIMS.find((claim) => claim.id === 'walletAddress')?.credentialPath).toBe(
-    'credentialSubject.walletAddress',
-  );
+  expect(
+    COMPANY_EVIDENCE_CLAIMS.find((claim) => claim.id === 'walletAddress')?.credentialPath,
+  ).toBe('credentialSubject.walletAddress');
   expect(INGREDIENT_EVIDENCE_CLAIMS.find((claim) => claim.id === 'expiryDate')?.group).toBe(
     'Dates and quantity',
   );
   expect(validateEvidenceClaimSelection(['companyName', 'role'], COMPANY_EVIDENCE_CLAIMS)).toBe(
     true,
   );
-  expect(validateEvidenceClaimSelection(['companyName', 'companyName'], COMPANY_EVIDENCE_CLAIMS)).toBe(
-    false,
-  );
+  expect(
+    validateEvidenceClaimSelection(['companyName', 'companyName'], COMPANY_EVIDENCE_CLAIMS),
+  ).toBe(false);
   expect(validateEvidenceClaimSelection(['unknown'], COMPANY_EVIDENCE_CLAIMS)).toBe(false);
 });
 it('keeps processing and quality claims out of new form choices without removing legacy support', () => {
@@ -113,6 +113,19 @@ it('requires traceability dates and keeps certificate scope distinct from labora
     ),
   ).not.toEqual([]);
   expect(ingredientDisclosureErrors(payload, { template: 'quality' }, [], 'BATCH')).not.toEqual([]);
+  const otherBatch = {
+    ['certification_' + 'b'.repeat(32)]: {
+      ...cert,
+      id: 'b',
+      scope: 'This batch',
+      scopeReference: 'OTHER',
+    },
+  };
+  expect(
+    ingredientDisclosureErrors(otherBatch, { template: 'certification' }, [], 'BATCH')[0],
+  ).toBe(
+    'The certification covers batch reference OTHER, not BATCH, so it cannot be used for this batch.',
+  );
   expect(
     ingredientDisclosureErrors(
       payload,

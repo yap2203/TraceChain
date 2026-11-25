@@ -75,7 +75,7 @@ export function CredentialCard(props: CredentialCardProps) {
             <div>
               <div
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   color: 'rgba(255,255,255,0.45)',
                   letterSpacing: '0.12em',
                   textTransform: 'uppercase',
@@ -94,7 +94,7 @@ export function CredentialCard(props: CredentialCardProps) {
               background: statusColor(props.status),
               borderRadius: 20,
               padding: '4px 12px',
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: 700,
               color: '#fff',
             }}
@@ -119,7 +119,7 @@ export function CredentialCard(props: CredentialCardProps) {
             <div key={field.label}>
               <div
                 style={{
-                  fontSize: 10,
+                  fontSize: 11,
                   color: 'rgba(255,255,255,0.4)',
                   textTransform: 'uppercase',
                   letterSpacing: '0.07em',
@@ -158,14 +158,14 @@ function CopyValue({
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, minWidth: 0 }}>
-      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, textTransform: 'uppercase' }}>
+      <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, textTransform: 'uppercase' }}>
         {label}
       </span>
       <code
         style={{
           color: '#fff',
           fontFamily: MONO,
-          fontSize: 11,
+          fontSize: 12,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
         }}

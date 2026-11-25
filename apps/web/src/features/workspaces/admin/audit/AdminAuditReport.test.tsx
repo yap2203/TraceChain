@@ -12,7 +12,7 @@ afterEach(cleanup);
 
 it('keeps audit exports without exposing backend-key backup or restore controls', async () => {
   render(<AdminAuditReport />);
-  expect(await screen.findByText('Registry Audit Report')).toBeTruthy();
+  expect(await screen.findByText('Registry audit report')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Export JSON' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Export CSV' })).toBeTruthy();
   expect(screen.queryByText(/backend storage backup/i)).toBeNull();

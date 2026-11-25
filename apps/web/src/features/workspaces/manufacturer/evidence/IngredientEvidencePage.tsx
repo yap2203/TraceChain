@@ -485,7 +485,7 @@ export function IngredientEvidence({
                 key={String(label)}
                 style={{ padding: 10, background: T.surface2, borderRadius: 8 }}
               >
-                <div style={{ fontSize: 11, color: T.text2 }}>{label}</div>
+                <div style={{ fontSize: 12, color: T.text2 }}>{label}</div>
                 <div style={{ marginTop: 4, overflowWrap: 'anywhere' }}>{value}</div>
               </div>
             ))}

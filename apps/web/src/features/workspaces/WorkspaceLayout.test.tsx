@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceLayout } from './WorkspaceLayout';
+import { WorkspaceGuide } from './WorkspaceGuide';
 import {
   workspaceNavigation,
   workspaceNavigationGroups,
@@ -71,7 +72,11 @@ describe('workspace navigation and guidance', () => {
     },
   );
   it('shows role-specific quick actions on the overview', () => {
-    show('overview', 'manufacturer');
+    render(
+      <MemoryRouter initialEntries={[workspacePath('manufacturer', 'overview')]}>
+        <WorkspaceGuide />
+      </MemoryRouter>,
+    );
     const quick = screen.getByRole('region', { name: 'Quick actions' });
     expect(
       within(quick)

@@ -114,7 +114,7 @@ export class OrdersService {
         return { address: session.address, role: session.role };
       },
       prepare: (sessionId, input) => this.prepareLogistics(sessionId, input),
-      proofCheck: async (sessionId, offer) => {
+      proofCheck: async (_sessionId, offer) => {
         const requestId = id(
           `ingredient-delivery-identity:${offer.offerId.toLowerCase()}:${offer.distributor.toLowerCase()}`,
         );
@@ -126,8 +126,10 @@ export class OrdersService {
             'Company proof verification is unavailable.',
             503,
           );
-        const status = await this.flow.getCompanyIdentityProofStatus(sessionId, requestId);
-        if (status.status !== 'VERIFIED')
+        // The 5-minute presentation is verified cryptographically once; later custody steps use
+        // the recorded outcome. Callers already require live on-chain authorization of both parties.
+        const proof = await this.flow.companyIdentityProofOutcome(requestId, offer.distributor);
+        if (proof.status !== 'VERIFIED' || !same(proof.presenterWallet ?? '', offer.sender))
           throw new OrdersError(
             'COMPANY_PROOF_REQUIRED',
             'Verify the requested company evidence before accepting, scheduling or handing off this stock.',
@@ -267,8 +269,15 @@ export class OrdersService {
               404,
             );
         }
-        const current = await this.flow.getCompanyIdentityProofStatus(sessionId, record.requestId);
-        status = record.identityProof.expiresAt <= Date.now() / 1000 ? 'EXPIRED' : current.status;
+        // Recorded outcome: re-verifying the short-lived presentation would mark verified rows unavailable.
+        const current = await this.flow.companyIdentityProofOutcome(
+          record.requestId,
+          session.address,
+        );
+        status =
+          record.identityProof.expiresAt <= Date.now() / 1000
+            ? 'EXPIRED'
+            : (current.status ?? 'REQUESTED');
       } catch (cause) {
         if (
           !(cause instanceof Error) ||

@@ -423,7 +423,7 @@ describe('private custody and company proof inbox', () => {
       ]),
     });
     const status = vi.fn();
-    Object.assign(f.service, { flow: { getCompanyIdentityProofStatus: status } });
+    Object.assign(f.service, { flow: { companyIdentityProofOutcome: status } });
     f.gateway.read.mockImplementation(async (contract, method) =>
       method === 'getOrder'
         ? {
@@ -529,7 +529,7 @@ describe('private custody and company proof inbox', () => {
     ];
     const status = vi.fn().mockResolvedValue({ status: 'REQUESTED' });
     Object.assign(f.repository, { listEvidence: vi.fn().mockResolvedValue(records) });
-    Object.assign(f.service, { flow: { getCompanyIdentityProofStatus: status } });
+    Object.assign(f.service, { flow: { companyIdentityProofOutcome: status } });
     const response = await request(f.app).get('/api/orders/information-requests').expect(200);
     expect(response.body.requests).toHaveLength(2);
     expect(response.body.requests.map((row: any) => row.direction).sort()).toEqual([

@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react';
 
 import { useOperationalData } from '../../blockchain/useOperationalData';
 import { getOrders, type OrdersState } from '../../orders/orders.api';
-import { Alert } from '../shared/ui';
 import { formatOperationalQuantity } from '../shared/operational-format';
 import {
   StakeholderOverviewLayout,
@@ -42,8 +41,8 @@ export function DistributorOverview({ onNav }: { onNav: (tab: string) => void })
 
   return (
     <>
-      {error && <Alert type="error" message={error} />}
       <StakeholderOverviewLayout
+        errors={[error]}
         title="Distributor overview"
         description="Monitor warehouse arrivals, custody inventory and outbound deliveries."
         metrics={[
