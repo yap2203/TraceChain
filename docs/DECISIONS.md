@@ -2,6 +2,12 @@
 
 ## Repository and implementation
 
+- Keep the current custody-offer and workflow storage architecture (user-confirmed 2026-11-26):
+  custody offers stay as encrypted API records with encrypted IPFS copies; no new custody-offer
+  contract, on-chain anchoring of pre-handoff status, or redeployment. Handoff and warehouse receipt
+  remain the on-chain custody events. Improve the existing workflows and UI instead. The brainstorm
+  brief (concepts_brief.md) is kept for reference only.
+
 - Use method-aware sequential multi-RPC reads (user-confirmed 2026-11-24): Alchemy is the preferred
   ordinary-read endpoint, Infura is the dedicated event-log endpoint and ordinary failover, and an
   explicitly configured third provider may be emergency ordinary-read capacity. Keep MetaMask as the

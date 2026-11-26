@@ -1,5 +1,5 @@
 import { blockchainProvider, registerRpcMulticallTarget } from '../blockchain/rpc-provider.js';
-import { queryContractEvents } from '../blockchain/contract-events.js';
+import { queryContractEvents, syncContractEvents } from '../blockchain/contract-events.js';
 import { readFileSync } from 'node:fs';
 import { Contract, Interface, JsonRpcProvider } from 'ethers';
 import type { PreparedTransaction } from '../blockchain/blockchain-gateway.service.js';
@@ -11,6 +11,8 @@ export interface OrdersGateway {
   address: string;
   read(contract: string, method: string, args?: unknown[]): Promise<any>;
   events(contract: string, event: string): Promise<ChainRecord[]>;
+  /** Runs page-display reads through the local read model when the gateway has one. */
+  display?<T>(build: () => Promise<T>, refresh?: boolean): Promise<T>;
   prepare(
     actor: string,
     contract: string,
@@ -152,6 +154,10 @@ export class EthersOrdersGateway implements OrdersGateway {
           blockHash: entry.blockHash,
         };
       });
+  }
+  /** Scans every contract this gateway has read so far up to the confirmed head. */
+  async syncEvents() {
+    await Promise.all([...this.contracts.values()].map((contract) => syncContractEvents(contract)));
   }
   async prepare(actor: string, name: string, method: string, args: unknown[]) {
     if (Number(BigInt(await this.provider.send('eth_chainId', []))) !== this.chainId)

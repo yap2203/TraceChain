@@ -85,6 +85,7 @@ import {
 import { createProductionFlowRouter } from './modules/production-flow/production-flow.routes.js';
 import { ProductionFlowService } from './modules/production-flow/production-flow.service.js';
 import { EthersOrdersGateway } from './modules/orders/orders.gateway.js';
+import { ReadModelGateway } from './modules/orders/read-model.js';
 import { OrdersService } from './modules/orders/orders.service.js';
 import { createOrdersRouter } from './modules/orders/orders.routes.js';
 import { ProductTraceabilityController } from './modules/product-traceability/product-traceability.controller.js';
@@ -440,18 +441,20 @@ export function createApp({
       if (!process.env.SUPPLY_ORDERS_ADDRESS) throw new Error('Order registry is not configured.');
       ordersService = new OrdersService(
         resolvedAuthService,
-        new EthersOrdersGateway(
-          env.CHAIN_ID,
-          process.env.SUPPLY_ORDERS_ADDRESS,
-          chain.CHAIN_RPC_URL,
-          {
-            stakeholders: chain.STAKEHOLDER_REGISTRY_ADDRESS,
-            credentials: chain.CREDENTIAL_REGISTRY_ADDRESS,
-            ingredients: chain.INGREDIENT_REGISTRY_ADDRESS,
-            products: chain.PRODUCT_REGISTRY_ADDRESS,
-            evidence: chain.EVIDENCE_REGISTRY_ADDRESS,
-            custody: chain.CUSTODY_TRANSFER_ADDRESS,
-          },
+        new ReadModelGateway(
+          new EthersOrdersGateway(
+            env.CHAIN_ID,
+            process.env.SUPPLY_ORDERS_ADDRESS,
+            chain.CHAIN_RPC_URL,
+            {
+              stakeholders: chain.STAKEHOLDER_REGISTRY_ADDRESS,
+              credentials: chain.CREDENTIAL_REGISTRY_ADDRESS,
+              ingredients: chain.INGREDIENT_REGISTRY_ADDRESS,
+              products: chain.PRODUCT_REGISTRY_ADDRESS,
+              evidence: chain.EVIDENCE_REGISTRY_ADDRESS,
+              custody: chain.CUSTODY_TRANSFER_ADDRESS,
+            },
+          ),
         ),
         lazyCredentialContentStore,
         new JsonProductionFlowRepository(didCommStorage.productionWorkflowStorePath),

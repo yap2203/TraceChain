@@ -8,7 +8,7 @@ const deploymentBlocks = new WeakMap<Provider, Map<string, Promise<number>>>();
 const contractIndexes = new WeakMap<Provider, Map<string, ContractIndex>>();
 
 /** Plain, JSON-safe copy of a confirmed log; public chain data only. */
-interface StoredLog {
+export interface StoredLog {
   address: string;
   blockNumber: number;
   blockHash: string;
@@ -33,6 +33,30 @@ interface ContractIndex {
 
 let storeDirectory: string | undefined;
 
+/** scan: newly confirmed logs; restore: the whole index loaded from disk; reset: history dropped. */
+export interface EventIndexUpdate {
+  key: string;
+  kind: 'scan' | 'restore' | 'reset';
+  block: number;
+  logs: readonly StoredLog[];
+}
+const indexListeners = new Set<(update: EventIndexUpdate) => void>();
+
+/** Lets read caches drop entries that newly confirmed events touch. */
+export function onEventIndexUpdate(listener: (update: EventIndexUpdate) => void) {
+  indexListeners.add(listener);
+  return () => indexListeners.delete(listener);
+}
+
+function notifyIndex(update: EventIndexUpdate) {
+  for (const listener of indexListeners)
+    try {
+      listener(update);
+    } catch {
+      // A failing cache listener must never break the event index itself.
+    }
+}
+
 /** Enables the on-disk index so API restarts do not rescan history. Unset keeps it in memory. */
 export function configureEventIndexStore(directory: string | undefined) {
   storeDirectory = directory;
@@ -46,6 +70,12 @@ export async function queryContractEvents(
   contract: BaseContract,
   event: Parameters<BaseContract['queryFilter']>[0],
 ) {
+  const index = await syncContractEvents(contract);
+  return matchingEvents(contract, contract.runner!.provider!, index.logs, await topicFilter(event));
+}
+
+/** Brings a contract's index up to the confirmed head without decoding any events. */
+export async function syncContractEvents(contract: BaseContract) {
   const provider = contract.runner?.provider;
   if (!provider) throw new Error('A blockchain provider is required to read contract events.');
   const [rawHead, network, address] = await Promise.all([
@@ -76,7 +106,7 @@ export async function queryContractEvents(
     );
   }
   await index.pending;
-  return matchingEvents(contract, provider, index.logs, await topicFilter(event));
+  return index;
 }
 
 function clearPending(index: ContractIndex, operation: Promise<void>) {
@@ -99,10 +129,14 @@ async function refreshContractIndex(
   local: boolean,
   key: string,
 ) {
-  if (confirmedHead < index.lastProcessedBlock) resetIndex(index);
+  const reset = () => {
+    resetIndex(index);
+    notifyIndex({ key, kind: 'reset', block: index.lastProcessedBlock, logs: [] });
+  };
+  if (confirmedHead < index.lastProcessedBlock) reset();
   if (index.lastProcessedBlock >= index.fromBlock && index.checkpointHash) {
     const checkpoint = await provider.getBlock(index.lastProcessedBlock);
-    if (!checkpoint?.hash || checkpoint.hash !== index.checkpointHash) resetIndex(index);
+    if (!checkpoint?.hash || checkpoint.hash !== index.checkpointHash) reset();
   }
   if (confirmedHead < index.fromBlock) return;
   const start = Math.max(index.fromBlock, index.lastProcessedBlock + 1);
@@ -124,6 +158,7 @@ async function refreshContractIndex(
   index.logs = deduplicateLogs([...index.logs, ...additions]);
   index.lastProcessedBlock = confirmedHead;
   index.checkpointHash = checkpoint?.hash ?? `local:${confirmedHead}`;
+  notifyIndex({ key, kind: 'scan', block: confirmedHead, logs: additions });
   if (!local && storeDirectory) persistIndex(index, key, storeDirectory);
 }
 
@@ -198,6 +233,7 @@ async function restoreIndex(index: ContractIndex, key: string, directory: string
     index.lastProcessedBlock = saved.lastProcessedBlock!;
     index.checkpointHash = saved.checkpointHash;
     index.logs = saved.logs;
+    notifyIndex({ key, kind: 'restore', block: index.lastProcessedBlock, logs: index.logs });
   } catch {
     // Missing or unreadable files rebuild from the chain.
   }

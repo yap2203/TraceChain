@@ -9,6 +9,7 @@ import { encodeBytes32String, id, ZeroHash } from 'ethers';
 import { OrdersService } from './orders.service.js';
 import { createOrdersRouter } from './orders.routes.js';
 import type { OrdersGateway } from './orders.gateway.js';
+import { ReadModelGateway } from './read-model.js';
 import type { AuthService } from '../auth/auth.service.js';
 import type { CredentialContentStore } from '../ssi/encrypted-credential.store.js';
 import type { ProductionFlowRepository } from '../production-flow/production-flow.repository.js';
@@ -2356,60 +2357,71 @@ describe('order API and private metadata', () => {
 
 // Synthetic transport latency is deliberate; no private values are logged.
 describe('Orders list performance workload', () => {
-  it('measures cold and repeat API loads for the same account and deployment', async () => {
-    const f = fixture();
-    const baseRead = f.gateway.read.getMockImplementation();
-    const listed = Array.from({ length: 20 }, (_, i) => ({
-      itemId: id('perf-item-' + i),
-      batchId: id('perf-batch-' + i),
-      seller,
-    }));
-    const requested = Array.from({ length: 40 }, (_, i) => ({
-      orderId: id('perf-order-' + i),
-      buyer,
-      seller,
-      blockNumber: i + 1,
-    }));
-    f.gateway.events.mockImplementation(async (_contract, event) => {
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      return event === 'ItemListed' ? listed : event === 'OrderRequested' ? requested : [];
-    });
-    f.gateway.read.mockImplementation(async (contract, method, args) => {
-      await new Promise((resolve) => setTimeout(resolve, 2));
-      const value = await baseRead(contract, method);
-      return method === 'getOrder'
-        ? {
-            ...value,
-            itemId:
-              listed[requested.findIndex((e) => e.orderId === args?.[0]) % listed.length].itemId,
-            createdAt: 100,
-          }
-        : value;
-    });
-    for (const phase of ['cold', 'repeat']) {
-      f.gateway.read.mockClear();
-      f.gateway.events.mockClear();
-      f.store.decrypt.mockClear();
-      const start = performance.now();
-      const response = await request(f.app)
-        .get(process.env.ORDERS_BENCHMARK_PATH || '/api/orders')
-        .expect(200);
-      expect(response.body.orders.length + response.body.catalogue.length).toBeGreaterThan(0);
-      console.log(
-        JSON.stringify({
-          workload: '40 orders / 20 catalogue batches',
-          phase,
-          apiMs: Math.round(performance.now() - start),
-          contractReads: f.gateway.read.mock.calls.length,
-          eventQueries: f.gateway.events.mock.calls.length,
-          ipfsDownloads: 0,
-          localDecryptions: f.store.decrypt.mock.calls.length,
-          rows: response.body.orders.length,
-          catalogueRows: response.body.catalogue.length,
-        }),
-      );
-    }
-  }, 20000);
+  it(
+    'measures cold and repeat API loads for the same account and deployment',
+    async () => {
+      const f = fixture();
+      // Simulated per-read RPC latency; set ORDERS_BENCHMARK_LATENCY_MS=100 for Sepolia-like timing.
+      const latencyMs = Number(process.env.ORDERS_BENCHMARK_LATENCY_MS ?? 2);
+      const baseRead = f.gateway.read.getMockImplementation();
+      const listed = Array.from({ length: 20 }, (_, i) => ({
+        itemId: id('perf-item-' + i),
+        batchId: id('perf-batch-' + i),
+        seller,
+      }));
+      const requested = Array.from({ length: 40 }, (_, i) => ({
+        orderId: id('perf-order-' + i),
+        buyer,
+        seller,
+        blockNumber: i + 1,
+      }));
+      f.gateway.events.mockImplementation(async (_contract, event) => {
+        await new Promise((resolve) => setTimeout(resolve, latencyMs));
+        return event === 'ItemListed' ? listed : event === 'OrderRequested' ? requested : [];
+      });
+      f.gateway.read.mockImplementation(async (contract, method, args) => {
+        await new Promise((resolve) => setTimeout(resolve, latencyMs));
+        const value = await baseRead(contract, method);
+        return method === 'getOrder'
+          ? {
+              ...value,
+              itemId:
+                listed[requested.findIndex((e) => e.orderId === args?.[0]) % listed.length].itemId,
+              createdAt: 100,
+            }
+          : value;
+      });
+      for (const phase of ['cold', 'repeat', 'read-model first', 'read-model warm']) {
+        if (phase === 'read-model first')
+          (f.service as any).gateway = new ReadModelGateway({
+            ...f.gateway,
+            syncEvents: async () => {},
+          } as any);
+        f.gateway.read.mockClear();
+        f.gateway.events.mockClear();
+        f.store.decrypt.mockClear();
+        const start = performance.now();
+        const response = await request(f.app)
+          .get(process.env.ORDERS_BENCHMARK_PATH || '/api/orders')
+          .expect(200);
+        expect(response.body.orders.length + response.body.catalogue.length).toBeGreaterThan(0);
+        console.log(
+          JSON.stringify({
+            workload: '40 orders / 20 catalogue batches',
+            phase,
+            apiMs: Math.round(performance.now() - start),
+            contractReads: f.gateway.read.mock.calls.length,
+            eventQueries: f.gateway.events.mock.calls.length,
+            ipfsDownloads: 0,
+            localDecryptions: f.store.decrypt.mock.calls.length,
+            rows: response.body.orders.length,
+            catalogueRows: response.body.catalogue.length,
+          }),
+        );
+      }
+    },
+    process.env.ORDERS_BENCHMARK_LATENCY_MS ? 600_000 : 20000,
+  );
 });
 
 describe('Paginated order summaries', () => {

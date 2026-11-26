@@ -1,5 +1,24 @@
 # Project Progress
 
+## 2026-11-26 - Orders state reads batched (performance step 1)
+
+- `OrdersService.buildState` no longer awaits contract reads one at a time. The orders,
+  focused-orders, registered-batches, listing-batches, supplier stock-orders, custody-transfer and
+  shipment loops now issue their reads concurrently, so Multicall3 groups them into few RPC calls;
+  results are still assembled in event order. Policy flags are read together.
+- Benchmark ("Orders list performance workload", 40 orders / 20 batches, 100 ms simulated RPC
+  latency): 18.6 s → 1.1 s, same 208 contract reads. Transfer and shipment loops are not in that
+  workload, so their gain is untested until the live pages are re-measured.
+- Verified: API typecheck, 523 API tests pass.
+
+## 2026-11-26 - Local read model for order pages (performance step 3)
+
+- Order-page reads go through `ReadModelGateway`: public contract view results are cached in
+  memory and in `<data dir>/read-model/orders.json`; a newly confirmed event re-reads only the
+  records it names (see docs/ORDERS_LOADING_PERFORMANCE.md). Actions and checks stay live.
+- Benchmark (100 ms latency): warm page load 1.1 s → 0.44 s with 0 contract reads.
+- Verified: API typecheck, 528 API tests (5 new read-model tests). Not yet measured on live Sepolia.
+
 ## 2026-11-26 - Custody flow fixes from live Supplier → Distributor test
 
 - Custody evidence gate (accept/schedule/handoff) now uses the recorded company-proof outcome

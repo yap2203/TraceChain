@@ -6,8 +6,10 @@ import { loadBlockchainEnvironment } from './config/blockchain-env.js';
 import { validateBlockchainRpcStartup } from './modules/blockchain/rpc-provider.js';
 import { configureEventIndexStore } from './modules/blockchain/contract-events.js';
 import { dataDirectory } from './config/data-directory.js';
+import { configureReadModelStore } from './modules/orders/read-model.js';
 
 try {
+  configureReadModelStore(dataDirectory());
   configureEventIndexStore(dataDirectory());
   await openExistingIssuer();
   loadCredentialStoragePublicEnvironment();

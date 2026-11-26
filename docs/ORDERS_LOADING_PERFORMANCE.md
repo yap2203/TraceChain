@@ -32,6 +32,18 @@ The latest change removes another source of full `/orders` requests:
   snapshot files or database were added. Existing event-index checkpoint/reorg handling runs on
   refresh; snapshots themselves are display data, not a claim of a latest-block result.
 
+**Local read model (2026-11-26).** Order-page builds (`OrdersService.state`) run their contract
+view reads through `ReadModelGateway` (`apps/api/src/modules/orders/read-model.ts`). Results are kept
+in memory and in `<TRACECHAIN_DATA_DIR>/read-model/orders.json` (public view results only; private
+payloads are decrypted per request and never stored there). Before each build the per-contract
+event indexes are brought to the confirmed head; each newly confirmed log drops only the cached
+reads whose identifier arguments appear in its topics or data, plus reads keyed by bytes32 ids in
+those results (e.g. a transfer's batch) and argument-less reads. Reorgs clear everything; entries
+also expire after 10 minutes; if events cannot be synced the build reads the live chain; `refresh`
+bypasses the cache. Actions, permission checks and transaction preflight never use it. Benchmark at
+100 ms simulated latency: full workspace 18.6 s before batching → 1.1 s batched → **0.44 s / 0
+contract reads** warm.
+
 Re-ran the existing 40-order / 20-batch mock workload: full workspace cold/repeat **2,649 / 2,652 ms**,
 205 getter reads and 9 event queries each; summary cold/repeat **414 / 6 ms**, 103 / 0 getter reads
 and 2 / 0 event queries. Both use zero IPFS downloads in this fixture. The summary cold improvement
