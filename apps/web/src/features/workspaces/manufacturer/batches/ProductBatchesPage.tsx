@@ -27,6 +27,7 @@ import {
   InventoryFact,
   InventorySummaryCard,
   InventoryViewToggle,
+  openCardOnClick,
   SectionTitle,
   SelectField,
   TechnicalDetails,
@@ -397,8 +398,9 @@ function ProductCard({
 
   return (
     <article
-      className={`ingredient-card ingredient-card--${view} manufacturer-product-card${expanded ? ' is-expanded' : ''}`}
+      className={`ingredient-card ingredient-card--${view} manufacturer-product-card is-clickable${expanded ? ' is-expanded' : ''}`}
       data-product-id={product.batchId}
+      onClick={openCardOnClick(onDetail)}
     >
       <div className="ingredient-card__media">
         <CatalogueImage

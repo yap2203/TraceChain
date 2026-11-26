@@ -1,10 +1,15 @@
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { PaginationBar, usePagination } from '../../../../components/ui/PaginatedTable';
+import './ingredients.css';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
+  ArrowRightLeft,
   Boxes,
   CalendarClock,
+  FileText,
   FilterX,
+  ImagePlus,
   PackageCheck,
   Pencil,
   Plus,
@@ -32,10 +37,10 @@ import {
   Btn,
   EmptyState,
   Input,
-  InventoryExpandButton,
   InventoryFact as Fact,
   InventorySummaryCard,
   InventoryViewToggle,
+  openCardOnClick,
   Modal,
   SectionTitle,
   SelectField,
@@ -55,7 +60,16 @@ type InventoryItem = OrderRecord & {
   itemId: string;
 };
 
-export function IngredientBatches({ onNew }: { onNew: () => void }) {
+export function IngredientBatches({
+  onNew,
+  openBatchId,
+  onOpened,
+}: {
+  onNew: () => void;
+  /** Batch to open once it appears, e.g. right after registration. */
+  openBatchId?: string;
+  onOpened?: () => void;
+}) {
   const [view, setView] = useState<IngredientView>(readIngredientView);
   const [data, setData] = useState<OrdersState>();
   const [loading, setLoading] = useState(true);
@@ -67,8 +81,6 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
   const [category, setCategory] = useState('all');
   const [status, setStatus] = useState<'all' | BatchStatus>('all');
   const [sort, setSort] = useState('newest');
-  const [showArchived, setShowArchived] = useState(false);
-  const [expandedBatchIds, setExpandedBatchIds] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<InventoryItem>();
   const [editing, setEditing] = useState<InventoryItem>();
   const [archiving, setArchiving] = useState<InventoryItem>();
@@ -127,6 +139,14 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
     [data],
   );
 
+  useEffect(() => {
+    if (!openBatchId) return;
+    const created = items.find((item) => item.batchId.toLowerCase() === openBatchId.toLowerCase());
+    if (!created) return;
+    setSelected(created);
+    onOpened?.();
+  }, [items, openBatchId, onOpened]);
+
   const categories = useMemo(
     () =>
       [...new Set(items.map((item) => item.category).filter(Boolean) as string[])].sort((a, b) =>
@@ -142,8 +162,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
         const matchesSearch = [item.name, item.batchReference]
           .filter(Boolean)
           .some((value) => String(value).toLocaleLowerCase().includes(query));
-        const archivedVisible =
-          item.inventoryStatus !== 'archived' || showArchived || status === 'archived';
+        const archivedVisible = item.inventoryStatus !== 'archived' || status === 'archived';
         return (
           archivedVisible &&
           (!query || matchesSearch) &&
@@ -152,31 +171,18 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
         );
       })
       .sort((left, right) => compareItems(left, right, sort));
-  }, [category, items, search, showArchived, sort, status]);
+  }, [category, items, search, sort, status]);
+  const pagination = usePagination(shown.map((item) => item.itemId));
 
   const summary = useMemo(() => inventorySummary(items), [items]);
   const filtersActive =
-    Boolean(search.trim()) ||
-    category !== 'all' ||
-    status !== 'all' ||
-    sort !== 'newest' ||
-    showArchived;
+    Boolean(search.trim()) || category !== 'all' || status !== 'all' || sort !== 'newest';
 
   const clearFilters = () => {
     setSearch('');
     setCategory('all');
     setStatus('all');
     setSort('newest');
-    setShowArchived(false);
-  };
-
-  const toggleExpanded = (batchId: string) => {
-    setExpandedBatchIds((current) => {
-      const next = new Set(current);
-      if (next.has(batchId)) next.delete(batchId);
-      else next.add(batchId);
-      return next;
-    });
   };
 
   const changeView = (nextView: IngredientView) => {
@@ -270,8 +276,8 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
   return (
     <section className="ingredient-inventory" aria-label="Ingredient batches">
       <SectionTitle
-        title="Ingredient batches"
-        sub="Register and manage the ingredients supplied by your company."
+        title="My ingredients"
+        sub="Your registered ingredient batches, their stock and listing status."
         action={
           <div className="ingredient-page-actions action-row">
             <Btn
@@ -355,7 +361,7 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
               value={status}
               onChange={(value) => setStatus(value as typeof status)}
               options={[
-                { value: 'all', label: 'All statuses' },
+                { value: 'all', label: 'All except archived' },
                 { value: 'active', label: 'Active' },
                 { value: 'suspended', label: 'Suspended' },
                 { value: 'recalled', label: 'Recalled' },
@@ -374,14 +380,6 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
                 { value: 'stock', label: 'Lowest stock' },
               ]}
             />
-            <label className="ingredient-archive-toggle">
-              <input
-                type="checkbox"
-                checked={showArchived}
-                onChange={(event) => setShowArchived(event.target.checked)}
-              />
-              Show archived
-            </label>
             <Btn
               variant="ghost"
               size="sm"
@@ -398,7 +396,6 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
               <strong aria-live="polite">
                 {shown.length} {shown.length === 1 ? 'batch' : 'batches'}
               </strong>
-              <span>Supplier images and descriptions are presentation information.</span>
             </div>
             <InventoryViewToggle value={view} onChange={changeView} label="Ingredient view" />
           </div>
@@ -422,32 +419,27 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
           action={<Btn onClick={clearFilters}>Clear filters</Btn>}
         />
       ) : (
-        <div className={`ingredient-grid ingredient-grid--${view}`}>
-          {shown.map((item) => (
-            <IngredientCard
-              key={item.itemId}
-              item={item}
-              stock={data.supplierStock?.find(
-                (stock) => stock.batchId.toLowerCase() === item.batchId.toLowerCase(),
-              )}
-              busy={busy}
-              expanded={expandedBatchIds.has(item.batchId)}
-              view={view}
-              onDetails={() => setSelected(item)}
-              onEdit={() => openEdit(item)}
-              onArchive={() => setArchiving(item)}
-              onToggle={() => toggleExpanded(item.batchId)}
-              onRestore={() =>
-                void save('ingredient-archive', { batchId: item.batchId, archived: false })
-              }
-            />
-          ))}
-        </div>
+        <>
+          <div className={`ingredient-grid ingredient-grid--${view}`}>
+            {shown.slice(pagination.start, pagination.end).map((item) => (
+              <IngredientCard
+                key={item.itemId}
+                item={item}
+                view={view}
+                onDetails={() => setSelected(item)}
+              />
+            ))}
+          </div>
+          <PaginationBar pagination={pagination} label="Ingredient pages" />
+        </>
       )}
 
       {selected && (
         <IngredientDetailModal
           item={selected}
+          stock={data?.supplierStock?.find(
+            (stock) => stock.batchId.toLowerCase() === selected.batchId.toLowerCase(),
+          )}
           busy={busy}
           imageFile={imageFile}
           imageError={imageError}
@@ -584,45 +576,28 @@ export function IngredientBatches({ onNew }: { onNew: () => void }) {
 
 function IngredientCard({
   item,
-  stock,
-  busy,
-  expanded,
   view,
   onDetails,
-  onEdit,
-  onArchive,
-  onRestore,
-  onToggle,
 }: {
   item: InventoryItem;
-  stock?: SupplierStock;
-  busy: boolean;
-  expanded: boolean;
   view: IngredientView;
   onDetails: () => void;
-  onEdit: () => void;
-  onArchive: () => void;
-  onRestore: () => void;
-  onToggle: () => void;
 }) {
-  const detailsId = `ingredient-card-details-${item.batchId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const credentialActive = Number(item.credentialStatus) === 1;
   const listingStatus = statusBadge(item.inventoryStatus);
 
-  const toggleButton = (
-    <InventoryExpandButton expanded={expanded} controls={detailsId} onClick={onToggle} />
-  );
-
   const primaryActions = (
     <div className="ingredient-card__primary-actions">
-      <Btn onClick={onDetails}>View details</Btn>
-      {toggleButton}
+      <Btn variant="outline" onClick={onDetails}>
+        View details
+      </Btn>
     </div>
   );
 
   return (
     <article
-      className={`ingredient-card ingredient-card--${view}${expanded ? ' is-expanded' : ''}`}
+      className={`ingredient-card ingredient-card--${view} is-clickable`}
+      onClick={openCardOnClick(onDetails)}
     >
       <div className="ingredient-card__media">
         <CatalogueImage
@@ -671,7 +646,7 @@ function IngredientCard({
                 value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
               />
               <Fact label="Indicative price" value={price(item)} />
-              <Fact label="Expires" value={date(item.batch.expiresAt)} />
+              <Fact label="Expires" value={expiryInformation(item.batch.expiresAt)} />
               <Fact
                 label="Credential status"
                 value={<CredentialStatus active={credentialActive} />}
@@ -681,80 +656,6 @@ function IngredientCard({
           {primaryActions}
         </>
       )}
-
-      <div
-        id={detailsId}
-        className="ingredient-card__expandable"
-        aria-hidden={!expanded}
-        inert={!expanded || undefined}
-      >
-        <div className="ingredient-card__expandable-inner">
-          <dl className="ingredient-card__expanded-facts">
-            <Fact label="Category" value={item.category || 'Not recorded'} />
-            <Fact label="Country of origin" value={item.countryOfOrigin || 'Not recorded'} />
-            <Fact label="Production date" value={date(item.batch.producedAt)} />
-            <Fact label="Expiry information" value={expiryInformation(item.batch.expiresAt)} />
-            <Fact
-              label="Registered quantity"
-              value={quantity(item.batch.totalQuantity, item.unit, 'Not recorded')}
-            />
-            <Fact
-              label="Available quantity"
-              value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
-            />
-            <Fact
-              label="Credential lifecycle"
-              value={item.evidenceAvailability || (credentialActive ? 'Active' : 'Unavailable')}
-            />
-            <Fact
-              label="Last updated"
-              value={dateValue(item.updatedAt ?? item.listingUpdatedAt ?? item.batch.updatedAt)}
-            />
-          </dl>
-          {stock && <SupplierStockSummary stock={stock} />}
-          {item.listingSupported === false && (
-            <p className="ingredient-card__notice">
-              Listing controls require the current registry deployment.
-            </p>
-          )}
-          <div className="ingredient-card__description">
-            <span>Description</span>
-            <p>{item.description || 'No description provided.'}</p>
-          </div>
-          <div className="ingredient-card__secondary-actions action-row">
-            <Btn
-              icon={<Pencil size={14} />}
-              variant="outline"
-              size="sm"
-              disabled={busy || !item.listingSupported || item.inventoryStatus === 'archived'}
-              onClick={onEdit}
-            >
-              Edit listing
-            </Btn>
-            {item.inventoryStatus === 'archived' ? (
-              <Btn
-                icon={<RotateCcw size={14} />}
-                variant="outline"
-                size="sm"
-                disabled={busy || !item.listingSupported}
-                onClick={onRestore}
-              >
-                Restore
-              </Btn>
-            ) : (
-              <Btn
-                icon={<Archive size={14} />}
-                variant="ghost"
-                size="sm"
-                disabled={busy || !item.listingSupported}
-                onClick={onArchive}
-              >
-                Archive
-              </Btn>
-            )}
-          </div>
-        </div>
-      </div>
     </article>
   );
 }
@@ -782,6 +683,7 @@ function CredentialStatus({ active }: { active: boolean }) {
 
 function IngredientDetailModal({
   item,
+  stock,
   busy,
   imageFile,
   imageError,
@@ -793,6 +695,7 @@ function IngredientDetailModal({
   onUpload,
 }: {
   item: InventoryItem;
+  stock?: SupplierStock;
   busy: boolean;
   imageFile?: File;
   imageError: string;
@@ -804,28 +707,14 @@ function IngredientDetailModal({
   onUpload: () => void;
 }) {
   const company = item.sellerName ?? 'Authenticated Supplier';
+  const credentialActive = Number(item.credentialStatus) === 1;
+  const custody = (item.custodyPositions ?? []).filter(
+    (position: OrderRecord) => BigInt(position.quantity) > 0n,
+  );
+  const picker = useRef<HTMLInputElement>(null);
   return (
     <Modal title={item.name} onClose={onClose} width={840}>
       <div className="ingredient-detail">
-        <div className="grid gap-[8px]">
-          <a
-            href={'/supplier/ingredients?view=batch-detail&id=' + encodeURIComponent(item.batchId)}
-          >
-            View signed batch details and certification documents
-          </a>
-          <a href={'/supplier/transfers?batchId=' + encodeURIComponent(item.batchId)}>
-            Send stock to a Distributor warehouse
-          </a>
-          {(item.custodyPositions ?? [])
-            .filter((position: OrderRecord) => BigInt(position.quantity) > 0n)
-            .map((position: OrderRecord) => (
-              <p key={position.positionId}>
-                <strong>{position.distributorName ?? 'Distributor'}</strong> (
-                {position.warehouseName ?? 'Warehouse'}): {position.quantity} {item.unit} in custody
-                · {position.available} {item.unit} unreserved
-              </p>
-            ))}
-        </div>
         <div className="ingredient-detail__hero">
           <CatalogueImage
             path={item.imagePath}
@@ -837,41 +726,56 @@ function IngredientDetailModal({
             <div className="ingredient-card__meta">
               <Badge {...statusBadge(item.inventoryStatus)} />
               <Badge
-                label={
-                  Number(item.credentialStatus) === 1
-                    ? 'Credential active'
-                    : 'Credential unavailable'
-                }
-                variant={Number(item.credentialStatus) === 1 ? 'verified' : 'pending'}
+                label={credentialActive ? 'Credential active' : 'Credential unavailable'}
+                variant={credentialActive ? 'verified' : 'pending'}
               />
             </div>
             <div>
               <h3>{item.name}</h3>
-              <p>{item.batchReference || 'Batch reference unavailable'}</p>
+              <p>
+                {[item.batchReference || 'Batch reference unavailable', item.category]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+              <p>
+                Supplier: <span>{company}</span>
+              </p>
             </div>
-            <dl className="ingredient-detail__summary-facts">
-              <Fact label="Category" value={item.category || 'Unavailable'} />
-              <Fact label="Supplier" value={company} />
-            </dl>
+            <div className="ingredient-detail__actions">
+              <a
+                className="ingredient-detail__link"
+                href={
+                  '/supplier/ingredients?view=batch-detail&id=' + encodeURIComponent(item.batchId)
+                }
+              >
+                <FileText size={15} aria-hidden="true" /> Signed details & certificates
+              </a>
+              {item.inventoryStatus !== 'archived' && (
+                <a
+                  className="ingredient-detail__link"
+                  href={'/supplier/transfers?batchId=' + encodeURIComponent(item.batchId)}
+                >
+                  <ArrowRightLeft size={15} aria-hidden="true" /> Send to custody
+                </a>
+              )}
+            </div>
           </div>
         </div>
 
-        <Alert
-          type="info"
-          message="The image, description and indicative price are Supplier-provided presentation information. They are not signed credential claims or laboratory evidence."
-        />
-
         <div className="ingredient-detail__facts">
           <section>
-            <h4>Inventory</h4>
+            <h4>Stock</h4>
             <dl>
+              {/* With a stock summary below, current stock is shown there instead. */}
+              {!stock && (
+                <Fact
+                  label="Available"
+                  value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
+                />
+              )}
               <Fact
-                label="Registered quantity"
+                label="Registered"
                 value={quantity(item.batch.totalQuantity, item.unit, 'Unavailable')}
-              />
-              <Fact
-                label="Available quantity"
-                value={quantity(item.batch.supplierAvailable, item.unit, 'Unavailable')}
               />
             </dl>
           </section>
@@ -879,60 +783,89 @@ function IngredientDetailModal({
             <h4>Dates and origin</h4>
             <dl>
               <Fact label="Production date" value={date(item.batch.producedAt)} />
-              <Fact label="Expiry date" value={date(item.batch.expiresAt)} />
+              <Fact label="Expiry" value={expiryInformation(item.batch.expiresAt)} />
               <Fact label="Country of origin" value={item.countryOfOrigin || 'Not recorded'} />
             </dl>
           </section>
           <section>
-            <h4>Listing information</h4>
+            <h4>Listing</h4>
             <dl>
               <Fact label="Indicative price" value={price(item)} />
               <Fact label="Description" value={item.description || 'No description provided'} />
-              <Fact
-                label="Credential lifecycle"
-                value={item.evidenceAvailability || 'Status unavailable'}
-              />
             </dl>
+            <p className="ingredient-detail__note">
+              Image, description and price are your listing information, not signed credential
+              claims.
+            </p>
           </section>
         </div>
+
+        {stock && <SupplierStockSummary stock={stock} />}
+
+        {custody.length > 0 && (
+          <section className="ingredient-detail__custody" aria-label="Stock in Distributor custody">
+            <h4>In Distributor custody</h4>
+            <ul>
+              {custody.map((position: OrderRecord) => (
+                <li key={position.positionId}>
+                  <span>
+                    <strong>{position.distributorName ?? 'Distributor'}</strong>
+                    <small>{position.warehouseName ?? 'Warehouse'}</small>
+                  </span>
+                  <span>
+                    {quantity(position.quantity, item.unit, '0')}
+                    <small>{quantity(position.available, item.unit, '0')} unreserved</small>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <section className="ingredient-image-manager" aria-labelledby="ingredient-image-title">
           <div>
             <h4 id="ingredient-image-title">Ingredient image</h4>
-            <p>
-              Optional PNG, JPEG or WebP presentation image, maximum 2 MB. This does not change the
-              credential or verify the physical ingredient.
-            </p>
+            <p>{imageFile ? `Selected: ${imageFile.name}` : 'PNG, JPEG or WebP, up to 2 MB.'}</p>
           </div>
-          <input
-            aria-label="Choose ingredient image"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            disabled={busy}
-            onChange={(event) => onImageFile(event.target.files?.[0])}
-          />
-          <Btn
-            variant="outline"
-            icon={<Upload size={15} />}
-            disabled={busy || !imageFile}
-            onClick={onUpload}
-          >
-            {item.imagePath ? 'Change image' : 'Upload image'}
-          </Btn>
+          <div className="ingredient-image-manager__actions">
+            {/* Native picker stays for accessibility and tests; the button opens it. */}
+            <input
+              ref={picker}
+              className="sr-only"
+              tabIndex={-1}
+              aria-label="Choose ingredient image"
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              disabled={busy}
+              onChange={(event) => onImageFile(event.target.files?.[0])}
+            />
+            <Btn
+              size="sm"
+              variant="outline"
+              icon={<ImagePlus size={15} />}
+              disabled={busy}
+              onClick={() => picker.current?.click()}
+            >
+              {imageFile ? 'Choose another' : 'Choose image'}
+            </Btn>
+            <Btn
+              size="sm"
+              icon={<Upload size={15} />}
+              disabled={busy || !imageFile}
+              onClick={onUpload}
+            >
+              {item.imagePath ? 'Change image' : 'Upload image'}
+            </Btn>
+          </div>
         </section>
         {imageError && <Alert type="error" message={imageError} />}
 
+        {item.listingSupported === false && (
+          <p className="ingredient-detail__note">
+            Listing controls require the current registry deployment.
+          </p>
+        )}
         <div className="ingredient-modal-actions">
-          {item.inventoryStatus !== 'archived' && (
-            <Btn
-              variant="outline"
-              icon={<Pencil size={14} />}
-              disabled={busy || !item.listingSupported}
-              onClick={onEdit}
-            >
-              Edit listing
-            </Btn>
-          )}
           {item.inventoryStatus === 'archived' ? (
             <Btn
               variant="outline"
@@ -943,14 +876,24 @@ function IngredientDetailModal({
               Restore listing
             </Btn>
           ) : (
-            <Btn
-              variant="ghost"
-              icon={<Archive size={14} />}
-              disabled={busy || !item.listingSupported}
-              onClick={onArchive}
-            >
-              Archive listing
-            </Btn>
+            <>
+              <Btn
+                variant="ghost"
+                icon={<Archive size={14} />}
+                disabled={busy || !item.listingSupported}
+                onClick={onArchive}
+              >
+                Archive listing
+              </Btn>
+              <Btn
+                variant="outline"
+                icon={<Pencil size={14} />}
+                disabled={busy || !item.listingSupported}
+                onClick={onEdit}
+              >
+                Edit listing
+              </Btn>
+            </>
           )}
         </div>
 
@@ -1046,22 +989,16 @@ function price(item: OrderRecord) {
 }
 
 function quantity(value: unknown, unit: string, fallback: string) {
-  return value !== undefined && value !== null ? `${String(value)} ${unit}` : fallback;
+  if (value === undefined || value === null) return fallback;
+  const amount = Number(value);
+  // Thousands separators only; the on-chain amount and unit are shown unchanged.
+  return `${Number.isFinite(amount) ? amount.toLocaleString() : String(value)} ${unit}`;
 }
 
 function date(value: unknown) {
   return Number(value)
     ? new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(Number(value) * 1_000)
     : 'Not recorded';
-}
-
-function dateValue(value: unknown) {
-  if (typeof value === 'string' && value.trim()) {
-    const parsed = Date.parse(value);
-    if (Number.isFinite(parsed))
-      return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(parsed);
-  }
-  return date(value);
 }
 
 function expiryDays(value: unknown) {

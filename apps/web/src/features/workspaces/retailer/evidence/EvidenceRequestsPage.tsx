@@ -1,3 +1,4 @@
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import {
   CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
   INGREDIENT_EVIDENCE_CLAIMS,
@@ -10,7 +11,20 @@ import { IngredientClaimValue } from '../../../production-flow/IngredientClaimVa
 import { getSharedCertificationDocument } from '../../../production-flow/production-flow.api';
 import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
-import { FileCheck2, RefreshCw } from 'lucide-react';
+import { FileCheck2, Plus, RefreshCw } from 'lucide-react';
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
+import {
+  EvidenceDetailLayout,
+  EvidenceHowItWorks,
+  EvidenceNextStep,
+  ingredientEvidenceStatus,
+  DeadlineCell,
+  EvidenceStatusSelect,
+  ingredientRequestGroup,
+  matchesStatusFilter,
+  type EvidenceGroup,
+  type EvidenceStatusFilter,
+} from '../../../orders/EvidenceParts';
 
 import {
   getEvidenceDetails,
@@ -25,7 +39,6 @@ import {
   type ProductionEvidenceRequest,
   type RetailerEvidenceOption,
 } from '../../../production-flow/production-flow.api';
-import { CatalogueImage, CompanyAvatar } from '../../../orders/CatalogueMedia';
 import { getOrders, type OrderRecord } from '../../../orders/orders.api';
 import {
   completePreparedWorkflow,
@@ -35,27 +48,15 @@ import {
   Alert,
   Badge,
   Btn,
-  Card,
   EmptyState,
   Input,
   SectionTitle,
-  StatusTabs,
-  T,
   TechnicalDetails,
 } from '../../shared/ui';
 import { chainDate, shortChainId } from '../../shared/operational-format';
 import { textError, futureDateError } from '../../../validation/form-validation';
 
 const claimOptions = INGREDIENT_REQUEST_CLAIMS;
-const statuses = [
-  'Unknown',
-  'Awaiting response',
-  'Evidence received',
-  'Satisfactory',
-  'Declined',
-  'Rejected',
-  'Cancelled',
-];
 
 export function RetailerEvidenceRequests({
   embedded = false,
@@ -70,9 +71,7 @@ export function RetailerEvidenceRequests({
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState<ProductionEvidenceRequest[]>([]);
   const [catalogue, setCatalogue] = useState<OrderRecord[]>([]);
-  const [statusFilter, setStatusFilter] = useState<
-    'all' | 'pending' | 'presented' | 'verified' | 'unavailable'
-  >('all');
+  const [statusFilter, setStatusFilter] = useState<EvidenceStatusFilter>('all');
   const [selected, setSelected] = useState('');
   const [reason, setReason] = useState('Retail product ingredient traceability review');
   const [dueAt, setDueAt] = useState('');
@@ -90,6 +89,9 @@ export function RetailerEvidenceRequests({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [refreshPending, setRefreshPending] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
+  // Arriving from a product link opens the request form straight away.
+  const [composing, setComposing] = useState(Boolean(initialIngredientBatchId));
   const load = async () => {
     const [available, current, orders] = await Promise.all([
       listRetailerEvidenceOptions(),
@@ -119,8 +121,8 @@ export function RetailerEvidenceRequests({
   const chosen = options.find(
     (item) => `${item.productBatchId}:${item.ingredientBatchId}` === selected,
   );
-  const visibleRequests = requests.filter(
-    (request) => statusFilter === 'all' || evidenceGroup(request) === statusFilter,
+  const visibleRequests = requests.filter((request) =>
+    matchesStatusFilter(statusFilter, retailerGroup(request)),
   );
   const requestEvidence = async () => {
     if (!chosen) return;
@@ -226,19 +228,15 @@ export function RetailerEvidenceRequests({
   };
 
   if (loading) return <LoadingIndicator page label="Loading ingredient evidence requests…" />;
-  return (
-    <div style={{ display: 'grid', gap: 18 }}>
-      {!embedded && (
-        <SectionTitle
-          title="Ingredient evidence"
-          sub="Request selective evidence from the original Supplier of an ingredient linked to a received product."
-          action={
-            <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={() => void load()}>
-              Refresh
-            </Btn>
-          }
-        />
-      )}
+  const contextFor = (request: { ingredientBatchId: string; productBatchId?: string }) =>
+    options.find(
+      (option) =>
+        option.ingredientBatchId.toLowerCase() === request.ingredientBatchId.toLowerCase() &&
+        (!request.productBatchId ||
+          option.productBatchId.toLowerCase() === request.productBatchId.toLowerCase()),
+    );
+  const banners = (
+    <>
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
       {refreshPending && (
@@ -260,254 +258,368 @@ export function RetailerEvidenceRequests({
           {busy === 'refresh' ? 'Refreshing…' : 'Refresh records'}
         </Btn>
       )}
-      <Card className="evidence-request-composer">
-        <div style={{ display: 'grid', gap: 12 }}>
-          <label style={{ fontSize: 12, color: T.text2 }}>
-            Product and linked ingredient
-            <select
-              value={selected}
-              onChange={(event) => setSelected(event.target.value)}
-              style={{ display: 'block', width: '100%', marginTop: 6, padding: 10 }}
-            >
-              <option value="">Select an authorized product ingredient</option>
-              {options.map((option) => (
-                <option
-                  key={`${option.productBatchId}:${option.ingredientBatchId}`}
-                  value={`${option.productBatchId}:${option.ingredientBatchId}`}
-                >
-                  {option.productName ?? `Product ${shortChainId(option.productBatchId)}`} ·{' '}
-                  {option.ingredientName ?? `Ingredient ${shortChainId(option.ingredientBatchId)}`}{' '}
-                  · {option.supplierName ?? shortChainId(option.supplier)}
-                </option>
-              ))}
-            </select>
-          </label>
-          {chosen && (
-            <div className="evidence-request-summary">
-              <CatalogueImage
-                path={catalogueProduct(catalogue, chosen.productBatchId)?.imagePath}
-                category={catalogueProduct(catalogue, chosen.productBatchId)?.category ?? 'Product'}
-                alt={`${chosen.productName ?? 'Product'} image`}
+    </>
+  );
+
+  if (review) {
+    const passed = review.verification.state === 'PASSED';
+    const source = requests.find((request) => request.requestId === review.requestId);
+    const context = source ? contextFor(source) : undefined;
+    const status = retailerStatus(review.status);
+    return (
+      <div className="information-requests-page is-detail">
+        <BackNavigation onClick={() => setReview(undefined)}>Ingredient evidence</BackNavigation>
+        <header className="evidence-detail-header">
+          <div>
+            <h2>
+              Evidence from {review.supplierName ?? 'the Supplier'} on{' '}
+              {context?.ingredientName ?? 'the ingredient'}
+            </h2>
+            <p>
+              {context?.productName
+                ? `Used in ${context.productName}`
+                : 'Linked to a received product'}
+            </p>
+          </div>
+          <div className="evidence-detail-header__status">
+            <Badge label={status.label} variant={status.variant} />
+            <Badge
+              label={passed ? 'Verification passed' : 'Unverified'}
+              variant={passed ? 'verified' : 'pending'}
+            />
+          </div>
+        </header>
+        {banners}
+        <EvidenceDetailLayout
+          aside={
+            <section className="evidence-request-details" aria-label="Request details">
+              <dl>
+                <div>
+                  <dt>Supplier</dt>
+                  <dd>{review.supplierName ?? review.supplier}</dd>
+                </div>
+                <div>
+                  <dt>Product</dt>
+                  <dd>{context?.productName ?? 'Registered product'}</dd>
+                </div>
+                <div>
+                  <dt>Ingredient</dt>
+                  <dd>{context?.ingredientName ?? 'Linked ingredient'}</dd>
+                </div>
+                <div>
+                  <dt>Proof valid until</dt>
+                  <dd>{new Date(review.presentationExpiry).toLocaleString()}</dd>
+                </div>
+                {review.verification.verifiedAt && (
+                  <div>
+                    <dt>Last verified</dt>
+                    <dd>{new Date(review.verification.verifiedAt).toLocaleString()}</dd>
+                  </div>
+                )}
+              </dl>
+            </section>
+          }
+        >
+          <EvidenceNextStep
+            tone={review.status === 3 ? 'done' : review.status === 2 ? 'default' : 'closed'}
+            message={
+              review.status === 3
+                ? 'You recorded this evidence as satisfactory. Nothing else to do.'
+                : review.status !== 2
+                  ? 'This request is closed.'
+                  : passed
+                    ? 'Verification passed. Record whether the evidence is satisfactory.'
+                    : 'Verify the shared values before you record a decision.'
+            }
+            action={
+              review.status === 2 && (
+                <>
+                  {passed && (
+                    <Btn
+                      variant="outline"
+                      disabled={Boolean(busy)}
+                      onClick={() => setRejecting(true)}
+                    >
+                      Reject…
+                    </Btn>
+                  )}
+                  <Btn
+                    variant={passed ? 'outline' : 'primary'}
+                    onClick={() => void verify()}
+                    disabled={Boolean(busy)}
+                  >
+                    {busy === 'verify' ? 'Verifying…' : 'Verify evidence'}
+                  </Btn>
+                  <Btn onClick={() => void decide(true)} disabled={!passed || Boolean(busy)}>
+                    Evidence satisfactory
+                  </Btn>
+                </>
+              )
+            }
+          />
+          {rejecting && review.status === 2 && (
+            <div className="evidence-request-form">
+              <Input
+                label="Rejection reason"
+                value={rejectReason}
+                onChange={setRejectReason}
+                placeholder="Tell the Supplier why the evidence is not satisfactory"
               />
-              <div>
-                <strong>{chosen.productName ?? 'Registered product'}</strong>
-                <span>{chosen.productBatchReference ?? shortChainId(chosen.productBatchId)}</span>
-                <span>
-                  Linked ingredient:{' '}
-                  {chosen.ingredientName ?? shortChainId(chosen.ingredientBatchId)}
-                </span>
-                <span className="workspace-company-cell">
-                  <CompanyAvatar name={chosen.supplierName ?? 'Original Supplier'} size="sm" />
-                  {chosen.supplierName ?? 'Original Supplier'}
-                </span>
+              <div className="evidence-actions">
+                <Btn variant="outline" onClick={() => setRejecting(false)}>
+                  Cancel
+                </Btn>
+                <Btn
+                  variant="danger"
+                  onClick={() => void decide(false)}
+                  disabled={!rejectReason.trim() || Boolean(busy)}
+                >
+                  Reject evidence
+                </Btn>
               </div>
             </div>
           )}
-          <IngredientRequestPolicyFields
-            policy={policy}
-            onChange={setPolicy}
-            onRequirements={(required) =>
-              setChoices((current) => ({
-                ...current,
-                ...Object.fromEntries(
-                  INGREDIENT_REQUEST_CLAIMS.map(([key]) => [
-                    key,
-                    required.includes(key) ? ('required' as const) : ('none' as const),
-                  ]),
-                ),
-              }))
-            }
+          <section className="evidence-panel__shared" aria-label="Shared values">
+            <h4>Shared values</h4>
+            <div className="ingredient-review-grid">
+              {Object.entries(review.sharedClaims).map(([key, value]) => (
+                <div key={key}>
+                  <IngredientClaimValue
+                    name={key}
+                    value={value}
+                    loadDocument={(id) => getSharedCertificationDocument(review.requestId, id)}
+                  />
+                </div>
+              ))}
+            </div>
+          </section>
+          <EvidenceHowItWorks>
+            <p>
+              These are the Supplier&apos;s own declarations, not independent laboratory or
+              certification-body proof. Verifying checks the signature, the request binding and the
+              credential&apos;s on-chain status; your decision is recorded separately and does not
+              grant any manufacturing or custody rights.
+            </p>
+          </EvidenceHowItWorks>
+          <TechnicalDetails
+            fields={[
+              { label: 'Request ID', value: review.requestId },
+              { label: 'Ingredient batch ID', value: review.batchId },
+              { label: 'Credential ID', value: review.credentialId },
+            ]}
           />
-          <EvidenceClaimSelector
-            catalogue={INGREDIENT_EVIDENCE_CLAIMS.filter((claim) => claimOptions.some(([id]) => id === claim.id))}
-            required={claimOptions.map(([id]) => id).filter((id) => choices[id] === 'required')}
-            optional={claimOptions.map(([id]) => id).filter((id) => choices[id] === 'optional')}
-            onChange={(required, optional) => setChoices(Object.fromEntries(claimOptions.map(([id]) => [id, required.includes(id) ? 'required' : optional.includes(id) ? 'optional' : 'none'])))}
-          />
-          <Input label="Reason" value={reason} onChange={setReason} required />
-          <Input label="Response deadline" type="date" value={dueAt} onChange={setDueAt} required />
-          <Btn
-            disabled={!chosen || !dueAt || !reason.trim() || Boolean(busy)}
-            onClick={() => void requestEvidence()}
-          >
-            {busy === 'request' ? 'Confirming…' : 'Request evidence with MetaMask'}
-          </Btn>
-        </div>
-      </Card>
-      <StatusTabs
-        label="Filter ingredient evidence requests"
-        value={statusFilter}
-        onChange={setStatusFilter}
-        variant="connected"
-        tabs={[
-          { value: 'all', label: 'All', count: requests.length },
-          {
-            value: 'pending',
-            label: 'Pending',
-            count: requests.filter((row) => evidenceGroup(row) === 'pending').length,
-          },
-          {
-            value: 'presented',
-            label: 'Presented',
-            count: requests.filter((row) => evidenceGroup(row) === 'presented').length,
-          },
-          {
-            value: 'verified',
-            label: 'Verified',
-            count: requests.filter((row) => evidenceGroup(row) === 'verified').length,
-          },
-          {
-            value: 'unavailable',
-            label: 'Rejected / unavailable',
-            count: requests.filter((row) => evidenceGroup(row) === 'unavailable').length,
-          },
-        ]}
-      />
+        </EvidenceDetailLayout>
+      </div>
+    );
+  }
+
+  const ordered = [...visibleRequests].sort(
+    (a, b) => b.updatedAt - a.updatedAt || b.dueAt - a.dueAt,
+  );
+  return (
+    <div className="information-requests-page">
+      {!embedded && (
+        <SectionTitle
+          title="Ingredient evidence"
+          sub="Ask the original Supplier for evidence about an ingredient in a product you received."
+          action={
+            <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={() => void load()}>
+              Refresh
+            </Btn>
+          }
+        />
+      )}
+      {banners}
+      <div className="evidence-toolbar">
+        <EvidenceStatusSelect
+          value={statusFilter}
+          onChange={setStatusFilter}
+          actionCount={requests.filter((request) => retailerGroup(request) === 'action').length}
+        />
+        <Btn
+          variant={composing ? 'outline' : 'primary'}
+          icon={<Plus size={16} />}
+          onClick={() => setComposing((open) => !open)}
+        >
+          {composing ? 'Close request form' : 'New evidence request'}
+        </Btn>
+      </div>
+      {composing && (
+        <section
+          className="evidence-request-details evidence-request-composer"
+          aria-label="New evidence request"
+        >
+          <h3 className="evidence-section-title">New evidence request</h3>
+          <div className="evidence-request-form">
+            <label className="evidence-select-field">
+              Product and linked ingredient
+              <select value={selected} onChange={(event) => setSelected(event.target.value)}>
+                <option value="">Select a product ingredient</option>
+                {options.map((option) => (
+                  <option
+                    key={`${option.productBatchId}:${option.ingredientBatchId}`}
+                    value={`${option.productBatchId}:${option.ingredientBatchId}`}
+                  >
+                    {option.productName ?? `Product ${shortChainId(option.productBatchId)}`} ·{' '}
+                    {option.ingredientName ??
+                      `Ingredient ${shortChainId(option.ingredientBatchId)}`}{' '}
+                    · {option.supplierName ?? shortChainId(option.supplier)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {chosen && (
+              <p className="evidence-panel__facts">
+                <span>
+                  Product <strong>{chosen.productName ?? 'Registered product'}</strong>
+                </span>
+                <span>
+                  Ingredient{' '}
+                  <strong>{chosen.ingredientName ?? shortChainId(chosen.ingredientBatchId)}</strong>
+                </span>
+                <span>
+                  Supplier <strong>{chosen.supplierName ?? 'Original Supplier'}</strong>
+                </span>
+              </p>
+            )}
+            <IngredientRequestPolicyFields
+              policy={policy}
+              onChange={setPolicy}
+              onRequirements={(required) =>
+                setChoices((current) => ({
+                  ...current,
+                  ...Object.fromEntries(
+                    INGREDIENT_REQUEST_CLAIMS.map(([key]) => [
+                      key,
+                      required.includes(key) ? ('required' as const) : ('none' as const),
+                    ]),
+                  ),
+                }))
+              }
+            />
+            <EvidenceClaimSelector
+              catalogue={INGREDIENT_EVIDENCE_CLAIMS.filter((claim) =>
+                claimOptions.some(([id]) => id === claim.id),
+              )}
+              required={claimOptions.map(([id]) => id).filter((id) => choices[id] === 'required')}
+              optional={claimOptions.map(([id]) => id).filter((id) => choices[id] === 'optional')}
+              onChange={(required, optional) =>
+                setChoices(
+                  Object.fromEntries(
+                    claimOptions.map(([id]) => [
+                      id,
+                      required.includes(id)
+                        ? 'required'
+                        : optional.includes(id)
+                          ? 'optional'
+                          : 'none',
+                    ]),
+                  ),
+                )
+              }
+            />
+            <Input label="Reason" value={reason} onChange={setReason} required />
+            <Input
+              label="Response deadline"
+              type="date"
+              value={dueAt}
+              onChange={setDueAt}
+              required
+            />
+            <div className="evidence-actions">
+              <span />
+              <Btn
+                disabled={!chosen || !dueAt || !reason.trim() || Boolean(busy)}
+                onClick={() => void requestEvidence()}
+              >
+                {busy === 'request' ? 'Confirming…' : 'Request evidence with MetaMask'}
+              </Btn>
+            </div>
+          </div>
+        </section>
+      )}
       {requests.length === 0 ? (
         <EmptyState
           icon={<FileCheck2 size={28} />}
-          title="No Retailer evidence requests"
-          sub="Requests for linked ingredients will appear here."
+          title="No ingredient evidence requests yet"
+          sub="Choose New evidence request to ask a Supplier about an ingredient in a product you received."
         />
-      ) : !visibleRequests.length ? (
+      ) : !ordered.length ? (
         <EmptyState
           icon={<FileCheck2 size={28} />}
           title="No requests match this status"
-          sub="Choose another status to see your other ingredient evidence requests."
+          sub="Choose another status to see your other requests."
         />
       ) : (
-        <div className="evidence-request-list">
-          {visibleRequests.map((request) => {
-            const context = options.find(
-              (option) =>
-                option.ingredientBatchId.toLowerCase() ===
-                  request.ingredientBatchId.toLowerCase() &&
-                (!request.productBatchId ||
-                  option.productBatchId.toLowerCase() === request.productBatchId.toLowerCase()),
-            );
-            const product = request.productBatchId
-              ? catalogueProduct(catalogue, request.productBatchId)
-              : undefined;
-            return (
-              <article className="evidence-request-card" key={request.requestId}>
-                <CatalogueImage
-                  path={product?.imagePath}
-                  category={product?.category ?? 'Product'}
-                  alt={`${context?.productName ?? product?.name ?? 'Product'} image`}
-                />
-                <div className="evidence-request-card__content">
-                  <div className="evidence-request-card__heading">
-                    <div>
-                      <h3>{context?.productName ?? product?.name ?? 'Registered product'}</h3>
-                      <p>
-                        {context?.productBatchReference ??
-                          product?.batchReference ??
-                          'Product reference unavailable'}
-                      </p>
-                    </div>
-                    <Badge
-                      label={statuses[request.status] ?? 'Unknown'}
-                      variant={
-                        request.status === 3
-                          ? 'active'
-                          : request.status === 2
-                            ? 'verified'
-                            : 'pending'
-                      }
-                    />
-                  </div>
-                  <dl className="workspace-record-facts">
-                    <div>
-                      <dt>Linked ingredient</dt>
-                      <dd>{context?.ingredientName ?? shortChainId(request.ingredientBatchId)}</dd>
-                    </div>
-                    <div>
-                      <dt>Original Supplier</dt>
-                      <dd>{request.supplierName ?? shortChainId(request.supplier)}</dd>
-                    </div>
-                    <div>
-                      <dt>Response deadline</dt>
-                      <dd>{chainDate(request.dueAt)}</dd>
-                    </div>
-                    <div>
-                      <dt>Next action</dt>
-                      <dd>{evidenceNextAction(request)}</dd>
-                    </div>
-                  </dl>
-                  <div className="evidence-request-card__actions">
-                    {request.status >= 2 && (
-                      <Btn
-                        size="xs"
-                        variant="outline"
-                        onClick={() => void openReview(request.requestId)}
-                      >
-                        View evidence
-                      </Btn>
-                    )}
-                  </div>
-                  <TechnicalDetails
-                    fields={[
-                      { label: 'Request ID', value: request.requestId },
-                      {
-                        label: 'Product batch ID',
-                        value: request.productBatchId ?? 'Not recorded',
-                      },
-                      { label: 'Ingredient batch ID', value: request.ingredientBatchId },
-                    ]}
-                  />
-                </div>
-              </article>
-            );
-          })}
+        <div className="evidence-table-card">
+          <PaginatedTable>
+            <table className="evidence-table" aria-label="Ingredient evidence requests">
+              <thead>
+                <tr>
+                  <th scope="col">Product</th>
+                  <th scope="col">Ingredient</th>
+                  <th scope="col">Supplier</th>
+                  <th scope="col">Deadline</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">
+                    <span className="sr-only">Action</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {ordered.map((request) => {
+                  const context = contextFor(request);
+                  const product = request.productBatchId
+                    ? catalogueProduct(catalogue, request.productBatchId)
+                    : undefined;
+                  const status = retailerStatus(request.status, request.dueAt);
+                  const ready = evidenceGroup(request) === 'presented';
+                  return (
+                    <tr key={request.requestId} className={ready ? 'is-actionable' : undefined}>
+                      <td>
+                        <span className="evidence-table__stack">
+                          <strong>
+                            {context?.productName ?? product?.name ?? 'Registered product'}
+                          </strong>
+                          <small>
+                            {context?.productBatchReference ?? product?.batchReference ?? ''}
+                          </small>
+                        </span>
+                      </td>
+                      <td>{context?.ingredientName ?? shortChainId(request.ingredientBatchId)}</td>
+                      <td>{request.supplierName ?? shortChainId(request.supplier)}</td>
+                      <DeadlineCell
+                        dueAt={request.dueAt}
+                        closed={retailerGroup(request) === 'closed'}
+                      />
+                      <td>
+                        <Badge label={status.label} variant={status.variant} />
+                      </td>
+                      <td className="evidence-table__action">
+                        {request.status >= 2 ? (
+                          <Btn
+                            size="xs"
+                            variant={ready ? 'primary' : 'outline'}
+                            disabled={Boolean(busy)}
+                            onClick={() => void openReview(request.requestId)}
+                          >
+                            {busy === request.requestId
+                              ? 'Loading…'
+                              : ready
+                                ? 'Review evidence'
+                                : 'View evidence'}
+                          </Btn>
+                        ) : (
+                          <small>Waiting for Supplier</small>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </PaginatedTable>
         </div>
-      )}
-      {review && (
-        <Card>
-          <h3 style={{ marginTop: 0 }}>Retailer evidence review</h3>
-          <Badge
-            label={review.verification.state === 'PASSED' ? 'Verification passed' : 'Unverified'}
-            variant={review.verification.state === 'PASSED' ? 'verified' : 'pending'}
-          />
-          <Alert
-            type="warning"
-            message="Supplier declarations are not independent laboratory or certification-body proof. Verification and the Retailer decision remain separate."
-          />
-          <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
-            {Object.entries(review.sharedClaims).map(([key, value]) => (
-              <div key={key}>
-                <IngredientClaimValue
-                  name={key}
-                  value={value}
-                  loadDocument={(id) => getSharedCertificationDocument(review.requestId, id)}
-                />
-              </div>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-            <Btn onClick={() => void verify()} disabled={Boolean(busy)}>
-              Verify evidence
-            </Btn>
-            <Btn
-              onClick={() => void decide(true)}
-              disabled={review.verification.state !== 'PASSED' || Boolean(busy)}
-            >
-              Evidence satisfactory
-            </Btn>
-            <Input label="Rejection reason" value={rejectReason} onChange={setRejectReason} />
-            <div className="action-row">
-              <Btn
-                variant="outline"
-                onClick={() => void decide(false)}
-                disabled={!rejectReason.trim() || Boolean(busy)}
-              >
-                Reject evidence
-              </Btn>
-            </div>
-            <Btn variant="ghost" onClick={() => setReview(undefined)}>
-              Close
-            </Btn>
-          </div>
-        </Card>
       )}
     </div>
   );
@@ -516,10 +628,23 @@ function message(cause: unknown) {
   return reportError(cause, 'The evidence workflow failed.');
 }
 
+/** Retailers record a "Satisfactory" decision rather than a Manufacturer acceptance. */
+function retailerStatus(status: number, dueAt?: number) {
+  const base = ingredientEvidenceStatus(status, dueAt);
+  return status === 3 ? { ...base, label: 'Satisfactory' } : base;
+}
+
 function catalogueProduct(catalogue: OrderRecord[], batchId: string) {
   return catalogue.find((item) =>
     item.batches?.some((id: string) => id.toLowerCase() === batchId.toLowerCase()),
   );
+}
+
+/** Ready-to-review evidence is the Retailer's action; verified evidence waits on no one. */
+function retailerGroup(request: ProductionEvidenceRequest): EvidenceGroup {
+  if (evidenceGroup(request) === 'presented') return 'action';
+  const group = ingredientRequestGroup(request, 'sent');
+  return group === 'action' ? 'open' : group;
 }
 
 function evidenceGroup(request: ProductionEvidenceRequest) {
@@ -527,12 +652,4 @@ function evidenceGroup(request: ProductionEvidenceRequest) {
   if (request.status === 3 || request.verification?.state === 'PASSED') return 'verified';
   if ([4, 5, 6].includes(request.status)) return 'unavailable';
   return 'pending';
-}
-
-function evidenceNextAction(request: ProductionEvidenceRequest) {
-  if (request.status === 2 && request.verification?.state !== 'PASSED')
-    return 'Verify the Supplier presentation, then record a separate decision.';
-  if (request.status === 3) return 'Evidence was accepted; no further action is required.';
-  if ([4, 5, 6].includes(request.status)) return 'This request is no longer actionable.';
-  return 'Waiting for the original Supplier to present the requested evidence.';
 }

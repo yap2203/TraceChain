@@ -74,7 +74,7 @@ export function ReceiveShipmentPage() {
   }, [allowed, auth.state.address]);
   return (
     <main className="workspace-ui min-h-screen p-[20px]">
-      <div className="mx-auto grid max-w-[1200px] gap-[20px]">
+      <div className="grid w-full gap-[20px]">
         <Brand />
         {!allowed && (
           <Card>

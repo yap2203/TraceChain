@@ -11,11 +11,19 @@ import {
 } from '@tracechain/shared';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { reportError } from '../../../../components/ui/feedback';
-import { Alert, Btn, Card, Input, SelectField, StepProgress } from '../../shared/ui';
+import {
+  Alert,
+  Badge,
+  Btn,
+  Card,
+  Input,
+  RadioGroup,
+  SelectField,
+  StepProgress,
+  Textarea,
+} from '../../shared/ui';
 import { RegistrationCountrySelect } from '../../../registration/RegistrationCountrySelect';
 import {
-  getIngredientDrafts,
-  getCertificationDocument,
   extractIngredientDocument,
   prepareIngredientBatch,
   type IngredientDocumentExtraction,
@@ -57,7 +65,8 @@ const categories = [
 ];
 interface Props {
   onBack: () => void;
-  onCompleted?: () => void;
+  /** Called with the new batch ID once registration is confirmed. */
+  onCompleted?: (batchId: string) => void;
   extractDocument?: typeof extractIngredientDocument;
   prepareWorkflow?: typeof prepareIngredientBatch;
   submitTransaction?: typeof submitIngredientBatchTransaction;
@@ -72,7 +81,6 @@ export function RegisterBatch({
   const [mode, setMode] = useState<'choose' | 'manual' | 'document'>('choose'),
     [step, setStep] = useState(0);
   const [operationId] = useState(() => crypto.randomUUID());
-  const [drafts, setDrafts] = useState<{ batchId: string; input: IngredientBatchInput }[]>([]);
   const [draft, setDraft] = useState({
     name: '',
     reference: '',
@@ -108,7 +116,9 @@ export function RegisterBatch({
     [busy, setBusy] = useState(false),
     [started, setStarted] = useState(false),
     [complete, setComplete] = useState(false),
-    [status, setStatus] = useState('');
+    [status, setStatus] = useState(''),
+    // Set when a review section's Edit opened an earlier step; Continue then returns to review.
+    [fromReview, setFromReview] = useState(false);
   const [batchId, setBatchId] = useState('');
   const confirmedStages = useRef(new Set<string>());
   const form = useRef<HTMLDivElement>(null),
@@ -241,7 +251,8 @@ export function RegisterBatch({
       focusError();
       return;
     }
-    editStep(Math.min(step + 1, 2));
+    editStep(fromReview ? 2 : Math.min(step + 1, 2));
+    setFromReview(false);
     setError('');
   };
   const extract = async (file?: File) => {
@@ -302,71 +313,6 @@ export function RegisterBatch({
       setExtracting(false);
     }
   };
-  const resume = async (record: { batchId: string; input: IngredientBatchInput }) => {
-    setBusy(true);
-    setError('');
-    try {
-      const saved = currentIngredientInput(record.input);
-      const restored: CertificationDraft[] = [];
-      for (const entry of saved.certificationEntries ?? []) {
-        const files = [];
-        for (const descriptor of entry.documents) {
-          const stored = await getCertificationDocument(record.batchId, descriptor.id);
-          const bytes = Uint8Array.from(atob(stored.data), (c) => c.charCodeAt(0));
-          files.push({
-            id: descriptor.id,
-            file: new File([bytes], stored.fileName, { type: stored.mimeType }),
-            document: descriptor,
-            status: 'stored' as const,
-            progress: 100,
-          });
-        }
-        const { documents, ...fields } = entry;
-        restored.push({ ...fields, files });
-      }
-      frozen.current = saved;
-      setStarted(true);
-      setMode('manual');
-      setStep(2);
-      setBatchId(record.batchId);
-      setEntries(restored);
-      setLegacyCerts(saved.certifications);
-      setLegacyOrigin(saved.origin);
-      setStatus(
-        'Recovered the persisted registration. Resume checks the chain before any transaction. Optional images must be reselected later if they were not saved.',
-      );
-      const source = saved.originDetails;
-      setDraft((old) => ({
-        ...old,
-        name: saved.ingredientName,
-        reference: saved.batchReference,
-        category: saved.category,
-        quantity: saved.quantity,
-        unit: saved.unit,
-        produced: saved.productionDate.slice(0, 10),
-        expiry: saved.expiryDate.slice(0, 10),
-        country: source?.countryCode ?? '',
-        region: source?.region ?? '',
-        city: source?.city ?? '',
-        facility: source?.facility ?? '',
-        address: source?.privateAddress ?? '',
-        allergenKind: saved.allergen?.kind ?? 'unknown',
-        allergenDetails: saved.allergen?.details ?? '',
-        price: saved.price ?? '',
-        currency: saved.currency ?? 'MYR',
-        priceBasis: saved.priceBasis ?? saved.unit,
-      }));
-    } catch (cause) {
-      setError(
-        reportError(
-          cause,
-          'The stored registration could not be retrieved. Retry; do not recreate its batch.',
-        ),
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
   const register = async () => {
     if (lock.current || complete) return;
     if (!frozen.current) {
@@ -387,7 +333,7 @@ export function RegisterBatch({
     setError('');
     let confirmationPending = false;
     try {
-      setStatus('Preparing documents and the encrypted Ingredient Credential...');
+      setStatus('Preparing registration…');
       let workflow = await prepareWorkflow(frozen.current);
       setBatchId(workflow.batchId);
       for (let count = 0; workflow.state !== 'COMPLETE'; count++) {
@@ -397,55 +343,55 @@ export function RegisterBatch({
           );
         setStatus(
           workflow.state === 'CREDENTIAL_REGISTRATION_REQUIRED'
-            ? 'Awaiting MetaMask: register the Ingredient Credential. Confirmation includes submission and mining.'
-            : 'Awaiting MetaMask: register the ingredient batch. Confirmation includes submission and mining.',
+            ? 'Confirm the credential transaction in MetaMask.'
+            : 'Confirm the batch transaction in MetaMask.',
         );
         if (confirmedStages.current.has(workflow.state))
           throw new Error(
-            'This transaction already confirmed. The RPC read is stale; resume to reread state without registering again.',
+            'This transaction already confirmed, but the blockchain read is behind. Choose Retry registration to read it again; nothing is registered twice.',
           );
         const currentStage = workflow.state;
         await submitTransaction(workflow.transaction, workflow.supplierWallet, (stage) => {
           confirmationPending = stage === 'submitted';
-          setStatus(
-            stage === 'wallet'
-              ? 'Awaiting your explicit MetaMask confirmation.'
-              : stage === 'submitted'
-                ? 'Transaction submitted. Waiting for blockchain confirmation...'
-                : 'Transaction confirmed. Reading the resulting batch state...',
-          );
+          if (stage !== 'wallet')
+            setStatus(
+              stage === 'submitted'
+                ? 'Waiting for blockchain confirmation…'
+                : 'Confirmed. Checking the result…',
+            );
         });
         confirmationPending = false;
         confirmedStages.current.add(currentStage);
-        setStatus('Transaction confirmed. Reading the batch registration state...');
         workflow = await prepareWorkflow(frozen.current);
       }
       setComplete(true);
-      setStatus('Ingredient batch confirmed and read back from the blockchain.');
+      let imageFailed = false;
       if (image) {
         try {
-          setStatus('Batch confirmed. Uploading the optional listing image...');
+          setStatus('Saving the listing image…');
           await uploadIngredientCatalogueImage(workflow.batchId, await imageFilePayload(image));
           setImageNotice('Optional listing image saved.');
         } catch (cause) {
+          imageFailed = true;
           setError(
             `The batch is already registered. ${reportError(cause, 'Add the optional image later from batch details. Do not register again.')}`,
           );
-        } finally {
-          setStatus('Ingredient batch confirmed and read back from the blockchain.');
         }
       }
+      setStatus('');
+      // Done: go straight to the new record, unless the image error needs reading first.
+      if (!imageFailed) onCompleted?.(workflow.batchId);
     } catch (cause) {
       setError(
         reportError(
           cause,
-          'Registration could not finish. Retry to resume the same operation; keep the same batch reference.',
+          'Registration could not finish. Your entries are kept; choose Retry registration.',
         ),
       );
       setStatus(
         confirmationPending && !/revert/i.test(cause instanceof Error ? cause.message : '')
-          ? 'Transaction submitted; confirmation is not yet known. Resume registration to check its on-chain state before continuing.'
-          : 'Registration paused. Your entries are retained. Resume registration to check the chain and retry.',
+          ? 'Transaction sent, but its confirmation is not known yet. Retry registration checks the chain first and will not register twice.'
+          : '',
       );
     } finally {
       lock.current = false;
@@ -468,6 +414,22 @@ export function RegisterBatch({
       form.current?.querySelector<HTMLElement>('legend, #listing-heading')?.focus(),
     );
   };
+  // Step indicator navigation: back freely; forward only through steps that pass the same checks as Continue.
+  const goToStep = (target: number) => {
+    if (busy || started || target === step) return;
+    if (target > step)
+      for (let page = step; page < target; page++) {
+        const found = validate(page);
+        if (Object.keys(found).length) {
+          setStep(page);
+          setErrors(found);
+          focusError();
+          return;
+        }
+      }
+    setFromReview(false);
+    editStep(target);
+  };
   const reviewValue = (label: string, value: string) => (
     <div key={label}>
       <dt>{label}</dt>
@@ -477,9 +439,12 @@ export function RegisterBatch({
   return (
     <div className="ingredient-create" ref={form}>
       <BackNavigation onClick={onBack} disabled={busy}>
-        Back to ingredient batches
+        My ingredients
       </BackNavigation>
-      <h2>Create ingredient batch</h2>
+      <header className="ingredient-create-header">
+        <h2>Register ingredient batch</h2>
+        <p>Record a new batch on chain. You confirm it in MetaMask at the last step.</p>
+      </header>
       {error && <Alert type="error" message={error} />}
       {mode === 'choose' ? (
         <Card>
@@ -506,33 +471,6 @@ export function RegisterBatch({
               <span>Complete three short steps.</span>
             </button>
           </div>
-          <div className="action-row">
-            <Btn
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                void getIngredientDrafts()
-                  .then((result) => setDrafts(result.workflows))
-                  .catch((cause) =>
-                    setError(reportError(cause, 'Stored registrations could not be loaded.')),
-                  )
-                  .finally(() => setBusy(false));
-              }}
-            >
-              Resume a registration
-            </Btn>
-          </div>
-          {drafts.map((record) => (
-            <div key={record.batchId} className="action-row">
-              <span>
-                {record.input.ingredientName} ? {record.input.batchReference}
-              </span>
-              <Btn variant="outline" disabled={busy} onClick={() => void resume(record)}>
-                Resume saved batch
-              </Btn>
-            </div>
-          ))}
         </Card>
       ) : (
         <>
@@ -567,6 +505,8 @@ export function RegisterBatch({
               <StepProgress
                 steps={['Batch details', 'Origin and certifications', 'Listing and review']}
                 current={step}
+                onSelect={goToStep}
+                disabled={busy || started}
               />
               {extraction && (
                 <Alert
@@ -585,7 +525,7 @@ export function RegisterBatch({
                     {Object.entries(extraction.fields).map(([name, field]) => (
                       <div key={name}>
                         <dt>
-                          {name} ? {field.confidence}
+                          {name} · {field.confidence}
                         </dt>
                         <dd>{field.value || 'Not found; enter this value if required.'}</dd>
                       </div>
@@ -599,7 +539,9 @@ export function RegisterBatch({
               <Card>
                 {step === 0 && (
                   <fieldset disabled={busy || started} className="ingredient-create-fields">
-                    <legend tabIndex={-1}>Batch details</legend>
+                    <legend className="sr-only" tabIndex={-1}>
+                      Batch details
+                    </legend>
                     <div className="workspace-form-grid">
                       {field('name', 'Ingredient name', {
                         required: true,
@@ -657,7 +599,9 @@ export function RegisterBatch({
                 )}
                 {step === 1 && (
                   <fieldset disabled={busy || started} className="ingredient-create-fields">
-                    <legend tabIndex={-1}>Origin and certifications</legend>
+                    <legend className="sr-only" tabIndex={-1}>
+                      Origin and certifications
+                    </legend>
                     <p className="ingredient-help">
                       Origin describes where the ingredient was sourced. Current storage and
                       dispatch locations are managed through locations and shipments.
@@ -686,9 +630,17 @@ export function RegisterBatch({
                       {field('facility', 'Source facility / farm name or reference (optional)', {
                         maxLength: 200,
                       })}
-                      {field('address', 'Detailed source address (private, optional)', {
-                        maxLength: 1000,
-                      })}
+                      <div className="is-full">
+                        <Textarea
+                          label="Detailed source address (private, optional)"
+                          value={draft.address}
+                          onChange={update('address')}
+                          maxLength={1000}
+                          rows={2}
+                          error={errors.address}
+                          hint="Private: stored encrypted and shared only if you choose to disclose it."
+                        />
+                      </div>
                     </div>
                     {legacyOrigin && (
                       <p>
@@ -698,30 +650,34 @@ export function RegisterBatch({
                     )}
                     <h3 className="ingredient-form-divider">Allergen declaration</h3>
                     <div data-error={Boolean(errors.allergenKind)}>
-                      <SelectField
+                      <RadioGroup
                         label="Allergen declaration"
                         required
                         value={draft.allergenKind}
                         onChange={update('allergenKind')}
+                        error={errors.allergenKind}
                         options={[
-                          { value: '', label: 'Choose a declaration' },
                           { value: 'contains', label: 'Contains' },
                           { value: 'mayContain', label: 'May contain' },
                           { value: 'declaresNone', label: 'Supplier declares none' },
                           { value: 'unknown', label: 'Unknown' },
                         ]}
                       />
-                      {errors.allergenKind && (
-                        <p role="alert" className="text-ws-red">
-                          {errors.allergenKind}
-                        </p>
-                      )}
                     </div>
-                    {['contains', 'mayContain'].includes(draft.allergenKind) &&
-                      field('allergenDetails', 'Allergen details', {
-                        required: true,
-                        maxLength: 500,
-                      })}
+                    {['contains', 'mayContain'].includes(draft.allergenKind) && (
+                      <div className="ingredient-allergen-details">
+                        <Textarea
+                          label="Allergen details"
+                          required
+                          value={draft.allergenDetails}
+                          onChange={update('allergenDetails')}
+                          maxLength={500}
+                          rows={2}
+                          error={errors.allergenDetails}
+                          hint="Required for Contains and May contain, e.g. milk, soy, tree nuts."
+                        />
+                      </div>
+                    )}
                     <h3 className="ingredient-form-divider">Certifications (optional)</h3>
                     {legacyCerts.length > 0 && (
                       <p>
@@ -751,6 +707,113 @@ export function RegisterBatch({
                   <div className="ingredient-create-review">
                     <section
                       className="ingredient-review-section"
+                      aria-labelledby="batch-review-heading"
+                    >
+                      <header className="ingredient-review-heading">
+                        <h3 id="batch-review-heading">Batch details</h3>
+                        <Btn
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || started}
+                          onClick={() => {
+                            setFromReview(true);
+                            editStep(0);
+                          }}
+                        >
+                          Edit batch details
+                        </Btn>
+                      </header>
+                      <dl className="workspace-review-grid">
+                        {[
+                          ['Ingredient', draft.name],
+                          ['Batch reference', draft.reference],
+                          [
+                            'Category',
+                            categories.find((item) => item.value === draft.category)?.label ??
+                              draft.category,
+                          ],
+                          ['Production date', formatReviewDate(draft.produced)],
+                          ['Expiry date', formatReviewDate(draft.expiry)],
+                        ].map(([label, value]) => reviewValue(label, value || 'Unavailable'))}
+                        <div>
+                          <dt>Quantity</dt>
+                          <dd>
+                            {draft.quantity} {draft.unit}
+                            <small className="ingredient-quantity-note">
+                              Registered as{' '}
+                              {formatQuantity(
+                                frozen.current && !frozen.current.originDetails
+                                  ? frozen.current.quantity
+                                  : (conversion?.quantity ?? ''),
+                              )}{' '}
+                              {frozen.current && !frozen.current.originDetails
+                                ? frozen.current.unit
+                                : conversion?.unit}
+                            </small>
+                          </dd>
+                        </div>
+                      </dl>
+                    </section>
+                    <section
+                      className="ingredient-review-section"
+                      aria-labelledby="origin-review-heading"
+                    >
+                      <header className="ingredient-review-heading">
+                        <h3 id="origin-review-heading">Origin and allergens</h3>
+                        <Btn
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy || started}
+                          onClick={() => {
+                            setFromReview(true);
+                            editStep(1);
+                          }}
+                        >
+                          Edit origin and certifications
+                        </Btn>
+                      </header>
+                      <dl className="workspace-review-grid">
+                        {reviewValue(
+                          draft.country ? 'Country of origin' : 'Origin (previously supplied text)',
+                          draft.country ? origin.countryName : legacyOrigin || 'Unavailable',
+                        )}
+                        {draft.region && reviewValue('State / region', draft.region)}
+                        {draft.city && reviewValue('City / district', draft.city)}
+                        {draft.facility && reviewValue('Source facility', draft.facility)}
+                        {draft.address && reviewValue('Private source address', draft.address)}
+                      </dl>
+                      <div className="ingredient-allergen-summary">
+                        <span>Allergen declaration</span>
+                        {(frozen.current?.allergen?.kind ?? allergen.kind) === 'unknown' ? (
+                          <Badge label="Unknown" variant="pending" />
+                        ) : (
+                          <strong>
+                            {frozen.current?.allergenInformation ?? input().allergenInformation}
+                          </strong>
+                        )}
+                      </div>
+                    </section>
+                    <section
+                      className="ingredient-review-section"
+                      aria-labelledby="certifications-review-heading"
+                    >
+                      <h3 id="certifications-review-heading">Certifications</h3>
+                      {legacyCerts.length > 0 && (
+                        <p>
+                          Legacy certification text: {legacyCerts.join(', ')}. Issuer, reference,
+                          dates and scope are unavailable unless separately supplied.
+                        </p>
+                      )}
+                      <CertificationEditor
+                        batchReference={draft.reference}
+                        entries={entries}
+                        setEntries={setEntries}
+                        operationId={operationId}
+                        readOnly
+                      />
+                    </section>
+                    <section
+                      className="ingredient-review-section"
                       aria-labelledby="listing-heading"
                     >
                       <header className="ingredient-review-heading">
@@ -769,6 +832,7 @@ export function RegisterBatch({
                           {field('price', 'Indicative price (optional)', {
                             inputMode: 'decimal',
                             maxLength: 15,
+                            hint: 'If you add a price, currency and price basis are required.',
                           })}
                           {draft.price && (
                             <>
@@ -873,103 +937,6 @@ export function RegisterBatch({
                         </div>
                       </fieldset>
                     </section>
-                    <section
-                      className="ingredient-review-section"
-                      aria-labelledby="batch-review-heading"
-                    >
-                      <header className="ingredient-review-heading">
-                        <h3 id="batch-review-heading">Batch details</h3>
-                        <Btn
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy || started}
-                          onClick={() => editStep(0)}
-                        >
-                          Edit batch details
-                        </Btn>
-                      </header>
-                      <dl className="workspace-review-grid">
-                        {[
-                          ['Ingredient', draft.name],
-                          ['Batch reference', draft.reference],
-                          [
-                            'Category',
-                            categories.find((item) => item.value === draft.category)?.label ??
-                              draft.category,
-                          ],
-                          ['Production date', formatReviewDate(draft.produced)],
-                          ['Expiry date', formatReviewDate(draft.expiry)],
-                        ].map(([label, value]) => reviewValue(label, value || 'Unavailable'))}
-                        <div>
-                          <dt>Quantity</dt>
-                          <dd>
-                            {draft.quantity} {draft.unit}
-                            <small className="ingredient-quantity-note">
-                              Registered as{' '}
-                              {formatQuantity(
-                                frozen.current && !frozen.current.originDetails
-                                  ? frozen.current.quantity
-                                  : (conversion?.quantity ?? ''),
-                              )}{' '}
-                              {frozen.current && !frozen.current.originDetails
-                                ? frozen.current.unit
-                                : conversion?.unit}
-                            </small>
-                          </dd>
-                        </div>
-                      </dl>
-                    </section>
-                    <section
-                      className="ingredient-review-section"
-                      aria-labelledby="origin-review-heading"
-                    >
-                      <header className="ingredient-review-heading">
-                        <h3 id="origin-review-heading">Origin and allergens</h3>
-                        <Btn
-                          variant="ghost"
-                          size="sm"
-                          disabled={busy || started}
-                          onClick={() => editStep(1)}
-                        >
-                          Edit origin and certifications
-                        </Btn>
-                      </header>
-                      <dl className="workspace-review-grid">
-                        {reviewValue(
-                          draft.country ? 'Country of origin' : 'Origin (previously supplied text)',
-                          draft.country ? origin.countryName : legacyOrigin || 'Unavailable',
-                        )}
-                        {draft.region && reviewValue('State / region', draft.region)}
-                        {draft.city && reviewValue('City / district', draft.city)}
-                        {draft.facility && reviewValue('Source facility', draft.facility)}
-                        {draft.address && reviewValue('Private source address', draft.address)}
-                      </dl>
-                      <div className="ingredient-allergen-summary">
-                        <span>Allergen declaration</span>
-                        <strong>
-                          {frozen.current?.allergenInformation ?? input().allergenInformation}
-                        </strong>
-                      </div>
-                    </section>
-                    <section
-                      className="ingredient-review-section"
-                      aria-labelledby="certifications-review-heading"
-                    >
-                      <h3 id="certifications-review-heading">Certifications</h3>
-                      {legacyCerts.length > 0 && (
-                        <p>
-                          Legacy certification text: {legacyCerts.join(', ')}. Issuer, reference,
-                          dates and scope are unavailable unless separately supplied.
-                        </p>
-                      )}
-                      <CertificationEditor
-                        batchReference={draft.reference}
-                        entries={entries}
-                        setEntries={setEntries}
-                        operationId={operationId}
-                        readOnly
-                      />
-                    </section>
                     {extraction && (
                       <label data-error={Boolean(errors.reviewed)}>
                         <input
@@ -987,16 +954,7 @@ export function RegisterBatch({
                         {errors.reviewed}
                       </p>
                     )}
-                    <details className="ingredient-registration-technical">
-                      <summary>What registration records</summary>
-                      <p className="ingredient-help">
-                        Batch identity, registered quantity and unit, dates, origin, allergens,
-                        certifications and document references become signed claims. Price and photo
-                        are separate listing metadata. Certifications remain supplier-provided.
-                        MetaMask signs future presentations for this company wallet.
-                      </p>
-                    </details>
-                    {started && (
+                    {status && (
                       <div
                         className="ingredient-registration-status"
                         role="status"
@@ -1011,12 +969,6 @@ export function RegisterBatch({
                         )}
                         <span>{status}</span>
                       </div>
-                    )}
-                    {started && !complete && (
-                      <p>
-                        Your entries are retained. Resume registration checks the chain before
-                        continuing this same attempt.
-                      </p>
                     )}
                     {complete && (
                       <Alert
@@ -1034,10 +986,28 @@ export function RegisterBatch({
                   </div>
                 )}
                 {step === 2 && !complete && (
-                  <p className="ingredient-help ingredient-register-note">
-                    Registration signs the batch details. Private details and documents stay
-                    encrypted off-chain.
-                  </p>
+                  <section
+                    className="ingredient-confirm"
+                    aria-labelledby="ingredient-confirm-title"
+                  >
+                    <h3 id="ingredient-confirm-title">Before you register</h3>
+                    <p className="ingredient-confirm__summary">
+                      <strong>{draft.name || 'Ingredient'}</strong> · batch {draft.reference} ·{' '}
+                      {draft.quantity} {draft.unit} · expires {formatReviewDate(draft.expiry)} ·{' '}
+                      {entries.length} {entries.length === 1 ? 'certification' : 'certifications'}
+                    </p>
+                    <ul>
+                      <li>
+                        Batch details, origin, allergens and certifications are signed and cannot be
+                        edited later. Price, photo and description can.
+                      </li>
+                      <li>
+                        MetaMask asks you to confirm up to two transactions. Private details and
+                        documents stay encrypted off-chain.
+                      </li>
+                      <li>Certifications stay marked as supplier-provided, not verified.</li>
+                    </ul>
+                  </section>
                 )}
                 <div className="ingredient-create-actions">
                   {!complete && (
@@ -1056,19 +1026,24 @@ export function RegisterBatch({
                   )}
                   {step < 2 ? (
                     <Btn disabled={busy} onClick={next}>
-                      Continue <ArrowRight size={16} aria-hidden="true" />
+                      {fromReview ? 'Save and return to review' : 'Continue'}{' '}
+                      <ArrowRight size={16} aria-hidden="true" />
                     </Btn>
                   ) : (
                     <Btn
                       disabled={busy}
-                      onClick={complete ? (onCompleted ?? onBack) : () => void register()}
+                      onClick={
+                        complete
+                          ? () => (onCompleted ? onCompleted(batchId) : onBack())
+                          : () => void register()
+                      }
                     >
                       {complete
                         ? 'View ingredient batches'
                         : busy
-                          ? 'Processing registration...'
+                          ? 'Registering…'
                           : started
-                            ? 'Resume registration'
+                            ? 'Retry registration'
                             : 'Register with MetaMask'}
                     </Btn>
                   )}
@@ -1080,18 +1055,6 @@ export function RegisterBatch({
       )}
     </div>
   );
-}
-
-function currentIngredientInput(input: IngredientBatchInput): IngredientBatchInput {
-  const current = { ...input } as IngredientBatchInput & Record<string, unknown>;
-  delete current.qualityTests;
-  delete current.internalQualityRemarks;
-  delete current.productionDateMeaning;
-  if (!current.originDetails) return current;
-  const originDetails = { ...current.originDetails } as IngredientOrigin & Record<string, unknown>;
-  delete originDetails.processingCountry;
-  delete originDetails.processingLocation;
-  return { ...current, originDetails };
 }
 
 function formatReviewDate(value: string) {

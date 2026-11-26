@@ -92,3 +92,18 @@ it('rejects unsupported files and excess file counts without pretending persiste
   expect(await screen.findByText(/Use up to 3 files/)).toBeTruthy();
   expect(mocks.upload).not.toHaveBeenCalled();
 });
+it('hides the expiry date while No expiry stated is selected', () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByText('Add certification'));
+  expect(screen.getByLabelText(/Certificate expiry date/)).toBeTruthy();
+  fireEvent.click(screen.getByLabelText('No expiry stated'));
+  expect(screen.queryByLabelText(/Certificate expiry date/)).toBeNull();
+  fireEvent.click(screen.getByLabelText('No expiry stated'));
+  expect(screen.getByLabelText(/Certificate expiry date/)).toBeTruthy();
+});
+it('marks an unfinished certification as Incomplete in its summary', () => {
+  render(<Harness />);
+  fireEvent.click(screen.getByText('Add certification'));
+  const summary = document.querySelector('.ingredient-certification-card > summary')!;
+  expect(within(summary as HTMLElement).getByText('Incomplete')).toBeTruthy();
+});

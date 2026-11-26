@@ -1,146 +1,209 @@
 import type { ReactNode } from 'react';
-import { BellRing, Clock3 } from 'lucide-react';
+import { CheckCircle2, RefreshCw } from 'lucide-react';
 
-import { CatalogueImage, CompanyAvatar } from '../../orders/CatalogueMedia';
-import { Alert, Badge, Btn, EmptyState, InventorySummaryCard, SectionTitle, TechnicalDetails } from './ui';
+import { PaginatedTable } from '../../../components/ui/PaginatedTable';
+import { CompanyAvatar } from '../../orders/CatalogueMedia';
+import { Alert, Badge, Btn, InventorySummaryCard, SectionTitle } from './ui';
 import { WorkspaceGuide } from '../WorkspaceGuide';
 import type { BadgeVariant } from './ui/Badge';
+import './stakeholder-overview.css';
 
 export interface OverviewMetric {
   icon: ReactNode;
   label: string;
   note?: string;
   value: string | number;
+  /** Opens the page that lists these records. */
+  onClick?: () => void;
 }
 
-export interface OverviewRecord {
-  actionLabel?: string;
+/** One thing waiting on this company, from any workflow. */
+export interface OverviewTask {
+  key: string;
+  task: string;
+  item: string;
+  detail?: string;
+  counterparty?: string;
+  /** Unix seconds. */
+  due?: number;
   badge: { label: string; variant: BadgeVariant };
-  companyLogoPath?: string;
-  companyName?: string;
-  description: string;
-  imagePath?: string;
-  itemCategory?: string;
-  name: string;
-  onAction?: () => void;
-  reference?: string;
-  technical?: Array<{ label: string; value: string }>;
+  actionLabel: string;
+  onAction: () => void;
+}
+
+export interface OverviewSnapshot {
+  title: string;
+  columns: string[];
+  rows: Array<{ key: string; cells: ReactNode[] }>;
+  empty: string;
+  viewAllLabel: string;
+  onViewAll: () => void;
 }
 
 export function StakeholderOverviewLayout({
   title,
   description,
   metrics,
-  attention,
-  recent,
-  emptyAttention,
-  emptyRecent,
+  tasks,
+  tasksLoading = false,
+  snapshot,
   errors = [],
+  onRefresh,
 }: {
   title: string;
   description: string;
   metrics: OverviewMetric[];
-  attention: OverviewRecord[];
-  recent: OverviewRecord[];
-  emptyAttention: string;
-  emptyRecent: string;
+  tasks: OverviewTask[];
+  tasksLoading?: boolean;
+  snapshot: OverviewSnapshot;
   errors?: Array<string | undefined>;
+  onRefresh?: () => void;
 }) {
+  const ordered = [...tasks].sort((a, b) => (a.due ?? Infinity) - (b.due ?? Infinity));
   return (
     <div className="stakeholder-overview">
-      <SectionTitle title={title} sub={description} />
+      <SectionTitle
+        title={title}
+        sub={description}
+        action={
+          onRefresh && (
+            <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={onRefresh}>
+              Refresh
+            </Btn>
+          )
+        }
+      />
       <WorkspaceGuide />
-      {errors.filter(Boolean).map((error) => (
+      {[...new Set(errors.filter(Boolean))].map((error) => (
         <Alert key={error} type="error" message={error!} />
       ))}
       <div className="stakeholder-overview__metrics" aria-label="Workspace summary">
         {metrics.slice(0, 4).map((metric) => (
-          <InventorySummaryCard key={metric.label} {...metric} />
+          <InventorySummaryCard
+            key={metric.label}
+            {...metric}
+            variant={metric.onClick ? 'navigation' : 'default'}
+          />
         ))}
       </div>
-      <div className="stakeholder-overview__sections">
-        <OverviewSection
-          title="Needs your attention"
-          icon={<BellRing size={19} />}
-          records={attention}
-          empty={emptyAttention}
-        />
-        <OverviewSection
-          title="Recent activity"
-          icon={<Clock3 size={19} />}
-          records={recent}
-          empty={emptyRecent}
-        />
-      </div>
+
+      <section className="overview-panel" aria-label="Needs your action">
+        <header>
+          <h3>Needs your action</h3>
+          {!tasksLoading && <span className="overview-panel__count">{ordered.length}</span>}
+        </header>
+        {tasksLoading && !ordered.length ? (
+          <p className="overview-panel__empty" role="status">
+            Checking orders, offers and evidence requests…
+          </p>
+        ) : !ordered.length ? (
+          <p className="overview-panel__empty is-done">
+            <CheckCircle2 size={18} aria-hidden="true" /> You&apos;re all caught up. New requests
+            and orders that need you will appear here.
+          </p>
+        ) : (
+          <PaginatedTable>
+            <table className="overview-table">
+              <thead>
+                <tr>
+                  <th scope="col">Task</th>
+                  <th scope="col">Item</th>
+                  <th scope="col">With</th>
+                  <th scope="col">Due</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">
+                    <span className="sr-only">Action</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {ordered.map((task) => (
+                  <tr key={task.key}>
+                    <td>
+                      <strong>{task.task}</strong>
+                    </td>
+                    <td>
+                      <span className="overview-table__stack">
+                        <span>{task.item}</span>
+                        {task.detail && <small>{task.detail}</small>}
+                      </span>
+                    </td>
+                    <td>
+                      {task.counterparty ? (
+                        <span className="overview-table__company">
+                          <CompanyAvatar name={task.counterparty} size="sm" />
+                          {task.counterparty}
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td className={dueClass(task.due)}>{formatDue(task.due)}</td>
+                    <td>
+                      <Badge {...task.badge} />
+                    </td>
+                    <td className="overview-table__action">
+                      <Btn size="xs" onClick={task.onAction}>
+                        {task.actionLabel}
+                      </Btn>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </PaginatedTable>
+        )}
+      </section>
+
+      <section className="overview-panel" aria-label={snapshot.title}>
+        <header>
+          <h3>{snapshot.title}</h3>
+          <Btn size="xs" variant="outline" onClick={snapshot.onViewAll}>
+            {snapshot.viewAllLabel}
+          </Btn>
+        </header>
+        {!snapshot.rows.length ? (
+          <p className="overview-panel__empty">{snapshot.empty}</p>
+        ) : (
+          <div className="overview-table__scroll">
+            <table className="overview-table">
+              <thead>
+                <tr>
+                  {snapshot.columns.map((column) => (
+                    <th key={column} scope="col">
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {snapshot.rows.slice(0, 5).map((row) => (
+                  <tr key={row.key}>
+                    {row.cells.map((cell, index) => (
+                      <td key={index}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
 
-function OverviewSection({
-  title,
-  icon,
-  records,
-  empty,
-}: {
-  title: string;
-  icon: ReactNode;
-  records: OverviewRecord[];
-  empty: string;
-}) {
-  return (
-    <section className="stakeholder-overview__section" aria-label={title}>
-      <header>
-        <span>{icon}</span>
-        <h3>{title}</h3>
-      </header>
-      {!records.length ? (
-        <EmptyState icon={icon} title={empty} sub="Nothing else requires action here right now." />
-      ) : (
-        <div className="stakeholder-overview__list">
-          {records.slice(0, 5).map((record, index) => (
-            <article
-              className="stakeholder-overview__record"
-              key={`${record.name}-${record.reference ?? index}`}
-            >
-              <div className="stakeholder-overview__image">
-                <CatalogueImage
-                  path={record.imagePath}
-                  category={record.itemCategory}
-                  alt={`${record.name} image`}
-                />
-              </div>
-              <div className="stakeholder-overview__record-body">
-                <div className="stakeholder-overview__record-heading">
-                  <div>
-                    <h4>{record.name}</h4>
-                    {record.reference && <p>{record.reference}</p>}
-                  </div>
-                  <Badge {...record.badge} />
-                </div>
-                {record.companyName && (
-                  <div className="workspace-company-cell">
-                    <CompanyAvatar
-                      name={record.companyName}
-                      logoPath={record.companyLogoPath}
-                      size="sm"
-                    />
-                    {record.companyName}
-                  </div>
-                )}
-                <p>{record.description}</p>
-                <div className="stakeholder-overview__record-actions">
-                  {record.onAction && (
-                    <Btn variant="outline" size="sm" onClick={record.onAction}>
-                      {record.actionLabel ?? 'Review'}
-                    </Btn>
-                  )}
-                </div>
-                {record.technical?.length ? <TechnicalDetails fields={record.technical} /> : null}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
+function formatDue(due?: number) {
+  if (!due) return '—';
+  const ms = due * 1000 - Date.now();
+  if (ms <= 0) return 'Overdue';
+  const hours = Math.round(ms / 3_600_000);
+  if (hours < 48) return `In ${Math.max(1, hours)} h`;
+  return new Date(due * 1000).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+function dueClass(due?: number) {
+  if (!due) return undefined;
+  const ms = due * 1000 - Date.now();
+  return ms <= 0 ? 'is-overdue' : ms < 24 * 3_600_000 ? 'is-soon' : undefined;
 }

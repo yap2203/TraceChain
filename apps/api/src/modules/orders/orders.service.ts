@@ -288,17 +288,29 @@ export class OrdersService {
         status = 'UNAVAILABLE';
       }
       const company = await this.directory?.resolve(counterparty);
+      const offer = record.deliveryOrderId
+        ? await this.offers().lookup(record.deliveryOrderId, session.address)
+        : undefined;
       rows.push({
         sharedReference: record.sharedIdentity === true,
         requestId: record.requestId,
         referenceId: record.deliveryOrderId ?? record.requestId,
         context: record.deliveryOrderId
-          ? (await this.offers().lookup(record.deliveryOrderId, session.address))
+          ? offer
             ? 'custody'
             : 'delivery'
           : record.orderContext
             ? 'order'
             : 'ingredient',
+        // Display context only; every value here is already visible to both participants.
+        counterpartyWallet: counterparty,
+        counterpartyRole: company?.role,
+        subject: offer
+          ? `${(await this.offerView(offer)).itemName} · ${offer.quantity} ${offer.unit}`
+          : undefined,
+        requiredClaims: record.identityProof.requiredClaims ?? [],
+        optionalClaims: record.identityProof.optionalClaims ?? [],
+        verifiedAt: record.identityProof.verifiedAt,
         direction: same(record.requester, session.address) ? 'received' : 'sent',
         company: company?.companyName ?? counterparty,
         purpose: record.identityProof.purpose,

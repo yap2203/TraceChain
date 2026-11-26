@@ -131,8 +131,8 @@ describe('Manufacturer information request management', () => {
   it('replaces Manufacturer Browse navigation and keeps old evidence links usable', () => {
     const labels = workspaceNavigationGroups('manufacturer').flatMap((group) => group.items.map(([, label]) => label));
     expect(labels).toContain('My products');
-    expect(labels).toContain('Ingredient orders');
-    expect(labels).toContain('Incoming product orders');
+    expect(labels).toContain('Orders');
+    expect(labels).not.toContain('Incoming product orders');
     expect(labels).toContain('Evidence Exchange');
     expect(labels).not.toContain('Sent requests');
     expect(labels).not.toContain('Browse & requests');

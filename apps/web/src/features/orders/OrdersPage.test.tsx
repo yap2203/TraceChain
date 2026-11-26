@@ -649,7 +649,7 @@ describe('browse and request-only UI', () => {
     expect(await screen.findByRole('heading', { name: 'Unsweetened Cocoa Powder' })).toBeTruthy();
     expect(screen.getAllByRole('heading', { name: 'Unsweetened Cocoa Powder' })).toHaveLength(1);
     expect(screen.queryByRole('heading', { name: 'Order request' })).toBeNull();
-    expect(screen.getByRole('button', { name: /Ingredient orders/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Buying ingredients/ })).toBeTruthy();
     expect(screen.getByText('Order and delivery details')).toBeTruthy();
 
     const progress = screen.getByRole('list', { name: 'Order progress' });

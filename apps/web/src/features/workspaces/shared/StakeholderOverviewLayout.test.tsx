@@ -7,57 +7,92 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 import { StakeholderOverviewLayout } from './StakeholderOverviewLayout';
 
+const snapshot = (rows = [] as Array<{ key: string; cells: string[] }>) => ({
+  title: 'Recent custody offers',
+  columns: ['Item', 'Status'],
+  rows,
+  empty: 'No custody offers yet.',
+  viewAllLabel: 'View all offers',
+  onViewAll: vi.fn(),
+});
+
 describe('shared stakeholder overview', () => {
   afterEach(cleanup);
 
-  it('renders readable records across roles and keeps identifiers collapsed', () => {
+  it('lists work across workflows by deadline with one action each, and links metrics', () => {
     const review = vi.fn();
-    const { container } = render(
+    const openOffers = vi.fn();
+    const now = Math.floor(Date.now() / 1000);
+    render(
       <MemoryRouter initialEntries={['/distributor/overview']}>
         <StakeholderOverviewLayout
           title="Distributor overview"
           description="Custody stock and shipment activity."
           metrics={[
-            { icon: <Package />, label: 'Available stock', value: '24 kg' },
-            { icon: <Package />, label: 'Incoming', value: 1 },
-            { icon: <Package />, label: 'In transit', value: 2 },
-            { icon: <Package />, label: 'Completed', value: 3 },
+            { icon: <Package />, label: 'Offers waiting on you', value: 2, onClick: openOffers },
+            { icon: <Package />, label: 'Arrivals to receive', value: 1 },
           ]}
-          attention={[
+          tasks={[
             {
-              name: 'Single Origin Cocoa With A Long Readable Name',
-              reference: 'COCOA-2026-01',
-              description: 'Review the incoming custody shipment.',
-              companyName: 'Rimba Cocoa Ingredients Sdn. Bhd.',
-              itemCategory: 'Cocoa',
-              badge: { label: 'Awaiting receipt', variant: 'pending' },
-              actionLabel: 'Review shipment',
+              key: 'later',
+              task: 'Arrange pickup time',
+              item: 'Cocoa beans',
+              counterparty: 'Rimba Cocoa',
+              due: now + 5 * 24 * 3600,
+              badge: { label: 'Your turn', variant: 'pending' },
+              actionLabel: 'Arrange pickup',
+              onAction: vi.fn(),
+            },
+            {
+              key: 'overdue',
+              task: 'Accept or reject custody offer',
+              item: 'Single Origin Cocoa',
+              detail: '12 kg',
+              counterparty: 'Rimba Cocoa Ingredients Sdn. Bhd.',
+              due: now - 60,
+              badge: { label: 'Your turn', variant: 'pending' },
+              actionLabel: 'Review offer',
               onAction: review,
-              technical: [{ label: 'Shipment ID', value: `0x${'12'.repeat(32)}` }],
             },
           ]}
-          recent={[]}
-          emptyAttention="No pending work"
-          emptyRecent="No recent records"
+          snapshot={snapshot([{ key: 'a', cells: ['Cocoa beans', 'Received'] }])}
         />
       </MemoryRouter>,
     );
 
     const heading = screen.getByRole('heading', { name: 'Distributor overview' });
     const quick = screen.getByRole('region', { name: 'Quick actions' });
-    // The page title comes before the quick actions.
     expect(heading.compareDocumentPosition(quick) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getAllByLabelText('Workspace summary')).toHaveLength(1);
-    expect(screen.getByText('Single Origin Cocoa With A Long Readable Name')).toBeTruthy();
-    expect(screen.getByLabelText('Cocoa image placeholder')).toBeTruthy();
-    expect(screen.getByLabelText('Rimba Cocoa Ingredients Sdn. Bhd. initials')).toBeTruthy();
-    const details = screen.getByText('Technical details').closest('details');
-    expect(details?.open).toBe(false);
-    expect(container.textContent).not.toContain(`0x${'12'.repeat(32)}`);
-    fireEvent.click(screen.getByRole('button', { name: 'Review shipment' }));
+    const work = screen.getByRole('region', { name: 'Needs your action' });
+    const rows = within(work).getAllByRole('row').slice(1);
+    // Most urgent first, overdue clearly labelled.
+    expect(rows[0]!.textContent).toContain('Single Origin Cocoa');
+    expect(rows[0]!.textContent).toContain('Overdue');
+    expect(work.textContent).not.toContain('Technical details');
+    fireEvent.click(within(rows[0]!).getByRole('button', { name: 'Review offer' }));
     expect(review).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole('button', { name: /Offers waiting on you/ }));
+    expect(openOffers).toHaveBeenCalledOnce();
     expect(
-      within(screen.getByLabelText('Recent activity')).getByText('No recent records'),
+      within(screen.getByRole('region', { name: 'Recent custody offers' })).getByText(
+        'Cocoa beans',
+      ),
     ).toBeTruthy();
+  });
+
+  it('says when there is nothing to do and when a snapshot is empty', () => {
+    render(
+      <MemoryRouter initialEntries={['/supplier/overview']}>
+        <StakeholderOverviewLayout
+          title="Supplier overview"
+          description="Orders and stock."
+          metrics={[]}
+          tasks={[]}
+          snapshot={snapshot()}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/You.re all caught up/)).toBeTruthy();
+    expect(screen.getByText('No custody offers yet.')).toBeTruthy();
   });
 });

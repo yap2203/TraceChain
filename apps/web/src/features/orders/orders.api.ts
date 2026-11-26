@@ -199,6 +199,7 @@ export interface CustodyOffer {
     'REQUESTED' | 'ACCEPTED' | 'SCHEDULED' | 'REJECTED' | 'DISPATCHED' | 'RECEIVED' | 'EXPIRED';
   pickupAt?: number;
   shipmentId?: string;
+  createdAt?: string;
 }
 export const getCustodyOffers = () => request<{ offers: CustodyOffer[] }>('/custody-offers');
 export const getCustodyOffer = (offerId: string) =>
@@ -225,6 +226,13 @@ export interface CompanyProofRequestRow {
   context: 'delivery' | 'order' | 'ingredient' | 'custody';
   direction: 'sent' | 'received';
   company: string;
+  counterpartyWallet?: string;
+  counterpartyRole?: string;
+  /** Item and quantity for custody-offer requests. */
+  subject?: string;
+  requiredClaims?: string[];
+  optionalClaims?: string[];
+  verifiedAt?: string;
   purpose: string;
   requestedFieldsCount?: number;
   requiredFieldsCount?: number;

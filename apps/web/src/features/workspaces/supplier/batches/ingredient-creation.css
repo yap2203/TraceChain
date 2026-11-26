@@ -1,10 +1,22 @@
 @reference '../../../../styles/tailwind.css';
 @layer components {
   .ingredient-create {
-    @apply grid min-w-0 w-full max-w-[1100px] mx-auto gap-5;
+    @apply grid min-w-0 w-full gap-5;
   }
   .ingredient-create h2 {
     @apply text-xl font-bold text-ws-navy;
+  }
+  .ingredient-create-header {
+    display: grid;
+    gap: 4px;
+  }
+  .ingredient-create-header h2,
+  .ingredient-create-header p {
+    margin: 0;
+  }
+  .ingredient-create-header p {
+    color: var(--c-text2);
+    font-size: var(--text-body);
   }
   .ingredient-create h3 {
     @apply text-base font-semibold text-ws-navy;
@@ -33,30 +45,154 @@
   .ingredient-certifications {
     @apply grid min-w-0 gap-4;
   }
+  /* Certification card: summary header, two-column fields, documents, footer. */
   .ingredient-certification-card {
-    @apply min-w-0 border border-solid border-ws-border rounded-lg p-4;
+    min-width: 0;
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    background: var(--c-surface);
   }
   .ingredient-certification-card > summary {
-    @apply cursor-pointer font-semibold text-sm text-ws-navy mb-3;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 14px 16px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .ingredient-certification-card > summary::-webkit-details-marker {
+    display: none;
+  }
+  .ingredient-certification-card > summary > strong {
+    color: var(--c-text);
+    font-size: var(--text-value);
+  }
+  .ingredient-certification-card__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-right: auto;
+  }
+  .ingredient-certification-card__tags > span {
+    padding: 2px 8px;
+    border: 1px solid var(--c-border2);
+    border-radius: 999px;
+    color: var(--c-text2);
+    font-size: var(--text-meta);
+  }
+  .ingredient-certification-card__tags > span.is-incomplete {
+    border-color: color-mix(in srgb, var(--c-amber) 45%, var(--c-border2));
+    color: var(--c-amber);
+    font-weight: 600;
+  }
+  .ingredient-certification-card__edit {
+    color: var(--c-teal);
+    font-size: var(--text-label);
+    font-weight: 600;
+  }
+  .ingredient-certification-card[open] .ingredient-certification-card__edit {
+    font-size: 0;
+  }
+  .ingredient-certification-card[open] .ingredient-certification-card__edit::after {
+    content: 'Done';
+    font-size: var(--text-label);
+  }
+  .ingredient-certification-card__body {
+    display: grid;
+    gap: 16px;
+    padding: 4px 16px 16px;
+    border-top: 1px solid var(--c-border);
   }
   .ingredient-certification-card .workspace-form-grid {
-    @apply my-4;
+    margin: 12px 0 0;
+  }
+  .ingredient-certification-card__expiry,
+  .ingredient-certification-card__scope {
+    display: grid;
+    gap: 8px;
+    align-content: start;
+    min-width: 0;
+  }
+  .ingredient-certification-card__check {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--c-text);
+    font-size: var(--text-body);
+    cursor: pointer;
+  }
+  .ingredient-certification-docs {
+    display: grid;
+    gap: 0;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+  }
+  .ingredient-certification-docs[data-error='true'] {
+    border-color: var(--c-red);
+  }
+  .ingredient-certification-docs > header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+  }
+  .ingredient-certification-docs > header > div:first-child {
+    display: grid;
+    gap: 2px;
+  }
+  .ingredient-certification-docs > header strong {
+    color: var(--c-text);
+    font-size: var(--text-body);
+  }
+  .ingredient-certification-docs__empty,
+  .ingredient-certification-docs > p {
+    margin: 0;
+    padding: 0 14px 12px;
+    color: var(--c-text2);
+    font-size: var(--text-label);
   }
   .ingredient-certification-file {
-    @apply flex flex-wrap items-center justify-between gap-3 py-3 border-0 border-t border-solid border-ws-border;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--c-border);
+    color: var(--c-text2);
   }
-  .ingredient-certification-file > div {
-    @apply min-w-0;
+  .ingredient-certification-file > div:nth-child(2) {
+    min-width: 0;
     overflow-wrap: anywhere;
   }
+  .ingredient-certification-file strong {
+    color: var(--c-text);
+    font-size: var(--text-body);
+  }
   .ingredient-certification-file small {
-    @apply block text-xs text-ws-text2 mt-1;
+    display: block;
+    margin-top: 2px;
+    color: var(--c-text2);
+    font-size: var(--text-meta);
   }
-  .ingredient-certification-upload {
-    @apply grid gap-2 min-w-0 text-sm;
+  .ingredient-certification-file .action-row {
+    flex-wrap: nowrap;
+    gap: 4px;
   }
-  .ingredient-certification-upload input {
-    @apply max-w-full min-w-0 text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-ws-surface file:text-ws-text file:px-3 file:py-2;
+  .ingredient-certification-card__footer {
+    display: flex;
+    justify-content: flex-start;
+  }
+  @media (max-width: 640px) {
+    .ingredient-certification-file {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+    .ingredient-certification-file .action-row {
+      grid-column: 1 / -1;
+      flex-wrap: wrap;
+    }
   }
   .ingredient-create-review {
     @apply grid min-w-0 gap-5;
@@ -64,18 +200,16 @@
   .ingredient-create-review fieldset {
     @apply border-0 p-0 m-0 min-w-0;
   }
+  /* Values read before labels. */
   .ingredient-create-review dd {
-    @apply m-0 text-sm;
+    margin: 0;
+    color: var(--c-text);
+    font-size: var(--text-value);
+    font-weight: 600;
     overflow-wrap: anywhere;
   }
   .ingredient-create-review dt {
     @apply text-xs text-ws-text2 mb-1;
-  }
-  .ingredient-create-review .ingredient-certification-card > summary {
-    @apply mb-0;
-  }
-  .ingredient-create-review .ingredient-certification-card[open] > summary {
-    @apply mb-3;
   }
   .ingredient-create-image {
     @apply w-20 h-20 shrink-0 object-contain rounded-lg bg-ws-surface border border-solid border-ws-border;
@@ -122,20 +256,44 @@
   .ingredient-allergen-summary > span {
     @apply text-xs text-ws-text2;
   }
-  .ingredient-registration-technical {
-    @apply text-sm text-ws-text2;
-  }
-  .ingredient-registration-technical > summary {
-    @apply cursor-pointer py-2;
-  }
   .ingredient-registration-status {
     @apply flex items-start gap-2 rounded-lg bg-ws-surface p-3 text-sm;
   }
-  .ingredient-register-note {
-    @apply mt-5 mb-0;
+  /* Confirmation summary: what is registered and what it means. */
+  .ingredient-confirm {
+    display: grid;
+    gap: 8px;
+    margin-top: 20px;
+    padding: 14px 16px;
+    border: 1px solid var(--c-border2);
+    border-radius: 10px;
+    background: var(--c-surface2);
   }
+  .ingredient-confirm h3 {
+    margin: 0;
+    font-size: var(--text-section);
+  }
+  .ingredient-confirm__summary {
+    margin: 0;
+    color: var(--c-text);
+    font-size: var(--text-value);
+  }
+  .ingredient-confirm ul {
+    display: grid;
+    gap: 4px;
+    margin: 0;
+    padding-left: 18px;
+    color: var(--c-text2);
+    font-size: var(--text-body);
+  }
+  /* Sticky so Back / Continue / Register stay reachable on long steps. */
   .ingredient-create-actions {
     @apply flex items-center justify-between gap-3 mt-4 pt-4 border-0 border-t border-solid border-ws-border;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding-bottom: 12px;
+    background: var(--c-surface);
   }
   .ingredient-create-actions > :last-child {
     @apply ml-auto;
@@ -144,7 +302,7 @@
     @apply outline-2 outline-offset-4 outline-ws-teal;
   }
   .ingredient-create .workspace-review-grid {
-    @apply grid grid-cols-2 gap-x-6 gap-y-4 m-0;
+    @apply gap-x-6 gap-y-4 m-0;
   }
   @media (max-width: 640px) {
     .ingredient-create .workspace-form-grid,
@@ -157,5 +315,12 @@
     .ingredient-review-heading {
       @apply items-start;
     }
+  }
+}
+
+@layer components {
+  /* Allergen details sit directly under the declaration that requires them. */
+  .ingredient-allergen-details {
+    margin-top: 10px;
   }
 }

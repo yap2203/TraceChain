@@ -41,14 +41,18 @@ beforeEach(() => {
 afterEach(cleanup);
 it('previews wallet-bound company claims and publishes only after explicit sharing approval', async () => {
   render(<CompanyIdentityProofAction requestId="request" role="manufacturer" />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Preview Company Role presentation' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Review request' }));
   await screen.findByText('Actual issuer company');
   expect(api.sign).not.toHaveBeenCalled();
   expect(screen.queryByText('Manage legacy presentation keys')).toBeNull();
-  expect((screen.getByRole('checkbox', { name: /companyId/ }) as HTMLInputElement).checked).toBe(
-    false,
+  const optional = screen.getByRole('switch', { name: 'Share Company ID' });
+  expect(optional.getAttribute('aria-checked')).toBe('false');
+  expect(screen.getByRole('switch', { name: 'Share Company name' })).toHaveProperty(
+    'disabled',
+    true,
   );
-  fireEvent.click(screen.getByRole('button', { name: 'Approve and present' }));
+  expect(screen.getByText('2 of 3 fields will be shared')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Sign and share' }));
   await waitFor(() => expect(api.submit).toHaveBeenCalledWith({ data: '0x1234' }, 'holder'));
   expect(api.sign).toHaveBeenCalledWith(material, ['companyName', 'role']);
   expect(api.present).toHaveBeenCalledWith('request', 'metamask-signed-presentation');
@@ -58,8 +62,8 @@ it('does not upload or record a presentation after wallet rejection', async () =
     Object.assign(new Error('Sharing signature rejected in MetaMask.'), { code: 4001 }),
   );
   render(<CompanyIdentityProofAction requestId="request" role="retailer" />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Preview Company Role presentation' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Approve and present' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Review request' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Sign and share' }));
   await screen.findByText('The wallet request was cancelled. You can try again when ready.');
   expect(api.present).not.toHaveBeenCalled();
   expect(api.submit).not.toHaveBeenCalled();

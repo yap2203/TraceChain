@@ -1009,9 +1009,20 @@
       @apply hidden;
     }
   }
-  .workspace-form-grid,
+  /* Form fields: two columns for related pairs, filling the form width; long inputs use .is-full. */
+  .workspace-form-grid {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .workspace-form-grid > .is-full {
+    grid-column: 1 / -1;
+  }
+  /* Review values are short label/value pairs, so they may use more columns. */
   .workspace-review-grid {
-    @apply grid grid-cols-[repeat(2,_minmax(0,_1fr))] gap-[14px];
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(max(220px, calc((100% - 42px) / 4)), 1fr));
   }
   .workspace-form-grid--quantity {
     @apply grid-cols-[2fr_1fr];

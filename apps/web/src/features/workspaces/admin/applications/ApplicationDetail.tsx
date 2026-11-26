@@ -111,7 +111,7 @@ export function AppDetail({
       }
       setApproving(false);
       notify(
-        'Company credential approved and activated. The company can access it from My company identity.',
+        'Company credential approved and activated. The company can access it from Company identity.',
         'success',
       );
       await onChanged();

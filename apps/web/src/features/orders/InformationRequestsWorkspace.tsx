@@ -1,23 +1,15 @@
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
 import {
   CompanyRequestFields,
   normalizeCompanyRequestFields,
 } from '../production-flow/CompanyRequestFields';
-import { notify, reportError } from '../../components/ui/feedback';
+import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import {
-  ArrowRight,
-  ChevronRight,
-  Clock3,
-  Copy,
-  Inbox,
-  PackageSearch,
-  RefreshCw,
-  Search,
-} from 'lucide-react';
+import { BadgeCheck, Inbox, Layers, RefreshCw, Search } from 'lucide-react';
 import {
   getInformationRequests,
   getOrders,
@@ -35,7 +27,7 @@ import { OrdersPage } from './OrdersPage';
 import { CompanyIdentityProofAction } from '../production-flow/CompanyIdentityProofAction';
 import {
   getCompanyIdentityProofStatus,
-  getEvidenceDetails,
+  listEvidenceRequests,
   requestCompanyIdentityProof,
   verifyCompanyIdentityProof,
   type CompanyIdentityProofStatus,
@@ -46,7 +38,6 @@ import {
   Alert,
   Badge,
   Btn,
-  Card,
   EmptyState,
   Input,
   SectionTitle,
@@ -54,7 +45,21 @@ import {
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import { CompanyAvatar } from './CatalogueMedia';
+import {
+  EvidenceDetailLayout,
+  EvidenceNextStep,
+  SharedClaims,
+  friendlyClaim,
+  relativeDeadline,
+  DeadlineCell,
+  EvidenceStatusSelect,
+  matchesStatusFilter,
+  type EvidenceStatusFilter,
+} from './EvidenceParts';
+import { PaginatedTable } from '../../components/ui/PaginatedTable';
+
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
 export function InformationRequestsWorkspace({
   role,
   children,
@@ -70,7 +75,7 @@ export function InformationRequestsWorkspace({
     [error, setError] = useState(''),
     [loading, setLoading] = useState(true),
     [search, setSearch] = useState(''),
-    [status, setStatus] = useState<'all' | 'pending' | 'verified' | 'unavailable'>('all'),
+    [status, setStatus] = useState<EvidenceStatusFilter>('all'),
     [selectedDirection, setDirection] = useState<'received' | 'sent'>(
       params.get('direction') === 'sent' ? 'sent' : 'received',
     );
@@ -108,6 +113,17 @@ export function InformationRequestsWorkspace({
   useEffect(() => {
     void load();
   }, [load]);
+  const [ingredientCount, setIngredientCount] = useState(0);
+  // Clicking the category tab remounts the ingredient list, closing any open review.
+  const [ingredientMount, setIngredientMount] = useState(0);
+  const hasIngredientTab = Boolean(children);
+  useEffect(() => {
+    // Only the category tab badge needs this; the ingredient list loads its own rows.
+    if (!hasIngredientTab) return;
+    void listEvidenceRequests()
+      .then((result) => setIngredientCount(result.requests.length))
+      .catch(() => undefined);
+  }, [hasIngredientTab]);
   const selected = rows.find((row) => same(row.referenceId, reference) && row.context === context);
   const shipment = data?.logistics?.shipments.find(
     (entry) => same(entry.shipmentId, reference) && Number(entry.leg) === 1,
@@ -134,127 +150,76 @@ export function InformationRequestsWorkspace({
       Boolean(params.get('batchId') || params.get('productBatchId')));
   const requestDetail = Boolean(reference && !showEvidence);
   const custodyDetail = requestDetail && context === 'custody';
-  const evidenceExchangePath = `${workspacePath(role, 'requests')}?direction=sent`;
+  const detailDirection = selected?.direction ?? (custodyDetail ? 'sent' : direction);
+  const listPath = `${workspacePath(role, 'requests')}?direction=${detailDirection}`;
   const directionRows = useMemo(
     () => rows.filter((row) => row.direction === direction),
     [direction, rows],
   );
   const visibleRows = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
-    return directionRows.filter((row) => {
-      const group = requestGroup(row.status);
-      return (
-        (status === 'all' || status === group) &&
-        (!query ||
-          [row.company, row.purpose, row.status, row.referenceId, contextLabel(row.context)]
-            .join(' ')
-            .toLocaleLowerCase()
-            .includes(query))
-      );
-    });
-  }, [directionRows, search, status]);
-  return (
-    <div className={`information-requests-page${requestDetail ? ' is-detail' : ''}`}>
-      {requestDetail && (
-        <nav className="information-request-breadcrumb" aria-label="Breadcrumb">
-          <Link to={evidenceExchangePath}>
-            Evidence Exchange
-          </Link>
-          <ChevronRight size={14} aria-hidden="true" />
-          <Link to={evidenceExchangePath}>Requests I sent</Link>
-          <ChevronRight size={14} aria-hidden="true" />
-          {custodyDetail ? (
-            <Link to={custodyOfferPath(role, reference)}>Custody offer</Link>
-          ) : (
-            <span>{contextLabel(context as CompanyProofRequestRow['context'])}</span>
-          )}
-          <ChevronRight size={14} aria-hidden="true" />
-          <span aria-current="page">
-            {custodyDetail ? 'Request company evidence' : 'Company evidence'}
-          </span>
-        </nav>
-      )}
-      <SectionTitle
-        title={
-          requestDetail
-            ? custodyDetail
-              ? 'Request company evidence'
-              : 'Company evidence request'
-            : initialDirection
-              ? 'Evidence Exchange'
-              : 'Evidence Exchange'
-        }
-        sub={
-          requestDetail
-            ? custodyDetail
-              ? 'Request verified company information before continuing this custody offer.'
-              : 'Review and respond to this company evidence request.'
-            : 'Request, share and review verifiable company and ingredient evidence.'
-        }
-        action={
-          requestDetail ? (
-            <div className="information-request-header-actions">
+    return (
+      directionRows
+        .filter((row) => {
+          const group = requestGroup(row, direction);
+          return (
+            matchesStatusFilter(status, group) &&
+            (!query ||
+              [row.company, row.purpose, proofStatusLabel(row.status), contextLabel(row.context)]
+                .join(' ')
+                .toLocaleLowerCase()
+                .includes(query))
+          );
+        })
+        // Newest first; the API has no request time, so the latest deadline stands in for it.
+        .sort((a, b) => b.expiresAt - a.expiresAt)
+    );
+  }, [direction, directionRows, search, status]);
+  const actionCount = directionRows.filter(
+    (row) => requestGroup(row, direction) === 'action',
+  ).length;
+
+  if (requestDetail)
+    return (
+      <div className="information-requests-page is-detail">
+        <BackNavigation to={listPath}>Evidence Exchange</BackNavigation>
+        <header className="evidence-detail-header">
+          <div>
+            <h2>{detailTitle(selected, custodyDetail)}</h2>
+            <p>
+              For {contextLabel(context as CompanyProofRequestRow['context']).toLocaleLowerCase()}
+              {selected?.subject ? ` · ${selected.subject}` : ''}
+            </p>
+          </div>
+          {selected && (
+            <div className="evidence-detail-header__status">
               <Badge
-                label={proofStatusLabel(selected?.status ?? 'NOT_REQUESTED')}
-                variant={proofStatusVariant(selected?.status ?? 'NOT_REQUESTED')}
+                label={proofStatusLabel(selected.status)}
+                variant={proofStatusVariant(selected.status)}
               />
-              {selected && (
-                <button
-                  type="button"
-                  className="information-request-refresh"
-                  aria-label="Refresh evidence request status"
-                  title="Refresh evidence request status"
-                  disabled={loading}
-                  onClick={() => void load()}
-                >
-                  <RefreshCw size={16} aria-hidden="true" />
-                </button>
-              )}
-              <Link className="information-request-back-link" to={evidenceExchangePath}>
-                Back to Evidence Exchange
-              </Link>
+              <button
+                type="button"
+                className="information-request-refresh"
+                aria-label="Refresh evidence request status"
+                title="Refresh"
+                disabled={loading}
+                onClick={() => void load()}
+              >
+                <RefreshCw size={16} aria-hidden="true" />
+              </button>
             </div>
-          ) : (
-            <Btn
-              variant="outline"
-              icon={<RefreshCw size={16} />}
-              disabled={loading}
-              onClick={() => void load()}
-            >
-              Refresh
-            </Btn>
-          )
-        }
-      />
-      {children && (
-        <div className="information-request-category-tabs">
-          <StatusTabs
-            label="Information request category"
-            value={showEvidence ? 'ingredient' : 'company'}
-            onChange={(value) => setParams(value === 'ingredient' ? { tab: 'evidence' } : {})}
-            variant="connected"
-            tabs={[
-              { value: 'company', label: 'Company evidence', count: directionRows.length },
-              {
-                value: 'ingredient',
-                label: 'Ingredient evidence',
-                count: showEvidence ? 1 : 0,
-              },
-            ]}
-          />
-        </div>
-      )}
-      {error && <Alert type="error" message={error} />}
-      {showEvidence ? (
-        children
-      ) : reference ? (
-        <>
+          )}
+        </header>
+        {error && <Alert type="error" message={error} />}
+        <EvidenceDetailLayout
+          aside={selected && <RequestDetails row={selected} actor={data?.actor} />}
+        >
           {loading && !data ? (
-            <LoadingIndicator page label="Checking request participants…" />
+            <LoadingIndicator page label="Loading request…" />
           ) : selected?.status === 'UNAVAILABLE' ? (
-            <Alert
-              type="warning"
-              message="This historical proof request is unavailable for further actions. Its participant binding or current authorization is no longer valid."
+            <EvidenceNextStep
+              tone="closed"
+              message="This request is no longer valid: a participant's authorization or binding has changed. No action is possible."
             />
           ) : selected?.sharedReference ? (
             <SharedCompanyProof key={selected.requestId} row={selected} role={role} />
@@ -262,21 +227,13 @@ export function InformationRequestsWorkspace({
             <CustodyCompanyProof referenceId={reference} data={data} role={role} />
           ) : context === 'delivery' ? (
             data && canDelivery ? (
-              <Card>
-                <h3>
-                  {order?.productDelivery ? 'Manufacturer' : 'Supplier'} company credential proof
-                </h3>
-                <p>
-                  {selected?.purpose ??
-                    'Review the seller company identity before custody acceptance or dispatch.'}
-                </p>
-                <DeliveryIdentityPanel
-                  key={reference}
-                  order={deliveryOrder!}
-                  data={data}
-                  onChanged={load}
-                />
-              </Card>
+              <DeliveryIdentityPanel
+                key={reference}
+                order={deliveryOrder!}
+                data={data}
+                onChanged={load}
+                showHeading={false}
+              />
             ) : (
               <Alert
                 type="warning"
@@ -294,111 +251,316 @@ export function InformationRequestsWorkspace({
           ) : (
             <Alert type="error" message="Unknown information request type." />
           )}
-        </>
-      ) : (
-        <>
-          {!initialDirection && (
-            <nav className="workspace-secondary-tabs" aria-label="Evidence request direction">
-              <Btn
-                variant={direction === 'received' ? 'primary' : 'outline'}
-                aria-pressed={direction === 'received'}
+        </EvidenceDetailLayout>
+      </div>
+    );
+
+  return (
+    <div className="information-requests-page">
+      <SectionTitle
+        title="Evidence Exchange"
+        sub="Share and verify company and ingredient evidence."
+        action={
+          <Btn
+            variant="outline"
+            icon={<RefreshCw size={16} />}
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            Refresh
+          </Btn>
+        }
+      />
+      {children && (
+        <StatusTabs
+          label="Information request category"
+          value={showEvidence ? 'ingredient' : 'company'}
+          onChange={(value) => {
+            setIngredientMount((count) => count + 1);
+            setParams(value === 'ingredient' ? { tab: 'evidence' } : {});
+          }}
+          variant="tabs"
+          tabs={[
+            {
+              value: 'company',
+              label: 'Company evidence',
+              icon: <BadgeCheck size={16} />,
+              count: directionRows.length,
+            },
+            {
+              value: 'ingredient',
+              label: 'Ingredient evidence',
+              icon: <Layers size={16} />,
+              count: ingredientCount,
+            },
+          ]}
+        />
+      )}
+      <div className="evidence-toolbar">
+        {!showEvidence && !initialDirection && (
+          <div className="evidence-segmented" role="group" aria-label="Request direction">
+            {(['received', 'sent'] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={direction === value}
                 onClick={() => {
-                  setDirection('received');
-                  setParams({ direction: 'received' });
+                  setDirection(value);
+                  setParams({ direction: value });
                 }}
               >
-                Requests to me
-              </Btn>
-              <Btn
-                variant={direction === 'sent' ? 'primary' : 'outline'}
-                aria-pressed={direction === 'sent'}
-                onClick={() => {
-                  setDirection('sent');
-                  setParams({ direction: 'sent' });
-                }}
-              >
-                Requests I sent
-              </Btn>
-            </nav>
-          )}
-          <div className="information-request-list-controls">
-            <p className="workspace-list-guidance">
-              {direction === 'received'
-                ? 'Other companies are asking your company to share information.'
-                : 'Track information your company has requested from others.'}
-            </p>
-            <Input
-              label="Search evidence requests"
-              type="search"
-              icon={<Search size={16} />}
-              value={search}
-              onChange={setSearch}
-              placeholder="Search company, purpose, reference or status"
-            />
-            <div className="information-request-status-filters">
-              <StatusTabs
-                label="Filter information requests by status"
-                value={status}
-                onChange={setStatus}
-                variant="connected"
-                tabs={[
-                  { value: 'all', label: 'All', count: directionRows.length },
-                  {
-                    value: 'pending',
-                    label: 'Pending',
-                    count: directionRows.filter((row) => requestGroup(row.status) === 'pending')
-                      .length,
-                  },
-                  {
-                    value: 'verified',
-                    label: 'Verified',
-                    count: directionRows.filter((row) => requestGroup(row.status) === 'verified')
-                      .length,
-                  },
-                  {
-                    value: 'unavailable',
-                    label: 'Unavailable',
-                    count: directionRows.filter((row) => requestGroup(row.status) === 'unavailable')
-                      .length,
-                  },
-                ]}
+                {value === 'received' ? 'Received' : 'Sent'}
+                <strong>{rows.filter((row) => row.direction === value).length}</strong>
+              </button>
+            ))}
+          </div>
+        )}
+        {!showEvidence && (
+          <>
+            <EvidenceStatusSelect value={status} onChange={setStatus} actionCount={actionCount} />
+            <div className="evidence-toolbar__search">
+              <Input
+                label="Search evidence requests"
+                type="search"
+                icon={<Search size={16} />}
+                value={search}
+                onChange={setSearch}
+                placeholder="Search company or purpose"
               />
             </div>
-          </div>
-          {loading ? (
-            <LoadingIndicator page label="Loading your company proof requests…" />
-          ) : (
-            <div className="information-request-list">
-              {visibleRows.map((row) => (
-                <InformationRequestCard
-                  key={row.requestId}
-                  row={row}
-                  direction={direction}
-                  data={data}
-                  onReview={() => setParams({ context: row.context, referenceId: row.referenceId })}
-                />
-              ))}
-              {!visibleRows.length && (
-                <EmptyState
-                  icon={<Inbox size={30} />}
-                  title={
-                    directionRows.length
-                      ? 'No requests match these filters'
-                      : 'No evidence requests'
-                  }
-                  sub={
-                    directionRows.length
-                      ? 'Change the search or selected status to see other requests.'
-                      : 'Company evidence requests linked to your orders, custody shipments and ingredient information appear here.'
-                  }
-                />
-              )}
-            </div>
-          )}
-        </>
+          </>
+        )}
+      </div>
+      {error && <Alert type="error" message={error} />}
+      {showEvidence ? (
+        <Fragment key={ingredientMount}>{children}</Fragment>
+      ) : loading ? (
+        <LoadingIndicator page label="Loading evidence requests…" />
+      ) : visibleRows.length ? (
+        <div className="evidence-table-card">
+          <PaginatedTable>
+            <table className="evidence-table" aria-label="Evidence requests">
+              <thead>
+                <tr>
+                  <th scope="col">
+                    {direction === 'received' ? 'Requested by' : 'Requested from'}
+                  </th>
+                  <th scope="col">Request for</th>
+                  <th scope="col">Fields</th>
+                  <th scope="col">Deadline</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">
+                    <span className="sr-only">Action</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row) => (
+                  <EvidenceRequestRow
+                    key={row.requestId}
+                    row={row}
+                    actionable={requestGroup(row, direction) === 'action'}
+                    logoPath={
+                      data?.companies?.find(
+                        (company) =>
+                          company.companyName.toLocaleLowerCase() ===
+                          row.company.toLocaleLowerCase(),
+                      )?.logoPath
+                    }
+                    onOpen={() => setParams({ context: row.context, referenceId: row.referenceId })}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </PaginatedTable>
+        </div>
+      ) : (
+        <EmptyState
+          icon={<Inbox size={30} />}
+          title={directionRows.length ? 'No requests match these filters' : 'No evidence requests'}
+          sub={
+            directionRows.length
+              ? 'Change the search or status filter.'
+              : direction === 'received'
+                ? 'Requests from other companies for your company evidence appear here.'
+                : 'Evidence you request from other companies appears here.'
+          }
+        />
       )}
     </div>
   );
+}
+
+function EvidenceRequestRow({
+  row,
+  actionable,
+  logoPath,
+  onOpen,
+}: {
+  row: CompanyProofRequestRow;
+  actionable: boolean;
+  logoPath?: string;
+  onOpen: () => void;
+}) {
+  const verb = actionable ? (row.direction === 'received' ? 'Respond' : 'Verify') : 'View';
+  return (
+    <tr className={actionable ? 'is-actionable' : undefined} onClick={onOpen}>
+      <td>
+        <span className="evidence-table__company">
+          <CompanyAvatar name={row.company} logoPath={logoPath} size="sm" />
+          <span>
+            <strong>{row.company}</strong>
+            <small>
+              {[formatRole(row.counterpartyRole), shortWallet(row.counterpartyWallet)]
+                .filter(Boolean)
+                .join(' · ')}
+            </small>
+          </span>
+        </span>
+      </td>
+      <td>
+        <span className="evidence-table__stack">
+          <strong>{contextLabel(row.context)}</strong>
+          <small title={row.purpose}>{row.subject ?? row.purpose}</small>
+        </span>
+      </td>
+      <td>
+        <span className="evidence-table__stack">
+          <strong>{row.requiredFieldsCount ?? '—'} required</strong>
+          <small>
+            {Math.max(0, (row.requestedFieldsCount ?? 0) - (row.requiredFieldsCount ?? 0))} optional
+          </small>
+        </span>
+      </td>
+      <DeadlineCell dueAt={row.expiresAt} closed={isClosed(row.status)} />
+      <td>
+        <Badge label={proofStatusLabel(row.status)} variant={proofStatusVariant(row.status)} />
+      </td>
+      <td className="evidence-table__action">
+        <Btn
+          size="xs"
+          variant={actionable ? 'primary' : 'outline'}
+          aria-label={`${verb} request from ${row.company}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen();
+          }}
+        >
+          {verb}
+        </Btn>
+      </td>
+    </tr>
+  );
+}
+
+/** Who, what, which fields and when — shown on every request, open or closed. */
+function RequestDetails({ row, actor }: { row: CompanyProofRequestRow; actor?: string }) {
+  const received = row.direction === 'received';
+  const required = row.requiredClaims ?? [];
+  const optional = (row.optionalClaims ?? []).filter((claim) => !required.includes(claim));
+  return (
+    <section className="evidence-request-details" aria-label="Request details">
+      <dl>
+        <div>
+          <dt>Requested by</dt>
+          <dd>
+            {received ? row.company : 'Your company'}
+            <small>{received ? shortWallet(row.counterpartyWallet) : shortWallet(actor)}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Evidence from</dt>
+          <dd>
+            {received ? 'Your company' : row.company}
+            <small>{received ? shortWallet(actor) : shortWallet(row.counterpartyWallet)}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Request for</dt>
+          <dd>
+            {contextLabel(row.context)}
+            {row.subject && <small>{row.subject}</small>}
+          </dd>
+        </div>
+        <div>
+          <dt>Deadline</dt>
+          <dd>
+            {new Date(row.expiresAt * 1000).toLocaleString()}
+            {!isClosed(row.status) && row.expiresAt * 1000 > Date.now() && (
+              <small>{deadlineText(row)}</small>
+            )}
+          </dd>
+        </div>
+        {row.verifiedAt && (
+          <div>
+            <dt>Verified</dt>
+            <dd>{new Date(row.verifiedAt).toLocaleString()}</dd>
+          </div>
+        )}
+        <div className="is-wide">
+          <dt>Purpose</dt>
+          <dd>{row.purpose}</dd>
+        </div>
+        {(required.length > 0 || optional.length > 0) && (
+          <div className="is-wide">
+            <dt>Fields requested</dt>
+            <dd className="evidence-request-details__chips">
+              {required.map((claim) => (
+                <span key={claim} className="is-required">
+                  {friendlyClaim(claim)}
+                </span>
+              ))}
+              {optional.map((claim) => (
+                <span key={claim}>{friendlyClaim(claim)} (optional)</span>
+              ))}
+            </dd>
+          </div>
+        )}
+      </dl>
+    </section>
+  );
+}
+
+function shortWallet(wallet?: string) {
+  return wallet && wallet.length > 14 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : wallet;
+}
+
+function formatRole(role?: string) {
+  return role ? role.charAt(0) + role.slice(1).toLocaleLowerCase().replaceAll('_', ' ') : '';
+}
+
+function detailTitle(row: CompanyProofRequestRow | undefined, custody: boolean) {
+  if (!row) return custody ? 'Request company evidence' : 'Company identity request';
+  return row.direction === 'received'
+    ? `${row.company} asks for your company identity`
+    : `Company identity from ${row.company}`;
+}
+
+function deadlineText(row: CompanyProofRequestRow) {
+  const deadline = relativeDeadline(row.expiresAt);
+  // The status badge already says Expired/Verified, so a closed row only needs the date.
+  if (isClosed(row.status) || deadline.past) return deadline.text;
+  return `Due ${deadline.text}`;
+}
+
+function isClosed(status: string) {
+  return ['VERIFIED', 'UNAVAILABLE', 'EXPIRED', 'DECLINED', 'REJECTED'].includes(status);
+}
+
+function requestGroup(row: CompanyProofRequestRow, direction: 'received' | 'sent') {
+  if (isClosed(row.status) || row.expiresAt * 1000 <= Date.now()) return 'closed' as const;
+  if (direction === 'received' && ['REQUESTED', 'PENDING'].includes(row.status))
+    return 'action' as const;
+  if (direction === 'sent' && ['PRESENTED', 'SHARED'].includes(row.status))
+    return 'action' as const;
+  return 'open' as const;
+}
+
+function contextLabel(context: CompanyProofRequestRow['context']) {
+  if (context === 'custody') return 'Custody offer';
+  if (context === 'delivery') return 'Delivery';
+  if (context === 'order') return 'Order';
+  return 'Ingredient information';
 }
 
 function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: WorkspaceRole }) {
@@ -410,226 +572,62 @@ function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: 
       .then(setStatus)
       .catch((error) => setError(error.message));
   }, [row.requestId]);
-  return (
-    <Card>
-      <h3>Company identity presentation</h3>
-      <p>
-        {row.company} · {row.purpose}
-      </p>
-      <p>
-        Status: {status?.status ?? row.status}. Expires:{' '}
-        {new Date(row.expiresAt * 1000).toLocaleString()}
-      </p>
-      <p>
-        Shared through encrypted IPFS and its on-chain request reference. Verification is separate
-        from accepting an order, custody offer or delivery.
-      </p>
-      {error && <Alert type="error" message={error} />}
-      {row.direction === 'received' ? (
+  if (row.direction === 'received')
+    return (
+      <>
+        {error && <Alert type="error" message={error} />}
         <CompanyIdentityProofAction requestId={row.requestId} role={role} />
-      ) : (
-        <>
-          <Btn
-            disabled={busy || !['PRESENTED', 'VERIFIED'].includes(status?.status ?? '')}
-            onClick={() => {
-              setBusy(true);
-              setError('');
-              void verifyCompanyIdentityProof(row.requestId)
-                .then(async (result) => {
-                  if (result.transaction && result.actorWallet)
-                    await submitProductionTransaction(result.transaction, result.actorWallet);
-                  setStatus({ ...result, ...(await getCompanyIdentityProofStatus(row.requestId)) });
-                })
-                .catch((error) => setError(error.message))
-                .finally(() => setBusy(false));
-            }}
-          >
-            {busy ? 'Verifying…' : 'Verify company identity'}
-          </Btn>
-          {status?.credential && (
-            <dl>
-              {Object.entries(status.credential).map(([key, value]) => (
-                <div key={key}>
-                  <dt>{key}</dt>
-                  <dd>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </>
-      )}
-    </Card>
-  );
-}
-
-function contextLabel(context: CompanyProofRequestRow['context']) {
-  if (context === 'custody') return 'Custody offer';
-  if (context === 'delivery') return 'Custody / delivery';
-  if (context === 'order') return 'Quantity request';
-  return 'Ingredient information';
-}
-
-function requestGroup(status: string): 'pending' | 'verified' | 'unavailable' {
-  if (status === 'VERIFIED') return 'verified';
-  if (['UNAVAILABLE', 'EXPIRED', 'DECLINED', 'REJECTED'].includes(status)) return 'unavailable';
-  return 'pending';
-}
-
-function requestNextAction(row: CompanyProofRequestRow, direction: 'received' | 'sent') {
-  if (row.status === 'VERIFIED') return 'No action required';
-  if (['UNAVAILABLE', 'EXPIRED'].includes(row.status)) return 'No action available';
-  if (['PRESENTED', 'SHARED'].includes(row.status)) return 'Review shared evidence';
-  return direction === 'received' ? 'Review and respond' : 'Await company response';
-}
-
-function requestActionMessage(row: CompanyProofRequestRow, direction: 'received' | 'sent') {
-  if (row.status === 'VERIFIED') return 'The company evidence has been verified.';
-  if (['UNAVAILABLE', 'EXPIRED'].includes(row.status))
-    return 'This request is no longer available for a response.';
-  if (['PRESENTED', 'SHARED'].includes(row.status))
-    return direction === 'received'
-      ? 'Review the shared evidence and its verification status.'
-      : 'Your company evidence has been shared for review.';
-  return direction === 'received'
-    ? 'Review the request and choose whether to share your company evidence.'
-    : `Wait for ${row.company} to review and respond to the evidence request.`;
-}
-
-function InformationRequestCard({
-  row,
-  direction,
-  data,
-  onReview,
-}: {
-  row: CompanyProofRequestRow;
-  direction: 'received' | 'sent';
-  data?: OrdersState;
-  onReview: () => void;
-}) {
-  const actor = data?.companies?.find((company) => same(company.wallet, data.actor));
-  const actorCompany = {
-    name: actor?.companyName ?? registeredCompanyFallback(data?.role),
-    logoPath: actor?.logoPath,
-  };
-  const counterparty = data?.companies?.find(
-    (company) => company.companyName.toLocaleLowerCase() === row.company.toLocaleLowerCase(),
-  );
-  const counterpartyCompany = { name: row.company, logoPath: counterparty?.logoPath };
-  const requesting = direction === 'received' ? counterpartyCompany : actorCompany;
-  const responding = direction === 'received' ? actorCompany : counterpartyCompany;
-  const deadline = deadlineIndicator(row.expiresAt);
-
+      </>
+    );
+  const current = status?.status ?? row.status;
+  const canVerify = ['PRESENTED', 'VERIFIED'].includes(current);
   return (
-    <article className="information-request-card">
-      <div className="information-request-card__heading">
-        <div>
-          <span>{contextLabel(row.context)}</span>
-          <h3>Company identity verification</h3>
-          <p>{row.purpose}</p>
-        </div>
-        <div className="information-request-card__badges">
-          <Badge label={proofStatusLabel(row.status)} variant={proofStatusVariant(row.status)} />
-          {deadline && <Badge label={deadline.label} variant={deadline.variant} />}
-        </div>
-      </div>
-      <div className="information-request-card__parties" aria-label="Request participants">
-        <RequestParty
-          label="Requesting company"
-          name={requesting.name}
-          logoPath={requesting.logoPath}
-        />
-        <span className="information-request-card__direction" aria-hidden="true">
-          <ArrowRight size={18} />
-        </span>
-        <RequestParty
-          label="Responding company"
-          name={responding.name}
-          logoPath={responding.logoPath}
-        />
-      </div>
-      <dl className="information-request-card__facts">
-        <div>
-          <dt>Related to</dt>
-          <dd>{contextLabel(row.context)}</dd>
-        </div>
-        <div>
-          <dt>Requested</dt>
-          <dd>{row.requestedAt ? formatRequestDate(row.requestedAt) : 'Not recorded'}</dd>
-        </div>
-        <div>
-          <dt>Deadline</dt>
-          <dd>{formatRequestDate(row.expiresAt)}</dd>
-        </div>
-        <div>
-          <dt>Evidence requested</dt>
-          <dd>
-            Company identity · {row.requestedFieldsCount ?? 'Unknown'} fields
-            {typeof row.requiredFieldsCount === 'number'
-              ? ` · ${row.requiredFieldsCount} required`
-              : ''}
-          </dd>
-        </div>
-        <div>
-          <dt>Next action</dt>
-          <dd>{requestNextAction(row, direction)}</dd>
-        </div>
-      </dl>
-      <div className="information-request-card__next">
-        <span className="information-request-card__next-icon" aria-hidden="true">
-          <Clock3 size={17} />
-        </span>
-        <p>
-          <strong>Next action:</strong> {requestActionMessage(row, direction)}
-        </p>
-        <Btn variant="primary" onClick={onReview}>
-          Review request
-        </Btn>
-      </div>
-      <TechnicalDetails
-        fields={[
-          { label: 'Request ID', value: row.requestId },
-          { label: 'Reference ID', value: row.referenceId },
-          { label: 'Raw proof status', value: row.status },
-        ]}
+    <div className="evidence-panel">
+      {error && <Alert type="error" message={error} />}
+      <EvidenceNextStep
+        tone={current === 'VERIFIED' ? 'done' : canVerify ? 'default' : 'closed'}
+        message={
+          current === 'VERIFIED'
+            ? 'Verified. Nothing else to do.'
+            : canVerify
+              ? `${row.company} shared their details. Verify them to continue.`
+              : isClosed(current)
+                ? 'This request has closed.'
+                : `Waiting for ${row.company} to respond.`
+        }
+        action={
+          canVerify &&
+          current !== 'VERIFIED' && (
+            <Btn
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError('');
+                void verifyCompanyIdentityProof(row.requestId)
+                  .then(async (result) => {
+                    if (result.transaction && result.actorWallet)
+                      await submitProductionTransaction(result.transaction, result.actorWallet);
+                    setStatus({
+                      ...result,
+                      ...(await getCompanyIdentityProofStatus(row.requestId)),
+                    });
+                  })
+                  .catch((error) => setError(error.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              {busy ? 'Verifying…' : 'Verify company identity'}
+            </Btn>
+          )
+        }
       />
-    </article>
-  );
-}
-
-function registeredCompanyFallback(role?: string) {
-  if (!role) return 'Registered company';
-  return `Registered ${role.charAt(0)}${role.slice(1).toLocaleLowerCase()} company`;
-}
-
-function deadlineIndicator(expiresAt: number) {
-  const remaining = expiresAt * 1000 - Date.now();
-  if (remaining <= 0) return { label: 'Overdue', variant: 'rejected' as const };
-  if (remaining <= 48 * 60 * 60 * 1000) return { label: 'Due soon', variant: 'pending' as const };
-  return undefined;
-}
-
-function formatRequestDate(value: string | number) {
-  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
-  return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
-}
-
-function RequestParty({
-  label,
-  name,
-  logoPath,
-}: {
-  label: string;
-  name: string;
-  logoPath?: string;
-}) {
-  return (
-    <span className="information-request-card__party">
-      <CompanyAvatar name={name} logoPath={logoPath} size="md" />
-      <span>
-        <small>{label}</small>
-        <strong>{name}</strong>
-      </span>
-    </span>
+      {status?.credential && (
+        <section className="evidence-panel__shared" aria-label="Shared company details">
+          <h4>Shared details</h4>
+          <SharedClaims values={status.credential as Record<string, unknown>} />
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -655,7 +653,7 @@ function CustodyCompanyProof({
     void load();
   }, [load]);
   if (error) return <Alert type="error" message={error} />;
-  if (!offer) return <LoadingIndicator page label="Checking custody request participants…" />;
+  if (!offer) return <LoadingIndicator page label="Loading custody offer…" />;
   const delivery = {
     distributor: offer.distributor,
     stage:
@@ -672,82 +670,25 @@ function CustodyCompanyProof({
   const item = (data.catalogue ?? []).find((entry) =>
     (entry.batches ?? []).some((batchId: string) => same(batchId, offer.batchId)),
   );
-  const batch = item?.batchDetails?.find((entry: { batchId?: string }) =>
-    same(entry.batchId, offer.batchId),
-  );
-  const batchReference = batch?.batchReference ?? item?.batchReference ?? shortReference(offer.batchId);
-  const copyOfferId = async () => {
-    try {
-      await navigator.clipboard.writeText(offer.offerId);
-      notify('Custody offer ID copied.', 'success');
-    } catch {
-      notify('Custody offer ID could not be copied.', 'error');
-    }
-  };
   return (
-    <div className="custody-evidence-detail custody-evidence-layout">
-      <Card className="custody-evidence-context">
-        <div className="custody-evidence-context__heading">
-          <span>
-            <PackageSearch size={18} aria-hidden="true" />
-          </span>
-          <div>
-            <small>Custody offer</small>
-            <h3>{offer.itemName || item?.name || 'Registered stock'}</h3>
-            <p>
-              <code title={offer.offerId}>{shortReference(offer.offerId)}</code>
-              <button type="button" onClick={() => void copyOfferId()} aria-label="Copy custody offer ID">
-                <Copy size={13} aria-hidden="true" /> Copy ID
-              </button>
-            </p>
-          </div>
-          <Badge
-            label={offerStatusLabel(offer.status)}
-            variant={offerStatusVariant(offer.status)}
-          />
-        </div>
-        <dl className="custody-evidence-context__facts">
-          <div>
-            <dt>Evidence holder</dt>
-            <dd>{offer.senderName}</dd>
-          </div>
-          <div>
-            <dt>Your company</dt>
-            <dd>{offer.distributorName}</dd>
-          </div>
-          <div>
-            <dt>Quantity</dt>
-            <dd>
-              {offer.quantity} {offer.unit}
-            </dd>
-          </div>
-          <div>
-            <dt>Related reference</dt>
-            <dd>{batchReference}</dd>
-          </div>
-          <div>
-            <dt>Custody status</dt>
-            <dd>{offerStatusLabel(offer.status)}</dd>
-          </div>
-        </dl>
-        <div className="custody-evidence-context__actions">
-          <Link
-            className="custody-evidence-context__link"
-            to={custodyOfferPath(role, offer.offerId)}
-          >
-            View custody offer
-          </Link>
-        </div>
-        <TechnicalDetails
-          fields={[
-            { label: 'Offer ID', value: offer.offerId },
-            { label: 'Batch ID', value: offer.batchId },
-            { label: 'Raw custody status', value: offer.status },
-            { label: 'Sender wallet', value: offer.sender },
-            { label: 'Distributor wallet', value: offer.distributor },
-          ]}
-        />
-      </Card>
+    <div className="evidence-panel">
+      <div className="evidence-context-strip">
+        <span>
+          <small>Custody offer</small>
+          <strong>{offer.itemName || item?.name || 'Registered stock'}</strong>
+        </span>
+        <span>
+          <small>Quantity</small>
+          <strong>
+            {offer.quantity} {offer.unit}
+          </strong>
+        </span>
+        <span>
+          <small>Offer status</small>
+          <strong>{offerStatusLabel(offer.status)}</strong>
+        </span>
+        <Link to={custodyOfferPath(role, offer.offerId)}>View custody offer</Link>
+      </div>
       <DeliveryIdentityPanel
         data={data}
         order={{
@@ -760,7 +701,17 @@ function CustodyCompanyProof({
         }}
         requestedBy={offer.distributorName}
         hideRefresh
+        showHeading={false}
         onChanged={load}
+      />
+      <TechnicalDetails
+        fields={[
+          { label: 'Offer ID', value: offer.offerId },
+          { label: 'Batch ID', value: offer.batchId },
+          { label: 'Raw custody status', value: offer.status },
+          { label: 'Sender wallet', value: offer.sender },
+          { label: 'Distributor wallet', value: offer.distributor },
+        ]}
       />
     </div>
   );
@@ -769,10 +720,6 @@ function CustodyCompanyProof({
 function custodyOfferPath(role: WorkspaceRole, offerId: string) {
   const page = role === 'distributor' ? 'intake' : 'transfers';
   return `${workspacePath(role, page)}?offerId=${encodeURIComponent(offerId)}`;
-}
-
-function shortReference(value: string) {
-  return value.length > 18 ? `${value.slice(0, 10)}…${value.slice(-6)}` : value;
 }
 
 function offerStatusLabel(status: CustodyOffer['status']) {
@@ -789,11 +736,6 @@ function offerStatusLabel(status: CustodyOffer['status']) {
   )[status];
 }
 
-function offerStatusVariant(status: CustodyOffer['status']) {
-  if (status === 'RECEIVED') return 'verified' as const;
-  if (['REJECTED', 'EXPIRED'].includes(status)) return 'rejected' as const;
-  return 'pending' as const;
-}
 function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requestId: string }) {
   const [required, setRequired] = useState<string[]>([...COMPANY_ALWAYS_CLAIMS]);
   const [optional, setOptional] = useState<string[]>([]);
@@ -839,14 +781,40 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
       setBusy(false);
     }
   };
+  if (!status)
+    return (
+      <>
+        {error && <Alert type="error" message={error} />}
+        {!error && <LoadingIndicator page label="Loading request…" />}
+      </>
+    );
+  if (role !== 'supplier') return <CompanyIdentityProofAction requestId={requestId} role={role} />;
+  const canRequest = ['NOT_REQUESTED', 'EXPIRED'].includes(status.status);
+  const canVerify = status.status === 'PRESENTED';
   return (
-    <Card>
-      <h3>Company credential evidence</h3>
+    <div className="evidence-panel">
       {error && <Alert type="error" message={error} />}
-      <p>{status?.purpose ?? 'Company proof linked to this ingredient information request.'}</p>
-      <p>Status: {status?.status ?? 'Checking authorization…'}</p>
-      {status && role === 'supplier' ? (
-        <>
+      <EvidenceNextStep
+        tone={status.status === 'VERIFIED' ? 'done' : 'default'}
+        message={
+          canRequest
+            ? 'Ask the requesting company to prove its identity before you share ingredient evidence.'
+            : canVerify
+              ? 'The company shared its details. Verify them to continue.'
+              : status.status === 'VERIFIED'
+                ? `Verified${status.verifiedAt ? ` on ${new Date(status.verifiedAt).toLocaleString()}` : ''}. Nothing else to do.`
+                : 'Waiting for the company to respond.'
+        }
+        action={
+          canVerify && (
+            <Btn disabled={busy} onClick={() => void run(true)}>
+              Verify company proof
+            </Btn>
+          )
+        }
+      />
+      {canRequest && (
+        <div className="evidence-request-form">
           <CompanyRequestFields
             required={required}
             optional={optional}
@@ -855,51 +823,18 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
               setOptional(o);
             }}
           />
-          <Input
-            label="Company proof purpose"
-            value={purpose}
-            onChange={setPurpose}
-            maxLength={500}
-          />
-          <Input
-            label="Company proof deadline"
-            type="datetime-local"
-            value={deadline}
-            onChange={setDeadline}
-          />
-          <Btn
-            disabled={
-              busy || !purpose.trim() || !['NOT_REQUESTED', 'EXPIRED'].includes(status.status)
-            }
-            onClick={() => void run(false)}
-          >
-            Request company proof
-          </Btn>
-          <Btn
-            variant="outline"
-            disabled={busy || !['PRESENTED', 'VERIFIED'].includes(status.status)}
-            onClick={() => void run(true)}
-          >
-            Verify company proof
-          </Btn>
-          {status.checks && (
-            <ul>
-              {status.checks.map((check) => (
-                <li key={check}>{check}</li>
-              ))}
-            </ul>
-          )}
-          {status.verifiedAt && (
-            <p>
-              Last successful verification (historical):{' '}
-              {new Date(status.verifiedAt).toLocaleString()}. This does not grant business
-              acceptance; protected actions check current authorization again.
-            </p>
-          )}
-        </>
-      ) : (
-        status && <CompanyIdentityProofAction requestId={requestId} role={role} />
+          <Input label="Purpose" value={purpose} onChange={setPurpose} maxLength={500} />
+          <Input label="Deadline" type="datetime-local" value={deadline} onChange={setDeadline} />
+          <div className="company-evidence-card__footer">
+            <Btn disabled={busy || !purpose.trim()} onClick={() => void run(false)}>
+              Request company proof
+            </Btn>
+          </div>
+        </div>
       )}
-    </Card>
+      {status.checks?.length ? (
+        <p className="evidence-panel__checks">Checks: {status.checks.join(' · ')}</p>
+      ) : null}
+    </div>
   );
 }

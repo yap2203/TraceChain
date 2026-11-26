@@ -1,6 +1,6 @@
 import { reportError } from '../../../components/ui/feedback';
 import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
-import { CheckCircle2, ChevronDown, Copy, Download, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 import {
@@ -9,9 +9,9 @@ import {
   type CompanyIdentityResponse,
 } from '../../auth/auth.api';
 import { CredentialCard } from './CredentialCard';
-import { CompanyWalletSigning } from '../../production-flow/CompanyWalletSigning';
 import { HolderSigningKeyPanel } from '../../didcomm/HolderSigningKeyPanel';
-import { Alert, Badge, Btn, Card, MONO, SectionTitle, T } from './ui';
+import { Alert, Badge, Btn, Card, SectionTitle, T, TechnicalDetails } from './ui';
+import './company-identity.css';
 import { CompanyBrandingPanel } from './CompanyBrandingPanel';
 
 export function StakeholderCredentialPage({
@@ -87,7 +87,7 @@ export function StakeholderCredentialPage({
   if (!data)
     return (
       <div>
-        <SectionTitle title="My company identity" sub="Company digital identity card" />
+        <SectionTitle title="Company identity" sub="Company digital identity card" />
         <Alert type="error" message={error || 'No credential is available for this wallet.'} />
         <Btn style={{ marginTop: 12 }} variant="outline" onClick={() => void load()}>
           Retry
@@ -98,28 +98,35 @@ export function StakeholderCredentialPage({
   const identity = data.identity;
   const verification = data.verification;
   const role = displayRole(identity.role);
+  const authorized = identity.lifecycleStatus === 'ACTIVE';
+  // Recovery for older Ed25519-bound credentials: shown only when a "Manage legacy presentation keys" link opens it.
+  const legacyKeys =
+    typeof window !== 'undefined' && window.location.hash === '#legacy-presentation-signing';
   return (
-    <div>
+    <div className="company-identity-page">
       <SectionTitle
-        title="My company identity"
-        sub="Your company identity, credential status and verification results."
+        title="Company identity"
+        sub="Your company's approved role in TraceChain and the status of its credential."
         action={
           <div className="action-row">
-            <Btn size="xs" variant="outline" onClick={download}>
-              <Download size={14} /> Download Identity Summary
-            </Btn>
             <Btn
-              size="xs"
+              size="sm"
               variant="outline"
-              onClick={() => void copyValue('Credential ID', identity.credentialId)}
+              icon={<RefreshCw size={14} />}
+              onClick={() => void load()}
             >
-              Copy Credential ID
-            </Btn>
-            <Btn size="xs" variant="outline" onClick={() => void load()}>
               Refresh
             </Btn>
-            <Btn size="xs" disabled={verifying} onClick={() => void verify()}>
-              {verifying ? 'Verifying...' : 'Verify My Credential'}
+            <Btn size="sm" variant="outline" icon={<Download size={14} />} onClick={download}>
+              Download summary
+            </Btn>
+            <Btn
+              size="sm"
+              icon={<ShieldCheck size={14} />}
+              disabled={verifying}
+              onClick={() => void verify()}
+            >
+              {verifying ? 'Verifying…' : 'Verify credential'}
             </Btn>
           </div>
         }
@@ -128,15 +135,7 @@ export function StakeholderCredentialPage({
         <div
           role={actionError ? 'alert' : 'status'}
           aria-live={actionError ? 'assertive' : 'polite'}
-          style={{
-            position: 'fixed',
-            top: 20,
-            right: 20,
-            width: 'min(360px, calc(100vw - 40px))',
-            zIndex: 1000,
-            boxShadow: '0 12px 32px rgba(6, 46, 91, 0.18)',
-            borderRadius: 10,
-          }}
+          className="company-identity-toast"
         >
           <Alert type={actionError ? 'error' : 'success'} message={actionError || actionMessage} />
         </div>
@@ -158,42 +157,40 @@ export function StakeholderCredentialPage({
         <Alert type="error" message={`Verification service unavailable: ${verificationError}`} />
       )}
 
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: 16,
-          marginBottom: 16,
-        }}
-      >
+      <div className="company-identity-grid">
         <Card>
-          <div style={{ fontWeight: 700, fontSize: 14, color: T.navy, marginBottom: 14 }}>
-            Credential lifecycle
-          </div>
-          <StatusRow label="Credential status" value={identity.lifecycleStatus} />
-          <StatusRow
-            label="Blockchain authorization"
-            value={identity.lifecycleStatus === 'ACTIVE' ? 'Authorized' : 'Not authorized'}
-          />
-          <StatusRow label="Registry updated" value={formatDateTime(identity.updatedAt)} plain />
-          <p style={{ color: T.text3, fontSize: 12, margin: '12px 0 0' }}>
-            Lifecycle status comes from the deployed registries and remains separate from
-            cryptographic VC verification.
+          <h3 className="company-identity-title">Registry status</h3>
+          <dl className="company-identity-rows">
+            <div>
+              <dt>Credential</dt>
+              <dd>
+                <Badge
+                  label={statusLabel(identity.lifecycleStatus)}
+                  variant={lifecycleVariant(identity.lifecycleStatus)}
+                />
+              </dd>
+            </div>
+            <div>
+              <dt>On-chain authorization</dt>
+              <dd>
+                <Badge
+                  label={authorized ? 'Authorized' : 'Not authorized'}
+                  variant={authorized ? 'active' : 'revoked'}
+                />
+              </dd>
+            </div>
+            <div>
+              <dt>Last updated</dt>
+              <dd>{formatDateTime(identity.updatedAt)}</dd>
+            </div>
+          </dl>
+          <p className="company-identity-note">
+            Read from the on-chain registries, separately from the signature check.
           </p>
         </Card>
         <Card>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: 12,
-              alignItems: 'center',
-              marginBottom: 14,
-            }}
-          >
-            <div style={{ fontWeight: 700, fontSize: 14, color: T.navy }}>
-              Cryptographic verification
-            </div>
+          <div className="company-identity-title-row">
+            <h3 className="company-identity-title">Signature check</h3>
             {verification && (
               <Badge
                 label={verification.outcome === 'CHECKS_PASSED' ? 'Checks passed' : 'Checks failed'}
@@ -202,35 +199,30 @@ export function StakeholderCredentialPage({
             )}
           </div>
           {!verification ? (
-            <p style={{ color: T.text2, fontSize: 12 }}>
-              Not verified in this session. Select “Verify My Credential” to retrieve and verify the
-              signed VC.
+            <p className="company-identity-note">
+              Not checked yet. Choose Verify credential to retrieve the signed credential and check
+              it.
             </p>
           ) : (
             <>
-              <div style={{ display: 'grid', gap: 8 }}>
+              <ul className="company-identity-checks">
                 {verification.checks.map((check) => (
-                  <div
-                    key={check.label}
-                    style={{ display: 'grid', gridTemplateColumns: '20px minmax(0, 1fr)', gap: 8 }}
-                  >
+                  <li key={check.label}>
                     {check.status === 'PASSED' ? (
-                      <CheckCircle2 size={17} color={T.green} />
+                      <CheckCircle2 size={17} color={T.green} aria-label="Passed" />
                     ) : (
-                      <XCircle size={17} color={T.red} />
+                      <XCircle size={17} color={T.red} aria-label="Failed" />
                     )}
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 12, color: T.text }}>
-                        {check.label}
-                      </div>
-                      <div style={{ fontSize: 12, color: T.text3 }}>{check.detail}</div>
+                      <strong>{check.label}</strong>
+                      <span>{check.detail}</span>
                     </div>
-                  </div>
+                  </li>
                 ))}
-              </div>
-              <div style={{ color: T.text3, fontSize: 12, marginTop: 12 }}>
-                Verified at {formatDateTime(verification.verifiedAt)}
-              </div>
+              </ul>
+              <p className="company-identity-note">
+                Checked {formatDateTime(verification.verifiedAt)}
+              </p>
             </>
           )}
         </Card>
@@ -240,175 +232,51 @@ export function StakeholderCredentialPage({
         <summary>Company logo settings</summary>
         <CompanyBrandingPanel walletAddress={identity.associatedWallet} />
       </details>
-      <details
-        id="presentation-signing"
-        className="workspace-profile-settings"
-        open={typeof window !== 'undefined' && window.location.hash === '#presentation-signing'}
-      >
-        <summary>Presentation signing settings</summary>
-        <CompanyWalletSigning />
-      </details>
-      <details id="legacy-presentation-signing" className="workspace-profile-settings" open={typeof window !== 'undefined' && window.location.hash === '#legacy-presentation-signing'}>
-        <summary>Legacy Ed25519 presentation keys</summary>
-        <p>Only existing credentials bound to these keys need this recovery flow. New wallet-bound credentials use MetaMask.</p>
-        <HolderSigningKeyPanel />
-      </details>
-      <details
-        style={{
-          background: T.surface,
-          border: `1px solid ${T.border}`,
-          borderRadius: 12,
-          padding: '14px 18px',
-        }}
-      >
-        <summary
-          style={{
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontWeight: 700,
-            color: T.navy,
-          }}
-        >
-          <ChevronDown size={16} /> View Technical Details
-        </summary>
-        <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
-          <TechnicalValue
-            label="Full credential ID"
-            value={identity.credentialId}
-            onCopy={copyValue}
-          />
-          <TechnicalValue
-            label="Registry credential ID"
-            value={identity.registryCredentialId}
-            onCopy={copyValue}
-          />
-          <TechnicalValue label="Subject DID" value={identity.subjectDid} onCopy={copyValue} />
-          <TechnicalValue label="Issuer DID" value={identity.issuerDid} onCopy={copyValue} />
-          <TechnicalValue
-            label="Associated wallet"
-            value={identity.associatedWallet}
-            onCopy={copyValue}
-          />
-          <TechnicalValue
-            label="Recorded credential hash"
-            value={identity.credentialHash}
-            onCopy={copyValue}
-          />
-          <TechnicalValue
-            label="Encrypted CID / reference"
-            value={identity.encryptedCredentialCid}
-            onCopy={copyValue}
-          />
-          <TechnicalValue
-            label="Application reference"
-            value={identity.applicationReference}
-            onCopy={copyValue}
-          />
-          <TechnicalValue label="Chain ID" value={String(identity.chainId)} onCopy={copyValue} />
-          <TechnicalValue
-            label="StakeholderRegistry"
-            value={identity.registryReferences.stakeholderRegistry || 'Unavailable'}
-            onCopy={copyValue}
-          />
-          <TechnicalValue
-            label="CredentialRegistry"
-            value={identity.registryReferences.credentialRegistry || 'Unavailable'}
-            onCopy={copyValue}
-          />
-          <TechnicalValue
-            label="Last verification"
-            value={
-              verification?.verifiedAt ? formatDateTime(verification.verifiedAt) : 'Unavailable'
-            }
-          />
-        </div>
-      </details>
-      <Alert
-        type="info"
-        message="This credential confirms approval to participate in the TraceChain network in the stated role. It does not represent government or independent product certification."
+      {legacyKeys && (
+        <details id="legacy-presentation-signing" className="workspace-profile-settings" open>
+          <summary>Legacy Ed25519 presentation keys</summary>
+          <p className="company-identity-note">
+            Only older credentials bound to these keys need this recovery flow. New credentials sign
+            with MetaMask.
+          </p>
+          <HolderSigningKeyPanel />
+        </details>
+      )}
+      <TechnicalDetails
+        fields={[
+          { label: 'Full credential ID', value: identity.credentialId },
+          { label: 'Registry credential ID', value: identity.registryCredentialId },
+          { label: 'Subject DID', value: identity.subjectDid },
+          { label: 'Issuer DID', value: identity.issuerDid },
+          { label: 'Recorded credential hash', value: identity.credentialHash },
+          { label: 'Encrypted CID / reference', value: identity.encryptedCredentialCid },
+          { label: 'Application reference', value: identity.applicationReference },
+          { label: 'Chain ID', value: String(identity.chainId) },
+          {
+            label: 'StakeholderRegistry',
+            value: identity.registryReferences.stakeholderRegistry,
+          },
+          { label: 'CredentialRegistry', value: identity.registryReferences.credentialRegistry },
+        ]}
       />
+      <p className="company-identity-note">
+        This credential confirms approval to take part in TraceChain in the stated role. It is not a
+        government or independent product certification.
+      </p>
     </div>
   );
 }
 
-function StatusRow({
-  label,
-  value,
-  plain = false,
-}: {
-  label: string;
-  value: string;
-  plain?: boolean;
-}) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        gap: 12,
-        alignItems: 'center',
-        padding: '9px 0',
-        borderBottom: `1px solid ${T.border}`,
-      }}
-    >
-      <span style={{ fontSize: 12, color: T.text2 }}>{label}</span>
-      {plain ? (
-        <span style={{ fontSize: 12, color: T.text3 }}>{value}</span>
-      ) : (
-        <Badge
-          label={value}
-          variant={
-            value === 'ACTIVE' || value === 'Authorized'
-              ? 'active'
-              : value === 'SUSPENDED'
-                ? 'suspended'
-                : value === 'EXPIRED'
-                  ? 'expired'
-                  : 'revoked'
-          }
-        />
-      )}
-    </div>
-  );
-}
-function TechnicalValue({
-  label,
-  value,
-  onCopy,
-}: {
-  label: string;
-  value: string;
-  onCopy?: (label: string, value: string) => Promise<void>;
-}) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: 'minmax(130px, 190px) minmax(0, 1fr) auto',
-        gap: 10,
-        alignItems: 'center',
-      }}
-    >
-      <span style={{ fontSize: 12, color: T.text3 }}>{label}</span>
-      <code style={{ fontFamily: MONO, fontSize: 12, overflowWrap: 'anywhere' }}>
-        {value || 'Unavailable'}
-      </code>
-      {onCopy && value && value !== 'Unavailable' && (
-        <button
-          type="button"
-          aria-label={`Copy full ${label}`}
-          title={`Copy full ${label}`}
-          onClick={() => void onCopy(label, value)}
-          style={{ border: 0, background: 'transparent', color: T.teal, cursor: 'pointer' }}
-        >
-          <Copy size={14} />
-        </button>
-      )}
-    </div>
-  );
-}
+const statusLabel = (status: string) => status.charAt(0) + status.slice(1).toLowerCase();
+const lifecycleVariant = (status: string) =>
+  status === 'ACTIVE'
+    ? 'active'
+    : status === 'SUSPENDED'
+      ? 'suspended'
+      : status === 'EXPIRED'
+        ? 'expired'
+        : 'revoked';
+
 function displayRole(role: string) {
   return role
     .toLowerCase()

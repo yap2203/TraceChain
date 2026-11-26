@@ -1,0 +1,144 @@
+/* My company identity: status cards, readable rows and muted notes. Uses the workspace theme tokens. */
+@layer components {
+  .company-identity-page {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .company-identity-page > .workspace-section-title {
+    margin-bottom: 0;
+  }
+  .company-identity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+  }
+  .company-identity-title {
+    margin: 0 0 12px;
+    color: var(--c-text);
+    font-size: var(--text-section);
+    font-weight: 700;
+  }
+  .company-identity-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .company-identity-rows {
+    display: grid;
+    margin: 0;
+  }
+  .company-identity-rows > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .company-identity-rows dt {
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  .company-identity-rows dd {
+    margin: 0;
+    color: var(--c-text);
+    font-size: var(--text-body);
+    font-weight: 600;
+  }
+  .company-identity-checks {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .company-identity-checks li {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .company-identity-checks strong {
+    display: block;
+    color: var(--c-text);
+    font-size: var(--text-body);
+  }
+  .company-identity-checks span {
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  .company-identity-note {
+    margin: 12px 0 0;
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  .company-identity-page > .company-identity-note {
+    margin: 0;
+  }
+  .company-identity-page .workspace-profile-settings {
+    margin: 0;
+  }
+  .company-identity-page .workspace-profile-settings > .company-identity-note {
+    margin: 0 16px 12px;
+  }
+  .company-identity-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 1000;
+    width: min(360px, calc(100vw - 40px));
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgb(6 46 91 / 18%);
+  }
+}
+
+/* Company logo panel inside "Company logo settings": avatar, name, then actions on one row. */
+@layer components {
+  .company-identity-page .company-branding {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+    padding: 0 16px 16px;
+  }
+  .company-identity-page .company-branding__row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    background: var(--c-surface2);
+  }
+  .company-identity-page .company-branding__text {
+    display: grid;
+    flex: 1 1 220px;
+    gap: 2px;
+    min-width: 0;
+  }
+  .company-identity-page .company-branding__text strong {
+    color: var(--c-text);
+    font-size: var(--text-value);
+  }
+  .company-identity-page .company-branding__text span {
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  .company-identity-page .company-branding__text small {
+    color: var(--c-text3);
+    font-size: var(--text-meta);
+    overflow-wrap: anywhere;
+  }
+  .company-identity-page .company-branding__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+  }
+  .company-identity-page .company-branding__note {
+    margin: 0;
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+}

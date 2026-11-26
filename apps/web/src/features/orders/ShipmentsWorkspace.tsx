@@ -730,7 +730,7 @@ export function ShipmentsWorkspace({
         <SectionTitle
           title={
             view === 'locations'
-              ? 'Company profile & locations'
+              ? 'Profile & locations'
               : section === 'intake'
                 ? 'Custody intake'
                 : role === 'distributor' && section === 'deliveries' && kind === 'ingredient'

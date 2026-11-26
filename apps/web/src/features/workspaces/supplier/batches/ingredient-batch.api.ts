@@ -132,11 +132,6 @@ export function getIngredientBatches() {
   void value.then(clear, clear);
   return value;
 }
-export function getIngredientDrafts() {
-  return ingredientBatchRequest<{ workflows: { batchId: string; input: IngredientBatchInput }[] }>(
-    '/workflows',
-  );
-}
 export function uploadCertificationDocument(
   input: {
     id: string;

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { notify } from '../../components/ui/feedback';
 import { Menu, Moon, Sun, X } from 'lucide-react';
 import type { CompanyRole } from '@tracechain/shared';
@@ -9,8 +9,10 @@ import { workspaces } from './workspace-config';
 import {
   workspaceNavigation,
   workspaceNavigationGroups,
+  workspaceSection,
   type WorkspaceRole,
 } from './workspace-navigation';
+import { StatusTabs } from './shared/ui';
 import './workspace.css';
 import { CompanyAvatar } from '../orders/CatalogueMedia';
 
@@ -45,7 +47,11 @@ export function WorkspaceLayout({
   const sidebar = useRef<HTMLElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const current = workspaceNavigation[role].find(([id]) => id === page);
-  const PageIcon = current?.[2];
+  // Merged pages (e.g. Buying / Selling orders) share one sidebar entry and switch by tabs.
+  const section = workspaceSection(role, page);
+  const navigate = useNavigate();
+  const activeId = section?.pages[0]![0] ?? page;
+  const PageIcon = workspaceNavigation[role].find(([id]) => id === activeId)?.[2] ?? current?.[2];
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -120,7 +126,13 @@ export function WorkspaceLayout({
               <section className="workspace-nav-group" key={group.label} aria-label={group.label}>
                 <h2>{group.label}</h2>
                 {group.items.map(([id, label, Icon]) => (
-                  <NavLink end key={id} to={pathForPage(id)} onClick={() => setMenuOpen(false)}>
+                  <Link
+                    key={id}
+                    to={pathForPage(id)}
+                    className={activeId === id ? 'active' : ''}
+                    aria-current={activeId === id ? 'page' : undefined}
+                    onClick={() => setMenuOpen(false)}
+                  >
                     <Icon
                       aria-hidden="true"
                       size={18}
@@ -128,7 +140,7 @@ export function WorkspaceLayout({
                       style={{ flexShrink: 0 }}
                     />
                     {label}
-                  </NavLink>
+                  </Link>
                 ))}
               </section>
             ))}
@@ -160,7 +172,7 @@ export function WorkspaceLayout({
                   style={{ flexShrink: 0 }}
                 />
               )}
-              {current?.[1] ?? 'Page not found'}
+              {section?.label ?? current?.[1] ?? 'Page not found'}
             </h1>
             <span className="workspace-status">{status}</span>
             {identity && (
@@ -183,6 +195,17 @@ export function WorkspaceLayout({
             </button>
           </header>
           <main id="workspace-content" className="workspace-content" key={`${role}/${page}`}>
+            {section && (
+              <div className="workspace-section-tabs">
+                <StatusTabs
+                  variant="tabs"
+                  label={section.label}
+                  value={page}
+                  onChange={(id) => navigate(pathForPage(id))}
+                  tabs={section.pages.map(([value, label]) => ({ value, label }))}
+                />
+              </div>
+            )}
             {children}
           </main>
         </div>

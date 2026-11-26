@@ -250,7 +250,6 @@ export function RequestsOverview({
         label="Filter requests by status"
         value={status as RequestFilter}
         onChange={setStatus}
-        variant="connected"
         tabs={[
           { value: 'all', label: 'All', count: summaryCount('all', orders.length) },
           {

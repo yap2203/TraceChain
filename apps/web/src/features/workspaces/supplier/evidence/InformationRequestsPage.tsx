@@ -23,6 +23,24 @@ import {
   TR,
 } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
+import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
+import {
+  DeadlineCell,
+  EvidenceStatusSelect,
+  ingredientEvidenceStatus,
+  ingredientRequestGroup,
+  matchesStatusFilter,
+  type EvidenceStatusFilter,
+} from '../../../orders/EvidenceParts';
+import {
+  getIngredientBatches,
+  type RegisteredIngredientBatch,
+} from '../batches/ingredient-batch.api';
+
+const canRespond = (request: ProductionEvidenceRequest) =>
+  request.status === 1 && request.dueAt * 1000 > Date.now();
+const roleLabel = (role?: string) =>
+  role ? role.charAt(0) + role.slice(1).toLocaleLowerCase() : '';
 const statuses = [
   'Unknown',
   'Awaiting response',
@@ -65,7 +83,8 @@ export function InformationRequests({
   const [loading, setLoading] = useState(true),
     [error, setError] = useState(''),
     [sentError, setSentError] = useState(''),
-    [search, setSearch] = useState('');
+    [search, setSearch] = useState(''),
+    [status, setStatus] = useState<EvidenceStatusFilter>('all');
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -139,6 +158,13 @@ export function InformationRequests({
   useEffect(() => {
     void load();
   }, [load]);
+  const [batches, setBatches] = useState<RegisteredIngredientBatch[]>([]);
+  useEffect(() => {
+    // Display only: ingredient names instead of on-chain batch IDs.
+    void getIngredientBatches()
+      .then((result) => setBatches(result.batches))
+      .catch(() => undefined);
+  }, []);
   useEffect(() => {
     if (initialOrderId) {
       setSelectedOrder(initialOrderId);
@@ -165,14 +191,142 @@ export function InformationRequests({
         />
       </div>
     );
-  const receivedShown = requests.filter((request) =>
-    ((request.requesterName ?? request.manufacturerName ?? '') + request.requestId)
-      .toLowerCase()
-      .includes(search.toLowerCase()),
+  const batchFor = (batchId: string) =>
+    batches.find((batch) => batch.batchId.toLowerCase() === batchId.toLowerCase());
+  const receivedShown = requests.filter(
+    (request) =>
+      matchesStatusFilter(status, ingredientRequestGroup(request, 'received')) &&
+      (
+        (request.requesterName ?? request.manufacturerName ?? '') +
+        request.requestId +
+        (batchFor(request.ingredientBatchId)?.ingredientName ?? '') +
+        (batchFor(request.ingredientBatchId)?.batchReference ?? '')
+      )
+        .toLowerCase()
+        .includes(search.toLowerCase()),
   );
   const sentShown = sent.filter((request) =>
     (request.recipient + request.purpose + request.id).toLowerCase().includes(search.toLowerCase()),
   );
+  // Inside Evidence Exchange: the page already has a title and refresh, so show a compact table.
+  if (hideDirection && direction === 'received')
+    return (
+      <div className="information-requests-page">
+        <div className="evidence-toolbar">
+          <EvidenceStatusSelect
+            value={status}
+            onChange={setStatus}
+            actionCount={
+              requests.filter((request) => ingredientRequestGroup(request, 'received') === 'action')
+                .length
+            }
+          />
+          <div className="evidence-toolbar__search">
+            <Input
+              label="Search ingredient evidence requests"
+              type="search"
+              icon={<Search size={16} />}
+              placeholder="Search company or ingredient"
+              value={search}
+              onChange={setSearch}
+            />
+          </div>
+        </div>
+        {error && <Alert type="error" message={error} />}
+        {loading ? (
+          <LoadingIndicator page label="Loading ingredient evidence requests…" />
+        ) : !receivedShown.length ? (
+          <EmptyState
+            icon={<Inbox size={30} />}
+            title={
+              requests.length
+                ? 'No requests match these filters'
+                : 'No ingredient evidence requests'
+            }
+            sub="When a Manufacturer or Retailer asks about one of your ingredient batches, it appears here."
+          />
+        ) : (
+          <div className="evidence-table-card">
+            <PaginatedTable>
+              <table className="evidence-table" aria-label="Ingredient evidence requests">
+                <thead>
+                  <tr>
+                    <th scope="col">Requested by</th>
+                    <th scope="col">Ingredient</th>
+                    <th scope="col">Deadline</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">
+                      <span className="sr-only">Action</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...receivedShown]
+                    .sort((a, b) => b.updatedAt - a.updatedAt || b.dueAt - a.dueAt)
+                    .map((request) => {
+                      const batch = batchFor(request.ingredientBatchId);
+                      const status = ingredientEvidenceStatus(request.status, request.dueAt);
+                      const company =
+                        request.requesterName ??
+                        request.manufacturerName ??
+                        short(request.requester);
+                      const respond = canRespond(request);
+                      return (
+                        <tr
+                          key={request.requestId}
+                          className={respond ? 'is-actionable' : undefined}
+                          onClick={() => onRespond(request)}
+                        >
+                          <td>
+                            <span className="evidence-table__stack">
+                              <strong>{company}</strong>
+                              <small>
+                                {[roleLabel(request.requesterRole), short(request.requester)]
+                                  .filter(Boolean)
+                                  .join(' · ')}
+                              </small>
+                            </span>
+                          </td>
+                          <td>
+                            <span className="evidence-table__stack">
+                              <strong>{batch?.ingredientName ?? 'Ingredient batch'}</strong>
+                              <small>
+                                {batch
+                                  ? `Batch ${batch.batchReference}`
+                                  : short(request.ingredientBatchId)}
+                              </small>
+                            </span>
+                          </td>
+                          <DeadlineCell
+                            dueAt={request.dueAt}
+                            closed={ingredientRequestGroup(request, 'received') === 'closed'}
+                          />
+                          <td>
+                            <Badge label={status.label} variant={status.variant} />
+                          </td>
+                          <td className="evidence-table__action">
+                            <Btn
+                              size="xs"
+                              variant={respond ? 'primary' : 'outline'}
+                              aria-label={`${respond ? 'Respond to' : 'View'} request from ${company}`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onRespond(request);
+                              }}
+                            >
+                              {respond ? 'Respond' : 'View'}
+                            </Btn>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </PaginatedTable>
+          </div>
+        )}
+      </div>
+    );
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <SectionTitle

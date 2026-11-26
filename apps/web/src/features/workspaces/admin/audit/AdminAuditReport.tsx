@@ -187,7 +187,6 @@ export default function AdminAuditReport() {
         label="Filter registry audit records by type"
         value={category}
         onChange={setCategory}
-        variant="connected"
         tabs={[
           { value: 'all', label: 'All records', count: rows.length },
           {

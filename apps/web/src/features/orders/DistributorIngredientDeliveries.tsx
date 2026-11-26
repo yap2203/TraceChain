@@ -225,7 +225,6 @@ export function DistributorIngredientDeliveries({
         label="Ingredient delivery status"
         tabs={tabs}
         value={tab}
-        variant="connected"
         onChange={(next) => {
           setTab(next);
           setStatus('all');

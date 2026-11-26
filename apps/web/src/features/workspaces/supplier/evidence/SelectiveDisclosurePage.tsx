@@ -1,4 +1,8 @@
-import { createWalletPresentation, createFullWalletPresentation } from '../../../production-flow/wallet-presentation';
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import {
+  createWalletPresentation,
+  createFullWalletPresentation,
+} from '../../../production-flow/wallet-presentation';
 import {
   INGREDIENT_ALWAYS_CLAIMS,
   expandIngredientRequestedClaims,
@@ -9,9 +13,19 @@ import {
 } from '@tracechain/shared';
 import { ingredientClaimLabel } from '@tracechain/shared';
 import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
-import { getCertificationDocument } from '../batches/ingredient-batch.api';
-import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import {
+  getCertificationDocument,
+  getIngredientBatches,
+  type RegisteredIngredientBatch,
+} from '../batches/ingredient-batch.api';
 import { reportError } from '../../../../components/ui/feedback';
+import {
+  EvidenceDetailLayout,
+  EvidenceHowItWorks,
+  EvidenceNextStep,
+  ingredientEvidenceStatus,
+} from '../../../orders/EvidenceParts';
+import { proofStatusLabel, proofStatusVariant } from '../../../orders/DeliveryIdentityPanel';
 import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 
@@ -31,7 +45,7 @@ import {
   type ProductionEvidenceRequest,
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
-import { Alert, Badge, Btn, Card, T, TechnicalDetails } from '../../shared/ui';
+import { Alert, Badge, Btn, Input, TechnicalDetails } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
 import { textError } from '../../../validation/form-validation';
 import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
@@ -54,6 +68,20 @@ export function SelectiveDisclosure({
   const [previewExpiresAt, setPreviewExpiresAt] = useState<number>();
   const [identityProof, setIdentityProof] = useState<CompanyIdentityProofStatus>();
   const [holderDid, setHolderDid] = useState('');
+  const [declining, setDeclining] = useState(false);
+  const [batchInfo, setBatchInfo] = useState<RegisteredIngredientBatch>();
+  useEffect(() => {
+    // Display only: name the batch instead of showing its on-chain ID.
+    void getIngredientBatches()
+      .then(({ batches }) =>
+        setBatchInfo(
+          batches.find(
+            (batch) => batch.batchId.toLowerCase() === request.ingredientBatchId.toLowerCase(),
+          ),
+        ),
+      )
+      .catch(() => undefined);
+  }, [request.ingredientBatchId]);
   const visibleRequestedClaims = (details?.claims ?? []).filter(
     (claim) => !isRetiredIngredientClaim(claim),
   );
@@ -85,8 +113,13 @@ export function SelectiveDisclosure({
           throw new Error('Preview all legacy credential claims before approving full disclosure.');
         const signing = await prepareEvidenceResponse(request.requestId);
         if (signing.holderSigning?.walletContext) {
-          const presentation = await createFullWalletPresentation(signing.holderSigning.credential, signing.holderSigning.walletContext);
-          await completePreparedWorkflow(() => prepareEvidenceResponse(request.requestId, presentation));
+          const presentation = await createFullWalletPresentation(
+            signing.holderSigning.credential,
+            signing.holderSigning.walletContext,
+          );
+          await completePreparedWorkflow(() =>
+            prepareEvidenceResponse(request.requestId, presentation),
+          );
         } else await completePreparedWorkflow(() => prepareEvidenceResponse(request.requestId));
         onBack();
         return;
@@ -154,24 +187,20 @@ export function SelectiveDisclosure({
       }
       const presentation = walletBound
         ? await createWalletPresentation(signing.holderSigning.credential, selected, walletContext!)
-        : await createSelectiveIngredientPresentation(
-        holder!,
-        signing.holderSigning.credential,
-        {
-          audience: signing.holderSigning.audience,
-          claims: selected,
-          nonce: signing.holderSigning.nonce,
-          context: signing.holderSigning.context
-            ? {
-                ...signing.holderSigning.context,
-                expiresAt: Math.min(
-                  previewExpiresAt ?? signing.holderSigning.context.expiresAt,
-                  signing.holderSigning.context.expiresAt,
-                ),
-              }
-            : undefined,
-        },
-      );
+        : await createSelectiveIngredientPresentation(holder!, signing.holderSigning.credential, {
+            audience: signing.holderSigning.audience,
+            claims: selected,
+            nonce: signing.holderSigning.nonce,
+            context: signing.holderSigning.context
+              ? {
+                  ...signing.holderSigning.context,
+                  expiresAt: Math.min(
+                    previewExpiresAt ?? signing.holderSigning.context.expiresAt,
+                    signing.holderSigning.context.expiresAt,
+                  ),
+                }
+              : undefined,
+          });
       await completePreparedWorkflow(() =>
         prepareEvidenceResponse(request.requestId, presentation),
       );
@@ -230,280 +259,350 @@ export function SelectiveDisclosure({
     }
   };
   if (!details && !error) return <LoadingIndicator page label="Loading evidence request…" />;
-  return (
-    <div style={{ maxWidth: 720 }}>
-      <BackNavigation onClick={onBack}>Back</BackNavigation>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-        <h2 style={{ margin: 0, color: T.navy }}>Respond to Evidence Request</h2>
-        <Badge label="Awaiting response" variant="pending" />
-      </div>
-      {error && <Alert type="error" message={error} />}
-      <Card>
-        <div style={{ display: 'grid', gap: 10 }}>
-          <div>
-            <b>Requesting company</b> ·{' '}
-            {request.requesterName ?? request.manufacturerName ?? 'Company name unavailable'}
-          </div>
-          <div>
-            <b>Deadline</b> · {chainDate(request.dueAt)}
-          </div>
-          <div>
-            <b>Ingredient batch</b> · {details?.batchId ?? request.ingredientBatchId}
-          </div>
-          <div>
-            <b>Purpose</b> · {details?.reason ?? 'Loading…'}
-          </div>
-          <div>
-            <b>Requested information</b> ·{' '}
-            {details
-              ? visibleRequestedClaims.map(ingredientClaimLabel).join(', ') ||
-                'No current ingredient fields requested'
-              : 'Loading…'}
-          </div>
-          <Alert
-            type="warning"
-            message={
-              details?.credentialFormat === 'JWT_VC'
-                ? 'Legacy full disclosure: this issuer-signed presentation shares the complete Ingredient Credential, including all its fields and document references. This legacy format cannot selectively hide claims.'
-                : 'Only the always-disclosed identity claims, required claims and optional claims you select below will be included. Other SD-JWT claims remain hidden.'
-            }
-          />
-          {visibleRequiredClaims.length ? (
-            <p>
-              <strong>Required by this request:</strong>{' '}
-              {visibleRequiredClaims.map(ingredientClaimLabel).join(', ')}. Missing requirements
-              block verification and acceptance; you may decline.
-            </p>
-          ) : null}
-          {hasRetiredRequiredClaim && (
-            <Alert
-              type="warning"
-              message="This older request includes information that TraceChain no longer shares. Decline it and ask the requester to create a current evidence request."
+  const legacy = details?.credentialFormat === 'JWT_VC';
+  const requester = request.requesterName ?? request.manufacturerName ?? 'The requesting company';
+  const ingredient = batchInfo?.ingredientName ?? (preview?.ingredientName as string | undefined);
+  const batchReference =
+    batchInfo?.batchReference ?? (preview?.batchReference as string | undefined);
+  const requestedRows =
+    !legacy && preview
+      ? expandIngredientRequestedClaims(visibleRequestedClaims, preview).filter(
+          (claim) => !isRetiredIngredientClaim(claim),
+        )
+      : [];
+  const status = ingredientEvidenceStatus(request.status, request.dueAt);
+  const open = request.status === 1 && request.dueAt * 1000 > Date.now();
+  const requestSummary = (
+    <section className="evidence-request-details" aria-label="Request details">
+      <dl>
+        <div>
+          <dt>Requested by</dt>
+          <dd>
+            {requester}
+            <small>{shortWallet(request.requester)}</small>
+          </dd>
+        </div>
+        <div>
+          <dt>Ingredient</dt>
+          <dd>
+            {ingredient ?? 'Ingredient batch'}
+            {batchReference && <small>Batch {batchReference}</small>}
+          </dd>
+        </div>
+        <div>
+          <dt>Deadline</dt>
+          <dd>{chainDate(request.dueAt)}</dd>
+        </div>
+        <div>
+          <dt>Requester identity</dt>
+          <dd>
+            <Badge
+              label={proofStatusLabel(identityProof?.status ?? 'NOT_REQUESTED')}
+              variant={proofStatusVariant(identityProof?.status ?? 'NOT_REQUESTED')}
             />
-          )}
-          <Alert
-            type="info"
-            message={
-              details?.credentialFormat === 'JWT_VC'
-                ? 'Legacy presentations use the existing issuer-signing flow. The entire credential is shared; this is not selective disclosure.'
-                : 'Review the requester, purpose, selected claims and attachments. Wallet-bound credentials ask MetaMask for a sharing signature, then a separate transaction records the encrypted IPFS reference. Legacy credentials still require their original presentation key.'
-            }
-          />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <a
               href={
                 '/supplier/information-requests/sent?context=ingredient&referenceId=' +
                 encodeURIComponent(request.requestId)
               }
             >
-              Manage Company Identity Proof in Information requests
+              {identityProof?.status === 'VERIFIED' ? 'View identity' : 'Check identity'}
             </a>
-          </div>
-          {identityProof && (
-            <div style={{ display: 'grid', gap: 8 }}>
+          </dd>
+        </div>
+        <div className="is-wide">
+          <dt>Purpose</dt>
+          <dd>{details?.reason ?? '—'}</dd>
+        </div>
+        <div className="is-wide">
+          <dt>Fields requested</dt>
+          <dd className="evidence-request-details__chips">
+            {visibleRequestedClaims.length
+              ? visibleRequestedClaims.map((claim) => (
+                  <span
+                    key={claim}
+                    className={visibleRequiredClaims.includes(claim) ? 'is-required' : undefined}
+                  >
+                    {ingredientClaimLabel(claim)}
+                    {visibleRequiredClaims.includes(claim) ? '' : ' (optional)'}
+                  </span>
+                ))
+              : 'No current ingredient fields requested'}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+  return (
+    <div className="information-requests-page is-detail">
+      <BackNavigation onClick={onBack}>Ingredient evidence</BackNavigation>
+      <header className="evidence-detail-header">
+        <div>
+          <h2>
+            {requester} asks for evidence on {ingredient ?? 'your ingredient'}
+          </h2>
+          <p>
+            {batchReference ? `Batch ${batchReference} · ` : ''}Due {chainDate(request.dueAt)}
+          </p>
+        </div>
+        <div className="evidence-detail-header__status">
+          <Badge label={status.label} variant={status.variant} />
+        </div>
+      </header>
+      {error && <Alert type="error" message={error} />}
+
+      <EvidenceDetailLayout aside={requestSummary}>
+        {!open ? (
+          <>
+            <EvidenceNextStep
+              tone="closed"
+              message={CLOSED_MESSAGE[request.status] ?? 'This request is closed.'}
+            />
+          </>
+        ) : (
+          <>
+            {hasRetiredRequiredClaim && (
               <Alert
-                type={identityProof.status === 'VERIFIED' ? 'success' : 'info'}
-                message={`Requester identity proof: ${identityProof.status}. A valid identity proof does not automatically authorize ingredient disclosure.`}
+                type="warning"
+                message="This older request asks for information TraceChain no longer shares. Decline it and ask the requester for a new request."
               />
-              {identityProof.credential && (
-                <Card>
-                  <b>Verified requester Company Role Credential</b>
-                  <div style={{ display: 'grid', gap: 4, marginTop: 8, fontSize: 13 }}>
-                    <div>Company: {identityProof.credential.subject.companyName}</div>
-                    <div>Role: {identityProof.credential.subject.role}</div>
-                    <div>Wallet: {identityProof.credential.subject.walletAddress}</div>
-                    <div>
-                      Issuer:{' '}
-                      {identityProof.credential.issuerName ?? identityProof.credential.issuer}
-                    </div>
-                    <div>Credential status: {identityProof.credential.credentialStatus}</div>
-                    <div>
-                      Expires:{' '}
-                      {chainDate(Date.parse(identityProof.credential.expirationDate) / 1000)}
-                    </div>
-                  </div>
-                  {identityProof.checks && (
-                    <div style={{ marginTop: 8, fontSize: 12 }}>
-                      Checks passed: {identityProof.checks.join(', ')}
-                    </div>
+            )}
+            {legacy && (
+              <Alert
+                type="warning"
+                message="This older credential format shares every field. Individual fields cannot be hidden."
+              />
+            )}
+
+            {!preview ? (
+              <EvidenceNextStep
+                message="Check the values that will be shared, then choose any optional fields."
+                action={
+                  <Btn disabled={busy || !details} onClick={() => void loadPreview()}>
+                    {busy ? 'Loading…' : 'Review values to share'}
+                  </Btn>
+                }
+              />
+            ) : (
+              <section className="evidence-fields" aria-labelledby="ingredient-fields-title">
+                <header>
+                  <h4 id="ingredient-fields-title">
+                    {legacy ? 'Values to share' : 'Fields to share'}
+                  </h4>
+                  {previewExpiresAt && (
+                    <strong>Proof valid until {chainDate(previewExpiresAt)}</strong>
                   )}
-                </Card>
+                </header>
+                <div className="ingredient-share-list">
+                  {legacy &&
+                    Object.entries(preview).map(([name, value]) => (
+                      <div key={name} className="ingredient-share-row">
+                        <IngredientClaimValue
+                          name={name}
+                          value={value}
+                          loadDocument={(documentId) =>
+                            getCertificationDocument(details!.batchId, documentId)
+                          }
+                        />
+                      </div>
+                    ))}
+                  {requestedRows.map((claim) => {
+                    const required = details?.requiredClaims.includes(claim) ?? false;
+                    const included = required || optionalClaims.includes(claim);
+                    return (
+                      <div
+                        key={claim}
+                        className={`ingredient-share-row${included ? ' is-included' : ''}`}
+                      >
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={included}
+                            disabled={required || busy}
+                            onChange={(event) =>
+                              setOptionalClaims((current) =>
+                                toggleIngredientDisclosure(
+                                  current,
+                                  claim,
+                                  event.target.checked,
+                                  preview,
+                                ),
+                              )
+                            }
+                          />
+                          <strong>{shareLabel(claim, preview)}</strong>
+                          <span className={required ? 'is-required' : undefined}>
+                            {required ? 'Required' : 'Optional'}
+                          </span>
+                        </label>
+                        <IngredientClaimValue
+                          name={claim}
+                          value={preview[claim]}
+                          loadDocument={(documentId) =>
+                            getCertificationDocument(
+                              details?.batchId ?? request.ingredientBatchId,
+                              documentId,
+                            )
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+                {!legacy && (
+                  <details className="evidence-how-it-works">
+                    <summary>Always included and kept private</summary>
+                    <p>
+                      Always included:{' '}
+                      {INGREDIENT_ALWAYS_CLAIMS.filter((key) => preview[key] !== undefined)
+                        .map(ingredientClaimLabel)
+                        .join(', ') || 'none'}
+                      .
+                    </p>
+                    <p>
+                      Kept private:{' '}
+                      {Object.keys(preview)
+                        .filter(
+                          (key) =>
+                            ![
+                              'iss',
+                              'vct',
+                              'cnf',
+                              'exp',
+                              'iat',
+                              'sub',
+                              'credentialId',
+                              'policyVersion',
+                              ...INGREDIENT_ALWAYS_CLAIMS,
+                            ].includes(key) &&
+                            !optionalClaims.includes(key) &&
+                            !details?.requiredClaims.includes(key) &&
+                            !isRetiredIngredientClaim(key),
+                        )
+                        .map(ingredientClaimLabel)
+                        .join(', ') || 'nothing else'}
+                      .
+                    </p>
+                  </details>
+                )}
+                {holderDid && preview.vct !== 'urn:tracechain:credential:ingredient:sd-jwt:v3' && (
+                  <PresentationSigningSettingsLink role="supplier" />
+                )}
+                <label className="ingredient-share-consent">
+                  <input
+                    type="checkbox"
+                    checked={approved}
+                    onChange={(event) => setApproved(event.target.checked)}
+                  />
+                  {legacy
+                    ? 'I reviewed and authorize full disclosure of all displayed credential claims and document references to this exact recipient.'
+                    : 'I reviewed this disclosure and authorize sharing only these selected claims for this exact request and recipient.'}
+                </label>
+              </section>
+            )}
+
+            {declining && (
+              <div className="evidence-request-form">
+                <Input
+                  label="Reason for declining"
+                  value={declineReason}
+                  onChange={setDeclineReason}
+                  maxLength={500}
+                  placeholder="Tell the requester why you are declining"
+                />
+              </div>
+            )}
+            <div className="evidence-actions">
+              {declining ? (
+                <>
+                  <Btn variant="outline" disabled={busy} onClick={() => setDeclining(false)}>
+                    Cancel
+                  </Btn>
+                  <Btn
+                    variant="danger"
+                    disabled={busy || !declineReason.trim()}
+                    onClick={() => void decline()}
+                  >
+                    Decline request
+                  </Btn>
+                </>
+              ) : (
+                <>
+                  <Btn variant="outline" disabled={busy} onClick={() => setDeclining(true)}>
+                    Decline…
+                  </Btn>
+                  {preview && (
+                    <Btn
+                      disabled={busy || !approved || !details || hasRetiredRequiredClaim}
+                      onClick={() => void respond()}
+                    >
+                      {busy ? 'Signing…' : legacy ? 'Share full credential' : 'Sign and share'}
+                    </Btn>
+                  )}
+                </>
               )}
             </div>
-          )}
-          <Btn variant="outline" disabled={busy || !details} onClick={() => void loadPreview()}>
-            Preview available claim values
-          </Btn>
-          {holderDid && preview?.vct !== 'urn:tracechain:credential:ingredient:sd-jwt:v3' && <PresentationSigningSettingsLink role="supplier" />}
-          {previewExpiresAt && (
-            <p>
-              Presentation expires: {chainDate(previewExpiresAt)}. Verify it before this time; the
-              request deadline and credential expiry are separate.
-            </p>
-          )}
-          {details?.credentialFormat === 'JWT_VC' &&
-            preview &&
-            Object.entries(preview).map(([name, value]) => (
-              <IngredientClaimValue
-                key={name}
-                name={name}
-                value={value}
-                loadDocument={(documentId) => getCertificationDocument(details.batchId, documentId)}
-              />
-            ))}
-          {preview && details?.credentialFormat !== 'JWT_VC' && (
-            <section>
-              <h3>Always included</h3>
-              {INGREDIENT_ALWAYS_CLAIMS.filter((key) => preview[key] !== undefined).map((key) => (
-                <IngredientClaimValue key={key} name={key} value={preview[key]} />
-              ))}
-            </section>
-          )}
-          {details?.credentialFormat !== 'JWT_VC' &&
-            expandIngredientRequestedClaims(visibleRequestedClaims, preview ?? {})
-              .filter((claim) => !isRetiredIngredientClaim(claim))
-              .map((claim) => {
-                const required = details?.requiredClaims.includes(claim) ?? false;
-                return (
-                  <div key={claim}>
-                    <label style={{ display: 'flex', gap: 8, alignItems: 'start' }}>
-                      <input
-                        type="checkbox"
-                        checked={required || optionalClaims.includes(claim)}
-                        disabled={required || busy}
-                        onChange={(event) =>
-                          setOptionalClaims((current) =>
-                            toggleIngredientDisclosure(
-                              current,
-                              claim,
-                              event.target.checked,
-                              preview ?? {},
-                            ),
-                          )
-                        }
-                      />
-                      <span>
-                        <b>
-                          {claim.startsWith('certificationDocuments_')
-                            ? `Supporting document: ${((preview?.[claim] as { documents?: { fileName: string }[] })?.documents ?? []).map((file) => file.fileName).join(', ')}`
-                            : claim.startsWith('certification_')
-                              ? `Supplier-provided certification: ${(preview?.[claim] as { name?: string })?.name ?? 'Unavailable'} ? ${(preview?.[claim] as { reference?: string })?.reference ?? 'Unavailable'}`
-                              : ingredientClaimLabel(claim)}
-                        </b>{' '}
-                        · {required ? 'Required by this request' : 'Optional'}
-                      </span>
-                    </label>
-                    {preview && (
-                      <IngredientClaimValue
-                        name={claim}
-                        value={preview[claim]}
-                        loadDocument={(documentId) =>
-                          getCertificationDocument(
-                            details?.batchId ?? request.ingredientBatchId,
-                            documentId,
-                          )
-                        }
-                      />
-                    )}
-                  </div>
-                );
-              })}
-          {(details?.claims.includes('certifications') ||
-            details?.claims.includes('certificationDocuments')) && (
-            <p>
-              Preview the available entries, select the certifications to share, and separately
-              select any documents. Required certification requests need at least one complete
-              entry. Selecting a document also shares its certification scope and provenance.
-            </p>
-          )}
-          {preview && details?.credentialFormat !== 'JWT_VC' && (
-            <details>
-              <summary>Available information remaining undisclosed</summary>
-              <ul>
-                {Object.keys(preview)
-                  .filter(
-                    (key) =>
-                      ![
-                        'iss',
-                        'vct',
-                        'cnf',
-                        'exp',
-                        'iat',
-                        'sub',
-                        'credentialId',
-                        'policyVersion',
-                        ...INGREDIENT_ALWAYS_CLAIMS,
-                      ].includes(key) &&
-                      !optionalClaims.includes(key) &&
-                      !details?.requiredClaims.includes(key) &&
-                      !isRetiredIngredientClaim(key),
-                  )
-                  .map((key) => (
-                    <li key={key}>{ingredientClaimLabel(key)}</li>
-                  ))}
-              </ul>
-            </details>
-          )}
-          <label style={{ fontSize: 13 }}>
-            <input
-              type="checkbox"
-              checked={approved}
-              onChange={(event) => setApproved(event.target.checked)}
-            />{' '}
-            {details?.credentialFormat === 'JWT_VC'
-              ? 'I reviewed and authorize full disclosure of all displayed credential claims and document references to this exact recipient.'
-              : 'I reviewed this disclosure and authorize sharing only these selected claims for this exact request and recipient.'}
-          </label>
-          <Btn
-            disabled={busy || !approved || !details || hasRetiredRequiredClaim}
-            onClick={() => void respond()}
-          >
-            {busy
-              ? 'Signing and confirming...'
-              : details?.credentialFormat === 'JWT_VC'
-                ? 'Share full legacy credential and confirm'
-                : 'Sign selective presentation and confirm'}
-          </Btn>
-          <input
-            aria-label="Decline reason"
-            maxLength={500}
-            placeholder="Reason for declining"
-            value={declineReason}
-            onChange={(event) => setDeclineReason(event.target.value)}
-          />
-          <div className="action-row">
-            <Btn
-              variant="ghost"
-              disabled={busy || !declineReason.trim()}
-              onClick={() => void decline()}
-            >
-              Decline request
-            </Btn>
-          </div>
-          <TechnicalDetails
-            fields={[
-              { label: 'Request ID', value: request.requestId },
-              { label: 'Requesting company wallet', value: request.requester },
-              { label: 'Ingredient batch ID', value: request.ingredientBatchId },
-              ...(preview
-                ? [
-                    { label: 'Issuer DID', value: String(preview.iss ?? 'Unavailable') },
-                    {
-                      label: 'Credential reference',
-                      value: String(preview.credentialId ?? 'Unavailable'),
-                    },
-                    {
-                      label: 'Credential expiry',
-                      value:
-                        typeof preview.exp === 'number' ? chainDate(preview.exp) : 'Unavailable',
-                    },
-                    { label: 'Holder signing DID', value: holderDid || 'Unavailable' },
-                  ]
-                : []),
-            ]}
-          />
-        </div>
-      </Card>
+          </>
+        )}
+
+        <EvidenceHowItWorks>
+          <p>
+            Only the fields you select, plus the basic batch identity, are shared. Everything else
+            in your ingredient credential stays hidden. Certification requests need at least one
+            complete certification; choosing a document also shares the certification it belongs to.
+          </p>
+          <p>
+            MetaMask asks for one signature to approve the selection, then one transaction records
+            the encrypted response reference. A verified requester identity does not by itself
+            approve sharing. Sharing does not approve any order.
+          </p>
+        </EvidenceHowItWorks>
+        <TechnicalDetails
+          fields={[
+            { label: 'Request ID', value: request.requestId },
+            { label: 'Requesting company wallet', value: request.requester },
+            { label: 'Ingredient batch ID', value: request.ingredientBatchId },
+            ...(preview
+              ? [
+                  { label: 'Issuer DID', value: String(preview.iss ?? 'Unavailable') },
+                  {
+                    label: 'Credential reference',
+                    value: String(preview.credentialId ?? 'Unavailable'),
+                  },
+                  {
+                    label: 'Credential expiry',
+                    value: typeof preview.exp === 'number' ? chainDate(preview.exp) : 'Unavailable',
+                  },
+                  { label: 'Holder signing DID', value: holderDid || 'Unavailable' },
+                ]
+              : []),
+          ]}
+        />
+      </EvidenceDetailLayout>
     </div>
   );
+}
+
+/** Why a closed request has nothing left to do. */
+const CLOSED_MESSAGE: Record<number, string> = {
+  1: 'The deadline passed before a response was sent. You can no longer respond.',
+  2: 'You shared evidence for this request. The requester is reviewing it.',
+  3: 'The requester accepted the evidence you shared.',
+  4: 'You declined this request.',
+  5: 'The requester rejected the evidence you shared.',
+  6: 'The requester cancelled this request.',
+};
+
+function shareLabel(claim: string, preview: Record<string, unknown>) {
+  if (claim.startsWith('certificationDocuments_'))
+    return `Supporting document: ${((preview[claim] as { documents?: { fileName: string }[] })?.documents ?? []).map((file) => file.fileName).join(', ')}`;
+  if (claim.startsWith('certification_')) {
+    const entry = preview[claim] as { name?: string; reference?: string } | undefined;
+    return `Supplier-provided certification: ${entry?.name ?? 'Unavailable'} · ${entry?.reference ?? 'Unavailable'}`;
+  }
+  return ingredientClaimLabel(claim);
+}
+
+function shortWallet(wallet?: string) {
+  return wallet && wallet.length > 14 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : wallet;
 }

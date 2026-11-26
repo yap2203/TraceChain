@@ -130,6 +130,9 @@ export function Textarea({
   rows = 3,
   required,
   maxLength = 4000,
+  error,
+  hint,
+  disabled,
 }: {
   label: string;
   value: string;
@@ -138,17 +141,28 @@ export function Textarea({
   rows?: number;
   required?: boolean;
   maxLength?: number;
+  error?: string;
+  hint?: string;
+  disabled?: boolean;
 }) {
   const descriptionId = useId();
   const [message, setMessage] = useState('');
+  const shown = error || message;
   return (
-    <FormField label={label} required={required} error={message} descriptionId={descriptionId}>
+    <FormField
+      label={label}
+      required={required}
+      error={shown}
+      hint={hint}
+      descriptionId={descriptionId}
+    >
       <textarea
         required={required}
+        disabled={disabled}
         maxLength={maxLength}
         value={value}
-        aria-invalid={!!message}
-        aria-describedby={message ? descriptionId : undefined}
+        aria-invalid={!!shown}
+        aria-describedby={shown || hint ? descriptionId : undefined}
         onChange={(e) => {
           e.target.setCustomValidity('');
           setMessage('');
@@ -165,6 +179,69 @@ export function Textarea({
         className={`${inputClasses} font-ui resize-y`}
       />
     </FormField>
+  );
+}
+
+/** A small set of mutually exclusive choices, all visible (use SelectField for long lists). */
+export function RadioGroup({
+  label,
+  value,
+  onChange,
+  options,
+  required,
+  error,
+  hint,
+  disabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string; hint?: string }[];
+  required?: boolean;
+  error?: string;
+  hint?: string;
+  disabled?: boolean;
+}) {
+  const name = useId();
+  const descriptionId = useId();
+  return (
+    <fieldset
+      className="workspace-radio-group"
+      aria-describedby={error || hint ? descriptionId : undefined}
+      aria-invalid={error ? true : undefined}
+      disabled={disabled}
+    >
+      <legend>
+        <RequiredLabel label={label} required={required} />
+      </legend>
+      <div className="workspace-radio-group__options">
+        {options.map((option) => (
+          <label key={option.value} className={value === option.value ? 'is-selected' : undefined}>
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              required={required}
+              onChange={() => onChange(option.value)}
+            />
+            <span>
+              {option.label}
+              {option.hint && <small>{option.hint}</small>}
+            </span>
+          </label>
+        ))}
+      </div>
+      {(error || hint) && (
+        <div
+          id={descriptionId}
+          role={error ? 'alert' : undefined}
+          className={`text-[12px] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
+        >
+          {error || hint}
+        </div>
+      )}
+    </fieldset>
   );
 }
 

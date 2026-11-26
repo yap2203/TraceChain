@@ -18,9 +18,8 @@ export function ClaimRow({
   technical?: boolean;
   onToggle?: () => void;
 }) {
-  const [showFull, setShowFull] = useState(false);
   const [copied, setCopied] = useState(false);
-  const displayValue = technical && !showFull ? shortenTechnicalValue(value) : value;
+  const displayValue = technical ? shortenTechnicalValue(value) : value;
 
   const copyValue = async () => {
     await navigator.clipboard?.writeText(value);
@@ -35,30 +34,25 @@ export function ClaimRow({
           <span
             className={`evidence-claim-row__requirement is-${requirement === 'always' ? 'required' : requirement}`}
           >
-            {requirement === 'always'
-              ? 'Always included'
-              : requirement === 'required'
-                ? 'Required'
-                : 'Optional'}
+            {requirement === 'optional' ? 'Optional' : 'Required'}
           </span>
         </div>
         <span className="evidence-claim-row__value" title={technical ? value : undefined}>
           {displayValue}
-        </span>
-        {technical && (
-          <div className="evidence-claim-row__technical-actions">
-            <button type="button" onClick={() => setShowFull((current) => !current)}>
-              {showFull ? 'Hide full value' : 'Show full value'}
-            </button>
-            <button type="button" aria-label={`Copy ${label}`} onClick={() => void copyValue()}>
+          {technical && (
+            <button
+              type="button"
+              className="evidence-claim-row__copy"
+              aria-label={copied ? `${label} copied` : `Copy ${label}`}
+              title={copied ? 'Copied' : 'Copy full value'}
+              onClick={() => void copyValue()}
+            >
               <Copy size={13} aria-hidden="true" />
-              {copied ? 'Copied' : 'Copy'}
             </button>
-          </div>
-        )}
+          )}
+        </span>
       </div>
       <div className="evidence-claim-row__control">
-        <span>{locked ? 'On — locked' : included ? 'On' : 'Off'}</span>
         <button
           type="button"
           role="switch"

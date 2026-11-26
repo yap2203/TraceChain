@@ -78,7 +78,7 @@ it.each(['pending', 'approved'] as const)(
     expect(mocks.send).toHaveBeenCalledTimes(status === 'pending' ? 2 : 0);
     expect(click).not.toHaveBeenCalled();
     expect(mocks.notify).toHaveBeenCalledWith(
-      expect.stringContaining('My company identity'),
+      expect.stringContaining('Company identity'),
       'success',
     );
     expect(screen.queryByRole('dialog')).toBeNull();

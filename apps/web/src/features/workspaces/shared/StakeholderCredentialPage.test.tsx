@@ -94,8 +94,9 @@ describe('My Company Identity', () => {
   it('renders actual API identity fields and copies the complete wallet', async () => {
     render(<StakeholderCredentialPage expectedRole="MANUFACTURER" />);
     expect(await screen.findByText('Verified Cocoa Company')).toBeTruthy();
-    const settings = screen.getByText('Presentation signing settings').closest('details');
-    expect(settings?.open).toBe(false);
+    expect(screen.queryByText('Presentation signing settings')).toBeNull();
+    // Legacy key recovery stays hidden unless a legacy-key link opens it.
+    expect(screen.queryByText('Legacy Ed25519 presentation keys')).toBeNull();
     expect(screen.queryByRole('textbox', { name: 'Presentation key backup password' })).toBeNull();
     expect(screen.queryByText(/Secure DIDComm delivery/)).toBeNull();
     expect(screen.getByText('REG-2026-001')).toBeTruthy();
@@ -130,7 +131,7 @@ describe('My Company Identity', () => {
       .mockImplementation(() => undefined);
     render(<StakeholderCredentialPage expectedRole="MANUFACTURER" />);
     await screen.findByText('Verified Cocoa Company');
-    fireEvent.click(screen.getByRole('button', { name: /Download Identity Summary/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Download summary/ }));
     expect(URL.createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
     expect(click).toHaveBeenCalled();
     expect(await screen.findByText('Identity summary downloaded successfully.')).toBeTruthy();
@@ -150,7 +151,7 @@ describe('My Company Identity', () => {
     } satisfies CompanyIdentityResponse);
     render(<StakeholderCredentialPage expectedRole="MANUFACTURER" />);
     await screen.findByText('Verified Cocoa Company');
-    fireEvent.click(screen.getByRole('button', { name: 'Verify My Credential' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Verify credential' }));
     expect(await screen.findByText('Checks failed')).toBeTruthy();
     expect(screen.getByText('Deterministic hash')).toBeTruthy();
     expect(screen.getByText('Signed hash does not match.')).toBeTruthy();

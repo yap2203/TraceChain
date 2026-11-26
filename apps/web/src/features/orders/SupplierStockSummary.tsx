@@ -1,48 +1,49 @@
 import type { SupplierStock } from './orders.api';
+import './supplier-stock.css';
+
+/** Whole-number on-chain amounts with thousands separators; anything else is shown as recorded. */
+const amount = (value: string, unit: string) => {
+  try {
+    return `${BigInt(value).toLocaleString()} ${unit}`;
+  } catch {
+    return `${value} ${unit}`;
+  }
+};
 
 export function SupplierStockSummary({ stock }: { stock: SupplierStock }) {
   return (
-    <section
-      aria-label="Supplier stock summary"
-      className="my-[12px] min-w-0 rounded-lg border border-[var(--c-border)] p-[12px] text-sm"
-    >
-      <dl className="grid grid-cols-1 gap-[8px] sm:grid-cols-2">
+    <section aria-label="Supplier stock summary" className="supplier-stock">
+      <dl>
         <div>
           <dt>Current on-chain stock</dt>
-          <dd className="m-0 break-words font-semibold">
-            {stock.availableQuantity} {stock.unit}
-          </dd>
+          <dd>{amount(stock.availableQuantity, stock.unit)}</dd>
         </div>
         <div>
           <dt>Remaining after open requests</dt>
-          <dd className="m-0 break-words font-semibold">
+          <dd>
             {stock.remainingAfterRequests === null
               ? 'Unavailable: older requests lack batch or decision data'
-              : `${stock.remainingAfterRequests} ${stock.unit}`}
+              : amount(stock.remainingAfterRequests, stock.unit)}
           </dd>
         </div>
         <div>
           <dt>Awaiting your approval</dt>
-          <dd className="m-0 break-words">
-            {stock.pendingQuantity} {stock.unit}
-          </dd>
+          <dd>{amount(stock.pendingQuantity, stock.unit)}</dd>
         </div>
         <div>
           <dt>Approved requests still in stock</dt>
-          <dd className="m-0 break-words">
-            {stock.approvedQuantity} {stock.unit}
-          </dd>
+          <dd>{amount(stock.approvedQuantity, stock.unit)}</dd>
         </div>
       </dl>
       {stock.shortfall !== null && BigInt(stock.shortfall) > 0n && (
-        <p role="status">
-          Open requests exceed current stock by {stock.shortfall} {stock.unit}. Review requests
-          before approving.
+        <p role="status" className="supplier-stock__warning">
+          Open requests exceed current stock by {amount(stock.shortfall, stock.unit)}. Review
+          requests before approving.
         </p>
       )}
-      <p className="mb-0">
-        Requests alone do not reserve stock. Collected deliveries are already deducted from current
-        stock and excluded from this estimate. Legacy direct receipts deduct stock at receipt.
+      <p className="supplier-stock__note">
+        Requests do not reserve stock. Collected deliveries are already deducted from current stock;
+        legacy direct receipts deduct stock at receipt.
       </p>
     </section>
   );

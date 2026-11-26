@@ -8,14 +8,15 @@ import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { deliveryIdentity, type OrderRecord, type OrdersState } from './orders.api';
+import { Alert, Badge, Btn, Modal, TechnicalDetails } from '../workspaces/shared/ui';
 import {
-  Alert,
-  Badge,
-  Btn,
-  ClaimRow,
-  Modal,
-  TechnicalDetails,
-} from '../workspaces/shared/ui';
+  EvidenceFieldList,
+  EvidenceHowItWorks,
+  EvidenceNextStep,
+  SharedClaims,
+  claimValueAvailable,
+  friendlyClaim,
+} from './EvidenceParts';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
@@ -36,7 +37,10 @@ export function DeliveryIdentityPanel({
   requestOnly = false,
   onRequestClose,
   requestContextLabel = 'custody offer',
+  showHeading = true,
 }: {
+  /** False when the surrounding page already shows the title and status. */
+  showHeading?: boolean;
   order: OrderRecord;
   data: OrdersState;
   onChanged: () => Promise<void>;
@@ -118,8 +122,6 @@ export function DeliveryIdentityPanel({
     if (result.transaction) await submitProductionTransaction(result.transaction, data.actor);
   };
   const rawStatus = status?.status ?? 'NOT_REQUESTED';
-  const completed = ['PRESENTED', 'SHARED', 'VERIFIED'].includes(rawStatus);
-  const failed = ['DECLINED', 'REJECTED', 'EXPIRED', 'UNAVAILABLE'].includes(rawStatus);
   const recipient =
     requestedBy ?? companyName(data, order.delivery.distributor) ?? 'Counterparty company';
   const evidenceHolder = companyName(data, order.seller) ?? sellerLabel;
@@ -208,23 +210,27 @@ export function DeliveryIdentityPanel({
         setPurpose(value.purpose);
         setDeadline(value.deadline);
       }}
-      onSubmit={() => void run(async () => {
-        const expiresAt = Math.floor(Date.parse(deadline) / 1000);
-        const payload = normalizeCompanyRequestFields(
-          requestClaims.required,
-          requestClaims.optional,
-        );
-        await submit(await deliveryIdentity(order.orderId, {
-          action: 'request',
-          purpose: purpose.trim(),
-          expiresAt,
-          required: true,
-          requiredClaims: payload.required,
-          optionalClaims: payload.optional,
-        }));
-        closeRequest();
-        setNotice(`${sellerLabel} evidence requested through encrypted IPFS references.`);
-      })}
+      onSubmit={() =>
+        void run(async () => {
+          const expiresAt = Math.floor(Date.parse(deadline) / 1000);
+          const payload = normalizeCompanyRequestFields(
+            requestClaims.required,
+            requestClaims.optional,
+          );
+          await submit(
+            await deliveryIdentity(order.orderId, {
+              action: 'request',
+              purpose: purpose.trim(),
+              expiresAt,
+              required: true,
+              requiredClaims: payload.required,
+              optionalClaims: payload.optional,
+            }),
+          );
+          closeRequest();
+          setNotice(`${sellerLabel} evidence requested through encrypted IPFS references.`);
+        })
+      }
     />
   );
   if (requestOnly) {
@@ -247,268 +253,135 @@ export function DeliveryIdentityPanel({
             <Badge label={proofStatusLabel(rawStatus)} variant={proofStatusVariant(rawStatus)} />
             <p>{proofStatusExplanation(rawStatus)}</p>
             <div className="action-row justify-end">
-              <Btn variant="outline" onClick={closeRequest}>Close</Btn>
+              <Btn variant="outline" onClick={closeRequest}>
+                Close
+              </Btn>
             </div>
           </div>
         </Modal>
       );
     return requestDialog;
   }
+  const verify = () =>
+    run(async () => {
+      const result = await deliveryIdentity(order.orderId, { action: 'verify' });
+      await submit(result);
+      setStatus(result);
+    });
+  const toggleClaim = (claim: string) =>
+    setSelected((current) => toggleCompanyDisclosure(current, claim, !current.includes(claim)));
+  const toggleAllOptional = () =>
+    setSelected((current) =>
+      optionalClaims.every((claim) => current.includes(claim))
+        ? current.filter((claim) => !optionalClaims.includes(claim))
+        : [...new Set([...current, ...optionalClaims])],
+    );
+  const next = nextStep({
+    status: rawStatus,
+    holder: supplier,
+    holderName: evidenceHolder,
+    recipient,
+    verifiedAt: status?.verifiedAt,
+  });
+  const nextAction =
+    !supplier && rawStatus === 'NOT_REQUESTED' ? (
+      <Btn disabled={busy || !purpose.trim()} onClick={() => setRequestOpen(true)}>
+        Create evidence request
+      </Btn>
+    ) : !supplier && ['PRESENTED', 'SHARED'].includes(rawStatus) ? (
+      <Btn disabled={busy} onClick={() => void verify()}>
+        Verify shared evidence
+      </Btn>
+    ) : supplier && rawStatus === 'REQUESTED' && !material ? (
+      <>
+        <Btn variant="outline" disabled={busy} onClick={() => void declineRequest()}>
+          Decline
+        </Btn>
+        <Btn disabled={busy || expired} onClick={() => void loadMaterial()}>
+          Review request
+        </Btn>
+      </>
+    ) : undefined;
   return (
-    <section className="company-evidence-card" aria-label={`${sellerLabel} company evidence`}>
-      <header className="company-evidence-card__heading">
-        <div>
-          <span>Evidence type</span>
+    <section
+      className="company-evidence-card evidence-panel"
+      aria-label={`${sellerLabel} company evidence`}
+    >
+      {showHeading && (
+        <header className="evidence-panel__heading">
           <h3>{sellerLabel} company evidence</h3>
-        </div>
-        <div className="company-evidence-card__badges">
           <Badge label={proofStatusLabel(rawStatus)} variant={proofStatusVariant(rawStatus)} />
           {expiryBadge && <Badge label={expiryBadge.label} variant={expiryBadge.variant} />}
-        </div>
-      </header>
-      <dl className="company-evidence-card__facts">
-        <div><dt>{supplier ? 'Requested by' : 'Recipient company'}</dt><dd>{supplier ? recipient : evidenceHolder}</dd></div>
-        <div><dt>Recipient role</dt><dd>{holderRole}</dd></div>
-        <div><dt>Related custody reference</dt><dd>{shortEvidenceReference(order.orderId)}</dd></div>
-        <div>
-          <dt>Evidence type</dt>
-          <dd>Company identity</dd>
-        </div>
-        <div>
-          <dt>{rawStatus === 'NOT_REQUESTED' ? 'Suggested purpose' : 'Purpose'}</dt>
-          <dd>{material?.purpose ?? status?.purpose ?? purpose}</dd>
-        </div>
-        <div>
-          <dt>Status</dt>
-          <dd>{proofStatusLabel(rawStatus)}</dd>
-        </div>
-        {rawStatus !== 'NOT_REQUESTED' && requestedRequired !== undefined && (
-          <div>
-            <dt>Requested fields</dt>
-            <dd>
-              {requestedRequired + (requestedOptional ?? 0)} fields · {requestedRequired} required
-              {requestedOptional !== undefined ? ` · ${requestedOptional} optional` : ''}
-            </dd>
-          </div>
-        )}
-        {rawStatus !== 'NOT_REQUESTED' && <div><dt>Deadline</dt><dd>{expiresAt ? formatEvidenceDate(expiresAt) : 'Not recorded'}</dd></div>}
-        {status?.verifiedAt && <div><dt>Verified</dt><dd>{formatEvidenceDate(status.verifiedAt)}</dd></div>}
-      </dl>
-      {error && <Alert type="error" message={error} />}
-      {notice && <Alert type="success" message={notice} />}
-      {rawStatus === 'NOT_REQUESTED' ? (
-        <p className="company-evidence-card__empty-copy">
-          Request verified company information from the supplier before collecting or dispatching this stock.
-        </p>
-      ) : <div className="company-evidence-card__next">
-        <div>
-          <span>What this means</span>
-          <p>{proofStatusExplanation(rawStatus)}</p>
-        </div>
-        <div>
-          <span>Next required action</span>
-          <strong>{proofNextAction(rawStatus, supplier)}</strong>
-        </div>
-      </div>}
-      {!supplier && rawStatus === 'NOT_REQUESTED' && (
-        <div className="company-evidence-card__request-form">
-          <div className="company-evidence-card__actions action-row">
-            <Btn
-              disabled={
-                busy ||
-                !purpose.trim() ||
-                ['PRESENTED', 'VERIFIED'].includes(status?.status) ||
-                (status?.status === 'REQUESTED' &&
-                  !!order.delivery.identityChallenge &&
-                  !/^0x0+$/.test(order.delivery.identityChallenge))
-              }
-              onClick={() => setRequestOpen(true)}
-            >
-              Create evidence request
-            </Btn>
-            {['PRESENTED', 'VERIFIED'].includes(status?.status) && (
-              <Btn
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    const result = await deliveryIdentity(order.orderId, { action: 'verify' });
-                    await submit(result);
-                    setStatus(result);
-                    setNotice(`Proof checked: ${result.checks?.join(', ') ?? 'Verified'}`);
-                  })
-                }
-              >
-                Verify {sellerLabel} proof & record result
-              </Btn>
-            )}
-          </div>
-          {requestDialog}
-        </div>
-      )}
-      {!supplier && rawStatus === 'NOT_REQUESTED' && (
-        <p className="company-evidence-separation-note">
-          Evidence sharing does not accept the custody offer or move stock.
-        </p>
-      )}
-      {supplier && status?.status === 'REQUESTED' && !material && (
-        <div className="company-evidence-card__footer">
-          <div>
-            <Btn variant="outline" disabled={busy} onClick={() => void declineRequest()}>
-              Decline request
-            </Btn>
-            <Btn
-              size="sm"
-              variant="outline"
-              icon={<RefreshCw size={14} />}
+          {!hideRefresh && rawStatus !== 'NOT_REQUESTED' && (
+            <button
+              type="button"
+              className="evidence-panel__refresh"
+              aria-label="Refresh status"
+              title="Refresh status"
               disabled={busy}
               onClick={() => void run(refresh)}
             >
-              Refresh status
-            </Btn>
-          </div>
-          <Btn disabled={busy || expired} onClick={() => void loadMaterial()}>
-            Review request
-          </Btn>
-        </div>
+              <RefreshCw size={14} aria-hidden="true" />
+            </button>
+          )}
+        </header>
       )}
+      {rawStatus !== 'NOT_REQUESTED' && (
+        <p className="evidence-panel__facts">
+          <span>
+            {supplier ? 'Requested by' : 'Requested from'}{' '}
+            <strong>{supplier ? recipient : evidenceHolder}</strong>
+          </span>
+          {requestedRequired !== undefined && (
+            <span>
+              <strong>{requestedRequired}</strong> required
+              {requestedOptional ? ` + ${requestedOptional} optional` : ''} fields
+            </span>
+          )}
+          {expiresAt > 0 && (
+            <span>
+              {expired ? 'Closed' : 'Due'} <strong>{formatEvidenceDate(expiresAt)}</strong>
+            </span>
+          )}
+        </p>
+      )}
+      {error && <Alert type="error" message={error} />}
+      {notice && <Alert type="success" message={notice} />}
+      {!material && (
+        <EvidenceNextStep message={next.message} tone={next.tone} action={nextAction} />
+      )}
+      {requestDialog}
       {supplier && material && (
         <div className="company-evidence-card__material">
-          <Alert
-            type="warning"
-            message={
-              material.format === 'COMPANY_IDENTITY_SD_JWT'
-                ? 'Review the claims and choose optional fields to share. The proof is bound to this Distributor, request, purpose, challenge and expiry.'
-                : 'Full disclosure: this presentation includes your entire signed Company Role Credential. Individual fields cannot be hidden in this format.'
-            }
+          {material.format !== 'COMPANY_IDENTITY_SD_JWT' && (
+            <Alert
+              type="warning"
+              message="This credential format shares every field. Individual fields cannot be hidden."
+            />
+          )}
+          <EvidenceFieldList
+            values={claimValues}
+            required={requiredClaims}
+            selected={selected}
+            selectable={material.format === 'COMPANY_IDENTITY_SD_JWT'}
+            onToggle={toggleClaim}
+            onToggleAll={toggleAllOptional}
           />
-          <section className="company-evidence-claims" aria-labelledby="required-claims-title">
-            <div className="company-evidence-claims__heading">
-              <div>
-                <h4 id="required-claims-title">Required information</h4>
-                <p>Required by the requesting company</p>
-              </div>
-              <strong>{requiredClaims.length}</strong>
-            </div>
-            <div className="company-evidence-claims__list">
-              {requiredClaims.map((claim) => (
-                <ClaimRow
-                  key={claim}
-                  label={friendlyClaim(claim)}
-                  value={displayClaimValue(claim, claimValues[claim])}
-                  requirement={
-                    (COMPANY_ALWAYS_CLAIMS as readonly string[]).includes(claim)
-                      ? 'always'
-                      : 'required'
-                  }
-                  included
-                  locked
-                  technical={technicalClaim(claim)}
-                />
-              ))}
-            </div>
-          </section>
-          <section className="company-evidence-claims" aria-labelledby="optional-claims-title">
-            <div className="company-evidence-claims__heading">
-              <div>
-                <h4 id="optional-claims-title">Optional information</h4>
-                <p>Choose the additional company information you want to share.</p>
-              </div>
-              {optionalClaims.length > 0 && material.format === 'COMPANY_IDENTITY_SD_JWT' && (
-                <label className="company-evidence-share-all">
-                  <span>Share all optional fields</span>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-label="Share all optional fields"
-                    aria-checked={optionalClaims.every((claim) => selected.includes(claim))}
-                    className="evidence-claim-switch"
-                    onClick={() =>
-                      setSelected((current) => {
-                        const allSelected = optionalClaims.every((claim) =>
-                          current.includes(claim),
-                        );
-                        return allSelected
-                          ? current.filter((claim) => !optionalClaims.includes(claim))
-                          : [...new Set([...current, ...optionalClaims])];
-                      })
-                    }
-                  >
-                    <span aria-hidden="true" />
-                  </button>
-                </label>
-              )}
-            </div>
-            <div className="company-evidence-claims__list">
-              {optionalClaims.map((claim) => (
-                <ClaimRow
-                  key={claim}
-                  label={friendlyClaim(claim)}
-                  value={displayClaimValue(claim, claimValues[claim])}
-                  requirement="optional"
-                  included={selected.includes(claim)}
-                  locked={material.format !== 'COMPANY_IDENTITY_SD_JWT'}
-                  technical={technicalClaim(claim)}
-                  onToggle={() =>
-                    setSelected((current) =>
-                      toggleCompanyDisclosure(current, claim, !current.includes(claim)),
-                    )
-                  }
-                />
-              ))}
-              {!optionalClaims.length && (
-                <p className="company-evidence-claims__empty">
-                  No optional company fields are available for this request.
-                </p>
-              )}
-            </div>
-          </section>
-          <div className="company-evidence-preview">
-            <strong>
-              {selectedClaims.length} of {claimNames.length} fields will be shared
-            </strong>
-            <p>
-              You are sharing {selectedClaims.length} company claims with {recipient}.
-            </p>
-            <ul>
-              {selectedClaims.map((claim) => (
-                <li key={claim}>{friendlyClaim(claim)}</li>
-              ))}
-            </ul>
-            <small>The proof is only valid for this request and expires at the stated time.</small>
-          </div>
-          {!material.walletContext && <PresentationSigningSettingsLink
-            role={order.productDelivery ? 'manufacturer' : 'supplier'}
-          />}
-          {material.walletContext && <p>Approve the exact selected claims with a MetaMask signature, then confirm the transaction publishing the encrypted response reference. This is separate from login and delivery approval.</p>}
-          {material.binding && (
-            <TechnicalDetails
-              fields={Object.entries(material.binding).map(([label, value]) => ({
-                label,
-                value: String(value),
-              }))}
+          {!material.walletContext && (
+            <PresentationSigningSettingsLink
+              role={order.productDelivery ? 'manufacturer' : 'supplier'}
             />
           )}
           {!requiredAvailable && (
             <Alert
               type="error"
-              message="A required signed company field is unavailable. An older credential without registration country needs an authorized replacement; unsigned profile data cannot supply this claim. You may decline this request."
+              message="A required field is missing from your company credential. Ask the administrator for a replacement credential, or decline this request."
             />
           )}
           <div className="company-evidence-card__footer is-sticky">
-            <div>
-              <Btn variant="outline" disabled={busy} onClick={() => void declineRequest()}>
-                Decline request
-              </Btn>
-              <Btn
-                size="sm"
-                variant="outline"
-                icon={<RefreshCw size={14} />}
-                disabled={busy}
-                onClick={() => void run(refresh)}
-              >
-                Refresh status
-              </Btn>
-            </div>
+            <Btn variant="outline" disabled={busy} onClick={() => void declineRequest()}>
+              Decline
+            </Btn>
             <Btn
               disabled={busy || expired || !requiredAvailable}
               onClick={() => setReviewOpen(true)}
@@ -518,76 +391,49 @@ export function DeliveryIdentityPanel({
           </div>
         </div>
       )}
-      {!hideRefresh && rawStatus !== 'NOT_REQUESTED' && !(supplier && status?.status === 'REQUESTED') && (
-        <div className="company-evidence-card__secondary-actions">
-          <Btn
-            size="sm"
-            variant="outline"
-            icon={<RefreshCw size={14} />}
-            disabled={busy}
-            onClick={() => void run(refresh)}
-          >
-            Refresh status
-          </Btn>
-        </div>
+      {status?.credential && (
+        <section className="evidence-panel__shared" aria-label="Shared company details">
+          <h4>Shared details</h4>
+          <SharedClaims values={status.credential} />
+        </section>
       )}
-      {(completed || status?.credential || status?.checks) && (
-        <details className="company-evidence-card__shared">
-          <summary>View shared evidence</summary>
-          {status?.checks?.length ? <p>Verification checks: {status.checks.join(', ')}</p> : null}
-          {rawStatus === 'VERIFIED' && (
-            <p>
-              Verification records the checks at that time, not business acceptance. Protected
-              actions check current company authorization again.
-            </p>
-          )}
-          {!status?.credential && (
-            <p>
-              {completed
-                ? 'The evidence presentation is recorded for this request.'
-                : 'No readable shared claims are available.'}
-            </p>
-          )}
-          <dl>
-            {Object.entries(status?.credential ?? {}).map(([key, value]) => (
-              <div key={key}>
-                <dt>{friendlyClaim(key)}</dt>
-                <dd className="break-words">
-                  {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </details>
-      )}
-      {failed && status?.checks?.length ? (
-        <p className="company-evidence-card__result">Result: {status.checks.join(', ')}</p>
+      {status?.checks?.length ? (
+        <p className="evidence-panel__checks">Checks: {status.checks.join(' · ')}</p>
       ) : null}
+      <EvidenceHowItWorks>
+        <p>
+          The {sellerLabel.toLocaleLowerCase()} shares selected fields from its signed company
+          credential. The shared proof is encrypted, stored on IPFS and referenced on-chain, and
+          only works for this request, recipient and deadline.
+        </p>
+        <p>
+          Sharing needs a MetaMask signature plus one transaction. Sharing or verifying evidence
+          does not accept the custody offer or move stock, and later actions re-check the
+          company&apos;s current authorization.
+        </p>
+      </EvidenceHowItWorks>
       <TechnicalDetails
         fields={[
           { label: 'Reference ID', value: order.orderId },
           { label: 'Raw proof status', value: rawStatus },
           ...(order.delivery.identityCredentialHash
-            ? [
-                {
-                  label: 'Identity credential hash',
-                  value: order.delivery.identityCredentialHash,
-                },
-              ]
+            ? [{ label: 'Identity credential hash', value: order.delivery.identityCredentialHash }]
             : []),
           ...(order.delivery.identityChallenge
             ? [{ label: 'Identity challenge', value: order.delivery.identityChallenge }]
             : []),
-          ...Object.entries(claimValues)
-            .filter(([claim]) => technicalClaim(claim))
-            .map(([claim, value]) => ({
-              label: `Full ${friendlyClaim(claim)}`,
-              value: displayClaimValue(claim, value),
-            })),
+          ...Object.entries(material?.binding ?? {}).map(([label, value]) => ({
+            label,
+            value: String(value),
+          })),
         ]}
       />
       {reviewOpen && material && (
-        <Modal title="Review company evidence" onClose={() => setReviewOpen(false)} width={620}>
+        <Modal
+          title="Sign and share company evidence"
+          onClose={() => setReviewOpen(false)}
+          width={560}
+        >
           <div className="company-evidence-review">
             <dl>
               <div>
@@ -599,22 +445,18 @@ export function DeliveryIdentityPanel({
                 <dd>{material.purpose}</dd>
               </div>
               <div>
-                <dt>Expiry</dt>
+                <dt>Valid until</dt>
                 <dd>{formatEvidenceDate(material.expiresAt)}</dd>
               </div>
             </dl>
             <div>
-              <h4>Claims being shared</h4>
+              <h4>Fields being shared</h4>
               <ul>
                 {selectedClaims.map((claim) => (
                   <li key={claim}>{friendlyClaim(claim)}</li>
                 ))}
               </ul>
             </div>
-            <Alert
-              type="info"
-              message="The proof is bound to this recipient, request, challenge and expiry. Signing does not accept the custody offer or move stock."
-            />
             <div className="company-evidence-review__actions action-row">
               <Btn variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>
                 Cancel
@@ -631,6 +473,54 @@ export function DeliveryIdentityPanel({
       )}
     </section>
   );
+}
+
+function nextStep({
+  status,
+  holder,
+  holderName,
+  recipient,
+  verifiedAt,
+}: {
+  status: string;
+  holder: boolean;
+  holderName: string;
+  recipient: string;
+  verifiedAt?: string;
+}): { message: string; tone: 'default' | 'done' | 'closed' } {
+  if (status === 'NOT_REQUESTED')
+    return holder
+      ? { message: 'No evidence has been requested.', tone: 'closed' }
+      : {
+          message: `Ask ${holderName} to share verified company details before collecting or dispatching this stock.`,
+          tone: 'default',
+        };
+  if (['REQUESTED', 'PENDING'].includes(status))
+    return holder
+      ? { message: 'Choose which details to share, then sign with MetaMask.', tone: 'default' }
+      : { message: `Waiting for ${holderName} to respond.`, tone: 'default' };
+  if (['PRESENTED', 'SHARED'].includes(status))
+    return holder
+      ? { message: `Shared. Waiting for ${recipient} to verify.`, tone: 'done' }
+      : {
+          message: `${holderName} shared their details. Verify them to continue.`,
+          tone: 'default',
+        };
+  if (status === 'VERIFIED')
+    return {
+      message: verifiedAt
+        ? `Verified on ${formatEvidenceDate(verifiedAt)}. Nothing else to do.`
+        : 'Verified. Nothing else to do.',
+      tone: 'done',
+    };
+  if (['DECLINED', 'REJECTED'].includes(status))
+    return { message: 'The request was declined or failed verification.', tone: 'closed' };
+  return {
+    message: holder
+      ? 'This request has closed. No action is possible.'
+      : 'This request has closed. Create a new one if you still need it.',
+    tone: 'closed',
+  };
 }
 
 export function proofStatusLabel(status?: string) {
@@ -650,10 +540,11 @@ export function proofStatusLabel(status?: string) {
   );
 }
 
+/** Green = done, teal = shared and ready to check, amber = waiting, red = failed or missed, grey = void. */
 export function proofStatusVariant(status?: string): BadgeVariant {
   if (status === 'VERIFIED') return 'verified';
-  if (['DECLINED', 'REJECTED'].includes(status ?? '')) return 'rejected';
-  if (['EXPIRED', 'UNAVAILABLE'].includes(status ?? '')) return 'expired';
+  if (['DECLINED', 'REJECTED', 'EXPIRED'].includes(status ?? '')) return 'rejected';
+  if (status === 'UNAVAILABLE') return 'expired';
   if (['PRESENTED', 'SHARED'].includes(status ?? '')) return 'shared';
   if (['REQUESTED', 'PENDING'].includes(status ?? '')) return 'pending';
   return 'default';
@@ -672,52 +563,6 @@ function proofStatusExplanation(status: string) {
   if (['EXPIRED', 'UNAVAILABLE'].includes(status))
     return 'This company evidence request is no longer available for action.';
   return 'The current evidence state could not be determined.';
-}
-
-function proofNextAction(status: string, supplier: boolean) {
-  if (status === 'NOT_REQUESTED')
-    return supplier ? 'No action required' : 'Create an evidence request';
-  if (['REQUESTED', 'PENDING'].includes(status))
-    return supplier ? 'Review and share the requested evidence' : 'Wait for the company response';
-  if (['PRESENTED', 'SHARED'].includes(status))
-    return supplier ? 'No action required' : 'Verify the shared evidence';
-  return 'No action required';
-}
-
-function friendlyClaim(claim: string) {
-  return (
-    {
-      companyId: 'Company ID',
-      companyName: 'Company name',
-      companyRegistrationNumber: 'Registration number',
-      registrationCountry: 'Registration country',
-      walletAddress: 'Wallet address',
-      applicationReference: 'Application reference',
-      role: 'Company role',
-      id: 'Decentralized identity',
-    }[claim] ??
-    claim.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (letter) => letter.toUpperCase())
-  );
-}
-
-function displayClaimValue(claim: string, value: unknown) {
-  if (!claimValueAvailable(value)) return 'Unavailable';
-  const text = typeof value === 'object' ? JSON.stringify(value) : String(value);
-  if (claim === 'role')
-    return text
-      .toLocaleLowerCase()
-      .split('_')
-      .map((part) => `${part.charAt(0).toLocaleUpperCase()}${part.slice(1)}`)
-      .join(' ');
-  return text;
-}
-
-function claimValueAvailable(value: unknown) {
-  return value !== undefined && value !== null && String(value).trim().length > 0;
-}
-
-function technicalClaim(claim: string) {
-  return ['companyId', 'walletAddress', 'applicationReference', 'id'].includes(claim);
 }
 
 function expiryStatus(expiresAt: number, expired: boolean) {
@@ -742,7 +587,10 @@ function companyRole(data: OrdersState, wallet?: string) {
 
 function formatRole(value?: string) {
   if (!value) return 'Registered company';
-  return value.toLocaleLowerCase().replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase());
+  return value
+    .toLocaleLowerCase()
+    .replaceAll('_', ' ')
+    .replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function shortEvidenceReference(value: string) {

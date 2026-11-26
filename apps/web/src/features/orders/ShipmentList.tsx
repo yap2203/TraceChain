@@ -130,7 +130,6 @@ export function ShipmentList({
         label="Filter shipments by status"
         value={filter}
         onChange={setFilter}
-        variant="connected"
         tabs={[
           { value: 'all', label: 'All', count: shipments.length },
           { value: 'attention', label: 'Needs action', count: counts.attention },

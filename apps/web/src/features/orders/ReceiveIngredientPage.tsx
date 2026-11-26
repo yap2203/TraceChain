@@ -51,7 +51,7 @@ export function ReceiveIngredientPage() {
   const order = data?.orders.find((entry) => entry.orderId.toLowerCase() === orderId.toLowerCase());
   return (
     <main className="workspace-ui min-h-screen w-full p-[20px]">
-      <div className="mx-auto grid w-full max-w-[1000px] gap-[20px]">
+      <div className="grid w-full gap-[20px]">
         <header>
           <Brand />
         </header>

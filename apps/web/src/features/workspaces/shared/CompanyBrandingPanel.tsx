@@ -1,9 +1,9 @@
 import { reportError } from '../../../components/ui/feedback';
-import { ImageUp } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ImagePlus, ImageUp } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { CompanyAvatar } from '../../orders/CatalogueMedia';
 import { getMyCompanyBranding, imageFilePayload, uploadCompanyLogo } from '../../orders/orders.api';
-import { Alert, Btn, Card } from './ui';
+import { Alert, Btn } from './ui';
 import {
   loadCompanyBranding,
   publishCompanyBranding,
@@ -19,6 +19,7 @@ export function CompanyBrandingPanel({ walletAddress }: { walletAddress: string 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const picker = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void loadCompanyBranding(walletAddress, getMyCompanyBranding).catch((cause) =>
@@ -47,47 +48,62 @@ export function CompanyBrandingPanel({ walletAddress }: { walletAddress: string 
     }
   };
 
+  const role = branding?.role
+    ? branding.role.charAt(0) + branding.role.slice(1).toLowerCase().replaceAll('_', ' ')
+    : '';
   return (
-    <Card>
-      <div className="company-branding">
+    <div className="company-branding">
+      <div className="company-branding__row">
         <CompanyAvatar
           name={branding?.companyName ?? 'Company'}
           logoPath={branding?.logoPath}
           revision={brandingState.revision}
           size="lg"
         />
-        <div>
-          <h3>Company catalogue identity</h3>
-          <p>
-            {branding?.companyName ?? 'Verified company'}
-            {branding?.role ? ` — ${branding.role.replaceAll('_', ' ')}` : ''}
-          </p>
+        <div className="company-branding__text">
+          <strong>{branding?.companyName ?? 'Verified company'}</strong>
+          <span>
+            {[role, branding?.logoPath ? 'Logo set' : 'No logo yet'].filter(Boolean).join(' · ')}
+          </span>
+          <small>{file ? `Selected: ${file.name}` : 'PNG, JPEG or WebP, up to 2 MB'}</small>
+        </div>
+        <div className="company-branding__actions">
+          {/* Native picker stays for accessibility and tests; the button below opens it. */}
+          <input
+            ref={picker}
+            className="sr-only"
+            tabIndex={-1}
+            aria-label="Choose company logo"
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            disabled={busy}
+            onChange={(event) => setFile(event.target.files?.[0])}
+          />
+          <Btn
+            size="sm"
+            variant="outline"
+            icon={<ImagePlus size={15} />}
+            disabled={busy}
+            onClick={() => picker.current?.click()}
+          >
+            {file ? 'Choose another' : 'Choose image'}
+          </Btn>
+          <Btn
+            size="sm"
+            icon={<ImageUp size={15} />}
+            disabled={busy || !file || !branding}
+            onClick={() => void upload()}
+          >
+            {busy ? 'Uploading…' : branding?.logoPath ? 'Replace logo' : 'Upload logo'}
+          </Btn>
         </div>
       </div>
-      <p>
-        Add an optional PNG, JPEG or WebP logo up to 2 MB. The logo is presentation metadata; it
-        does not alter your verified company name, credential, role or blockchain authorization.
-      </p>
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
-      <div className="company-branding__actions">
-        <input
-          aria-label="Choose company logo"
-          type="file"
-          accept="image/png,image/jpeg,image/webp"
-          disabled={busy}
-          onChange={(event) => setFile(event.target.files?.[0])}
-        />
-        <Btn
-          size="sm"
-          variant="outline"
-          icon={<ImageUp size={15} />}
-          disabled={busy || !file || !branding}
-          onClick={() => void upload()}
-        >
-          {branding?.logoPath ? 'Replace logo' : 'Upload logo'}
-        </Btn>
-      </div>
-    </Card>
+      <p className="company-branding__note">
+        Shown beside your company name in catalogues and evidence lists. It does not change your
+        verified name, credential, role or authorization.
+      </p>
+    </div>
   );
 }

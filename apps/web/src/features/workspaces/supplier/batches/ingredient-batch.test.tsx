@@ -93,17 +93,14 @@ describe('Supplier ingredient batch workflow', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Edit batch details' }));
     fireEvent.change(screen.getByLabelText(/Quantity/), { target: { value: '123' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByRole('button', { name: 'Country of origin' }).textContent).toContain(
-      'Ghana',
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    // Editing from the review returns straight to the review.
+    fireEvent.click(screen.getByRole('button', { name: 'Save and return to review' }));
     expect(screen.getByText('Registered as 123,000 g')).toBeTruthy();
     expect(screen.getByText(filename)).toBeTruthy();
     expect((screen.getByLabelText(/Indicative price/) as HTMLInputElement).value).toBe('12.50');
     fireEvent.click(screen.getByRole('button', { name: 'Edit origin and certifications' }));
     fireEvent.change(screen.getByLabelText(/City \/ district/), { target: { value: 'Kumasi' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save and return to review' }));
     expect(screen.getByText('Kumasi')).toBeTruthy();
     expect(screen.getByAltText('Ingredient image preview')).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Choose optional ingredient image'), {
@@ -163,19 +160,24 @@ describe('Supplier ingredient batch workflow', () => {
         expect(within(card).getAllByText(/Encrypted copy stored/)).toHaveLength(index + 1),
       );
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(screen.getByText('Halal · This batch · 1 document')).toBeTruthy();
-    expect(screen.getByText('Organic · This batch · 2 documents')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Save and return to review' }));
+    const summaries = [
+      ...document.querySelectorAll('.ingredient-certification-card > summary'),
+    ].map((summary) => summary.textContent);
+    expect(summaries.some((text) => /Halal.*This batch.*1 document/.test(text ?? ''))).toBe(true);
+    expect(summaries.some((text) => /Organic.*This batch.*2 documents/.test(text ?? ''))).toBe(
+      true,
+    );
     const details = document.querySelectorAll(
       '.ingredient-certification-card',
     )[0] as HTMLDetailsElement;
     expect(details.open).toBe(false);
-    fireEvent.click(within(details).getByText('Halal · This batch · 1 document'));
+    fireEvent.click(details.querySelector('summary')!);
     fireEvent.click(within(details).getByRole('button', { name: 'Preview' }));
     expect(screen.getByTitle('Certification document preview')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /Close/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit origin and certifications' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save and return to review' }));
     expect(upload).toHaveBeenCalledTimes(3);
     fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
     await screen.findByText(
@@ -209,15 +211,31 @@ describe('Supplier ingredient batch workflow', () => {
     );
     completeForm();
     fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
-    await screen.findByText('Transaction submitted. Waiting for blockchain confirmation...');
+    await screen.findByText('Waiting for blockchain confirmation…');
     expect(
-      (screen.getByRole('button', { name: 'Processing registration...' }) as HTMLButtonElement)
-        .disabled,
+      (screen.getByRole('button', { name: 'Registering…' }) as HTMLButtonElement).disabled,
     ).toBe(true);
     rejectTransaction(new Error('RPC confirmation timed out.'));
-    await screen.findByText(/Transaction submitted; confirmation is not yet known/);
-    expect(screen.getByRole('button', { name: 'Resume registration' })).toBeTruthy();
-    expect(screen.getByText('Cocoa Powder')).toBeTruthy();
+    await screen.findByText(/confirmation is not known yet/);
+    expect(screen.getByRole('button', { name: 'Retry registration' })).toBeTruthy();
+    expect(screen.getAllByText('Cocoa Powder').length).toBeGreaterThan(0);
+  });
+  it('navigates with the step indicator, validating before moving forward', async () => {
+    render(<RegisterBatch onBack={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Enter information manually' }));
+    const progress = screen.getByRole('list', { name: 'Form progress' });
+    // Forward jump with an empty step 1 stays on step 1 and shows its errors.
+    fireEvent.click(within(progress).getByRole('button', { name: /Listing and review/ }));
+    expect(screen.getByLabelText(/Ingredient name/)).toBeTruthy();
+    expect(screen.getByText('Production date is required.')).toBeTruthy();
+    fillBatch();
+    fireEvent.click(within(progress).getByRole('button', { name: /Origin and certifications/ }));
+    expect(screen.getByRole('button', { name: 'Country of origin' })).toBeTruthy();
+    // Going back is always allowed and keeps entered values.
+    fireEvent.click(within(progress).getByRole('button', { name: /Batch details/ }));
+    expect((screen.getByLabelText(/Ingredient name/) as HTMLInputElement).value).toBe(
+      'Cocoa Powder',
+    );
   });
   it('keeps values between three short steps and focuses invalid fields', async () => {
     render(<RegisterBatch onBack={vi.fn()} />);
@@ -273,7 +291,7 @@ describe('Supplier ingredient batch workflow', () => {
       'blob:second',
     );
     expect(revoke).toHaveBeenCalledWith('blob:first');
-    expect(screen.getByText('Cocoa Powder')).toBeTruthy();
+    expect(screen.getAllByText('Cocoa Powder').length).toBeGreaterThan(0);
   });
   it('keeps extraction editable and requires explicit review and allergen declaration before issuing', async () => {
     const prepareWorkflow = vi.fn();
@@ -295,10 +313,13 @@ describe('Supplier ingredient batch workflow', () => {
     );
     fireEvent.change(screen.getByLabelText(/Category/), { target: { value: 'cocoa' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect((screen.getByLabelText(/Allergen declaration/) as HTMLSelectElement).value).toBe('');
-    fireEvent.change(screen.getByLabelText(/Allergen declaration/), {
-      target: { value: 'unknown' },
-    });
+    // No declaration is pre-selected; the Supplier must choose one.
+    expect(
+      within(screen.getByRole('group', { name: /Allergen declaration/ }))
+        .getAllByRole('radio')
+        .some((radio) => (radio as HTMLInputElement).checked),
+    ).toBe(false);
+    fireEvent.click(screen.getByLabelText('Unknown'));
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
     expect(
@@ -321,56 +342,19 @@ describe('Supplier ingredient batch workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enter information manually' }));
     expect(screen.getByLabelText(/Ingredient name/)).toBeTruthy();
   });
-  it('recovers an existing registration without recreating or storing a private browser draft', async () => {
-    const saved = {
-      operationId: '11111111-1111-4111-8111-111111111111',
-      ingredientName: 'Recovered ingredient',
-      batchReference: 'RECOVERED-1',
-      category: 'cocoa',
-      quantity: '1250',
-      unit: 'g',
-      productionDate: '2026-10-01',
-      expiryDate: '2030-01-01',
-      origin: 'Ghana',
-      originDetails: {
-        countryCode: 'GH',
-        countryName: 'Ghana',
-        processingCountry: 'MY',
-        processingLocation: 'Previously saved facility',
-      },
-      productionDateMeaning: 'processing',
-      internalQualityRemarks: 'Previously saved quality note',
-      allergen: { kind: 'unknown' },
-      allergenInformation: 'Unknown',
-      certifications: [],
-      certificationEntries: [],
-    };
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({ workflows: [{ batchId: BASE_WORKFLOW.batchId, input: saved }] }),
-      }),
-    );
+  it('hands the new batch ID back once registration is confirmed', async () => {
     const prepareWorkflow = vi.fn().mockResolvedValue({ ...BASE_WORKFLOW, state: 'COMPLETE' });
-    render(<RegisterBatch onBack={vi.fn()} prepareWorkflow={prepareWorkflow} />);
-    fireEvent.click(screen.getByText('Resume a registration'));
-    fireEvent.click(await screen.findByText('Resume saved batch'));
-    await screen.findByText('Recovered ingredient');
-    expect(screen.queryByText('Previously saved additional details (read-only)')).toBeNull();
-    expect(screen.queryByText('Previously saved facility')).toBeNull();
-    expect(screen.queryByText('Previously saved quality note')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Resume registration' }));
-    await screen.findByText(
-      'The ingredient batch was confirmed and read back from the blockchain.',
+    const onCompleted = vi.fn();
+    render(
+      <RegisterBatch
+        onBack={vi.fn()}
+        onCompleted={onCompleted}
+        prepareWorkflow={prepareWorkflow}
+      />,
     );
-    const submitted = prepareWorkflow.mock.calls[0]?.[0];
-    expect(submitted).not.toHaveProperty('qualityTests');
-    expect(submitted).not.toHaveProperty('internalQualityRemarks');
-    expect(submitted).not.toHaveProperty('productionDateMeaning');
-    expect(submitted.originDetails).not.toHaveProperty('processingCountry');
-    expect(submitted.originDetails).not.toHaveProperty('processingLocation');
-    expect(window.localStorage.length).toBe(0);
+    completeForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
+    await waitFor(() => expect(onCompleted).toHaveBeenCalledWith(BASE_WORKFLOW.batchId));
   });
   it('submits sequentially, reuses the operation ID and blocks duplicate clicks', async () => {
     const prepareWorkflow = vi
@@ -423,7 +407,7 @@ describe('Supplier ingredient batch workflow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
     await screen.findByText(/This transaction already confirmed/);
     expect(submitTransaction).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole('button', { name: 'Resume registration' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry registration' }));
     await waitFor(() => expect(prepareWorkflow).toHaveBeenCalledTimes(3));
     expect(submitTransaction).toHaveBeenCalledTimes(1);
   });
@@ -446,7 +430,7 @@ describe('Supplier ingredient batch workflow', () => {
       completeForm();
       fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
       await screen.findByText(message);
-      expect(screen.getByRole('button', { name: 'Resume registration' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Retry registration' })).toBeTruthy();
     },
   );
 
@@ -494,9 +478,7 @@ describe('Supplier ingredient batch workflow', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
-    expect(
-      screen.getByText('Supplier-provided presentation information', { exact: false }),
-    ).toBeTruthy();
+    expect(screen.getByText('not signed credential claims', { exact: false })).toBeTruthy();
   });
 
   it.each([1, 2, 3, 4])(
@@ -547,11 +529,11 @@ describe('Supplier ingredient batch workflow', () => {
     expect(page.container.querySelector('.ingredient-grid--list')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Search batches'), { target: { value: 'COCOA-001' } });
-    fireEvent.click(screen.getByLabelText('Show archived'));
+    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'name' } });
     fireEvent.click(screen.getByRole('button', { name: 'Grid view' }));
 
     expect((screen.getByLabelText('Search batches') as HTMLInputElement).value).toBe('COCOA-001');
-    expect((screen.getByLabelText('Show archived') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText('Sort') as HTMLSelectElement).value).toBe('name');
     expect(page.container.querySelector('.ingredient-grid--grid')).toBeTruthy();
     expect(page.container.querySelectorAll('.ingredient-card--grid')).toHaveLength(1);
     expect(window.localStorage.getItem('tracechain:supplier-ingredient-view')).toBe('grid');
@@ -567,8 +549,8 @@ describe('Supplier ingredient batch workflow', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it('expands cards independently and preserves expansion while filtering and sorting', async () => {
-    const fetchMock = mockOrders({
+  it('shows one details action per row and keeps batch facts in the details window', async () => {
+    mockOrders({
       actor: BASE_WORKFLOW.supplierWallet,
       catalogue: [
         catalogueItem({ itemId: 'cocoa', name: 'Cocoa Powder', reference: 'COCOA-001' }),
@@ -577,42 +559,27 @@ describe('Supplier ingredient batch workflow', () => {
     });
     render(<IngredientBatches onNew={vi.fn()} />);
 
-    const cocoaHeading = await screen.findByRole('heading', { name: 'Cocoa Powder' });
-    const cocoaCard = cocoaHeading.closest('article')!;
-    const milkCard = screen.getByRole('heading', { name: 'Milk Powder' }).closest('article')!;
-    const cocoaToggle = within(cocoaCard).getByRole('button', { name: 'Show more' });
-    const milkToggle = within(milkCard).getByRole('button', { name: 'Show more' });
+    const cocoaCard = (await screen.findByRole('heading', { name: 'Cocoa Powder' })).closest(
+      'article',
+    )!;
+    expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
+    fireEvent.click(within(cocoaCard).getByRole('button', { name: 'View details' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Country of origin')).toBeTruthy();
+    expect(within(dialog).getByText('Registered')).toBeTruthy();
+    expect(within(dialog).getByText('Supplier-provided listing description')).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Edit listing' })).toBeTruthy();
+    expect(within(dialog).getByRole('button', { name: 'Archive listing' })).toBeTruthy();
+  });
 
-    expect(cocoaToggle.getAttribute('aria-expanded')).toBe('false');
-    expect(milkToggle.getAttribute('aria-expanded')).toBe('false');
-    const detailsId = cocoaToggle.getAttribute('aria-controls')!;
-    expect(document.getElementById(detailsId)?.getAttribute('aria-hidden')).toBe('true');
-
-    fireEvent.click(cocoaToggle);
-    expect(within(cocoaCard).getByRole('button', { name: 'Show less' })).toBeTruthy();
-    expect(document.getElementById(detailsId)?.getAttribute('aria-hidden')).toBe('false');
-    expect(within(cocoaCard).getByText('Country of origin')).toBeTruthy();
-    expect(within(cocoaCard).getByText('Registered quantity')).toBeTruthy();
-    expect(within(cocoaCard).getByText('Supplier-provided listing description')).toBeTruthy();
-    expect(within(milkCard).getByRole('button', { name: 'Show more' })).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    fireEvent.change(screen.getByLabelText('Search batches'), { target: { value: 'MILK-001' } });
-    expect(screen.queryByRole('heading', { name: 'Cocoa Powder' })).toBeNull();
-    fireEvent.change(screen.getByLabelText('Sort'), { target: { value: 'name' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-
-    const restoredCocoaCard = screen
-      .getByRole('heading', { name: 'Cocoa Powder' })
-      .closest('article')!;
-    expect(within(restoredCocoaCard).getByRole('button', { name: 'Show less' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Grid view' }));
-    const gridCocoaCard = screen.getByRole('heading', { name: 'Cocoa Powder' }).closest('article')!;
-    const gridMilkCard = screen.getByRole('heading', { name: 'Milk Powder' }).closest('article')!;
-    expect(gridCocoaCard.classList.contains('ingredient-card--grid')).toBe(true);
-    expect(within(gridCocoaCard).getByRole('button', { name: 'Show less' })).toBeTruthy();
-    expect(within(gridMilkCard).getByRole('button', { name: 'Show more' })).toBeTruthy();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+  it('opens details when the card itself is clicked', async () => {
+    mockOrders({
+      actor: BASE_WORKFLOW.supplierWallet,
+      catalogue: [catalogueItem({ itemId: 'cocoa', name: 'Cocoa Powder', reference: 'COCOA-001' })],
+    });
+    render(<IngredientBatches onNew={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('heading', { name: 'Cocoa Powder' }));
+    expect(screen.getByRole('dialog')).toBeTruthy();
   });
 
   it('calculates real summaries without combining different quantity units', async () => {
@@ -719,7 +686,7 @@ describe('Supplier ingredient batch workflow', () => {
 
     expect(screen.getByRole('img', { name: 'Cocoa image placeholder' })).toBeTruthy();
     expect(screen.getByText(longReference)).toBeTruthy();
-    expect(screen.getAllByText('77 kg')).toHaveLength(2);
+    expect(screen.getAllByText('77 kg')).toHaveLength(1);
     expect(screen.getByText(/Expires in 10 days/)).toBeTruthy();
     expect(screen.getAllByText('Active').length).toBeGreaterThan(1);
     const gridText = container.querySelector('.ingredient-grid')?.textContent ?? '';
@@ -869,9 +836,7 @@ function completeForm() {
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
   fireEvent.click(screen.getByRole('button', { name: 'Country of origin' }));
   fireEvent.click(screen.getByRole('option', { name: 'Ghana' }));
-  fireEvent.change(screen.getByLabelText(/Allergen declaration/), {
-    target: { value: 'declaresNone' },
-  });
+  fireEvent.click(screen.getByLabelText('Supplier declares none'));
   fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 }
 

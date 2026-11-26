@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, ChevronUp, LayoutGrid, List as ListIcon } from 'lucide-react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 
 export type InventoryView = 'list' | 'grid';
 
@@ -48,42 +48,68 @@ export function InventorySummaryCard({
 }
 
 export interface StatusTab<T extends string> {
-  count: number;
+  count?: number;
+  icon?: ReactNode;
   label: string;
   value: T;
 }
 
+/**
+ * `tabs`: underline tabs for moving between related pages or sections (ARIA tabs, arrow keys).
+ * `chips` (default): filter chips that narrow the current list (toggle buttons, not navigation).
+ */
 export function StatusTabs<T extends string>({
   label,
   tabs,
   value,
   onChange,
-  variant = 'default',
+  variant = 'chips',
 }: {
   label: string;
   tabs: Array<StatusTab<T>>;
   value: T;
   onChange: (value: T) => void;
-  variant?: 'default' | 'connected';
+  variant?: 'chips' | 'tabs';
 }) {
+  const navigation = variant === 'tabs';
+  const moveFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!navigation || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    // Manual activation (WAI-ARIA tabs): arrows move focus; Enter/Space opens, since a tab may load a page.
+    const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? buttons.length - 1
+          : (index + (event.key === 'ArrowRight' ? 1 : -1) + buttons.length) % buttons.length;
+    event.preventDefault();
+    buttons[next]?.focus();
+  };
   return (
     <div
       className={`workspace-status-tabs workspace-status-tabs--${variant}`}
-      role="tablist"
+      role={navigation ? 'tablist' : 'group'}
       aria-label={label}
+      onKeyDown={moveFocus}
     >
-      {tabs.map((tab) => (
-        <button
-          key={tab.value}
-          type="button"
-          role="tab"
-          aria-selected={value === tab.value}
-          onClick={() => onChange(tab.value)}
-        >
-          <span>{tab.label}</span>
-          <strong>{tab.count}</strong>
-        </button>
-      ))}
+      {tabs.map((tab) => {
+        const selected = value === tab.value;
+        return (
+          <button
+            key={tab.value}
+            type="button"
+            {...(navigation
+              ? { role: 'tab', 'aria-selected': selected, tabIndex: selected ? 0 : -1 }
+              : { 'aria-pressed': selected })}
+            onClick={() => onChange(tab.value)}
+          >
+            {tab.icon && <span aria-hidden="true">{tab.icon}</span>}
+            <span>{tab.label}</span>
+            {tab.count !== undefined && <strong>{tab.count}</strong>}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -156,4 +182,14 @@ export function InventoryFact({ label, value }: { label: string; value: ReactNod
       <dd>{value}</dd>
     </div>
   );
+}
+
+/** Card click opens details, except when the click lands on a control inside the card. */
+export function openCardOnClick(open: () => void) {
+  return (event: { target: EventTarget }) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('button, a, input, select, textarea, label, summary')) return;
+    if (window.getSelection()?.toString()) return; // selecting text is not a click
+    open();
+  };
 }

@@ -148,7 +148,7 @@ for this check. If the browser origin differs, add it to the configured frontend
 ## Company: retrieve the same VC in a fresh browser
 
 1. Open a fresh browser/profile; connect the same company MetaMask wallet and sign SIWE.
-2. Open **My company identity**. The API reads that wallet's current registry CID, downloads its
+2. Open **Company → Company identity**. The API reads that wallet's current registry CID, downloads its
    encrypted envelope through `IPFS_GATEWAY_URL`, decrypts it and checks its hash/wallet binding.
 3. Select **Verify My Credential** for the existing cryptographic and current on-chain checks.
 
@@ -160,7 +160,7 @@ their explicit encrypted-payload adapter. The identity response exposes selected
 ## Holder: restore the key and sign a new VP
 
 Retrieving a VC restores access to the credential; it does **not** restore the credential-bound
-presentation-signing key. In **My company identity → presentation signing**, import the separate
+presentation-signing key. Open the **Manage legacy presentation keys** link shown on the sharing screen (it opens **Company identity → Legacy Ed25519 presentation keys**), then import the separate
 holder-signing recovery kit with its own password. Confirm its DID matches the key bound to the
 credential, then preview and explicitly approve a new challenge/recipient-bound presentation.
 

@@ -182,7 +182,7 @@ export function ManufacturerIngredientOrderDetail({
 
   return (
     <section className="manufacturer-order-detail" aria-label="Ingredient order detail">
-      <BackNavigation onClick={onBack}>Ingredient orders</BackNavigation>
+      <BackNavigation onClick={onBack}>Buying ingredients</BackNavigation>
 
       <header className="manufacturer-order-detail__header">
         <div className="manufacturer-order-detail__title">

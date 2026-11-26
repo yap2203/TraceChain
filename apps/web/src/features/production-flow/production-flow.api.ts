@@ -77,14 +77,21 @@ export interface WorkflowResponse {
   transaction?: PreparedTransaction;
   transferId?: string;
 }
-export const prepareCompanyWalletBinding = () => request<WorkflowResponse>('/company-wallet-binding/prepare', { method: 'POST' });
+export const prepareCompanyWalletBinding = () =>
+  request<WorkflowResponse>('/company-wallet-binding/prepare', { method: 'POST' });
 
 export const listProductionIngredients = (location?: string, purpose?: 'production') =>
   request<{ batches: ProductionIngredient[] }>(
     `/ingredients${location || purpose ? '?' + new URLSearchParams({ ...(location ? { location } : {}), ...(purpose ? { purpose } : {}) }) : ''}`,
   );
+let evidenceRequestsInFlight: Promise<{ requests: ProductionEvidenceRequest[] }> | undefined;
+/** Concurrent callers (tab badge, list) share one in-flight request; nothing is cached after it settles. */
 export const listEvidenceRequests = () =>
-  request<{ requests: ProductionEvidenceRequest[] }>('/evidence-requests');
+  (evidenceRequestsInFlight ??= request<{ requests: ProductionEvidenceRequest[] }>(
+    '/evidence-requests',
+  ).finally(() => {
+    evidenceRequestsInFlight = undefined;
+  }));
 export interface RetailerEvidenceOption {
   ingredientBatchReference?: string;
   ingredientBatchId: string;

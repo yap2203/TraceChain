@@ -807,7 +807,7 @@ Set a full HTTPS gateway base ending in `/ipfs`, without a CID, for example:
 IPFS_GATEWAY_URL=https://your-gateway.mypinata.cloud/ipfs
 ```
 
-My company identity reads the authenticated wallet's current credential CID from the registries,
+Company identity reads the authenticated wallet's current credential CID from the registries,
 retrieves the encrypted envelope through the gateway, then decrypts and checks its hash/wallet
 binding on the backend. **Verify My Credential** performs the separate cryptographic and current
 authorization checks. Gateway retrieval does not require an npm Pinata SDK.

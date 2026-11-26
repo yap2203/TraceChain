@@ -123,12 +123,8 @@ it('uses locked required toggles, readable optional claims and a review modal be
     screen.getByRole('switch', { name: 'Share Wallet address' }).closest('.evidence-claim-row')
       ?.textContent,
   ).not.toContain(material.claims.walletAddress);
-  expect(
-    document
-      .querySelector(`code[title="${material.claims.walletAddress}"]`)
-      ?.closest('details')
-      ?.hasAttribute('open'),
-  ).toBe(false);
+  // The full value stays reachable on the shortened row, not duplicated elsewhere.
+  expect(document.querySelector(`[title="${material.claims.walletAddress}"]`)).toBeTruthy();
 
   fireEvent.click(screen.getByRole('switch', { name: 'Share Company name' }));
   expect(screen.getByText('4 of 6 fields will be shared')).toBeTruthy();
@@ -170,11 +166,7 @@ it('shows a neutral not-requested state without presenting refresh as the primar
   mocks.identity.mockResolvedValue({ status: 'NOT_REQUESTED' });
   renderSupplierPanel();
   expect((await screen.findAllByText('Not requested')).length).toBeGreaterThan(0);
-  expect(
-    screen.getByText(
-      'Request verified company information from the supplier before collecting or dispatching this stock.',
-    ),
-  ).toBeTruthy();
+  expect(screen.getByText('No evidence has been requested.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Refresh status' })).toBeNull();
   const raw = screen.getByText('NOT_REQUESTED');
   expect(raw.closest('details')?.hasAttribute('open')).toBe(false);
@@ -216,7 +208,9 @@ it('opens a two-step company evidence request for the distributor', async () => 
     target: { value: '2099-01-01T12:00' },
   });
   fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
-  expect(screen.getByText(/selected evidence deadline is after the custody offer deadline/i)).toBeTruthy();
+  expect(
+    screen.getByText(/selected evidence deadline is after the custody offer deadline/i),
+  ).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Use custody offer deadline' }));
   expect(screen.getByText('Step 2 of 2 · Review and submit')).toBeTruthy();
   expect(screen.getByRole('heading', { name: /Required/ })).toBeTruthy();
@@ -235,7 +229,9 @@ it('opens a two-step company evidence request for the distributor', async () => 
   const request = mocks.identity.mock.calls.find(([, input]) => input.action === 'request')![1];
   expect(new Set(request.requiredClaims).size).toBe(request.requiredClaims.length);
   expect(new Set(request.optionalClaims).size).toBe(request.optionalClaims.length);
-  expect(request.requiredClaims.some((claim: string) => request.optionalClaims.includes(claim))).toBe(false);
+  expect(
+    request.requiredClaims.some((claim: string) => request.optionalClaims.includes(claim)),
+  ).toBe(false);
   expect(request.optionalClaims).toContain('companyId');
   expect(request.expiresAt).toBeLessThanOrEqual(custodyDeadline);
 });
@@ -262,8 +258,9 @@ it('shows a readable completed result and shared-evidence disclosure', async () 
   });
   renderSupplierPanel();
   expect((await screen.findAllByText('Verified')).length).toBeGreaterThan(0);
-  expect(screen.getByText('The shared company evidence passed verification.')).toBeTruthy();
-  expect(screen.getByText('View shared evidence')).toBeTruthy();
+  expect(screen.getByText('Verified. Nothing else to do.')).toBeTruthy();
+  expect(screen.getByText('Shared details')).toBeTruthy();
+  expect(screen.getByText('Rimba Cocoa Ingredients')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
 });
 
@@ -309,7 +306,8 @@ it('does not allow an expired request to enter the signing flow', async () => {
     expiresAt: 1,
   });
   renderSupplierPanel();
-  expect((await screen.findAllByText('Expired')).length).toBeGreaterThanOrEqual(2);
+  expect((await screen.findAllByText('Expired')).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getByText('This request has closed. No action is possible.')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Review and sign proof' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sign and share' })).toBeNull();

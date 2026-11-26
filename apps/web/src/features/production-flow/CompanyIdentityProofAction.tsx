@@ -14,6 +14,7 @@ import {
 } from './production-flow.api';
 import { Alert, Btn, TechnicalDetails } from '../workspaces/shared/ui';
 import { PresentationSigningSettingsLink } from '../didcomm/HolderSigningKeyPanel';
+import { EvidenceFieldList, EvidenceHowItWorks, EvidenceNextStep } from '../orders/EvidenceParts';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 
 export function CompanyIdentityProofAction({
@@ -78,81 +79,100 @@ export function CompanyIdentityProofAction({
       setBusy(false);
     }
   };
+  const values = (material?.claims ?? material?.credential?.credentialSubject ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const required = [
+    ...new Set([...(material?.requiredClaims ?? []), ...COMPANY_ALWAYS_CLAIMS]),
+  ].filter((claim) => claim in values);
+  const missingRequired = !!material?.requiredClaims?.some((key) => !material.claims?.[key]);
+  const pending = status.status === 'REQUESTED';
   return (
-    <div style={{ display: 'grid', gap: 8 }}>
-      <Alert
-        type={status.status === 'VERIFIED' ? 'success' : 'info'}
-        message={`Company identity proof: ${status.status}. This remains separate from ingredient-evidence authorization.`}
-      />
+    <div className="evidence-panel">
       {error && <Alert type="error" message={error} />}
-      {status.status === 'REQUESTED' && !material && (
-        <Btn size="sm" disabled={busy} onClick={() => void preview()}>
-          {busy ? 'Loading…' : 'Preview Company Role presentation'}
-        </Btn>
+      {!material && (
+        <EvidenceNextStep
+          tone={
+            status.status === 'VERIFIED' || status.status === 'PRESENTED'
+              ? 'done'
+              : pending
+                ? 'default'
+                : 'closed'
+          }
+          message={
+            pending
+              ? 'Choose which details to share, then sign with MetaMask.'
+              : status.status === 'PRESENTED'
+                ? 'Shared. Waiting for the requesting company to verify.'
+                : status.status === 'VERIFIED'
+                  ? 'Verified. Nothing else to do.'
+                  : 'This request has closed. No action is possible.'
+          }
+          action={
+            pending && (
+              <Btn disabled={busy} onClick={() => void preview()}>
+                {busy ? 'Loading…' : 'Review request'}
+              </Btn>
+            )
+          }
+        />
       )}
-      {material && status.status === 'REQUESTED' && (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {material && !material.walletContext && <PresentationSigningSettingsLink role={role} />}
-          <div>
-            <b>{material.presenterRole}</b> · {material.credentialHash}
-          </div>
-          <dl>
-            {Object.entries(material.claims ?? material.credential?.credentialSubject ?? {}).map(
-              ([name, value]) => (
-                <div key={name}>
-                  <dt>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(name)}
-                        disabled={
-                          material.requiredClaims?.includes(name) ||
-                          (COMPANY_ALWAYS_CLAIMS as readonly string[]).includes(name)
-                        }
-                        onChange={(event) =>
-                          setSelected(toggleCompanyDisclosure(selected, name, event.target.checked))
-                        }
-                      />{' '}
-                      {name}
-                      {material.requiredClaims?.includes(name) ? ' — Required' : ' — Optional'}
-                    </label>
-                  </dt>
-                  <dd>{String(value)}</dd>
-                </div>
-              ),
-            )}
-          </dl>
-          <p>
-            Recipient: {material.audience}. Shared fields: {selected.join(', ')}. MetaMask will ask
-            for a sharing signature and a separate transaction to record the encrypted response.
-            {material.bindingTransaction
-              ? ' First use also records the issuer-authorized wallet attestation.'
-              : ''}{' '}
-            This is separate from SIWE sign-in and business acceptance.
+      {material && pending && (
+        <>
+          <p className="evidence-panel__facts">
+            <span>
+              Purpose <strong>{material.purpose}</strong>
+            </span>
+            <span>
+              Valid until <strong>{new Date(material.expiresAt * 1000).toLocaleString()}</strong>
+            </span>
           </p>
-          <div style={{ fontSize: 12 }}>
-            Purpose: {material.purpose}
-            <br />
-            Expires: {new Date(material.expiresAt * 1000).toLocaleString()}
-          </div>
-          {material.binding && (
-            <TechnicalDetails
-              fields={Object.entries(material.binding).map(([label, value]) => ({ label, value }))}
+          <EvidenceFieldList
+            values={values}
+            required={required}
+            selected={selected}
+            selectable
+            onToggle={(claim) =>
+              setSelected(toggleCompanyDisclosure(selected, claim, !selected.includes(claim)))
+            }
+          />
+          {!material.walletContext && <PresentationSigningSettingsLink role={role} />}
+          {missingRequired && (
+            <Alert
+              type="error"
+              message="A required field is missing from your company credential. Ask the administrator for a replacement credential, or decline this request."
             />
           )}
-          <div className="action-row">
-            <Btn size="sm" variant="outline" disabled={busy} onClick={() => void decline()}>
+          <div className="company-evidence-card__footer">
+            <Btn variant="outline" disabled={busy} onClick={() => void decline()}>
               Decline
             </Btn>
-            <Btn
-              size="sm"
-              disabled={busy || !!material.requiredClaims?.some((key) => !material.claims?.[key])}
-              onClick={() => void present()}
-            >
-              {busy ? 'Signing…' : 'Approve and present'}
+            <Btn disabled={busy || missingRequired} onClick={() => void present()}>
+              {busy ? 'Signing…' : 'Sign and share'}
             </Btn>
           </div>
-        </div>
+          <EvidenceHowItWorks>
+            <p>
+              MetaMask asks for one signature to approve the selected fields, then one transaction
+              that records the encrypted response.
+              {material.bindingTransaction
+                ? ' The first time, it also records your wallet’s link to the company credential.'
+                : ''}{' '}
+              Sharing does not approve any order or move stock.
+            </p>
+          </EvidenceHowItWorks>
+          {material.binding && (
+            <TechnicalDetails
+              fields={[
+                ...(material.credentialHash
+                  ? [{ label: 'Credential hash', value: material.credentialHash }]
+                  : []),
+                ...Object.entries(material.binding).map(([label, value]) => ({ label, value })),
+              ]}
+            />
+          )}
+        </>
       )}
     </div>
   );

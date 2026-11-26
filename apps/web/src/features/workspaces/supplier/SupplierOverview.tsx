@@ -1,110 +1,127 @@
-import { reportError } from '../../../components/ui/feedback';
-import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
-import { Boxes, ClipboardList, PackageCheck, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { CalendarClock, ClipboardCheck, Layers, MessageSquareReply } from 'lucide-react';
 
 import { useOperationalData } from '../../blockchain/useOperationalData';
+import { Badge } from '../shared/ui';
 import { formatOperationalQuantity } from '../shared/operational-format';
+import { StakeholderOverviewLayout } from '../shared/StakeholderOverviewLayout';
 import {
-  StakeholderOverviewLayout,
-  type OverviewRecord,
-} from '../shared/StakeholderOverviewLayout';
-import {
-  getIngredientBatches,
-  type RegisteredIngredientBatch,
-} from './batches/ingredient-batch.api';
+  identityTasks,
+  ingredientEvidenceTasks,
+  loadCustodyOffers,
+  loadIdentityRequests,
+  loadOrdersToApprove,
+  offerTasks,
+  orderTasks,
+  useOverviewSource,
+} from '../shared/overview-data';
+import { getIngredientBatches } from './batches/ingredient-batch.api';
+
+const DAY = 24 * 60 * 60;
 
 export function SupplierOverview({ onNav }: { onNav: (tab: string) => void }) {
-  const { data, error: operationalError, loading: operationalLoading } = useOperationalData();
-  const [batches, setBatches] = useState<RegisteredIngredientBatch[]>([]);
-  const [batchError, setBatchError] = useState('');
-  const [batchesLoading, setBatchesLoading] = useState(true);
+  const operational = useOperationalData();
+  const batches = useOverviewSource(
+    () => getIngredientBatches().then((result) => result.batches),
+    'Ingredient batches could not be loaded.',
+  );
+  const orders = useOverviewSource(loadOrdersToApprove, 'Orders could not be loaded.');
+  const offers = useOverviewSource(loadCustodyOffers, 'Custody offers could not be loaded.');
+  const identity = useOverviewSource(
+    loadIdentityRequests,
+    'Evidence requests could not be loaded.',
+  );
 
-  useEffect(() => {
-    let active = true;
-    getIngredientBatches()
-      .then(({ batches: result }) => {
-        if (active) setBatches(result);
-      })
-      .catch((caught: unknown) => {
-        if (active) setBatchError(reportError(caught, 'Batches could not be loaded.'));
-      })
-      .finally(() => {
-        if (active) setBatchesLoading(false);
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  if (batchesLoading || operationalLoading)
-    return <LoadingIndicator page label="Loading Supplier overview" />;
-
-  const activeBatches = batches.filter((batch) => batch.status === 1);
-  const availableBatches = activeBatches.filter((batch) => BigInt(batch.availableQuantity) > 0n);
-  const pendingRequests = data.evidenceRequests.filter((request) => request.status === 1);
-  const attention: OverviewRecord[] = pendingRequests.map((request) => {
-    const batch = batches.find((entry) => entry.batchId === request.ingredientBatchId);
-    return {
-      name: batch?.ingredientName ?? 'Ingredient evidence request',
-      reference: batch?.batchReference ?? 'Registered ingredient batch',
-      companyName: request.manufacturerName ?? 'Requesting Manufacturer',
-      description: `Evidence response due ${new Date(request.dueAt * 1_000).toLocaleString()}.`,
-      badge: { label: 'Awaiting response', variant: 'pending' },
-      actionLabel: 'Review request',
-      onAction: () => onNav('requests'),
-      technical: [
-        { label: 'Request ID', value: request.requestId },
-        { label: 'Ingredient batch ID', value: request.ingredientBatchId },
-      ],
-    };
-  });
-  const recent: OverviewRecord[] = batches.slice(0, 5).map((batch) => ({
-    name: batch.ingredientName,
-    reference: batch.batchReference,
-    itemCategory: batch.category,
-    description: `${formatOperationalQuantity(batch.availableQuantity, batch.unit)} available; ${batch.origin || 'Origin not provided'}`,
-    badge: {
-      label: batch.status === 1 ? 'Active' : 'Unavailable',
-      variant: batch.status === 1 ? 'active' : 'pending',
-    },
-    actionLabel: 'View ingredients',
-    onAction: () => onNav('batches'),
-    technical: [
-      { label: 'Batch ID', value: batch.batchId },
-      { label: 'Credential ID', value: batch.credentialId },
-    ],
-  }));
+  const now = Date.now() / 1000;
+  const allBatches = batches.data ?? [];
+  const active = allBatches.filter((batch) => batch.status === 1 && batch.expiresAt > now);
+  const inStock = active.filter((batch) => BigInt(batch.availableQuantity) > 0n);
+  const expiringSoon = active.filter((batch) => batch.expiresAt - now <= 30 * DAY);
+  const batchName = (batchId: string) =>
+    allBatches.find((batch) => batch.batchId === batchId)?.ingredientName;
+  const evidence = ingredientEvidenceTasks(
+    operational.data.evidenceRequests,
+    'supplier',
+    batchName,
+    () => onNav('requests'),
+  );
+  const identityWork = identityTasks(identity.data ?? [], () => onNav('requests'));
+  const tasks = [
+    ...orderTasks(orders.data ?? [], () => onNav('orders')),
+    ...evidence,
+    ...identityWork,
+    ...offerTasks(offers.data ?? [], false, () => onNav('transfers')),
+  ];
 
   return (
-    <>
-      <StakeholderOverviewLayout
-        errors={[batchError, operationalError]}
-        title="Supplier overview"
-        description="Monitor ingredient availability, evidence requests and recent registered batches."
-        metrics={[
-          { label: 'Ingredient batches', value: batches.length, icon: <Boxes size={21} /> },
-          {
-            label: 'Available batches',
-            value: availableBatches.length,
-            icon: <PackageCheck size={21} />,
-          },
-          {
-            label: 'Evidence requests',
-            value: data.evidenceRequests.length,
-            icon: <ClipboardList size={21} />,
-          },
-          {
-            label: 'Awaiting response',
-            value: pendingRequests.length,
-            icon: <ShieldCheck size={21} />,
-          },
-        ]}
-        attention={attention}
-        recent={recent}
-        emptyAttention="No evidence requests need a response"
-        emptyRecent="No ingredient batches registered"
-      />
-    </>
+    <StakeholderOverviewLayout
+      title="Supplier overview"
+      description="Orders to approve, evidence to answer and the ingredient stock you can sell."
+      errors={[batches.error, orders.error, offers.error, identity.error, operational.error]}
+      onRefresh={() => {
+        batches.reload();
+        orders.reload();
+        offers.reload();
+        identity.reload();
+        void operational.reload();
+      }}
+      metrics={[
+        {
+          label: 'Orders to approve',
+          value: orders.loading ? '…' : (orders.data?.length ?? 0),
+          icon: <ClipboardCheck size={21} />,
+          onClick: () => onNav('orders'),
+        },
+        {
+          label: 'Evidence to answer',
+          value: identity.loading ? '…' : evidence.length + identityWork.length,
+          icon: <MessageSquareReply size={21} />,
+          onClick: () => onNav('requests'),
+        },
+        {
+          label: 'Batches in stock',
+          value: batches.loading ? '…' : inStock.length,
+          icon: <Layers size={21} />,
+          onClick: () => onNav('batches'),
+        },
+        {
+          label: 'Expiring in 30 days',
+          value: batches.loading ? '…' : expiringSoon.length,
+          icon: <CalendarClock size={21} />,
+          onClick: () => onNav('batches'),
+        },
+      ]}
+      tasks={tasks}
+      tasksLoading={orders.loading || offers.loading || identity.loading || operational.loading}
+      snapshot={{
+        title: 'Your ingredient stock',
+        columns: ['Ingredient', 'Batch', 'Available', 'Expires', 'Status'],
+        rows: [...active]
+          .sort((a, b) => a.expiresAt - b.expiresAt)
+          .map((batch) => ({
+            key: batch.batchId,
+            cells: [
+              <strong key="name">{batch.ingredientName}</strong>,
+              batch.batchReference,
+              formatOperationalQuantity(batch.availableQuantity, batch.unit),
+              <span
+                key="expiry"
+                className={batch.expiresAt - now <= 30 * DAY ? 'is-soon' : undefined}
+              >
+                {new Date(batch.expiresAt * 1000).toLocaleDateString()}
+              </span>,
+              BigInt(batch.availableQuantity) > 0n ? (
+                <Badge key="status" label="In stock" variant="active" />
+              ) : (
+                <Badge key="status" label="Sold out" variant="expired" />
+              ),
+            ],
+          })),
+        empty: batches.loading
+          ? 'Loading your batches…'
+          : 'No active ingredient batches. Register a batch to start selling.',
+        viewAllLabel: 'View all ingredients',
+        onViewAll: () => onNav('batches'),
+      }}
+    />
   );
 }

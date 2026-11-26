@@ -103,7 +103,7 @@ export function CompanyProfilePage({ role }: { role: WorkspaceRole }) {
   return (
     <div className="workspace-flow-page">
       <SectionTitle
-        title="Company profile & locations"
+        title="Profile & locations"
         sub="Manage your company details and locations used for orders and deliveries."
         action={
           data ? (

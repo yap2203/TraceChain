@@ -1,88 +1,122 @@
-import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
-import { CheckCircle, ClipboardList, Package, Store } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { CheckCircle, FileSearch, Package, ShoppingCart } from 'lucide-react';
+import { requestStatus } from '@tracechain/shared';
 
 import { useOperationalData } from '../../blockchain/useOperationalData';
-import { getOrders, type OrdersState } from '../../orders/orders.api';
+import { Badge } from '../shared/ui';
 import { formatOperationalQuantity } from '../shared/operational-format';
+import { StakeholderOverviewLayout, type OverviewTask } from '../shared/StakeholderOverviewLayout';
 import {
-  StakeholderOverviewLayout,
-  type OverviewRecord,
-} from '../shared/StakeholderOverviewLayout';
+  catalogueItem,
+  identityTasks,
+  ingredientEvidenceTasks,
+  loadCatalogue,
+  loadIdentityRequests,
+  loadMyOrders,
+  useOverviewSource,
+} from '../shared/overview-data';
 
 export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
-  const { data, error, loading } = useOperationalData();
-  const [orders, setOrders] = useState<OrdersState>();
-  useEffect(() => {
-    void getOrders('catalogue')
-      .then(setOrders)
-      .catch(() => undefined);
-  }, []);
-  if (loading) return <LoadingIndicator page label="Loading Retailer overview" />;
+  const operational = useOperationalData();
+  const myOrders = useOverviewSource(loadMyOrders, 'Your orders could not be loaded.');
+  const identity = useOverviewSource(
+    loadIdentityRequests,
+    'Evidence requests could not be loaded.',
+  );
+  const catalogue = useOverviewSource(loadCatalogue, 'Product names could not be loaded.');
 
-  const incoming = data.transfers.filter(
+  const transfers = operational.data.transfers;
+  const arriving = transfers.filter(
     (transfer) => transfer.direction === 'incoming' && transfer.status === 1,
   );
-  const stock = data.transfers
-    .filter(
-      (transfer, index, all) =>
-        all.findIndex((candidate) => candidate.productBatchId === transfer.productBatchId) ===
-        index,
-    )
-    .reduce((sum, transfer) => sum + BigInt(transfer.inventory.available), 0n);
-  const record = (transfer: (typeof data.transfers)[number], received = false): OverviewRecord => {
-    const item = orders?.catalogue.find((entry) =>
-      entry.batches?.some(
-        (batch: string) => batch.toLowerCase() === transfer.productBatchId.toLowerCase(),
-      ),
-    );
+  const received = transfers.filter((transfer) => transfer.status === 2);
+  const evidence = ingredientEvidenceTasks(
+    operational.data.evidenceRequests,
+    'requester',
+    (batchId) => catalogueItem(catalogue.data, batchId)?.name,
+    () => onNav('requests'),
+  );
+  const arrivalWork: OverviewTask[] = arriving.map((transfer) => {
+    const item = catalogueItem(catalogue.data, transfer.productBatchId);
     return {
-      name: item?.name ?? 'Incoming product',
-      reference: item?.batchReference ?? 'Registered product batch',
-      imagePath: item?.imagePath,
-      itemCategory: item?.category,
-      companyName: transfer.senderName ?? transfer.distributorName ?? 'Sending Distributor',
-      description: `${formatOperationalQuantity(transfer.quantity, item?.unit)}; ${received ? 'receipt recorded' : `expected ${new Date(transfer.expectedAt * 1_000).toLocaleString()}`}.`,
-      badge: received
-        ? { label: 'Received', variant: 'verified' }
-        : { label: 'Awaiting receipt', variant: 'pending' },
-      actionLabel: received ? 'View traceability' : 'Review shipment',
-      onAction: () => onNav(received ? 'history' : 'shipments'),
-      technical: [
-        { label: 'Transfer ID', value: transfer.transferId },
-        { label: 'Product batch ID', value: transfer.productBatchId },
-      ],
+      key: `arrival:${transfer.transferId}`,
+      task: 'Confirm product receipt',
+      item: item?.name ?? 'Incoming product',
+      detail: formatOperationalQuantity(transfer.quantity, item?.unit),
+      counterparty: transfer.senderName ?? transfer.distributorName,
+      due: transfer.expectedAt,
+      badge: { label: 'Awaiting receipt', variant: 'pending' },
+      actionLabel: 'Receive',
+      onAction: () => onNav('shipments'),
     };
-  };
+  });
+  const openOrders = (myOrders.data ?? []).filter(
+    (order) => requestStatus(order).group !== 'closed',
+  );
 
   return (
-    <>
-      <StakeholderOverviewLayout
-        errors={[error]}
-        title="Retailer overview"
-        description="Review incoming products, confirmed receipts and product traceability."
-        metrics={[
-          { label: 'Incoming shipments', value: incoming.length, icon: <Package size={21} /> },
-          { label: 'Products in stock', value: stock.toString(), icon: <Store size={21} /> },
-          {
-            label: 'Evidence requests',
-            value: data.evidenceRequests.length,
-            icon: <ClipboardList size={21} />,
-          },
-          {
-            label: 'Received transfers',
-            value: data.transfers.filter((item) => item.status === 2).length,
-            icon: <CheckCircle size={21} />,
-          },
-        ]}
-        attention={incoming.map((transfer) => record(transfer))}
-        recent={data.transfers
-          .filter((transfer) => transfer.status === 2)
-          .slice(0, 5)
-          .map((transfer) => record(transfer, true))}
-        emptyAttention="No incoming products need receipt"
-        emptyRecent="No received products recorded"
-      />
-    </>
+    <StakeholderOverviewLayout
+      title="Retailer overview"
+      description="Products arriving, your open orders and evidence shared with you."
+      errors={[myOrders.error, identity.error, operational.error]}
+      onRefresh={() => {
+        myOrders.reload();
+        identity.reload();
+        void operational.reload();
+      }}
+      metrics={[
+        {
+          label: 'Products arriving',
+          value: operational.loading ? '…' : arriving.length,
+          icon: <Package size={21} />,
+          onClick: () => onNav('shipments'),
+        },
+        {
+          label: 'Open orders',
+          value: myOrders.loading ? '…' : openOrders.length,
+          icon: <ShoppingCart size={21} />,
+          onClick: () => onNav('orders'),
+        },
+        {
+          label: 'Evidence to review',
+          value: operational.loading ? '…' : evidence.length,
+          icon: <FileSearch size={21} />,
+          onClick: () => onNav('requests'),
+        },
+        {
+          label: 'Products received',
+          value: operational.loading ? '…' : received.length,
+          icon: <CheckCircle size={21} />,
+          onClick: () => onNav('history'),
+        },
+      ]}
+      tasks={[
+        ...arrivalWork,
+        ...evidence,
+        ...identityTasks(identity.data ?? [], () => onNav('requests')),
+      ]}
+      tasksLoading={identity.loading || operational.loading}
+      snapshot={{
+        title: 'Your recent orders',
+        columns: ['Product', 'Seller', 'Quantity', 'Deadline', 'Status'],
+        rows: (myOrders.data ?? []).map((order) => {
+          const status = requestStatus(order);
+          return {
+            key: order.orderId,
+            cells: [
+              <strong key="name">{order.item?.name ?? 'Product'}</strong>,
+              order.sellerName ?? '—',
+              order.requested ? formatOperationalQuantity(order.requested, order.item?.unit) : '—',
+              new Date(Number(order.expiresAt) * 1000).toLocaleDateString(),
+              <Badge key="status" label={status.label} variant={status.variant} />,
+            ],
+          };
+        }),
+        empty: myOrders.loading
+          ? 'Loading your orders…'
+          : 'No orders yet. Browse products to place your first order.',
+        viewAllLabel: 'View all orders',
+        onViewAll: () => onNav('orders'),
+      }}
+    />
   );
 }

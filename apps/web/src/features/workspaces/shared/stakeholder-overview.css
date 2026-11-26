@@ -1,0 +1,125 @@
+/* Stakeholder overviews: action table + one role snapshot. Workspace theme tokens only. */
+@layer components {
+  .overview-panel {
+    overflow: hidden;
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    background: var(--c-surface);
+  }
+  .overview-panel > header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .overview-panel > header h3 {
+    margin: 0;
+    font-size: 16px;
+  }
+  .overview-panel > header > button {
+    margin-left: auto;
+  }
+  .overview-panel__count {
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--c-teal) 16%, transparent);
+    color: var(--c-teal);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .overview-panel__empty {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 18px 16px;
+    color: var(--c-text2);
+    font-size: 14px;
+  }
+  .overview-panel__empty.is-done svg {
+    color: var(--c-green);
+  }
+  .overview-table__scroll {
+    overflow-x: auto;
+  }
+  .overview-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .overview-table th {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--c-border);
+    background: var(--c-surface2);
+    color: var(--c-text2);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .overview-table td {
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--c-border);
+    font-size: 13px;
+    vertical-align: middle;
+  }
+  .overview-table tbody tr:last-child td {
+    border-bottom: 0;
+  }
+  .overview-table tbody tr:hover {
+    background: var(--c-surface2);
+  }
+  .overview-table strong {
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .overview-table__stack {
+    display: grid;
+    gap: 2px;
+  }
+  .overview-table__stack small,
+  .overview-table small {
+    color: var(--c-text3);
+    font-size: 12px;
+  }
+  .overview-table__company {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .overview-table .is-overdue {
+    color: var(--c-red);
+    font-weight: 700;
+  }
+  .overview-table .is-soon {
+    color: var(--c-amber);
+    font-weight: 600;
+  }
+  .overview-table__action {
+    text-align: right;
+    white-space: nowrap;
+  }
+}
+
+/* Unlayered on purpose: the older overview grid rules in workspace.css are unlayered too. */
+.overview-panel {
+  min-width: 0;
+}
+/* Phones: keep the four counts in one compact block so the action table stays in view. */
+@media (max-width: 720px) {
+  .stakeholder-overview .stakeholder-overview__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .stakeholder-overview .stakeholder-overview__metrics .ingredient-summary-card {
+    min-height: 0;
+    padding: 12px;
+  }
+  .stakeholder-overview .stakeholder-overview__metrics .ingredient-summary-card > span,
+  .stakeholder-overview .stakeholder-overview__metrics .ingredient-summary-card__arrow {
+    display: none;
+  }
+}

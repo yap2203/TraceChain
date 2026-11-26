@@ -299,9 +299,7 @@ describe('unified warehouse shipments', () => {
     render(<ShipmentsWorkspace role="distributor" initialShipmentId={shipmentId} />);
     expect(await screen.findByRole('button', { name: 'Accept custody delivery' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Reject custody delivery' })).toBeTruthy();
-    expect(
-      screen.queryByRole('link', { name: /Manage Supplier credential request/ }),
-    ).toBeNull();
+    expect(screen.queryByRole('link', { name: /Manage Supplier credential request/ })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Scan package QR' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Reject custody delivery' }));
     await waitFor(() =>
@@ -347,7 +345,12 @@ describe('unified warehouse shipments', () => {
     expect(screen.getByText('Manage ingredient shipments to Manufacturers.')).toBeTruthy();
     const awaitingSummary = screen.getByRole('button', { name: /Awaiting dispatch\s*1/ });
     expect(awaitingSummary).toBeTruthy();
-    expect(screen.getByRole('tab', { name: /Needs action\s*1/ })).toBeTruthy();
+    expect(
+      within(screen.getByRole('group', { name: 'Ingredient delivery status' })).getByRole(
+        'button',
+        { name: /Needs action\s*1/ },
+      ),
+    ).toBeTruthy();
     expect(screen.getByText('Actual flour')).toBeTruthy();
     expect(screen.getAllByText('Actual Supplier Company').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Actual Manufacturer Company').length).toBeGreaterThan(0);
@@ -433,8 +436,12 @@ describe('unified warehouse shipments', () => {
 
     render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
 
-    expect(await screen.findByRole('button', { name: /In transit\s*1/ })).toBeTruthy();
-    const tab = screen.getByRole('tab', { name: /In transit\s*1/ });
+    // Summary card and filter chip share the name; both are buttons.
+    expect((await screen.findAllByRole('button', { name: /In transit\s*1/ })).length).toBe(2);
+    const tab = within(screen.getByRole('group', { name: 'Ingredient delivery status' })).getByRole(
+      'button',
+      { name: /In transit\s*1/ },
+    );
     fireEvent.click(tab);
     expect(screen.getByText('SHP-BBBBBBBB')).toBeTruthy();
     expect(screen.getByText(/Track the shipment until it reaches the Manufacturer/)).toBeTruthy();

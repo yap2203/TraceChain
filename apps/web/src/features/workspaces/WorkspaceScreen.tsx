@@ -1,13 +1,9 @@
 ﻿import { useState, type ComponentProps } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { workspacePath } from './workspace-paths';
+import { notify } from '../../components/ui/feedback';
 import type { WorkspaceRole } from './workspace-navigation';
-import {
-  AdminOverview,
-  Applications,
-  CompanyCredentials,
-  DiscrepancyManagement,
-} from './admin';
+import { AdminOverview, Applications, CompanyCredentials, DiscrepancyManagement } from './admin';
 import AccessControlScreen from './admin/access-control/AccessControlPage';
 import AdminAuditReport from './admin/audit/AdminAuditReport';
 import {
@@ -85,10 +81,22 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     return (
       <InformationRequestsWorkspace key={tab} role={role} initialDirection={direction}>
         {role === 'supplier' ? (
-          discReq ? (
-            <SelectiveDisclosure request={discReq} onBack={() => setDiscReq(null)} />
+          // The open request lives in the URL too, so the category tab and browser Back return to the list.
+          discReq && params.get('requestId') === discReq.requestId ? (
+            <SelectiveDisclosure
+              key={discReq.requestId}
+              request={discReq}
+              onBack={() => setSearchParams({ tab: 'evidence' })}
+            />
           ) : (
-            <InformationRequests onRespond={setDiscReq} initialDirection="received" hideDirection />
+            <InformationRequests
+              onRespond={(request) => {
+                setDiscReq(request);
+                setSearchParams({ tab: 'evidence', requestId: request.requestId });
+              }}
+              initialDirection="received"
+              hideDirection
+            />
           )
         ) : role === 'manufacturer' ? (
           <IngredientEvidence
@@ -158,12 +166,21 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
         return (
           <RegisterBatch
             onBack={() => setSearchParams({})}
-            onCompleted={() => setSearchParams({})}
+            onCompleted={(batchId) => {
+              notify('Ingredient batch registered.', 'success');
+              setSearchParams({ opened: batchId });
+            }}
           />
         );
       if (subView === 'batch-detail')
         return <IngredientBatchDetail batchId={activeId} onBack={() => setSearchParams({})} />;
-      return <IngredientBatches onNew={() => goTo('batches-new')} />;
+      return (
+        <IngredientBatches
+          onNew={() => goTo('batches-new')}
+          openBatchId={params.get('opened') ?? undefined}
+          onOpened={() => setSearchParams({}, { replace: true })}
+        />
+      );
     }
     if (tab === 'mycredential') return <SupplierCredential />;
     if (tab === 'audit') return <AuditReport />;

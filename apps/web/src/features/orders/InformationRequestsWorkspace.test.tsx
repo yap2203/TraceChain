@@ -17,6 +17,7 @@ vi.mock('../production-flow/production-flow.api', () => ({
   verifyCompanyIdentityProof: api.verify,
   requestCompanyIdentityProof: api.requestProof,
   getEvidenceDetails: api.details,
+  listEvidenceRequests: vi.fn().mockResolvedValue({ requests: [] }),
 }));
 vi.mock('./orders.api', () => ({
   getInformationRequests: api.requests,
@@ -167,7 +168,11 @@ it.each(['received', 'sent'] as const)(
 it('provides one Evidence Exchange navigation entry for participating companies', () => {
   for (const role of ['supplier', 'manufacturer', 'distributor', 'retailer'] as const) {
     expect(workspaceNavigation[role].some(([id]) => id === 'requests')).toBe(true);
-    expect(workspaceNavigationGroups(role).flatMap((group) => group.items).some(([id]) => id === 'sent-requests')).toBe(false);
+    expect(
+      workspaceNavigationGroups(role)
+        .flatMap((group) => group.items)
+        .some(([id]) => id === 'sent-requests'),
+    ).toBe(false);
   }
 });
 it('separates sent and received company proof requests and opens the correct existing manager', async () => {
@@ -178,16 +183,20 @@ it('separates sent and received company proof requests and opens the correct exi
   );
   expect(await screen.findByText('Warehouse Company')).toBeTruthy();
   expect(screen.queryByText('Manufacturer Company')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
+  fireEvent.click(screen.getByRole('button', { name: /Warehouse Company/ }));
   expect(screen.getByText('Delivery proof manager: ' + shipment)).toBeTruthy();
+  // Request details stay visible whatever the status.
+  const details = screen.getByRole('region', { name: 'Request details' });
+  expect(details.textContent).toContain('Requested by');
+  expect(details.textContent).toContain('Confirm Supplier role');
   fireEvent.click(screen.getByRole('link', { name: 'Evidence Exchange' }));
-  fireEvent.click(screen.getByRole('button', { name: 'Requests I sent' }));
+  fireEvent.click(screen.getByRole('button', { name: /^Sent/ }));
   expect(await screen.findByText('Manufacturer Company')).toBeTruthy();
-  fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
+  fireEvent.click(screen.getByRole('button', { name: /Manufacturer Company/ }));
   expect(screen.getByText('Order proof manager')).toBeTruthy();
 });
 
-it('shows registered participants, readable status and a compact next action', async () => {
+it('shows one compact row per request with readable status and the action on top', async () => {
   render(
     <MemoryRouter>
       <InformationRequestsWorkspace role="supplier" initialDirection="received">
@@ -196,26 +205,22 @@ it('shows registered participants, readable status and a compact next action', a
     </MemoryRouter>,
   );
 
-  expect(await screen.findByText('Company identity verification')).toBeTruthy();
-  expect(screen.getByText('Warehouse Company')).toBeTruthy();
-  expect(screen.getByText('Rimba Cocoa Ingredients')).toBeTruthy();
-  expect(screen.queryByText('Your company')).toBeNull();
-  expect(screen.getByText('Awaiting response')).toBeTruthy();
-  expect(screen.getByText('Review and respond')).toBeTruthy();
-  expect(document.querySelector('.information-request-card__next p')?.textContent).toBe(
-    'Next action: Review the request and choose whether to share your company evidence.',
-  );
-  expect(screen.getByRole('button', { name: 'Review request' })).toBeTruthy();
+  const action = await screen.findByRole('button', {
+    name: 'Respond request from Warehouse Company',
+  });
+  const row = action.closest('tr')!;
+  expect(screen.getByRole('columnheader', { name: 'Requested by' })).toBeTruthy();
+  expect(row.textContent).toContain('Delivery');
+  expect(row.textContent).toContain('Awaiting response');
+  expect(row.className).toContain('is-actionable');
+  expect(row.textContent).not.toContain('REQUESTED');
+  expect(screen.getByRole('navigation', { name: 'Table pages' })).toBeTruthy();
+  expect(screen.queryByText('Technical details')).toBeNull();
   expect(screen.getByRole('tab', { name: /Company evidence/ })).toBeTruthy();
   expect(screen.getByRole('tab', { name: /Ingredient evidence/ })).toBeTruthy();
-
-  const technical = screen.getByText('Technical details').closest('details');
-  expect(technical?.hasAttribute('open')).toBe(false);
-  expect(document.querySelector('.information-request-card__parties')).toBeTruthy();
-  expect(document.querySelector('.information-request-card__next')).toBeTruthy();
 });
 
-it('uses Expired and Overdue labels without exposing the raw status in the summary', async () => {
+it('shows one Expired label and no action for a closed request', async () => {
   api.requests.mockResolvedValueOnce({
     requests: [
       {
@@ -237,12 +242,13 @@ it('uses Expired and Overdue labels without exposing the raw status in the summa
   );
 
   expect(await screen.findByText('Expired')).toBeTruthy();
-  expect(screen.getByText('Overdue')).toBeTruthy();
-  expect(document.querySelector('.information-request-card__heading')?.textContent).not.toContain(
-    'EXPIRED',
-  );
-  expect(screen.getByText('EXPIRED').closest('details')?.hasAttribute('open')).toBe(false);
-  expect(screen.getByText('No action available')).toBeTruthy();
+  const row = screen
+    .getByRole('button', { name: 'View request from Warehouse Company' })
+    .closest('tr')!;
+  expect(row.textContent?.match(/Expired/g)).toHaveLength(1);
+  expect(row.textContent).not.toContain('EXPIRED');
+  expect(row.textContent).toContain('Closed');
+  expect(row.className).not.toContain('is-actionable');
 });
 it('denies an unrelated delivery reference in a direct URL', async () => {
   render(
@@ -300,12 +306,12 @@ it('verifies an ingredient-linked company proof only after explicit action and s
   const button = await screen.findByRole('button', { name: 'Verify company proof' });
   expect(api.verify).not.toHaveBeenCalled();
   fireEvent.click(button);
-  expect(await screen.findByText('Signature and holder checks passed')).toBeTruthy();
+  expect(await screen.findByText(/Signature and holder checks passed/)).toBeTruthy();
   expect(api.verify).toHaveBeenCalledWith('ingredient-proof');
   expect(api.send).not.toHaveBeenCalled();
 });
 
-it('shows readable custody-offer context, compact tabs and collapsed technical details', async () => {
+it('shows a compact custody-offer context strip and collapsed technical details', async () => {
   const offerId = '0x' + 'c'.repeat(64);
   render(
     <MemoryRouter
@@ -318,22 +324,17 @@ it('shows readable custody-offer context, compact tabs and collapsed technical d
   );
   expect(await screen.findByRole('heading', { name: 'Request company evidence' })).toBeTruthy();
   expect(
-    screen.getByText(
-      'Request verified company information before continuing this custody offer.',
-    ),
-  ).toBeTruthy();
-  expect(screen.getByRole('navigation', { name: 'Breadcrumb' }).textContent).toContain(
-    'Evidence ExchangeRequests I sentCustody offerRequest company evidence',
-  );
+    screen.getByRole('link', { name: 'Evidence Exchange' }).getAttribute('href'),
+  ).toContain('direction=sent');
   expect(await screen.findByText('Unsweetened Cocoa Powder')).toBeTruthy();
-  expect(screen.getAllByText('Bayu Food Logistics').length).toBeGreaterThan(0);
+  expect(screen.getByText(/Delivery proof manager: .* Bayu Food Logistics/)).toBeTruthy();
   expect(screen.getByText('8 kg')).toBeTruthy();
   expect(screen.getAllByText('Awaiting acceptance').length).toBeGreaterThan(0);
   expect(screen.getByRole('link', { name: 'View custody offer' }).getAttribute('href')).toContain(
     '/supplier/transfers?offerId=',
   );
-  expect(screen.getByRole('tab', { name: /Company evidence/ })).toBeTruthy();
-  expect(screen.getByRole('tab', { name: /Ingredient evidence/ })).toBeTruthy();
+  // Category tabs belong to the list, not to a single request.
+  expect(screen.queryByRole('tab', { name: /Ingredient evidence/ })).toBeNull();
   const technical = screen.getAllByText('Technical details')[0]!.closest('details');
   expect(technical?.hasAttribute('open')).toBe(false);
   expect(screen.queryByRole('button', { name: 'Back to company requests' })).toBeNull();

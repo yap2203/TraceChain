@@ -102,14 +102,14 @@ describe('shared custody inventory presentation', () => {
   it('renders Distributor Ingredient custody with the shared list layout and private stock only', async () => {
     renderPage();
 
-    expect(await screen.findByRole('heading', { name: 'Ingredient custody' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Ingredient stock' })).toBeTruthy();
     expect(api.get).toHaveBeenCalledWith('custody-inventory', { refresh: false });
     expect(screen.queryByText('Foreign flour')).toBeNull();
     expect(screen.queryByText('Private foreign warehouse')).toBeNull();
     expect(screen.getByRole('button', { name: 'List view' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
-    expect(screen.getByLabelText('Ingredient custody summary')).toBeTruthy();
+    expect(screen.getByLabelText('Ingredient stock summary')).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Flour image placeholder' })).toBeTruthy();
     expect(screen.getByLabelText('Supplier One initials')).toBeTruthy();
 
@@ -222,7 +222,7 @@ describe('shared custody inventory presentation', () => {
     api.get.mockResolvedValue(next);
     renderPage('distributor', 'product');
 
-    expect(await screen.findByRole('heading', { name: 'Product custody' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Product stock' })).toBeTruthy();
     expect(screen.getByText('Finished chocolate')).toBeTruthy();
     expect(screen.getAllByText('Manufacturer One').length).toBeGreaterThan(0);
     expect(screen.queryByText('Owned flour')).toBeNull();
@@ -232,7 +232,7 @@ describe('shared custody inventory presentation', () => {
     api.get.mockResolvedValue({ ...structuredClone(state), actor: supplier, role: 'SUPPLIER' });
     renderPage('supplier');
 
-    expect(await screen.findByRole('heading', { name: 'My stock in custody' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Stock at distributors' })).toBeTruthy();
     expect(screen.getByText('Owned flour')).toBeTruthy();
     expect(screen.queryByText('Foreign flour')).toBeNull();
     expect(screen.getByText('Supplier-owned stock in Distributor custody.')).toBeTruthy();
@@ -276,7 +276,7 @@ describe('shared custody inventory presentation', () => {
     api.get.mockResolvedValue(next);
     renderPage('manufacturer');
 
-    expect(await screen.findByRole('heading', { name: 'My products in custody' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Stock at distributors' })).toBeTruthy();
     expect(screen.getByText('Manufacturer product')).toBeTruthy();
     expect(screen.queryByText('Registered product')).toBeNull();
     expect(screen.getByText('Manufacturer-owned stock in Distributor custody.')).toBeTruthy();

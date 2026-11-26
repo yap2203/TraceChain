@@ -7,7 +7,7 @@
     @apply p-[24px];
   }
   .product-trace-shell {
-    @apply max-w-[1120px] m-[0_auto];
+    @apply w-full;
   }
   .product-trace-header {
     @apply flex justify-between items-center gap-[16px] mb-[24px];

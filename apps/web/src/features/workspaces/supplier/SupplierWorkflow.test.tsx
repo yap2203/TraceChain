@@ -144,7 +144,7 @@ describe('Supplier ingredient and request management', () => {
       ],
     });
     const grid = mount(<IngredientBatches onNew={vi.fn()} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
     await screen.findByText('88 g');
     expect(screen.getByText('Remaining after open requests')).toBeTruthy();
     expect(
@@ -164,7 +164,7 @@ describe('Supplier ingredient and request management', () => {
   it('edits only listing fields and requires confirmation before archiving', async () => {
     mount(<IngredientBatches onNew={vi.fn()} />);
     await screen.findByText('Supplier cocoa');
-    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit listing' }));
     fireEvent.change(screen.getByLabelText(/Listing name/), {
       target: { value: 'Supplier cocoa listing' },
@@ -185,7 +185,8 @@ describe('Supplier ingredient and request management', () => {
     );
     await screen.findByText(/Listing updated successfully/);
     api.prepareOrder.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'Archive' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive listing' }));
     expect(api.prepareOrder).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));
     await waitFor(() =>
@@ -217,10 +218,10 @@ describe('Supplier ingredient and request management', () => {
     api.getOrders.mockResolvedValue({ ...state, catalogue: [{ ...item, archived: true }] });
     mount(<IngredientBatches onNew={vi.fn()} />);
     await screen.findByText('No batches match these filters');
-    fireEvent.click(screen.getByLabelText('Show archived'));
+    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'archived' } });
     expect(screen.getByText('Supplier cocoa')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Show more' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restore listing' }));
     await waitFor(() =>
       expect(api.prepareOrder).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'ingredient-archive', batchId, archived: false }),

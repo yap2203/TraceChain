@@ -54,7 +54,31 @@ describe('workspace navigation and guidance', () => {
     const link = within(navigation).getByRole('link', { name: 'My ingredients' });
     expect(link.getAttribute('href')).toBe(workspacePath('supplier', 'batches'));
     expect(link.getAttribute('aria-current')).toBe('page');
-    expect(within(navigation).getByRole('region', { name: 'Profile' })).toBeTruthy();
+    expect(within(navigation).getByRole('region', { name: 'Company' })).toBeTruthy();
+  });
+  it('shows merged pages as one sidebar entry with tabs for each page', () => {
+    show('product-orders', 'manufacturer');
+    const navigation = screen.getByRole('navigation', { name: 'Manufacturer navigation' });
+    const orders = within(navigation).getByRole('link', { name: 'Orders' });
+    expect(orders.getAttribute('href')).toBe(workspacePath('manufacturer', 'orders'));
+    expect(orders.getAttribute('aria-current')).toBe('page');
+    expect(within(navigation).queryByRole('link', { name: 'Selling products' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Orders');
+    expect(
+      screen.getByRole('tab', { name: 'Selling products' }).getAttribute('aria-selected'),
+    ).toBe('true');
+    expect(screen.getByRole('tab', { name: 'Buying ingredients' })).toBeTruthy();
+  });
+  it('moves focus between section tabs with arrow keys without opening them', () => {
+    show('product-orders', 'manufacturer');
+    const selling = screen.getByRole('tab', { name: 'Selling products' });
+    const buying = screen.getByRole('tab', { name: 'Buying ingredients' });
+    expect(selling.tabIndex).toBe(0);
+    expect(buying.tabIndex).toBe(-1);
+    selling.focus();
+    fireEvent.keyDown(selling, { key: 'ArrowLeft' });
+    expect(document.activeElement).toBe(buying);
+    expect(selling.getAttribute('aria-selected')).toBe('true');
   });
   it.each(['supplier', 'manufacturer', 'distributor', 'retailer'] as const)(
     'highlights only the exact information-request page for %s',

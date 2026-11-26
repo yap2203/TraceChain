@@ -1,0 +1,626 @@
+/* Evidence Exchange: compact request rows and one detail layout. Uses the workspace theme tokens. */
+@layer components {
+  .evidence-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 4px 0 16px;
+  }
+  .evidence-toolbar__search {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  /* The placeholder already names the field; keep the label for screen readers only. */
+  .evidence-toolbar__search label > span:first-child {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .evidence-toolbar__select select {
+    height: 40px;
+    padding: 0 10px;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    background: var(--c-surface);
+    color: var(--c-text);
+    font: inherit;
+    font-size: 13px;
+  }
+  .evidence-segmented {
+    display: inline-flex;
+    padding: 3px;
+    border: 1px solid var(--c-border);
+    border-radius: 9px;
+    background: var(--c-surface);
+  }
+  .evidence-segmented button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 32px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--c-text2);
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .evidence-segmented button strong {
+    color: var(--c-text3);
+    font-size: 11px;
+  }
+  .evidence-segmented button[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--c-teal) 16%, transparent);
+    color: var(--c-teal);
+  }
+  .evidence-segmented button[aria-pressed='true'] strong {
+    color: inherit;
+  }
+
+  .evidence-table-card {
+    overflow: hidden;
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    background: var(--c-surface);
+  }
+  .evidence-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .evidence-table th {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--c-border);
+    background: var(--c-surface2);
+    color: var(--c-text2);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .evidence-table td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--c-border);
+    font-size: var(--text-body);
+    vertical-align: middle;
+  }
+  .evidence-table tbody tr {
+    cursor: pointer;
+  }
+  .evidence-table tbody tr:hover {
+    background: var(--c-surface2);
+  }
+  .evidence-table tbody tr.is-actionable td:first-child {
+    box-shadow: inset 3px 0 0 var(--c-teal);
+  }
+  .evidence-table__company {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .evidence-table__company > span,
+  .evidence-table__stack {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+  }
+  .evidence-table strong {
+    color: var(--c-text);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .evidence-table small {
+    overflow: hidden;
+    max-width: 280px;
+    color: var(--c-text3);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .evidence-table td.is-overdue small {
+    color: var(--c-red);
+    font-weight: 700;
+  }
+  .evidence-table__action {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .evidence-request-details {
+    padding: 16px 18px;
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    background: var(--c-surface);
+  }
+  .evidence-request-details dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 14px 24px;
+    margin: 0;
+  }
+  .evidence-request-details dl > div.is-wide {
+    grid-column: 1 / -1;
+  }
+  .evidence-request-details dt {
+    color: var(--c-text3);
+    font-size: var(--text-label);
+  }
+  .evidence-request-details dd {
+    display: grid;
+    gap: 2px;
+    margin: 3px 0 0;
+    color: var(--c-text);
+    font-size: var(--text-value);
+    font-weight: 600;
+  }
+  .evidence-request-details dd small {
+    color: var(--c-text3);
+    font-size: var(--text-meta);
+    font-weight: 400;
+  }
+  .evidence-request-details__chips {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .evidence-request-details__chips span {
+    padding: 3px 9px;
+    border: 1px solid var(--c-border);
+    border-radius: 999px;
+    color: var(--c-text2);
+    font-size: var(--text-label);
+    font-weight: 500;
+  }
+  .evidence-request-details__chips span.is-required {
+    border-color: color-mix(in srgb, var(--c-teal) 40%, var(--c-border));
+    color: var(--c-text);
+  }
+
+  .evidence-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin: 6px 0 18px;
+  }
+  .evidence-detail-header h2 {
+    margin: 0;
+    font-size: var(--text-title);
+  }
+  .evidence-detail-header p {
+    margin: 4px 0 0;
+    color: var(--c-text2);
+    font-size: var(--text-body);
+  }
+
+  /* Detail body: task in the main column, reference facts in a side column on wide screens. */
+  .evidence-detail-body {
+    display: grid;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (min-width: 1100px) {
+    .evidence-detail-body {
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    }
+    .evidence-detail-aside {
+      position: sticky;
+      top: 16px;
+    }
+  }
+  .evidence-detail-main {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .evidence-detail-aside {
+    display: grid;
+    gap: 12px;
+    padding: 16px 18px;
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    background: var(--c-surface);
+  }
+  .evidence-detail-aside > h3 {
+    margin: 0;
+    font-size: var(--text-section);
+  }
+  .evidence-detail-aside .evidence-request-details {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+  .evidence-detail-aside .evidence-request-details dl {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .evidence-detail-header__status {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .evidence-panel {
+    display: grid;
+    gap: 14px;
+  }
+  .company-evidence-card.evidence-panel {
+    padding: 18px;
+  }
+  .evidence-panel__heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .evidence-panel__heading h3 {
+    margin: 0 auto 0 0;
+    font-size: 16px;
+  }
+  .evidence-panel__refresh {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--c-border);
+    border-radius: 7px;
+    background: transparent;
+    color: var(--c-text2);
+    cursor: pointer;
+  }
+  .evidence-panel__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 0;
+    color: var(--c-text2);
+    font-size: var(--text-body);
+  }
+  .evidence-panel__facts strong {
+    color: var(--c-text);
+    font-weight: 600;
+  }
+  .evidence-panel__checks {
+    margin: 0;
+    color: var(--c-text2);
+    font-size: var(--text-body);
+  }
+  .evidence-panel__shared h4 {
+    margin: 0 0 10px;
+    font-size: var(--text-section);
+  }
+
+  .evidence-next-step {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid color-mix(in srgb, var(--c-teal) 35%, var(--c-border));
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--c-teal) 7%, var(--c-surface));
+  }
+  .evidence-next-step.is-done {
+    border-color: color-mix(in srgb, var(--c-green) 35%, var(--c-border));
+    background: color-mix(in srgb, var(--c-green) 7%, var(--c-surface));
+  }
+  .evidence-next-step.is-closed {
+    border-color: var(--c-border);
+    background: var(--c-surface2);
+  }
+  .evidence-next-step > div:first-child > span {
+    color: var(--c-text3);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .evidence-next-step p {
+    margin: 2px 0 0;
+    color: var(--c-text);
+    font-size: var(--text-value);
+    font-weight: 500;
+  }
+  .evidence-next-step__action {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+  }
+
+  .evidence-fields {
+    display: grid;
+    gap: 8px;
+  }
+  .evidence-fields > header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .evidence-fields h4 {
+    margin: 0 auto 0 0;
+    font-size: var(--text-section);
+  }
+  .evidence-fields > header > strong {
+    color: var(--c-text2);
+    font-size: var(--text-body);
+    font-weight: 500;
+  }
+  .evidence-fields__list {
+    display: grid;
+    gap: 6px;
+  }
+  .evidence-claim-row__value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  .evidence-claim-row__copy {
+    display: inline-grid;
+    place-items: center;
+    padding: 2px;
+    border: 0;
+    background: transparent;
+    color: var(--c-text3);
+    cursor: pointer;
+  }
+  .evidence-claim-row__copy:hover {
+    color: var(--c-teal);
+  }
+
+  .evidence-shared-claims {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px 18px;
+    margin: 0;
+  }
+  .evidence-shared-claims dt {
+    color: var(--c-text3);
+    font-size: var(--text-label);
+  }
+  .evidence-shared-claims dd {
+    margin: 2px 0 0;
+    overflow: hidden;
+    font-size: var(--text-value);
+    font-weight: 600;
+    text-overflow: ellipsis;
+  }
+
+  .evidence-how-it-works {
+    color: var(--c-text2);
+    font-size: var(--text-body);
+  }
+  .evidence-how-it-works summary {
+    cursor: pointer;
+  }
+  .evidence-how-it-works p {
+    margin: 8px 0 0;
+    line-height: 1.5;
+  }
+
+  .evidence-context-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 28px;
+    padding: 12px 16px;
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    background: var(--c-surface);
+  }
+  .evidence-context-strip span {
+    display: grid;
+    gap: 2px;
+  }
+  .evidence-context-strip small {
+    color: var(--c-text3);
+    font-size: 12px;
+  }
+  .evidence-context-strip a {
+    margin-left: auto;
+    color: var(--c-teal);
+    font-size: 13px;
+  }
+
+  .evidence-request-form {
+    display: grid;
+    gap: 12px;
+  }
+
+  /* Ingredient evidence: one row per field to share, mirrors the company field rows. */
+  .ingredient-share-list {
+    display: grid;
+    gap: 6px;
+  }
+  .ingredient-share-row {
+    display: grid;
+    gap: 6px;
+    padding: 11px 12px;
+    border: 1px solid var(--c-border);
+    border-radius: 9px;
+    background: var(--c-surface2);
+  }
+  .ingredient-share-row.is-included {
+    border-color: color-mix(in srgb, var(--c-teal) 35%, var(--c-border));
+    background: color-mix(in srgb, var(--c-teal) 7%, var(--c-surface2));
+  }
+  .ingredient-share-row > label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+  }
+  .ingredient-share-row > label > strong {
+    margin-right: auto;
+    font-size: var(--text-value);
+  }
+  .ingredient-share-row > label > span {
+    padding: 2px 8px;
+    border: 1px solid var(--c-border);
+    border-radius: 999px;
+    color: var(--c-text2);
+    font-size: 11px;
+  }
+  .ingredient-share-row > label > span.is-required {
+    border-color: color-mix(in srgb, var(--c-teal) 40%, var(--c-border));
+    color: var(--c-teal);
+  }
+  .ingredient-share-consent {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--c-border);
+    border-radius: 9px;
+    font-size: var(--text-body);
+    line-height: 1.45;
+  }
+  .evidence-request-details dd a {
+    color: var(--c-teal);
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .ingredient-review-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 10px;
+  }
+  .ingredient-review-grid > div {
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--c-border);
+    border-radius: 9px;
+    background: var(--c-surface2);
+    overflow-wrap: anywhere;
+  }
+  .evidence-section-title {
+    margin: 0 0 12px;
+    font-size: 16px;
+  }
+  .evidence-select-field {
+    display: grid;
+    gap: 5px;
+    color: var(--c-text2);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .evidence-select-field select {
+    height: 40px;
+    padding: 0 10px;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    background: var(--c-surface);
+    color: var(--c-text);
+    font: inherit;
+    font-size: 13px;
+  }
+  .evidence-request-details dd > span {
+    display: block;
+  }
+  .evidence-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .evidence-request-details dd:has(> a) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  @media (max-width: 720px) {
+    .evidence-toolbar__select {
+      flex: 1 1 140px;
+    }
+    .evidence-toolbar__select select {
+      width: 100%;
+    }
+    .evidence-detail-header,
+    .evidence-next-step {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .evidence-context-strip a {
+      margin-left: 0;
+    }
+  }
+
+  /* Ingredient values (share and review): label/value pairs in a grid, notes muted, files on one line. */
+  :is(.ingredient-share-row, .ingredient-review-grid > div) dl {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px 18px;
+    margin: 6px 0 0;
+  }
+  :is(.ingredient-share-row, .ingredient-review-grid > div) dl > div {
+    min-width: 0;
+  }
+  :is(.ingredient-share-row, .ingredient-review-grid > div) dt {
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  :is(.ingredient-share-row, .ingredient-review-grid > div) dd {
+    margin: 2px 0 0;
+    color: var(--c-text);
+    font-size: var(--text-value);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  :is(.ingredient-share-row, .ingredient-review-grid > div) p {
+    margin: 8px 0 0;
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  /* A simple value sits right under its label and reads as a value, not a note. */
+  :is(.ingredient-share-row, .ingredient-review-grid > div) strong + p {
+    margin-top: 2px;
+    color: var(--c-text);
+    font-size: var(--text-value);
+    font-weight: 600;
+  }
+  /* The share row's checkbox label already names the field. */
+  .ingredient-share-row > label + div > strong:first-child {
+    display: none;
+  }
+  .ingredient-share-row > label + div > strong:first-child + p {
+    margin-top: 0;
+  }
+  :is(.ingredient-share-row, .ingredient-review-grid > div) .my-3 {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 12px;
+    margin: 10px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    background: var(--c-surface);
+    font-size: var(--text-body);
+  }
+  :is(.ingredient-share-row, .ingredient-review-grid > div) .my-3 .action-row {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+  }
+  .ingredient-share-row > label {
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--c-border);
+  }
+}
+
+/* Unlayered: the older workspace .action-row rule would otherwise push the file buttons onto their own line. */
+:is(.ingredient-share-row, .ingredient-review-grid > div) .my-3 .action-row {
+  width: auto;
+  margin: 0;
+  justify-content: flex-end;
+}

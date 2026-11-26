@@ -1,5 +1,237 @@
 # Project Progress
 
+## 2026-11-27 - Clickable form steps
+
+- Shared `StepProgress` takes optional `onSelect` / `disabled`; with them, each step is a button
+  covering the whole step box. Without them (receipt flow, evidence wizard, product batch
+  creation) it stays display-only.
+- Ingredient registration: click a step to move. Earlier steps are always reachable. Later
+  steps are reachable only if every step in between passes the same checks as Continue;
+  otherwise the form stops at the first invalid step and shows its errors. Steps are locked while
+  registering. Entered values are kept.
+- Verified: web typecheck, 435 web tests (new step-navigation test); blocked forward jump checked
+  live.
+
+## 2026-11-27 - Data entry and complex form rules
+
+- `enforce-ui-consistency` skill gains section 9 "Data entry and complex forms": layout,
+  choosing components by data type, conditional fields, repeated sections, readability,
+  workflow and constraints ("Verify across screens" is now section 10).
+- `.workspace-form-grid` (shared) is back to two columns for related pairs and fills the form
+  width (the user rejected a 1040 px cap); `.is-full` gives long inputs a full row. This
+  replaces the four auto-columns from the previous entry. `.workspace-review-grid` keeps flexible columns.
+- Shared components: new `RadioGroup` (`shared/ui`); `Textarea` accepts `error`, `hint` and
+  `disabled`.
+- Ingredient registration step 2: the allergen declaration is four visible choices instead of a
+  dropdown (no default; still required), with "Allergen details" as a textarea directly beneath
+  when Contains or May contain is chosen. The private source address is a full-width textarea
+  with a "Private: …" hint. Certification summaries show an amber "Incomplete" tag (reason on
+  hover), using the existing validator; this marks completion only, not verification.
+- The country of origin picker was already searchable, so it is unchanged.
+- Verified: web typecheck, 434 web tests (new: Incomplete tag); step 1 layout checked live.
+
+## 2026-11-27 - Form, review and confirmation rules
+
+- `enforce-ui-consistency` skill gains section 8 "Forms, review and confirmation pages": layout,
+  components, review, actions, rules and validation ("Verify across screens" is now section 9).
+- Shared `.workspace-form-grid` / `.workspace-review-grid` (`styles.css`) use fluid columns, at
+  least 280 px and at most four, so fields no longer stretch across wide pages. Modals and narrow
+  screens keep two columns; phones keep one.
+- Ingredient registration review step:
+  - The required sections (batch, origin and allergens, certifications) come before the optional
+    listing details.
+  - "Edit …" from the review returns to the review ("Save and return to review").
+  - An unknown allergen declaration shows as an amber "Unknown" tag.
+  - The price field says that currency and basis become required.
+  - Review values are bolder than labels.
+  - A visible "Before you register" summary (what is registered, what cannot change later, up to
+    two MetaMask confirmations, certifications stay unverified) replaces the collapsed "What
+    registration records" note.
+  - The action bar is sticky.
+- Verified: web typecheck, 433 web tests; step 1 layout checked live. The review step was not
+  checked live (date entry through browser automation did not work).
+
+## 2026-11-27 - Ingredient registration form clean-up
+
+- Removed "Resume a registration" (the saved-draft list) from the first screen, with its
+  restore code and the unused `getIngredientDrafts` client call. The API `/workflows` route is
+  unchanged. The in-form retry after a failed or unconfirmed transaction stays, renamed "Retry
+  registration"; it still checks the chain first so nothing is registered twice.
+- Shorter status text: only "Preparing registration…", the MetaMask confirmation prompt,
+  "Waiting for blockchain confirmation…", "Confirmed. Checking the result…", and the
+  sent-but-unconfirmed warning. Removed the duplicate "entries are retained" paragraph. Busy
+  button reads "Registering…".
+- After a confirmed registration the page returns to My ingredients, shows "Ingredient batch
+  registered." and opens the new batch's details (`opened` URL parameter). If the optional image
+  upload failed, it stays so the message can be read.
+- Certifications: ticking "No expiry stated" hides the expiry date field. Each certification
+  card was redesigned:
+  - Header: name with scope, document count and expiry tags, plus an "Edit" / "Done" hint.
+  - Fields: two-column grid; expiry date and the checkbox share one cell; the scope note sits
+    under the scope field.
+  - Documents: "Supporting documents" panel with an "Add documents" button instead of the
+    browser file input, and one compact row per file (icon, name, size and state, Preview /
+    Download / Remove).
+  - "Remove certification" moved to the footer with an icon.
+- Page heading "Register ingredient batch" with a one-line subtitle; the step name is no longer
+  repeated under the step indicator (kept for screen readers).
+- Verified: web typecheck, 433 web tests (new tests for completion hand-off and hidden expiry);
+  first screen and step 1 checked live. A full live registration was not run (needs MetaMask).
+
+## 2026-11-27 - Navigation and tab rules
+
+- `enforce-ui-consistency` skill gains section 7 "Navigation and tab design": which control for
+  which job, states, placement, keyboard, small screens, and reusing the shared component.
+- Shared `StatusTabs` has two variants. `tabs` is underline tabs for related pages or sections
+  (ARIA tabs, roving tab index, arrow / Home / End move focus, Enter or Space activates, optional
+  icon). `chips` (the default) is filter chips as toggle buttons (`aria-pressed`, not tabs). The
+  filled teal "connected" style is removed.
+- Merged sidebar sections and the Evidence Exchange Company / Ingredient tabs use underline tabs.
+  The Evidence Exchange tabs now sit on their own row under the heading. Delivery, request,
+  shipment and both audit-report status filters use chips.
+- Verified: web typecheck, 432 web tests (new keyboard test); Evidence Exchange and Custody
+  checked live as Supplier. Other roles' tab rows not checked live.
+
+## 2026-11-27 - My ingredients refinements
+
+- Supplier "My ingredients": title matches the menu, list and grid views are paginated with the
+  shared pagination bar (`usePagination` / `PaginationBar`, split out of `PaginatedTable`; tables
+  behave as before), quantities show thousands separators, "View details" is a secondary button
+  so "Register ingredient batch" is the only primary action, and the duplicate "Show archived"
+  checkbox is gone (Status → Archived; the default reads "All except archived").
+- Removed the per-row "Show more" panel: each row has only "View details". The details window
+  now holds everything the panel had (category, origin, production date, registered quantity,
+  description, Supplier stock summary, Edit listing / Archive / Restore), with the two text links
+  turned into buttons, a muted note instead of the large info alert, "Choose image" / "Upload
+  image" buttons instead of the browser file input, and Distributor custody as a small list.
+  The row's "Expires" shows the "Expires in N days" warning.
+- Inventory cards (My ingredients, custody inventory, product batches) open their details when
+  clicked anywhere outside a control (`openCardOnClick`), with a hover border; a lone "View
+  details" button fills its column.
+- Pages fill the workspace width: removed the centered max-width caps on Register ingredient
+  batch, Create product batch, admin company detail, Receive ingredient, Receive shipment and
+  Product trace, and the inventory grid view now uses fluid columns instead of fixed 380 px ones.
+- `SupplierStockSummary` (also used on Incoming orders) shows amounts with thousands separators,
+  labelled values and a shorter muted note.
+- Verified: web typecheck, 430 web tests; page and details window checked live as Supplier (3
+  batches, so multi-page paging not exercised live).
+
+## 2026-11-27 - Simpler workspace navigation
+
+- Sidebar groups are the same for every company role: Home, Products, Orders, Logistics,
+  Evidence & tracing, Company (admin unchanged).
+- Pairs of pages are one sidebar entry with tabs (`workspaceSection` in `workspace-navigation.ts`,
+  tabs rendered by `WorkspaceLayout`): Supplier Custody (stock / send); Manufacturer Orders
+  (buying / selling), Shipments (incoming / outgoing), Custody; Distributor Deliveries and
+  Warehouse stock (ingredients / products); Retailer Deliveries (incoming / received) and Trace a
+  product (search / scan QR). Visible items: Supplier 11→10, Manufacturer 14→11, Distributor
+  12→10, Retailer 11→9.
+- Renamed: Audit history/reports → Activity log, My company identity → Company identity, Company
+  profile & locations → Profile & locations; page titles match. All existing URLs keep working.
+- Docs: removed the "Presentation signing settings" instructions; legacy key recovery now points
+  to the "Manage legacy presentation keys" link.
+- Verified: web typecheck, 430 web tests; Supplier menu and Custody tabs checked live. Other
+  roles not checked live.
+
+## 2026-11-27 - Company identity page tidy-up
+
+- "My company identity": sentence-case actions (Refresh, Download summary, Verify credential),
+  "Registry status" and "Signature check" cards with readable labels, the shared
+  `TechnicalDetails`, and the disclaimer as a muted note instead of a large alert.
+- Removed the "Presentation signing settings" button (`CompanyWalletSigning`): the first company
+  presentation already registers the wallet attestation. The `/company-wallet-binding/prepare`
+  API route is unchanged.
+- "Legacy Ed25519 presentation keys" is hidden unless opened through the "Manage legacy
+  presentation keys" links, so older key-bound credentials can still be restored.
+- Company logo settings: one row with the avatar, company name, role and logo state, and
+  "Choose image" / "Upload logo" buttons instead of the browser's file input; no card nested in
+  the collapsible section. Upload behavior is unchanged.
+- Verified: web typecheck, 429 web tests; page, logo panel and legacy-key link checked live as
+  Supplier.
+
+## 2026-11-27 - Consistent ingredient evidence lists and navigation
+
+- Every Evidence Exchange list (company, Supplier, Manufacturer, Retailer ingredient) uses one
+  status filter (All / Needs your action / Open / Closed) and one deadline cell ("Due in 5 h",
+  "Overdue", "Closed"); the unexplained amber deadline is gone. Lists show newest first, as do
+  custody offers.
+- Fixed: an opened Supplier ingredient request stayed on screen after clicking the "Ingredient
+  evidence" tab. The open request is now in the URL (`requestId`), and the tab remounts the
+  Manufacturer/Retailer lists so their open review closes too.
+- Supplier request detail shows its real status; a closed request explains why and hides the
+  response actions. Every evidence detail, open or closed, keeps its request summary in the right
+  column (closed requests no longer move it below). Evidence detail pages use the shared
+  `BackNavigation` (top-left "‹" link) like other detail pages, replacing their breadcrumbs.
+  Shared ingredient values show as a label/value grid with files on one line.
+- Verified: web typecheck, 429 web tests; Supplier list, closed and open details and the tab
+  back-navigation checked live. Manufacturer/Retailer lists not checked live.
+
+## 2026-11-27 - Readable hierarchy on evidence detail screens
+
+- `enforce-ui-consistency` skill gains a "Visual hierarchy, readability and information
+  presentation" section (type scale, status placement, grouping, layout, actions, checklist).
+- New type-scale tokens on `.workspace-ui` (`--text-meta` 12 → `--text-title` 22); evidence styles
+  use them: labels 13px, values 15px semibold, body 14px, section headings 16px.
+- Company and ingredient evidence details (Supplier respond, Manufacturer and Retailer review) use
+  a shared `EvidenceDetailLayout`: the task in the main column and a titled "Request summary" /
+  "Proof details" side column on wide screens, one column on narrow screens. A closed request
+  shows why no action is possible first, then its summary full width; the deadline date is no
+  longer repeated.
+- Verified: web typecheck, 428 web tests; closed company request and open ingredient request
+  checked live as Supplier. Manufacturer/Retailer review screens not checked live.
+
+## 2026-11-27 - Ingredient evidence pages redesigned (Supplier, Manufacturer, Retailer)
+
+- Lists now match the company evidence table: who, which ingredient (name + batch reference instead
+  of on-chain IDs), deadline, one status badge and one action, paginated, with requests that need
+  the viewer sorted first. The duplicate page header, second Refresh, explanation paragraphs and
+  per-row technical details were removed. The Ingredient evidence tab shows the real request
+  count (was hard-coded 1/0).
+- Detail pages share the company evidence layout: breadcrumb, a title that says who asks about
+  what, a Request details card (requester, wallet, ingredient, deadline, requester identity status,
+  purpose, requested fields), one Next step box, and explanations collapsed under "How this
+  works". Supplier respond: decline reason appears only after "Decline…"; buttons are "Review
+  values to share" and "Sign and share". Manufacturer/Retailer review: Verify, Accept (or
+  "Evidence satisfactory" for Retailers) and Reject… in one place; the Retailer request form opens
+  from "New evidence request".
+- One shared ingredient evidence status map (`ingredientEvidenceStatus` in
+  `features/orders/EvidenceParts.tsx`) replaces three inline arrays; concurrent
+  `listEvidenceRequests` calls share one in-flight request.
+- Verified: web typecheck, 428 web tests; Supplier list and respond page checked live. Manufacturer
+  and Retailer pages not yet checked live; "Review values to share" was not clicked live.
+
+## 2026-11-27 - Stakeholder overviews show only actionable information
+
+- Supplier, Manufacturer, Distributor and Retailer overviews share one layout: four clickable
+  counts, a paginated "Needs your action" table (task, item, counterparty, due, status, one
+  action) gathered from orders, custody offers, ingredient evidence and company identity
+  requests, sorted by deadline, and one role snapshot table (ingredient stock with expiry,
+  product batches, recent custody offers, or recent orders). Image placeholders and technical
+  IDs were removed from overviews. Each source loads on its own, so a slow source never blocks
+  the others.
+- New: orders awaiting approval and custody offers waiting on the viewer now appear on the
+  overview (the previous overview read only the operational chain summary).
+- Shared code: `features/workspaces/shared/overview-data.ts` (task builders, one custody-offer
+  status map) and `shared/stakeholder-overview.css`.
+- Verified: web typecheck, 428 web tests; Supplier overview checked live at desktop and phone
+  width. Manufacturer, Distributor and Retailer not yet checked live.
+
+## 2026-11-26 - Evidence Exchange redesign
+
+- List: one control bar (category, Received/Sent, status filter, search) and one compact row per
+  request (company, evidence type, single status badge, deadline, Respond/Verify only when the
+  viewer can act). Requests needing action are grouped on top; technical IDs left the list.
+- Detail: one layout for every request type — correct breadcrumb (Received/Sent), a title that
+  says who asks whom, a one-line summary, one "Next step" box with the action, one field list
+  (required fields locked, optional toggles, "X of Y fields will be shared"), shared claims shown
+  directly, and all explanations collapsed under "How this works". Raw statuses and IDs stay in
+  Technical details. Order/ingredient/shared proofs use the same field list instead of raw
+  checkboxes. A requester can now verify a shared delivery proof from the panel.
+- Shared pieces in `apps/web/src/features/orders/EvidenceParts.tsx` and `evidence-exchange.css`;
+  85 unused evidence CSS rules removed from `workspace.css`.
+- Verified: web typecheck, production build, 427 web tests; list and closed-request detail
+  checked live as Supplier. Active request states (respond/sign, verify) not yet seen live.
+
 ## 2026-11-26 - Orders state reads batched (performance step 1)
 
 - `OrdersService.buildState` no longer awaits contract reads one at a time. The orders,

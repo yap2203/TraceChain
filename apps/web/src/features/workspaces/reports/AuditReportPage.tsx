@@ -135,7 +135,6 @@ export default function AuditReport() {
             label="Filter audit records by type"
             value={category}
             onChange={setCategory}
-            variant="connected"
             tabs={[
               { value: 'All', label: 'All records', count: rows.length },
               {

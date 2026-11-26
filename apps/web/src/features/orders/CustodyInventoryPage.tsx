@@ -20,6 +20,7 @@ import {
   InventoryFact,
   InventorySummaryCard,
   InventoryViewToggle,
+  openCardOnClick,
   LoadFailed,
   SectionTitle,
   SelectField,
@@ -372,8 +373,9 @@ function CustodyInventoryCard({
 
   return (
     <article
-      className={`ingredient-card ingredient-card--${view} custody-inventory-card${expanded ? ' is-expanded' : ''}`}
+      className={`ingredient-card ingredient-card--${view} custody-inventory-card is-clickable${expanded ? ' is-expanded' : ''}`}
       data-inventory-id={entry.id}
+      onClick={openCardOnClick(onDetails)}
     >
       <div className="ingredient-card__media">
         <CatalogueImage
@@ -775,23 +777,23 @@ function inventoryCopy(role: InventoryRole, kind: InventoryKind) {
   if (role === 'distributor')
     return kind === 'ingredient'
       ? {
-          title: 'Ingredient custody',
+          title: 'Ingredient stock',
           subtitle: 'Ingredient stock physically held at your authorized warehouses.',
           resultNote: 'Physical custody balances for your Distributor company.',
         }
       : {
-          title: 'Product custody',
+          title: 'Product stock',
           subtitle: 'Finished-product stock physically held at your authorized warehouses.',
           resultNote: 'Physical custody balances for your Distributor company.',
         };
   if (role === 'manufacturer')
     return {
-      title: 'My products in custody',
+      title: 'Stock at distributors',
       subtitle: 'Your finished-product stock held at authorized Distributor locations.',
       resultNote: 'Manufacturer-owned stock in Distributor custody.',
     };
   return {
-    title: 'My stock in custody',
+    title: 'Stock at distributors',
     subtitle: 'Your ingredient batches physically held by authorized Distributors.',
     resultNote: 'Supplier-owned stock in Distributor custody.',
   };

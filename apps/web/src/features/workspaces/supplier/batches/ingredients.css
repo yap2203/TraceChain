@@ -1,0 +1,124 @@
+/* My ingredients: the details modal. Uses the workspace theme tokens and type scale. */
+@layer components {
+  /* Details modal */
+  .ingredient-detail {
+    gap: 18px;
+  }
+  .ingredient-detail__hero {
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+  }
+  .ingredient-detail__hero > .catalogue-image {
+    aspect-ratio: 4 / 3;
+    min-height: 0;
+    max-height: 220px;
+  }
+  .ingredient-detail__summary {
+    gap: 12px;
+  }
+  .ingredient-detail__summary h3 {
+    font-size: var(--text-title);
+  }
+  .ingredient-detail__summary p {
+    font-size: var(--text-body);
+  }
+  .ingredient-detail__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ingredient-detail__link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid var(--c-border2);
+    border-radius: 8px;
+    color: var(--c-text);
+    font-size: var(--text-label);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .ingredient-detail__link:hover,
+  .ingredient-detail__link:focus-visible {
+    border-color: var(--c-teal);
+    color: var(--c-teal);
+  }
+  .ingredient-detail__facts h4,
+  .ingredient-detail__custody h4,
+  .ingredient-image-manager h4 {
+    font-size: var(--text-body);
+  }
+  .ingredient-detail__facts dt {
+    font-size: var(--text-label);
+  }
+  .ingredient-detail__facts dd {
+    font-size: var(--text-value);
+  }
+  .ingredient-detail__note {
+    margin: 0;
+    color: var(--c-text2);
+    font-size: var(--text-meta);
+  }
+  .ingredient-detail__custody {
+    display: grid;
+    gap: 10px;
+  }
+  .ingredient-detail__custody h4 {
+    margin: 0;
+    color: var(--c-text);
+  }
+  .ingredient-detail__custody ul {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-sm);
+  }
+  .ingredient-detail__custody li {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    font-size: var(--text-body);
+  }
+  .ingredient-detail__custody li + li {
+    border-top: 1px solid var(--c-border);
+  }
+  .ingredient-detail__custody li > span {
+    display: grid;
+    gap: 2px;
+  }
+  .ingredient-detail__custody li > span:last-child {
+    text-align: right;
+    font-weight: 600;
+  }
+  .ingredient-detail__custody small {
+    color: var(--c-text2);
+    font-size: var(--text-meta);
+    font-weight: 400;
+  }
+  .ingredient-image-manager {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .ingredient-image-manager p {
+    font-size: var(--text-label);
+    overflow-wrap: anywhere;
+  }
+  .ingredient-image-manager__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .ingredient-modal-actions {
+    justify-content: flex-end;
+  }
+
+  @container workspace (max-width: 699px) {
+    .ingredient-detail__hero,
+    .ingredient-image-manager {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}

@@ -585,9 +585,14 @@ export function CustodyOffersWorkspace({
           ? selectedProductStock.available
           : '0'
       : undefined;
-  const visible = offers.filter(
-    (offer) => data && same(receiver ? offer.distributor : offer.sender, data.actor),
-  );
+  const visible = offers
+    .filter((offer) => data && same(receiver ? offer.distributor : offer.sender, data.actor))
+    // Newest first; offers without a creation time fall back to their expiry.
+    .sort(
+      (a, b) =>
+        (Date.parse(b.createdAt ?? '') || b.expiresAt * 1000) -
+        (Date.parse(a.createdAt ?? '') || a.expiresAt * 1000),
+    );
   const label = (location: string) =>
     formatLocationLabel(
       data?.locations.find((site) => same(site.location, location)),
@@ -706,7 +711,7 @@ export function CustodyOffersWorkspace({
                 <div className="workspace-offer-field">
                   <SelectField
                     label="Pickup location"
-                  required
+                    required
                     value={from}
                     onChange={setFrom}
                     options={[
