@@ -35,15 +35,8 @@ function encoded(name: 'Supplied' | 'Noted', values: unknown[], block: number, i
 function fixture(deployedAt = 12_000, chainId = 11155111n) {
   let tip = 24_005;
   let hashVersion = 1;
-  const provider = {
-    getBlockNumber: vi.fn(async () => tip),
-    getNetwork: vi.fn(async () => ({ chainId })),
-    getBlock: vi.fn(async (block: number) => ({ hash: `hash-${hashVersion}-${block}` })),
-    getCode: vi.fn(async (_address: string, block: number) =>
-      block >= deployedAt ? '0x1234' : '0x',
-    ),
-  };
   // Each page holds one log per supplier plus one unrelated event.
+  // Recorded as ['*', from, to] per scanned range; the provider receives one multi-address filter.
   const queryFilter = vi.fn(async (_filter: unknown, from: number, to: number) => {
     if (to - from + 1 > 10_000) throw new Error('RPC range exceeded');
     return [
@@ -52,6 +45,17 @@ function fixture(deployedAt = 12_000, chainId = 11155111n) {
       encoded('Noted', [to], to, 2),
     ];
   });
+  const provider = {
+    getBlockNumber: vi.fn(async () => tip),
+    getNetwork: vi.fn(async () => ({ chainId })),
+    getBlock: vi.fn(async (block: number) => ({ hash: `hash-${hashVersion}-${block}` })),
+    getCode: vi.fn(async (_address: string, block: number) =>
+      block >= deployedAt ? '0x1234' : '0x',
+    ),
+    getLogs: vi.fn(async (filter: { fromBlock: number; toBlock: number }) =>
+      queryFilter('*', filter.fromBlock, filter.toBlock),
+    ),
+  };
   const contract = {
     runner: { provider },
     interface: abi,
@@ -75,6 +79,7 @@ describe('Public chain event pagination', () => {
   beforeEach(() => {
     vi.stubEnv('CHAIN_EVENT_START_BLOCK', '');
     vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '0');
+    vi.stubEnv('CHAIN_EVENT_HEAD_CACHE_MS', '0');
   });
   afterEach(() => vi.unstubAllEnvs());
   it('uses a configured deployment lower bound without historical code reads', async () => {
@@ -185,11 +190,83 @@ describe('Public chain event pagination', () => {
   });
 });
 
+describe('Shared multi-contract scan', () => {
+  const second = '0x00000000000000000000000000000000000000bb';
+  beforeEach(() => {
+    vi.stubEnv('CHAIN_EVENT_START_BLOCK', '24000');
+    vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '0');
+  });
+  afterEach(() => vi.unstubAllEnvs());
+  function twoContracts() {
+    const f = fixture();
+    const other = {
+      ...(f.contract as unknown as Record<string, unknown>),
+      getAddress: async () => second,
+    } as unknown as BaseContract;
+    // Logs for both addresses arrive in one response and must be split by address.
+    f.provider.getLogs.mockImplementation(async (filter: any) => {
+      await f.queryFilter('*', filter.fromBlock, filter.toBlock);
+      return [
+        { ...encoded('Noted', [1], filter.toBlock, 0) },
+        { ...encoded('Noted', [2], filter.toBlock, 1), address: second },
+      ];
+    });
+    return { f, other };
+  }
+
+  it('advances every contract with one log request per new range', async () => {
+    vi.stubEnv('CHAIN_EVENT_HEAD_CACHE_MS', '0');
+    const { f, other } = twoContracts();
+    await Promise.all([
+      queryContractEvents(f.contract, notedFilter),
+      queryContractEvents(other, notedFilter),
+    ]);
+    const before = f.provider.getLogs.mock.calls.length;
+    f.setTip(24_010);
+    const [a, b] = (await Promise.all([
+      queryContractEvents(f.contract, notedFilter),
+      queryContractEvents(other, notedFilter),
+    ])) as EventLog[][];
+    expect(f.provider.getLogs.mock.calls.length - before).toBe(1);
+    expect(f.provider.getLogs.mock.calls.at(-1)![0]).toMatchObject({
+      address: ['0x00000000000000000000000000000000000000aa', second],
+      fromBlock: 24_006,
+      toBlock: 24_010,
+    });
+    expect(a.map((log) => Number(log.args.value))).toEqual([1, 1]);
+    expect(b.map((log) => Number(log.args.value))).toEqual([2, 2]);
+  });
+
+  it('asks for the chain head once per short window instead of once per contract', async () => {
+    const { f, other } = twoContracts();
+    await queryContractEvents(f.contract, notedFilter);
+    await queryContractEvents(other, notedFilter);
+    await queryContractEvents(f.contract, notedFilter);
+    expect(f.provider.getBlockNumber).toHaveBeenCalledTimes(1);
+  });
+
+  it('halves a range the provider rejects for returning too many results', async () => {
+    vi.stubEnv('CHAIN_EVENT_HEAD_CACHE_MS', '0');
+    const f = fixture();
+    f.provider.getLogs
+      .mockRejectedValueOnce(new Error('query returned more than 10000 results'))
+      .mockImplementation(async (filter: any) =>
+        f.queryFilter('*', filter.fromBlock, filter.toBlock),
+      );
+    await queryContractEvents(f.contract, notedFilter);
+    expect(f.queryFilter.mock.calls).toEqual([
+      ['*', 24_000, 24_002],
+      ['*', 24_003, 24_005],
+    ]);
+  });
+});
+
 describe('Persisted contract event index', () => {
   let directory: string;
   beforeEach(async () => {
     vi.stubEnv('CHAIN_EVENT_START_BLOCK', '12000');
     vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '0');
+    vi.stubEnv('CHAIN_EVENT_HEAD_CACHE_MS', '0');
     directory = await mkdtemp(join(tmpdir(), 'tracechain-events-'));
     configureEventIndexStore(directory);
   });

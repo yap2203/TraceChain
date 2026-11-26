@@ -5,7 +5,14 @@ import { countRead } from './read-timing.js';
 
 const DEFAULT_PAGE_SIZE = 5_000;
 const deploymentBlocks = new WeakMap<Provider, Map<string, Promise<number>>>();
-const contractIndexes = new WeakMap<Provider, Map<string, ContractIndex>>();
+const scanners = new WeakMap<Provider, ProviderScanner>();
+
+/** All contract indexes on one provider advance together through one multi-address log scan. */
+interface ProviderScanner {
+  indexes: Map<string, ContractIndex>;
+  head?: { at: number; value: Promise<number> };
+  scan?: Promise<void>;
+}
 
 /** Plain, JSON-safe copy of a confirmed log; public chain data only. */
 export interface StoredLog {
@@ -22,11 +29,16 @@ export interface StoredLog {
 
 /** One index per contract: every event type shares the same paged scan. */
 interface ContractIndex {
+  address: string;
+  key: string;
+  local: boolean;
+  ready: boolean;
+  /** False after a disk restore until its checkpoint is re-checked against the chain. */
+  verified: boolean;
   checkpointHash?: string;
   fromBlock: number;
   lastProcessedBlock: number;
   logs: StoredLog[];
-  pending?: Promise<void>;
   restored?: Promise<void>;
   saving?: Promise<void>;
 }
@@ -78,88 +90,185 @@ export async function queryContractEvents(
 export async function syncContractEvents(contract: BaseContract) {
   const provider = contract.runner?.provider;
   if (!provider) throw new Error('A blockchain provider is required to read contract events.');
-  const [rawHead, network, address] = await Promise.all([
-    latestBlockNumber(provider),
-    provider.getNetwork(),
-    contract.getAddress(),
-  ]);
+  let scanner = scanners.get(provider);
+  if (!scanner) scanners.set(provider, (scanner = { indexes: new Map() }));
+  const [network, address] = await Promise.all([provider.getNetwork(), contract.getAddress()]);
   const local = network.chainId === 31_337n;
+  const rawHead = await latestBlockNumber(provider, scanner, local);
   const confirmations = local ? 0 : integerEnvironment('CHAIN_EVENT_CONFIRMATIONS', 2, 0, 1_000);
   const confirmedHead = Math.max(0, rawHead - confirmations);
   const fromBlock = await eventStartBlock(provider, address, rawHead, confirmedHead, local);
   const key = `${network.chainId}-${address.toLowerCase()}-${fromBlock}`;
-  let providerIndexes = contractIndexes.get(provider);
-  if (!providerIndexes) contractIndexes.set(provider, (providerIndexes = new Map()));
-  let index = providerIndexes.get(key);
+  let index = scanner.indexes.get(key);
   if (!index) {
-    index = { fromBlock, lastProcessedBlock: fromBlock - 1, logs: [] };
-    if (!local && storeDirectory) index.restored = restoreIndex(index, key, storeDirectory);
-    providerIndexes.set(key, index);
+    const created: ContractIndex = {
+      address: address.toLowerCase(),
+      key,
+      local,
+      ready: false,
+      verified: true,
+      fromBlock,
+      lastProcessedBlock: fromBlock - 1,
+      logs: [],
+    };
+    created.restored = (
+      !local && storeDirectory ? restoreIndex(created, key, storeDirectory) : Promise.resolve()
+    ).then(() => {
+      created.ready = true;
+    });
+    scanner.indexes.set(key, (index = created));
   }
   await index.restored;
-  if (!index.pending) {
-    const operation = refreshContractIndex(contract, provider, index, confirmedHead, local, key);
-    index.pending = operation;
-    void operation.then(
-      () => clearPending(index, operation),
-      () => clearPending(index, operation),
-    );
+  // Join a running scan when there is one; otherwise start a scan covering every ready index.
+  while (!current(index, confirmedHead)) {
+    if (!scanner.scan) {
+      const operation = scanAll(provider, scanner, confirmedHead);
+      scanner.scan = operation;
+      void operation.then(
+        () => clearScan(scanner, operation),
+        () => clearScan(scanner, operation),
+      );
+    }
+    await scanner.scan;
   }
-  await index.pending;
   return index;
 }
 
-function clearPending(index: ContractIndex, operation: Promise<void>) {
-  if (index.pending === operation) index.pending = undefined;
+/** Local chains can restart below the index, so they must match the head exactly. */
+function current(index: ContractIndex, confirmedHead: number) {
+  if (!index.verified) return false;
+  return index.local
+    ? index.lastProcessedBlock === confirmedHead
+    : index.lastProcessedBlock >= Math.max(confirmedHead, index.fromBlock - 1);
 }
 
-async function latestBlockNumber(provider: Provider) {
+function clearScan(scanner: ProviderScanner, operation: Promise<void>) {
+  if (scanner.scan === operation) scanner.scan = undefined;
+}
+
+/** One head lookup serves every contract for a short window, so a page build asks once. */
+async function latestBlockNumber(provider: Provider, scanner: ProviderScanner, local: boolean) {
+  const ttl = local ? 0 : integerEnvironment('CHAIN_EVENT_HEAD_CACHE_MS', 3_000, 0, 60_000);
+  if (ttl && scanner.head && Date.now() - scanner.head.at < ttl) return scanner.head.value;
   const transport = provider as Provider & {
     send?: (method: string, params: unknown[]) => Promise<unknown>;
   };
-  if (transport.send) return Number(BigInt(String(await transport.send('eth_blockNumber', []))));
-  return provider.getBlockNumber();
+  const value = transport.send
+    ? transport.send('eth_blockNumber', []).then((raw) => Number(BigInt(String(raw))))
+    : provider.getBlockNumber();
+  const head = { at: Date.now(), value };
+  scanner.head = head;
+  void value.catch(() => {
+    if (scanner.head === head) scanner.head = undefined;
+  });
+  return value;
 }
 
-async function refreshContractIndex(
-  contract: BaseContract,
-  provider: Provider,
-  index: ContractIndex,
-  confirmedHead: number,
-  local: boolean,
-  key: string,
-) {
-  const reset = () => {
+async function scanAll(provider: Provider, scanner: ProviderScanner, confirmedHead: number) {
+  const members = [...scanner.indexes.values()].filter(
+    (index) => index.ready && !current(index, confirmedHead),
+  );
+  const reset = (index: ContractIndex) => {
     resetIndex(index);
-    notifyIndex({ key, kind: 'reset', block: index.lastProcessedBlock, logs: [] });
+    notifyIndex({ key: index.key, kind: 'reset', block: index.lastProcessedBlock, logs: [] });
   };
-  if (confirmedHead < index.lastProcessedBlock) reset();
-  if (index.lastProcessedBlock >= index.fromBlock && index.checkpointHash) {
-    const checkpoint = await provider.getBlock(index.lastProcessedBlock);
-    if (!checkpoint?.hash || checkpoint.hash !== index.checkpointHash) reset();
+  for (const index of members) if (confirmedHead < index.lastProcessedBlock) reset(index);
+  // Indexes scanned together share a checkpoint, so one block lookup verifies all of them.
+  const checkpoints = new Map<number, Promise<string | null | undefined>>();
+  for (const index of members)
+    if (index.lastProcessedBlock >= index.fromBlock && index.checkpointHash)
+      if (!checkpoints.has(index.lastProcessedBlock))
+        checkpoints.set(
+          index.lastProcessedBlock,
+          provider.getBlock(index.lastProcessedBlock).then((block) => block?.hash),
+        );
+  for (const index of members)
+    if (index.lastProcessedBlock >= index.fromBlock && index.checkpointHash) {
+      const hash = await checkpoints.get(index.lastProcessedBlock);
+      if (!hash || hash !== index.checkpointHash) reset(index);
+    }
+  for (const index of members) index.verified = true;
+  // Indexes at the same position share one multi-address scan; a newly seen one catches up alone.
+  const groups = new Map<number, ContractIndex[]>();
+  for (const index of members) {
+    const start = Math.max(index.fromBlock, index.lastProcessedBlock + 1);
+    if (start > confirmedHead) continue;
+    groups.set(start, [...(groups.get(start) ?? []), index]);
   }
-  if (confirmedHead < index.fromBlock) return;
-  const start = Math.max(index.fromBlock, index.lastProcessedBlock + 1);
-  if (start > confirmedHead) return;
-  const pageSize = integerEnvironment('CHAIN_EVENT_PAGE_SIZE', DEFAULT_PAGE_SIZE, 1, 100_000);
-  const additions: StoredLog[] = [];
-  for (let pageStart = start; pageStart <= confirmedHead; pageStart += pageSize) {
-    countRead('scans');
-    const page = await contract.queryFilter(
-      '*',
-      pageStart,
-      Math.min(pageStart + pageSize - 1, confirmedHead),
-    );
-    additions.push(...page.map(storedLog));
-  }
-  const checkpoint = await provider.getBlock(confirmedHead);
+  if (!groups.size) return;
+  const [scanned, checkpoint] = await Promise.all([
+    Promise.all(
+      [...groups].map(async ([start, indexes]) => ({
+        indexes,
+        logs: await readLogs(
+          provider,
+          indexes.map((index) => index.address),
+          start,
+          confirmedHead,
+        ),
+      })),
+    ),
+    provider.getBlock(confirmedHead),
+  ]);
+  const local = members[0]!.local;
   if (!checkpoint?.hash && !local)
     throw new Error('The RPC provider did not return a confirmed block hash.');
-  index.logs = deduplicateLogs([...index.logs, ...additions]);
-  index.lastProcessedBlock = confirmedHead;
-  index.checkpointHash = checkpoint?.hash ?? `local:${confirmedHead}`;
-  notifyIndex({ key, kind: 'scan', block: confirmedHead, logs: additions });
-  if (!local && storeDirectory) persistIndex(index, key, storeDirectory);
+  for (const { indexes, logs } of scanned)
+    for (const index of indexes) {
+      const additions = logs.filter((log) => log.address.toLowerCase() === index.address);
+      index.logs = deduplicateLogs([...index.logs, ...additions]);
+      index.lastProcessedBlock = confirmedHead;
+      index.checkpointHash = checkpoint?.hash ?? `local:${confirmedHead}`;
+      notifyIndex({ key: index.key, kind: 'scan', block: confirmedHead, logs: additions });
+      if (!index.local && storeDirectory) persistIndex(index, index.key, storeDirectory);
+    }
+}
+
+async function readLogs(provider: Provider, addresses: string[], from: number, to: number) {
+  const pageSize = integerEnvironment('CHAIN_EVENT_PAGE_SIZE', DEFAULT_PAGE_SIZE, 1, 100_000);
+  const logs: StoredLog[] = [];
+  for (let pageStart = from; pageStart <= to; pageStart += pageSize)
+    logs.push(
+      ...(await readLogRange(
+        provider,
+        addresses,
+        pageStart,
+        Math.min(to, pageStart + pageSize - 1),
+      )),
+    );
+  return logs;
+}
+
+/** Halves a range the provider rejects for returning too many results. */
+async function readLogRange(
+  provider: Provider,
+  addresses: string[],
+  from: number,
+  to: number,
+): Promise<StoredLog[]> {
+  countRead('scans');
+  try {
+    const page = await provider.getLogs({
+      address: addresses.length === 1 ? addresses[0] : addresses,
+      fromBlock: from,
+      toBlock: to,
+    });
+    return page.map(storedLog);
+  } catch (cause) {
+    if (to <= from || !tooManyResults(cause)) throw cause;
+    const middle = Math.floor((from + to) / 2);
+    return [
+      ...(await readLogRange(provider, addresses, from, middle)),
+      ...(await readLogRange(provider, addresses, middle + 1, to)),
+    ];
+  }
+}
+
+function tooManyResults(cause: unknown) {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  return /more than \d+ results|query returned more than|too many results|response size (?:is )?(?:too large|exceed)/i.test(
+    message,
+  );
 }
 
 function storedLog(log: Log | EventLog): StoredLog {
@@ -232,6 +341,7 @@ async function restoreIndex(index: ContractIndex, key: string, directory: string
     // The checkpoint is re-verified against the chain before the next scan; a reorg rebuilds.
     index.lastProcessedBlock = saved.lastProcessedBlock!;
     index.checkpointHash = saved.checkpointHash;
+    index.verified = false;
     index.logs = saved.logs;
     notifyIndex({ key, kind: 'restore', block: index.lastProcessedBlock, logs: index.logs });
   } catch {
