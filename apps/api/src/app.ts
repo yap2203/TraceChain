@@ -23,7 +23,11 @@ import {
   InMemorySessionRepository,
 } from './modules/auth/auth.repository.js';
 import { createAuthRouter } from './modules/auth/auth.routes.js';
-import { AuthService } from './modules/auth/auth.service.js';
+import {
+  AuthService,
+  mayUseCachedAuthorization,
+  runWithAuthorizationFreshness,
+} from './modules/auth/auth.service.js';
 import {
   EthersBlockchainAuthorizationService,
   BlockchainAuthorizationUnavailableError,
@@ -187,6 +191,11 @@ export function createApp({
   const resolvedAuthService =
     authService ??
     new AuthService({
+      // Read-only (GET) requests may reuse an AUTHORIZED result this long; actions always re-check.
+      authorizationCacheMs: Math.min(
+        60_000,
+        Math.max(0, Number(process.env.AUTH_STATUS_CACHE_MS ?? 15_000) || 0),
+      ),
       authorizationResolver,
       configuration: {
         chainId: env.CHAIN_ID,
@@ -619,7 +628,11 @@ export function createApp({
       });
       return;
     }
-    next();
+    // Only allow-listed page-list reads may use a cached authorization; everything else is live.
+    runWithAuthorizationFreshness(
+      !mayUseCachedAuthorization(request.method, request.originalUrl.split('?')[0]!),
+      next,
+    );
   });
 
   app.get('/api/health', (_request, response) => {

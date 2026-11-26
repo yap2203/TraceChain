@@ -19,6 +19,23 @@
 - Benchmark (100 ms latency): warm page load 1.1 s → 0.44 s with 0 contract reads.
 - Verified: API typecheck, 528 API tests (5 new read-model tests). Not yet measured on live Sepolia.
 
+## 2026-11-26 - One shared event scan and a short authorization cache
+
+- Event indexes on one provider now advance together: one multi-address `eth_getLogs`, one
+  checkpoint check and one head lookup (cached `CHAIN_EVENT_HEAD_CACHE_MS`, default 3 s) per new
+  block instead of about 4 requests per contract. Saved index files keep their format; a restored
+  index is still checkpoint-verified once; ranges rejected for too many results are halved.
+  Live (Distributor, Sepolia): Shipments first load 16.0 s → 3.5 s, Overview 16.5 s → 6.2 s, full
+  orders state 13 s → 6 s.
+- Sign-in authorization: an AUTHORIZED on-chain result may be reused for `AUTH_STATUS_CACHE_MS`
+  (default 15 s, max 60 s) by an allow-list of read-only page-list GETs only (`/api/auth/session`,
+  `/api/orders` and its information-requests, custody-offers, branding/me, profile). Every other
+  request — all writes, transaction preparation, credential issuance, decrypted evidence and
+  documents — checks the chain live. Sign-in is always live; sign-out forgets the wallet; an older
+  read can never overwrite a newer revocation. Trust-boundary review found a credential-issuing
+  GET in the first version; fixed by the fail-closed allow-list.
+- Verified: API typecheck, 536 API tests. Authorization-cache timings not yet measured live.
+
 ## 2026-11-26 - Custody flow fixes from live Supplier → Distributor test
 
 - Custody evidence gate (accept/schedule/handoff) now uses the recorded company-proof outcome

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 
 import { getAddress } from 'ethers';
@@ -46,7 +47,32 @@ export function assertAuthorizationAvailable(session: SessionRecord | SessionRes
     );
 }
 
+const freshAuthorization = new AsyncLocalStorage<boolean>();
+
+/**
+ * Runs a request with or without a live on-chain authorization check. Requests that change
+ * data or prepare transactions must pass true so they never rely on a cached result.
+ */
+export function runWithAuthorizationFreshness<T>(fresh: boolean, operation: () => T): T {
+  return freshAuthorization.run(fresh, operation);
+}
+
+// Fail closed: only these read-only page-list GETs may reuse a cached result. Anything else,
+// including routes that issue credentials or release decrypted evidence, checks live.
+const cacheableReads = [
+  /^\/api\/auth\/session$/,
+  /^\/api\/orders\/?$/,
+  /^\/api\/orders\/(?:information-requests|custody-offers|branding\/me|profile)$/,
+  /^\/api\/orders\/custody-offers\/[^/]+$/,
+];
+
+export function mayUseCachedAuthorization(method: string, path: string) {
+  return method === 'GET' && cacheableReads.some((pattern) => pattern.test(path));
+}
+
 interface AuthServiceDependencies {
+  /** How long an AUTHORIZED result may serve read-only requests; 0 disables the cache. */
+  authorizationCacheMs?: number;
   authorizationResolver?: LoginAuthorizationResolver;
   stakeholderDirectory?: Pick<StakeholderDirectory, 'resolve'>;
   clock?: () => Date;
@@ -63,9 +89,18 @@ export class AuthService {
   private readonly authorizationResolver?: LoginAuthorizationResolver;
   private readonly stakeholderDirectory?: Pick<StakeholderDirectory, 'resolve'>;
   private readonly attempts = new Map<string, number[]>();
-  private readonly pendingAuthorizations = new Map<string, Promise<OnChainAuthorizationSummary>>();
+  private readonly pendingAuthorizations = new Map<
+    string,
+    { startedAt: number; value: Promise<OnChainAuthorizationSummary> }
+  >();
+  private readonly authorizationCache = new Map<
+    string,
+    { at: number; value: OnChainAuthorizationSummary }
+  >();
+  private readonly authorizationCacheMs: number;
 
   constructor({
+    authorizationCacheMs = 0,
     authorizationResolver,
     stakeholderDirectory,
     clock = () => new Date(),
@@ -74,6 +109,7 @@ export class AuthService {
     sessionRepository,
   }: AuthServiceDependencies) {
     this.clock = clock;
+    this.authorizationCacheMs = authorizationCacheMs;
     this.authorizationResolver = authorizationResolver;
     this.stakeholderDirectory = stakeholderDirectory;
     this.configuration = configuration;
@@ -187,7 +223,7 @@ export class AuthService {
       id: randomBytes(32).toString('base64url'),
     };
 
-    const authorizedSession = await this.refreshAuthorization(session);
+    const authorizedSession = await this.refreshAuthorization(session, true, true);
     await this.sessionRepository.save(authorizedSession);
 
     return {
@@ -244,7 +280,17 @@ export class AuthService {
   }
 
   async logout(sessionId?: string) {
-    if (sessionId) await this.sessionRepository.delete(sessionId);
+    if (!sessionId) return;
+    const session = await this.sessionRepository.find(sessionId, this.clock());
+    if (session) this.forgetAuthorization(session.address);
+    await this.sessionRepository.delete(sessionId);
+  }
+
+  /** Drops a wallet's cached authorization so its next request checks the chain. */
+  forgetAuthorization(address: string) {
+    const prefix = `${address.toLowerCase()}:`;
+    for (const key of this.authorizationCache.keys())
+      if (key.startsWith(prefix)) this.authorizationCache.delete(key);
   }
 
   private invalidNonceError() {
@@ -294,17 +340,38 @@ export class AuthService {
   private async refreshAuthorization(
     session: SessionRecord,
     includeCompanyIdentity = true,
+    fresh = freshAuthorization.getStore() ?? false,
   ): Promise<SessionRecord> {
     const key = `${session.address.toLowerCase()}:${includeCompanyIdentity}`;
-    let pending = this.pendingAuthorizations.get(key);
+    const cached = this.authorizationCache.get(key);
+    if (
+      !fresh &&
+      cached?.value.status === 'AUTHORIZED' &&
+      this.clock().getTime() - cached.at < this.authorizationCacheMs
+    )
+      return { ...session, onChainAuthorization: cached.value };
+    // Live checks never join a read that a cached-path request started earlier.
+    const pendingKey = fresh ? `${key}:fresh` : key;
+    let pending = this.pendingAuthorizations.get(pendingKey);
     if (!pending) {
-      pending = this.resolveAuthorization(session, includeCompanyIdentity);
-      this.pendingAuthorizations.set(key, pending);
+      pending = {
+        startedAt: this.clock().getTime(),
+        value: this.resolveAuthorization(session, includeCompanyIdentity),
+      };
+      this.pendingAuthorizations.set(pendingKey, pending);
     }
+    const { startedAt } = pending;
     try {
-      return { ...session, onChainAuthorization: await pending };
+      const value = await pending.value;
+      // Every result is recorded by start time so an older read can never overwrite a newer
+      // one (e.g. AUTHORIZED landing after a live REVOKED); only AUTHORIZED is ever served.
+      const latest = this.authorizationCache.get(key);
+      if (this.authorizationCacheMs > 0 && (!latest || latest.at <= startedAt))
+        this.authorizationCache.set(key, { at: startedAt, value });
+      return { ...session, onChainAuthorization: value };
     } finally {
-      if (this.pendingAuthorizations.get(key) === pending) this.pendingAuthorizations.delete(key);
+      if (this.pendingAuthorizations.get(pendingKey) === pending)
+        this.pendingAuthorizations.delete(pendingKey);
     }
   }
 
