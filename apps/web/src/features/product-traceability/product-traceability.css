@@ -122,6 +122,9 @@
   .product-qr-actions {
     @apply flex flex-wrap gap-[8px];
   }
+  .product-qr-actions {
+    justify-content: center;
+  }
   .product-trace-page button:not(.page-back-navigation__control),
   .product-qr-label button {
     @apply inline-flex flex-nowrap items-center justify-center gap-[6px] leading-none;
@@ -161,19 +164,21 @@
     overflow-wrap: anywhere;
     @apply text-[length:11px];
   }
+  /* One centred label layout on every screen, matching the receipt QR (TransferQrDisplay). */
   .product-qr-label {
-    @apply grid gap-[14px];
-    justify-items: start;
-    border: 1px solid #24435b;
-    @apply rounded-[14px] p-[20px];
-    background: #0b1728;
-    color: #dbe8f5;
+    @apply grid gap-[14px] text-center;
+    justify-items: center;
+    border: 1px solid var(--c-border, #24435b);
+    @apply rounded-[14px] p-[24px_20px];
+    background: var(--c-surface, #0b1728);
+    color: var(--c-text, #dbe8f5);
   }
   .product-qr-label h3 {
     @apply m-[3px_0];
   }
   .product-qr-identity {
-    @apply grid gap-[3px] mt-[14px];
+    @apply grid gap-[3px] mt-[8px];
+    justify-items: center;
   }
   .product-qr-identity strong {
     color: #fff;
@@ -185,14 +190,17 @@
   }
   .product-qr-label p,
   .product-qr-label small {
-    color: #91a8bf;
-    @apply m-[0];
+    color: var(--c-text2, #91a8bf);
+    @apply m-[0] max-w-[60ch];
   }
   .product-qr-svg {
-    @apply w-[min(280px,_100%)];
+    @apply w-[min(260px,_100%)] p-[6px];
     aspect-ratio: 1;
     background: #fff;
-    @apply rounded-[8px];
+    border: 1px solid var(--c-border, #24435b);
+    @apply rounded-[14px];
+    box-shadow: var(--shadow-md, 0 8px 28px rgba(0, 0, 0, 0.35));
+    shape-rendering: crispEdges;
   }
   @media (max-width: 760px) {
     .product-trace-page {
@@ -218,7 +226,7 @@
     }
     .product-qr-label {
       @apply fixed;
-      inset: 20px auto auto 20px;
+      inset: 20px 20px auto 20px;
       color: #000;
       background: #fff;
       border-color: #000;

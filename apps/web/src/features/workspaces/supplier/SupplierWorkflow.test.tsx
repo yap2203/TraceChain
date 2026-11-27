@@ -185,7 +185,7 @@ describe('Supplier ingredient and request management', () => {
     );
     await screen.findByText(/Listing updated successfully/);
     api.prepareOrder.mockClear();
-    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    // The details page stays open after saving the listing.
     fireEvent.click(screen.getByRole('button', { name: 'Archive listing' }));
     expect(api.prepareOrder).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Confirm archive' }));

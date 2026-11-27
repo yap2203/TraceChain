@@ -252,9 +252,27 @@ describe('order-bound Company Role VP verification with real holder and authorit
     );
     expect('claims' in material && material.claims).not.toHaveProperty('registrationCountry');
     const proof = await selectiveProof(fixture, {}, fixture.buyerKey, []);
+    // The signed credential itself lacks the field, so only a replacement credential can supply it.
     await expect(
       fixture.service.validateOrderIdentityPresentation('buyer', fixture.orderId, proof),
-    ).rejects.toMatchObject({ code: 'IDENTITY_HOLDER_PROOF_INVALID' });
+    ).rejects.toMatchObject({ code: 'REQUIRED_IDENTITY_CLAIM_MISSING' });
+  });
+  it('lets the holder withhold a required field and reports it to the requester as missing', async () => {
+    const fixture = await setup(CompanyRole.MANUFACTURER, true, 'MY');
+    fixture.workflows.get(fixture.orderId).identityProof.requiredClaims = [
+      'companyRegistrationNumber',
+      'registrationCountry',
+    ];
+    const proof = await selectiveProof(fixture, {}, fixture.buyerKey, []);
+    await fixture.service.presentCompanyIdentityProof('buyer', fixture.orderId, proof);
+    const result = await fixture.service.verifyCompanyIdentityProof('seller', fixture.orderId);
+    expect(result.status).toBe('VERIFIED');
+    expect(result.missingClaims).toEqual(['companyRegistrationNumber', 'registrationCountry']);
+    expect(result.credential).not.toHaveProperty('companyRegistrationNumber');
+    const status = await fixture.service.getCompanyIdentityProofStatus('seller', fixture.orderId);
+    expect(status).toMatchObject({
+      missingClaims: ['companyRegistrationNumber', 'registrationCountry'],
+    });
   });
   async function selectiveProof(
     fixture: Awaited<ReturnType<typeof setup>>,
@@ -305,6 +323,57 @@ describe('order-bound Company Role VP verification with real holder and authorit
       ).rejects.toMatchObject({ code: 'IDENTITY_PROOF_REPLAY' });
     },
   );
+  it('verifies a shared proof more than 5 minutes later, within the request deadline', async () => {
+    const fixture = await setup(CompanyRole.MANUFACTURER, true);
+    const proof = await selectiveProof(fixture);
+    await fixture.service.presentCompanyIdentityProof('buyer', fixture.orderId, proof);
+    // The request deadline is 10 minutes; no separate 5-minute presentation cap applies.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 6 * 60_000);
+    try {
+      const result = await fixture.service.verifyCompanyIdentityProof('seller', fixture.orderId);
+      expect(result.status).toBe('VERIFIED');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('re-verifies an already verified proof as of its verification time, before the deadline', async () => {
+    const fixture = await setup(CompanyRole.MANUFACTURER, true);
+    const proof = await selectiveProof(fixture);
+    await fixture.service.presentCompanyIdentityProof('buyer', fixture.orderId, proof);
+    const first = await fixture.service.verifyCompanyIdentityProof('seller', fixture.orderId);
+    // A proof shared with a shorter lifetime than the request deadline (as older proofs were).
+    fixture.workflows.get(fixture.orderId).identityProof.expiresAt =
+      Math.floor(Date.now() / 1000) + 3600;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 20 * 60_000);
+    try {
+      const again = await fixture.service.verifyCompanyIdentityProof('seller', fixture.orderId);
+      expect(again.status).toBe('VERIFIED');
+      expect(again.verifiedAt).toBe(first.verifiedAt);
+      await expect(
+        fixture.service.orderIdentityAttestation('seller', fixture.orderId),
+      ).resolves.toMatchObject({ checks: expect.any(Array) });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('keeps a verified proof readable after its presentation lifetime has passed', async () => {
+    const fixture = await setup(CompanyRole.MANUFACTURER, true);
+    const proof = await selectiveProof(fixture);
+    await fixture.service.presentCompanyIdentityProof('buyer', fixture.orderId, proof);
+    await fixture.service.verifyCompanyIdentityProof('seller', fixture.orderId);
+    // Past the 10-minute presentation/request window, before the 1-hour credential expiry.
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(Date.now() + 20 * 60_000);
+    try {
+      const status = await fixture.service.getCompanyIdentityProofStatus('seller', fixture.orderId);
+      expect(status.status).toBe('VERIFIED');
+      expect(status.credential).toMatchObject({ companyName: 'Registered test company' });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('rejects missing necessary company claims, wrong key, audience, nonce, expiry and revoked company', async () => {
     const fixture = await setup(CompanyRole.MANUFACTURER, true);
     // Company name is now always disclosed by the v2 attestation, even with no optional claims.

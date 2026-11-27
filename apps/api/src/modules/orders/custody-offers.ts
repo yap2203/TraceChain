@@ -37,6 +37,9 @@ export interface CustodyOffer {
   pickupAt?: number;
   dispatchOperationId?: string;
   shipmentId?: string;
+  /** Shipment ID the handoff will record, known once pickup is arranged, so the label can be
+   * printed and attached before the goods leave. Not authoritative until dispatch confirms. */
+  plannedShipmentId?: string;
   registrationBlockHash: string;
   reviewedAt?: string;
   reviewedBy?: string;
@@ -167,6 +170,12 @@ export class CustodyOffers {
       offer.expiresAt <= Date.now() / 1000
     )
       offer.status = 'EXPIRED';
+    if (offer.status === 'SCHEDULED' && !offer.shipmentId)
+      offer.plannedShipmentId = this.shipmentIdFor(
+        offer.sender,
+        offer.dispatchOperationId ?? offer.operationId,
+      );
+    else delete offer.plannedShipmentId;
     return offer;
   }
   async list(sessionId?: string) {
@@ -189,6 +198,12 @@ export class CustodyOffers {
     }
     return { offers: rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt)) };
   }
+  /** Same derivation as the logistics dispatch (orders.service), so a printed label matches. */
+  private shipmentIdFor(sender: string, operationId: string) {
+    const { chainId, address } = this.dependencies.gateway;
+    return id(`logistics:${chainId}:${address}:${sender.toLowerCase()}:${operationId}`);
+  }
+
   async get(sessionId: string | undefined, offerId: string) {
     const session = await this.dependencies.session(sessionId);
     const offer = await this.lookup(offerId, session.address);
@@ -422,9 +437,7 @@ export class CustodyOffers {
         );
       await this.dependencies.proofCheck(sessionId, offer);
       const operationId = offer.dispatchOperationId ?? offer.operationId;
-      const shipmentId = id(
-        `logistics:${this.dependencies.gateway.chainId}:${this.dependencies.gateway.address}:${session.address.toLowerCase()}:${operationId}`,
-      );
+      const shipmentId = this.shipmentIdFor(session.address, operationId);
       const prepared = await this.dependencies.prepare(sessionId, {
         ...input,
         operationId,

@@ -515,6 +515,9 @@ describe('custody offer, acceptance, pickup and handoff', () => {
         pickupAt: Math.floor(Date.now() / 1000) + 600,
       });
       f.actor(source, kind === 1 ? CompanyRole.SUPPLIER : CompanyRole.MANUFACTURER);
+      // The label can be printed once pickup is arranged; it must match the shipment the handoff records.
+      const planned = (await f.offers.get('s', offer.offerId)).plannedShipmentId;
+      expect(planned).toMatch(/^0x[0-9a-f]{64}$/);
       const payload = {
         vehicle: 'VAB 1234',
         occurredAt: Math.floor(Date.now() / 1000),
@@ -533,6 +536,8 @@ describe('custody offer, acceptance, pickup and handoff', () => {
       );
       const prepared = await f.offers.get('s', offer.offerId);
       expect(prepared.status).toBe('SCHEDULED');
+      expect(prepared.shipmentId).toBe(planned);
+      expect(prepared.plannedShipmentId).toBeUndefined();
       f.shipment({
         sender: source,
         recipient: carrier,

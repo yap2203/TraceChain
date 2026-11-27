@@ -1,4 +1,5 @@
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
+import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { PaginationBar, usePagination } from '../../../../components/ui/PaginatedTable';
 import './ingredients.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -81,7 +82,8 @@ export function IngredientBatches({
   const [category, setCategory] = useState('all');
   const [status, setStatus] = useState<'all' | BatchStatus>('all');
   const [sort, setSort] = useState('newest');
-  const [selected, setSelected] = useState<InventoryItem>();
+  const [selectedId, setSelectedId] = useState<string>();
+  const setSelected = (item?: InventoryItem) => setSelectedId(item?.batchId);
   const [editing, setEditing] = useState<InventoryItem>();
   const [archiving, setArchiving] = useState<InventoryItem>();
   const [imageFile, setImageFile] = useState<File>();
@@ -147,6 +149,8 @@ export function IngredientBatches({
     onOpened?.();
   }, [items, openBatchId, onOpened]);
 
+  const selected = items.find((item) => item.batchId === selectedId);
+
   const categories = useMemo(
     () =>
       [...new Set(items.map((item) => item.category).filter(Boolean) as string[])].sort((a, b) =>
@@ -196,7 +200,6 @@ export function IngredientBatches({
 
   const openEdit = (item: InventoryItem) => {
     setEditing(item);
-    setSelected(undefined);
     setArchiving(undefined);
     setImageFile(undefined);
     setImageError('');
@@ -258,7 +261,6 @@ export function IngredientBatches({
       setNotice(
         'Supplier-provided ingredient image updated. Credential claims and batch history are unchanged.',
       );
-      setSelected(undefined);
       setEditing(undefined);
       await load();
     } catch (cause) {
@@ -275,25 +277,27 @@ export function IngredientBatches({
 
   return (
     <section className="ingredient-inventory" aria-label="Ingredient batches">
-      <SectionTitle
-        title="My ingredients"
-        sub="Your registered ingredient batches, their stock and listing status."
-        action={
-          <div className="ingredient-page-actions action-row">
-            <Btn
-              variant="outline"
-              icon={<RefreshCw size={16} />}
-              disabled={busy || loading}
-              onClick={() => void load(true)}
-            >
-              Refresh
-            </Btn>
-            <Btn icon={<Plus size={16} />} onClick={onNew}>
-              Register ingredient batch
-            </Btn>
-          </div>
-        }
-      />
+      {!selected && (
+        <SectionTitle
+          title="My ingredients"
+          sub="Your registered ingredient batches, their stock and listing status."
+          action={
+            <div className="ingredient-page-actions action-row">
+              <Btn
+                variant="outline"
+                icon={<RefreshCw size={16} />}
+                disabled={busy || loading}
+                onClick={() => void load(true)}
+              >
+                Refresh
+              </Btn>
+              <Btn icon={<Plus size={16} />} onClick={onNew}>
+                Register ingredient batch
+              </Btn>
+            </div>
+          }
+        />
+      )}
 
       {error && (
         <div className="ingredient-page-alert">
@@ -311,7 +315,7 @@ export function IngredientBatches({
         </div>
       )}
 
-      {!loading && data && (
+      {!selected && !loading && data && (
         <>
           <div className="ingredient-summary-grid" aria-label="Ingredient inventory summary">
             <InventorySummaryCard
@@ -402,7 +406,7 @@ export function IngredientBatches({
         </>
       )}
 
-      {loading ? (
+      {selected ? null : loading ? (
         <IngredientLoading />
       ) : !data ? null : !items.length ? (
         <EmptyState
@@ -435,7 +439,7 @@ export function IngredientBatches({
       )}
 
       {selected && (
-        <IngredientDetailModal
+        <IngredientDetailPage
           item={selected}
           stock={data?.supplierStock?.find(
             (stock) => stock.batchId.toLowerCase() === selected.batchId.toLowerCase(),
@@ -681,7 +685,7 @@ function CredentialStatus({ active }: { active: boolean }) {
   );
 }
 
-function IngredientDetailModal({
+function IngredientDetailPage({
   item,
   stock,
   busy,
@@ -713,7 +717,8 @@ function IngredientDetailModal({
   );
   const picker = useRef<HTMLInputElement>(null);
   return (
-    <Modal title={item.name} onClose={onClose} width={840}>
+    <section className="ingredient-detail-page" aria-label={item.name}>
+      <BackNavigation onClick={onClose}>My ingredients</BackNavigation>
       <div className="ingredient-detail">
         <div className="ingredient-detail__hero">
           <CatalogueImage
@@ -905,7 +910,7 @@ function IngredientDetailModal({
           ]}
         />
       </div>
-    </Modal>
+    </section>
   );
 }
 

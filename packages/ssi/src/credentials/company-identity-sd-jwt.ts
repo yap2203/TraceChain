@@ -133,6 +133,8 @@ export async function verifyCompanyIdentitySdJwt(
     expiresAt?: number;
   },
 ) {
+  if (input.expiresAt !== undefined && input.now > input.expiresAt)
+    throw new Error('The company presentation request has expired.');
   const wallet = parseWalletPresentation(presentation);
   const result = await verifierInstance(agent).verify(presentationSdJwt(presentation), {
     allowedIssuerAlgorithms: ['ES256K'],
@@ -141,7 +143,8 @@ export async function verifyCompanyIdentitySdJwt(
           allowedKeyBindingAlgorithms: ['EdDSA'],
           expectedKeyBindingAudience: input.audience,
           keyBindingNonce: input.challenge,
-          keyBindingMaxAgeSeconds: 300,
+          // Bound by the request deadline (and its single-use challenge), not a fixed 5 minutes.
+          ...(input.expiresAt === undefined ? { keyBindingMaxAgeSeconds: 300 } : {}),
         }
       : {}),
     expectedVct: [COMPANY_IDENTITY_SD_VCT, COMPANY_IDENTITY_SD_VCT_V2, COMPANY_IDENTITY_SD_VCT_V3],

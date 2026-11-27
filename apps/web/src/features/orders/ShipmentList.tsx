@@ -1,13 +1,6 @@
 import { useMemo, useState } from 'react';
-import {
-  ArrowRight,
-  CalendarClock,
-  CheckCircle2,
-  Filter,
-  Package,
-  Search,
-  Truck,
-} from 'lucide-react';
+import { CalendarClock, CheckCircle2, Filter, Package, Search, Truck } from 'lucide-react';
+import { PaginationBar, usePagination } from '../../components/ui/PaginatedTable';
 
 import {
   Badge,
@@ -17,7 +10,7 @@ import {
   InventorySummaryCard,
   SelectField,
   StatusTabs,
-  TechnicalDetails,
+  openCardOnClick,
 } from '../workspaces/shared/ui';
 import { formatOperationalQuantity } from '../workspaces/shared/operational-format';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
@@ -83,6 +76,8 @@ export function ShipmentList({
       })
       .sort((left, right) => compareShipments(left, right, sort, catalogue));
   }, [catalogue, filter, locationName, search, shipments, sort, statusLabel]);
+  const pagination = usePagination(visible.map((entry) => entry.shipmentId));
+  const page = visible.slice(pagination.start, pagination.end);
 
   if (!shipments.length)
     return (
@@ -217,137 +212,138 @@ export function ShipmentList({
           }
         />
       ) : (
-        <div className="shipment-card-list">
-          {visible.map((entry) => {
-            const item = catalogueItem(catalogue, entry.batchId);
-            const state = statusLabel(entry);
-            const group = shipmentGroup(entry, state);
-            const sender = entry.senderName ?? 'Sending company';
-            const recipient = entry.recipientName ?? 'Receiving company';
-            const distributor = entry.distributorName ?? entry.delivery?.distributorName;
-            return (
-              <article className="shipment-card" key={entry.shipmentId}>
-                <div className="shipment-card__media">
-                  <CatalogueImage
-                    path={item?.imagePath}
-                    category={item?.category ?? entry.kind}
-                    alt={`${item?.name ?? entry.itemName ?? 'Shipment item'} image`}
-                  />
-                </div>
-                <div className="shipment-card__content">
-                  <div className="shipment-card__heading">
-                    <div>
-                      <span>
-                        {entry.kind === 'product' ? 'Product shipment' : 'Ingredient shipment'}
-                      </span>
-                      <h3>{entry.itemName ?? item?.name ?? 'Registered shipment item'}</h3>
-                      <p>{item?.batchReference ?? 'Batch reference unavailable'}</p>
-                    </div>
-                    <Badge
-                      label={state}
-                      variant={
-                        group === 'completed'
-                          ? 'verified'
-                          : group === 'attention'
-                            ? 'pending'
-                            : 'transfer-pending'
-                      }
+        <>
+          <div className="shipment-card-list">
+            {page.map((entry) => {
+              const item = catalogueItem(catalogue, entry.batchId);
+              const state = statusLabel(entry);
+              const group = shipmentGroup(entry, state);
+              const sender = entry.senderName ?? 'Sending company';
+              const recipient = entry.recipientName ?? 'Receiving company';
+              const distributor = entry.distributorName ?? entry.delivery?.distributorName;
+              const name = entry.itemName ?? item?.name ?? 'Registered shipment item';
+              const open = () => onOpen(entry.shipmentId);
+              return (
+                <article
+                  className={`shipment-card is-${group}`}
+                  key={entry.shipmentId}
+                  onClick={openCardOnClick(open)}
+                >
+                  <div className="shipment-card__media">
+                    <CatalogueImage
+                      path={item?.imagePath}
+                      category={item?.category ?? entry.kind}
+                      alt={`${name} image`}
                     />
                   </div>
+                  <div className="shipment-card__content">
+                    <div className="shipment-card__heading">
+                      <div>
+                        <span>
+                          {entry.kind === 'product' ? 'Product shipment' : 'Ingredient shipment'}
+                        </span>
+                        <h3>{name}</h3>
+                        <p>{item?.batchReference ?? 'Batch reference unavailable'}</p>
+                      </div>
+                      <Badge
+                        label={state}
+                        variant={
+                          group === 'completed'
+                            ? 'verified'
+                            : group === 'attention'
+                              ? 'pending'
+                              : 'transfer-pending'
+                        }
+                      />
+                    </div>
 
-                  <div className="shipment-card__route" aria-label="Shipment company route">
-                    <CompanyStep role="Sender" name={sender} logoPath={entry.senderLogoPath} />
-                    <ArrowRight
-                      aria-hidden="true"
-                      className="shipment-card__route-arrow"
-                      size={18}
-                    />
-                    {distributor && (
-                      <>
-                        <CompanyStep
-                          role="Distributor"
-                          name={distributor}
-                          logoPath={
-                            entry.distributorLogoPath ?? entry.delivery?.distributorLogoPath
-                          }
-                        />
-                        <ArrowRight
-                          aria-hidden="true"
-                          className="shipment-card__route-arrow"
-                          size={18}
-                        />
-                      </>
-                    )}
-                    <CompanyStep
-                      role="Recipient"
-                      name={recipient}
-                      logoPath={entry.recipientLogoPath}
-                    />
-                  </div>
+                    <div className="shipment-journey" aria-label="Shipment journey">
+                      <JourneyStop
+                        role="From"
+                        company={sender}
+                        logoPath={entry.senderLogoPath}
+                        place={locationName(entry.fromLocation)}
+                        timeLabel="Pickup"
+                        time={entry.dispatchedAt ?? entry.pickupAt}
+                      />
+                      <div className="shipment-journey__leg" aria-hidden="true">
+                        <span className="shipment-journey__line" />
+                        <span className="shipment-journey__vehicle">
+                          {group === 'completed' ? <CheckCircle2 size={16} /> : <Truck size={16} />}
+                        </span>
+                        {distributor && <small>via {distributor}</small>}
+                      </div>
+                      <JourneyStop
+                        role="To"
+                        company={recipient}
+                        logoPath={entry.recipientLogoPath}
+                        place={locationName(entry.toLocation)}
+                        timeLabel={group === 'completed' ? 'Expected' : 'Arrives'}
+                        time={entry.expectedAt}
+                      />
+                    </div>
 
-                  <dl className="shipment-card__facts">
-                    <div>
-                      <dt>Quantity</dt>
-                      <dd>{formatOperationalQuantity(entry.quantity, entry.unit)}</dd>
+                    <div className="shipment-card__next">
+                      <dl className="shipment-card__chips">
+                        <div>
+                          <dt>Quantity</dt>
+                          <dd>{formatOperationalQuantity(entry.quantity, entry.unit)}</dd>
+                        </div>
+                        <div>
+                          <dt>Vehicle</dt>
+                          <dd>{entry.vehicle || 'Not recorded'}</dd>
+                        </div>
+                      </dl>
+                      <p>
+                        <span>Next</span>
+                        {nextShipmentAction(group, recipient)}
+                      </p>
+                      <Btn variant="outline" onClick={open}>
+                        Review shipment
+                      </Btn>
                     </div>
-                    <div>
-                      <dt>Pickup</dt>
-                      <dd>{locationName(entry.fromLocation)}</dd>
-                    </div>
-                    <div>
-                      <dt>Destination</dt>
-                      <dd>{locationName(entry.toLocation)}</dd>
-                    </div>
-                    <div>
-                      <dt>Vehicle</dt>
-                      <dd>{entry.vehicle || 'Not recorded'}</dd>
-                    </div>
-                    <div>
-                      <dt>Scheduled pickup</dt>
-                      <dd>{dateTime(entry.dispatchedAt ?? entry.pickupAt)}</dd>
-                    </div>
-                    <div>
-                      <dt>Expected arrival</dt>
-                      <dd>{dateTime(entry.expectedAt)}</dd>
-                    </div>
-                  </dl>
-                  <div className="shipment-card__next">
-                    <div>
-                      <span>Next action</span>
-                      <strong>{nextShipmentAction(group, recipient)}</strong>
-                    </div>
-                    <Btn variant="outline" onClick={() => onOpen(entry.shipmentId)}>
-                      Review shipment
-                    </Btn>
                   </div>
-                  <TechnicalDetails
-                    fields={[
-                      { label: 'Shipment ID', value: entry.shipmentId },
-                      { label: 'Batch ID', value: entry.batchId },
-                      { label: 'Sender wallet', value: entry.sender },
-                      { label: 'Recipient wallet', value: entry.recipient },
-                      { label: 'Raw unit', value: entry.unit },
-                    ]}
-                  />
-                </div>
-              </article>
-            );
-          })}
-        </div>
+                </article>
+              );
+            })}
+          </div>
+          {visible.length > 10 && <PaginationBar pagination={pagination} label="Shipment pages" />}
+        </>
       )}
     </section>
   );
 }
 
-function CompanyStep({ role, name, logoPath }: { role: string; name: string; logoPath?: string }) {
+/** One end of a shipment journey: company, place and time. */
+export function JourneyStop({
+  role,
+  company,
+  logoPath,
+  place,
+  timeLabel,
+  time,
+}: {
+  role: string;
+  company: string;
+  logoPath?: string;
+  place: string;
+  timeLabel: string;
+  time: unknown;
+}) {
   return (
-    <span className="shipment-card__company">
-      <CompanyAvatar name={name} logoPath={logoPath} size="sm" />
-      <span>
-        <small>{role}</small>
-        <strong>{name}</strong>
+    <div className="shipment-journey__stop">
+      <span className="shipment-journey__company">
+        <CompanyAvatar name={company} logoPath={logoPath} size="sm" />
+        <span>
+          <small>{role}</small>
+          <strong>{company}</strong>
+        </span>
       </span>
-    </span>
+      <span className="shipment-journey__place">{place}</span>
+      <span className="shipment-journey__time">
+        {timeLabel} {dateTime(time)}
+      </span>
+    </div>
   );
 }
 
@@ -359,7 +355,7 @@ function catalogueItem(catalogue: OrderRecord[], batchId?: string) {
 
 function shipmentGroup(entry: OrderRecord, label: string): Exclude<ShipmentFilter, 'all'> {
   const value = label.toLocaleLowerCase();
-  if (/received|completed|returned/.test(value)) return 'completed';
+  if (/received|completed|returned|cancelled/.test(value)) return 'completed';
   if (/rejected|discrepancy|review|action/.test(value)) return 'attention';
   if (/awaiting.*receipt|arrived|partially/.test(value)) return 'receipt';
   if (Number(entry.status) === 1 || /transit|dispatched|sent/.test(value)) return 'transit';
@@ -384,7 +380,7 @@ function compareShipments(
   );
 }
 
-function dateTime(value: unknown) {
+export function dateTime(value: unknown) {
   return Number(value) ? new Date(Number(value) * 1_000).toLocaleString() : 'Not recorded';
 }
 

@@ -1,4 +1,11 @@
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import { ClipboardList, Leaf } from 'lucide-react';
+import {
+  EvidenceOutcome,
+  EvidenceSummaryCard,
+  RequestSummary,
+  evidenceDateFields,
+} from '../../../orders/EvidenceIdentity';
 import {
   createWalletPresentation,
   createFullWalletPresentation,
@@ -22,7 +29,6 @@ import { reportError } from '../../../../components/ui/feedback';
 import {
   EvidenceDetailLayout,
   EvidenceHowItWorks,
-  EvidenceNextStep,
   ingredientEvidenceStatus,
 } from '../../../orders/EvidenceParts';
 import { proofStatusLabel, proofStatusVariant } from '../../../orders/DeliveryIdentityPanel';
@@ -141,50 +147,8 @@ export function SelectiveDisclosure({
         throw new Error(
           'The active presentation key is not bound to this credential. Restore the correct signing-key backup.',
         );
-      const required = signing.holderSigning.requiredClaims.filter(
-        (claim) => !isRetiredIngredientClaim(claim),
-      );
-      const selected = [
-        ...new Set([
-          ...required.filter(
-            (claim) =>
-              ![
-                'certifications',
-                'certificationDocuments',
-                'qualityTests',
-                'qualityDocuments',
-              ].includes(claim),
-          ),
-          ...optionalClaims,
-        ]),
-      ];
-      if (
-        required.includes('certifications') &&
-        !selected.some((key) => key.startsWith('certification_'))
-      )
-        throw new Error('Select at least one complete certification entry.');
-      if (
-        required.includes('certificationDocuments') &&
-        !selected.some((key) => key.startsWith('certificationDocuments_'))
-      )
-        throw new Error('Select at least one certification document and its entry.');
-      if (details?.policy) {
-        const disclosed = Object.fromEntries(
-          Object.entries(preview ?? {}).filter(
-            ([key]) =>
-              selected.includes(key) ||
-              key === 'policyVersion' ||
-              (INGREDIENT_ALWAYS_CLAIMS as readonly string[]).includes(key),
-          ),
-        );
-        const failures = ingredientDisclosureErrors(
-          disclosed,
-          details.policy,
-          required,
-          String(preview?.batchReference ?? ''),
-        );
-        if (failures.length) throw new Error(failures[0]);
-      }
+      // The holder decides; withheld required fields are reported to the requester, not blocked.
+      const selected = [...new Set(optionalClaims)];
       const presentation = walletBound
         ? await createWalletPresentation(signing.holderSigning.credential, selected, walletContext!)
         : await createSelectiveIngredientPresentation(holder!, signing.holderSigning.credential, {
@@ -225,9 +189,14 @@ export function SelectiveDisclosure({
       setHolderDid(signing.holderSigning.holderDid);
       setPreviewCredential(signing.holderSigning.credential);
       setPreviewExpiresAt(signing.holderSigning.context?.expiresAt);
-      setPreview(
-        visibleIngredientClaims(
-          await readSelectiveIngredientClaims(signing.holderSigning.credential),
+      const claims = visibleIngredientClaims(
+        await readSelectiveIngredientClaims(signing.holderSigning.credential),
+      );
+      setPreview(claims);
+      // Required fields start selected; the holder can still untick any of them.
+      setOptionalClaims(
+        signing.holderSigning.requiredClaims.filter(
+          (claim) => claim in claims && !isRetiredIngredientClaim(claim),
         ),
       );
     } catch (cause) {
@@ -270,96 +239,115 @@ export function SelectiveDisclosure({
           (claim) => !isRetiredIngredientClaim(claim),
         )
       : [];
+  const unmet =
+    !legacy && preview && details ? disclosureGaps(details, preview, optionalClaims) : [];
   const status = ingredientEvidenceStatus(request.status, request.dueAt);
   const open = request.status === 1 && request.dueAt * 1000 > Date.now();
+  const requesterRole = request.requesterRole
+    ? request.requesterRole.charAt(0) + request.requesterRole.slice(1).toLowerCase()
+    : undefined;
   const requestSummary = (
-    <section className="evidence-request-details" aria-label="Request details">
-      <dl>
-        <div>
-          <dt>Requested by</dt>
-          <dd>
-            {requester}
-            <small>{shortWallet(request.requester)}</small>
-          </dd>
-        </div>
-        <div>
-          <dt>Ingredient</dt>
-          <dd>
-            {ingredient ?? 'Ingredient batch'}
-            {batchReference && <small>Batch {batchReference}</small>}
-          </dd>
-        </div>
-        <div>
-          <dt>Deadline</dt>
-          <dd>{chainDate(request.dueAt)}</dd>
-        </div>
-        <div>
-          <dt>Requester identity</dt>
-          <dd>
-            <Badge
-              label={proofStatusLabel(identityProof?.status ?? 'NOT_REQUESTED')}
-              variant={proofStatusVariant(identityProof?.status ?? 'NOT_REQUESTED')}
-            />
-            <a
-              href={
-                '/supplier/information-requests/sent?context=ingredient&referenceId=' +
-                encodeURIComponent(request.requestId)
-              }
-            >
-              {identityProof?.status === 'VERIFIED' ? 'View identity' : 'Check identity'}
-            </a>
-          </dd>
-        </div>
-        <div className="is-wide">
-          <dt>Purpose</dt>
-          <dd>{details?.reason ?? '—'}</dd>
-        </div>
-        <div className="is-wide">
-          <dt>Fields requested</dt>
-          <dd className="evidence-request-details__chips">
-            {visibleRequestedClaims.length
-              ? visibleRequestedClaims.map((claim) => (
-                  <span
-                    key={claim}
-                    className={visibleRequiredClaims.includes(claim) ? 'is-required' : undefined}
-                  >
-                    {ingredientClaimLabel(claim)}
-                    {visibleRequiredClaims.includes(claim) ? '' : ' (optional)'}
-                  </span>
-                ))
-              : 'No current ingredient fields requested'}
-          </dd>
-        </div>
-      </dl>
-    </section>
+    <RequestSummary
+      requester={{ name: requester, role: requesterRole, wallet: request.requester }}
+      provider={{ name: 'Your company', role: 'Supplier', you: true }}
+      facts={[
+        {
+          label: 'Request for',
+          value: (
+            <>
+              {ingredient ?? 'Ingredient batch'}
+              {batchReference && <small>Batch {batchReference}</small>}
+            </>
+          ),
+        },
+        {
+          label: 'Requester identity',
+          value: (
+            <span className="evidence-identity-status">
+              <Badge
+                label={proofStatusLabel(identityProof?.status ?? 'NOT_REQUESTED')}
+                variant={proofStatusVariant(identityProof?.status ?? 'NOT_REQUESTED')}
+              />
+              <a
+                href={
+                  '/supplier/information-requests/sent?context=ingredient&referenceId=' +
+                  encodeURIComponent(request.requestId)
+                }
+              >
+                {identityProof?.status === 'VERIFIED' ? 'View identity' : 'Check identity'}
+              </a>
+            </span>
+          ),
+        },
+        ...evidenceDateFields({
+          dueAt: request.dueAt,
+          open,
+          proofValidUntil: previewExpiresAt
+            ? new Date(previewExpiresAt * 1000).toISOString()
+            : undefined,
+          credentialExpires:
+            typeof preview?.exp === 'number'
+              ? new Date(preview.exp * 1000).toISOString()
+              : undefined,
+        }),
+      ]}
+      purpose={details?.reason}
+      requested={visibleRequestedClaims.map((claim) => ({
+        claim,
+        label: ingredientClaimLabel(claim),
+        required: visibleRequiredClaims.includes(claim),
+        state: 'requested' as const,
+      }))}
+    />
   );
+  const outcome = !open
+    ? {
+        tone: 'closed' as const,
+        title: `Request ${status.label.toLowerCase()}`,
+        message: CLOSED_MESSAGE[request.status] ?? 'This request is closed.',
+      }
+    : !preview
+      ? {
+          tone: 'action' as const,
+          title: 'Your response is needed',
+          message: 'Check the values that will be shared, then choose what to share.',
+        }
+      : {
+          tone: 'action' as const,
+          title: 'Choose what to share',
+          message:
+            'Required fields start selected; you decide. Sign and share when ready, or decline.',
+        };
   return (
     <div className="information-requests-page is-detail">
       <BackNavigation onClick={onBack}>Ingredient evidence</BackNavigation>
-      <header className="evidence-detail-header">
-        <div>
-          <h2>
-            {requester} asks for evidence on {ingredient ?? 'your ingredient'}
-          </h2>
-          <p>
-            {batchReference ? `Batch ${batchReference} · ` : ''}Due {chainDate(request.dueAt)}
-          </p>
-        </div>
-        <div className="evidence-detail-header__status">
-          <Badge label={status.label} variant={status.variant} />
-        </div>
-      </header>
       {error && <Alert type="error" message={error} />}
 
-      <EvidenceDetailLayout aside={requestSummary}>
-        {!open ? (
-          <>
-            <EvidenceNextStep
-              tone="closed"
-              message={CLOSED_MESSAGE[request.status] ?? 'This request is closed.'}
-            />
-          </>
-        ) : (
+      <EvidenceDetailLayout
+        asideTitle="Request summary"
+        asideIcon={ClipboardList}
+        aside={requestSummary}
+      >
+        <EvidenceSummaryCard
+          icon={Leaf}
+          title={ingredient ?? 'Your ingredient'}
+          subtitle={`Requested by ${requester}${requesterRole ? ` · ${requesterRole}` : ''}`}
+          context="Ingredient evidence request"
+          badges={<Badge label={status.label} variant={status.variant} />}
+        >
+          <EvidenceOutcome
+            {...outcome}
+            action={
+              open &&
+              !preview && (
+                <Btn disabled={busy || !details} onClick={() => void loadPreview()}>
+                  {busy ? 'Loading…' : 'Review values to share'}
+                </Btn>
+              )
+            }
+          />
+        </EvidenceSummaryCard>
+        {open && (
           <>
             {hasRetiredRequiredClaim && (
               <Alert
@@ -374,17 +362,11 @@ export function SelectiveDisclosure({
               />
             )}
 
-            {!preview ? (
-              <EvidenceNextStep
-                message="Check the values that will be shared, then choose any optional fields."
-                action={
-                  <Btn disabled={busy || !details} onClick={() => void loadPreview()}>
-                    {busy ? 'Loading…' : 'Review values to share'}
-                  </Btn>
-                }
-              />
-            ) : (
-              <section className="evidence-fields" aria-labelledby="ingredient-fields-title">
+            {preview && (
+              <section
+                className="evidence-card evidence-fields evidence-share-card"
+                aria-labelledby="ingredient-fields-title"
+              >
                 <header>
                   <h4 id="ingredient-fields-title">
                     {legacy ? 'Values to share' : 'Fields to share'}
@@ -408,7 +390,7 @@ export function SelectiveDisclosure({
                     ))}
                   {requestedRows.map((claim) => {
                     const required = details?.requiredClaims.includes(claim) ?? false;
-                    const included = required || optionalClaims.includes(claim);
+                    const included = optionalClaims.includes(claim);
                     return (
                       <div
                         key={claim}
@@ -418,7 +400,7 @@ export function SelectiveDisclosure({
                           <input
                             type="checkbox"
                             checked={included}
-                            disabled={required || busy}
+                            disabled={busy}
                             onChange={(event) =>
                               setOptionalClaims((current) =>
                                 toggleIngredientDisclosure(
@@ -476,7 +458,6 @@ export function SelectiveDisclosure({
                               ...INGREDIENT_ALWAYS_CLAIMS,
                             ].includes(key) &&
                             !optionalClaims.includes(key) &&
-                            !details?.requiredClaims.includes(key) &&
                             !isRetiredIngredientClaim(key),
                         )
                         .map(ingredientClaimLabel)
@@ -484,6 +465,12 @@ export function SelectiveDisclosure({
                       .
                     </p>
                   </details>
+                )}
+                {unmet.length > 0 && (
+                  <Alert
+                    type="warning"
+                    message={`You are not sharing ${unmet.length === 1 ? 'one required item' : `${unmet.length} required items`}. You can still share; ${requester} will see the response as incomplete and may reject it. ${unmet.join(' ')}`}
+                  />
                 )}
                 {holderDid && preview.vct !== 'urn:tracechain:credential:ingredient:sd-jwt:v3' && (
                   <PresentationSigningSettingsLink role="supplier" />
@@ -603,6 +590,39 @@ function shareLabel(claim: string, preview: Record<string, unknown>) {
   return ingredientClaimLabel(claim);
 }
 
-function shortWallet(wallet?: string) {
-  return wallet && wallet.length > 14 ? `${wallet.slice(0, 6)}…${wallet.slice(-4)}` : wallet;
+/** Requirements the current selection leaves unmet, in the same words the requester will see. */
+function disclosureGaps(
+  details: EvidenceDetails,
+  preview: Record<string, unknown>,
+  selected: string[],
+) {
+  const required = details.requiredClaims.filter((claim) => !isRetiredIngredientClaim(claim));
+  const disclosed = Object.fromEntries(
+    Object.entries(preview).filter(
+      ([key]) =>
+        selected.includes(key) ||
+        key === 'policyVersion' ||
+        (INGREDIENT_ALWAYS_CLAIMS as readonly string[]).includes(key),
+    ),
+  );
+  if (details.policy)
+    return ingredientDisclosureErrors(
+      disclosed,
+      details.policy,
+      required,
+      String(preview.batchReference ?? ''),
+    );
+  const prefix: Record<string, string> = {
+    certifications: 'certification_',
+    certificationDocuments: 'certificationDocuments_',
+    qualityTests: 'qualityTest_',
+    qualityDocuments: 'qualityDocuments_',
+  };
+  return required
+    .filter((claim) =>
+      prefix[claim]
+        ? !Object.keys(disclosed).some((key) => key.startsWith(prefix[claim]!))
+        : disclosed[claim] == null,
+    )
+    .map((claim) => `${ingredientClaimLabel(claim)} is required.`);
 }

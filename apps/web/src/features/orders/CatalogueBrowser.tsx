@@ -8,6 +8,7 @@ import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { FilterX, PackageSearch, Search, ShieldCheck } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { BackNavigation } from '../../components/ui/BackNavigation';
 import { workspacePath } from '../workspaces/workspace-paths';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import {
@@ -173,6 +174,23 @@ export function CatalogueBrowser({
   };
   const resultNoun = presentation?.resultNoun ?? { singular: 'result', plural: 'results' };
   const resultLabel = `${shown.length} ${shown.length === 1 ? resultNoun.singular : resultNoun.plural}`;
+  if (selected)
+    return (
+      <CatalogueDetail
+        item={selected}
+        mode={mode}
+        busy={busy}
+        onClose={() => setSelected(undefined)}
+        onMode={setMode}
+        onEvidenceRequest={onEvidenceRequest}
+        onOpenEvidence={onOpenEvidence}
+        onQuantityRequest={onQuantityRequest}
+        role={role}
+        locations={locations}
+        onRegisterLocation={onRegisterLocation}
+        presentation={presentation}
+      />
+    );
   return (
     <section
       className="catalogue-browser"
@@ -299,22 +317,6 @@ export function CatalogueBrowser({
             />
           ))}
         </div>
-      )}
-      {selected && (
-        <CatalogueDetail
-          item={selected}
-          mode={mode}
-          busy={busy}
-          onClose={() => setSelected(undefined)}
-          onMode={setMode}
-          onEvidenceRequest={onEvidenceRequest}
-          onOpenEvidence={onOpenEvidence}
-          onQuantityRequest={onQuantityRequest}
-          role={role}
-          locations={locations}
-          onRegisterLocation={onRegisterLocation}
-          presentation={presentation}
-        />
       )}
     </section>
   );
@@ -468,14 +470,9 @@ function CatalogueDetail({
       (!!chosenSource && BigInt(chosenSource.available ?? '0') >= BigInt(quantity || '0')));
   const requestedClaims = Object.keys(claims).filter((claim) => claims[claim] !== 'not-requested');
   return (
-    <Modal
-      title={`${item.name} — ${mode === 'details' ? 'details' : mode === 'quantity' ? 'request quantity' : 'request information'}`}
-      onClose={onClose}
-      width={760}
-    >
-      <div
-        className={`catalogue-dialog-content ${mode === 'quantity' ? 'catalogue-dialog-content--quantity' : ''}`}
-      >
+    <section className="catalogue-detail-page" aria-label={`${item.name} details`}>
+      <BackNavigation onClick={onClose}>Back to catalogue</BackNavigation>
+      <div className="catalogue-dialog-content">
         <section className="catalogue-dialog-hero" aria-label="Item summary">
           <CatalogueImage
             path={item.imagePath}
@@ -531,102 +528,113 @@ function CatalogueDetail({
           </dl>
         </section>
         {mode === 'quantity' && (
-          <form
-            className="catalogue-request-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (validQuantity)
-                void onQuantityRequest(item, {
-                  quantity,
-                  deadline,
-                  note,
-                  ...(requiresLocation ? { location: receiving } : {}),
-                  ...(chosenSource
-                    ? Number(item.kind) === 1
-                      ? { positionId: chosenSource.positionId, batchId: chosenSource.batchId }
-                      : {
-                          custodySource: {
-                            distributor: chosenSource.distributor,
-                            location: chosenSource.location,
-                          },
-                        }
-                    : {}),
-                });
-            }}
+          <Modal
+            title={`Request quantity — ${item.name}`}
+            onClose={() => onMode('details')}
+            width={640}
           >
-            <div className="catalogue-request-primary">
+            <form
+              className="catalogue-request-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (validQuantity)
+                  void onQuantityRequest(item, {
+                    quantity,
+                    deadline,
+                    note,
+                    ...(requiresLocation ? { location: receiving } : {}),
+                    ...(chosenSource
+                      ? Number(item.kind) === 1
+                        ? { positionId: chosenSource.positionId, batchId: chosenSource.batchId }
+                        : {
+                            custodySource: {
+                              distributor: chosenSource.distributor,
+                              location: chosenSource.location,
+                            },
+                          }
+                      : {}),
+                  });
+              }}
+            >
+              <div className="catalogue-request-primary">
+                <Input
+                  label={`Requested quantity (${item.unit})`}
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={quantity}
+                  onChange={setQuantity}
+                  required
+                />
+                <p className="catalogue-section-note">
+                  {source === 'seller'
+                    ? 'The Supplier reviews this request and then chooses delivery. No stock is reserved and no payment is taken now.'
+                    : 'This uses the selected Distributor custody stock under the existing reservation rules. No payment or goods movement happens now.'}
+                </p>
+              </div>
+              {requiresLocation && (
+                <>
+                  <SelectField
+                    label="Your receiving location"
+                    value={receiving}
+                    onChange={setReceiving}
+                    required
+                    options={[
+                      { value: '', label: 'Select your receiving location' },
+                      ...locations.map((entry) => ({
+                        value: entry.location,
+                        label: formatLocationLabel(entry, entry.location),
+                      })),
+                    ]}
+                  />
+                  {!locations.length && (
+                    <Link to={workspacePath(role, 'profile')}>
+                      Add your receiving location in Profile
+                    </Link>
+                  )}
+                </>
+              )}
+              <SelectField
+                label="Request from"
+                value={source}
+                onChange={setSource}
+                options={[
+                  { value: 'seller', label: 'Seller stock · request Distributor pickup' },
+                  ...sources.flatMap((entry, index) =>
+                    BigInt(entry.available ?? '0') > 0n
+                      ? [
+                          {
+                            value: String(index),
+                            label: `${entry.warehouseName ?? 'Distributor warehouse'} · ${entry.available} ${item.unit} available`,
+                          },
+                        ]
+                      : [],
+                  ),
+                ]}
+              />
               <Input
-                label={`Requested quantity (${item.unit})`}
-                type="number"
-                min="1"
-                step="1"
-                value={quantity}
-                onChange={setQuantity}
+                label="Response deadline"
+                type="datetime-local"
+                value={deadline}
+                onChange={setDeadline}
                 required
               />
-              <p className="catalogue-section-note">
-                {source === 'seller'
-                  ? 'The Supplier reviews this request and then chooses delivery. No stock is reserved and no payment is taken now.'
-                  : 'This uses the selected Distributor custody stock under the existing reservation rules. No payment or goods movement happens now.'}
-              </p>
-            </div>
-            {requiresLocation && (
-              <>
-                <SelectField
-                  label="Your receiving location"
-                  value={receiving}
-                  onChange={setReceiving}
-                  required
-                  options={[
-                    { value: '', label: 'Select your receiving location' },
-                    ...locations.map((entry) => ({
-                      value: entry.location,
-                      label: formatLocationLabel(entry, entry.location),
-                    })),
-                  ]}
-                />
-                {!locations.length && (
-                  <Link to={workspacePath(role, 'profile')}>
-                    Add your receiving location in Profile
-                  </Link>
-                )}
-              </>
-            )}
-            <SelectField
-              label="Request from"
-              value={source}
-              onChange={setSource}
-              options={[
-                { value: 'seller', label: 'Seller stock · request Distributor pickup' },
-                ...sources.flatMap((entry, index) =>
-                  BigInt(entry.available ?? '0') > 0n
-                    ? [
-                        {
-                          value: String(index),
-                          label: `${entry.warehouseName ?? 'Distributor warehouse'} · ${entry.available} ${item.unit} available`,
-                        },
-                      ]
-                    : [],
-                ),
-              ]}
-            />
-            <Input
-              label="Response deadline"
-              type="datetime-local"
-              value={deadline}
-              onChange={setDeadline}
-              required
-            />
-            <Input label="Private note" value={note} onChange={setNote} maxLength={500} />
-            <div className="catalogue-detail__actions action-row">
-              <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
-                Back
-              </Btn>
-              <Btn type="submit" disabled={busy || !validQuantity}>
-                {busy ? 'Submitting…' : 'Submit request'}
-              </Btn>
-            </div>
-          </form>
+              <Input label="Private note" value={note} onChange={setNote} maxLength={500} />
+              <div className="catalogue-detail__actions action-row">
+                <Btn
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => onMode('details')}
+                >
+                  Cancel
+                </Btn>
+                <Btn type="submit" disabled={busy || !validQuantity}>
+                  {busy ? 'Submitting…' : 'Submit request'}
+                </Btn>
+              </div>
+            </form>
+          </Modal>
         )}
         <section className="catalogue-dialog-section catalogue-batch-section">
           <div className="catalogue-dialog-section__heading">
@@ -669,7 +677,7 @@ function CatalogueDetail({
             not independently prove physical quality.
           </p>
         </section>
-        {mode === 'details' && (
+        {
           <div className="catalogue-detail__actions action-row">
             <Btn variant="outline" onClick={() => onMode('evidence')}>
               Request evidence or information
@@ -678,118 +686,129 @@ function CatalogueDetail({
               Request quantity
             </Btn>
           </div>
-        )}
+        }
         {mode === 'evidence' && (
-          <form
-            className="catalogue-request-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (
-                evidenceReason.trim() &&
-                evidenceDeadline &&
-                evidenceBatch &&
-                requestedClaims.length
-              )
-                void onEvidenceRequest(item, {
-                  batchId: evidenceBatch,
-                  claims: requestedClaims,
-                  policy,
-                  deadline: evidenceDeadline,
-                  reason: evidenceReason,
-                  requiredClaims: requestedClaims.filter((claim) => claims[claim] === 'required'),
-                });
-            }}
+          <Modal
+            title={`Request evidence or information — ${item.name}`}
+            onClose={() => onMode('details')}
+            width={760}
           >
-            <div className="catalogue-dialog-alert catalogue-dialog-alert--info">
-              <Alert
-                type="info"
-                message="Evidence remains confidential until the existing Supplier consent and verification workflow authorizes disclosure."
-              />
-            </div>
-            {Number(item.kind) === 2 && (
-              <SelectField
-                label="Ingredient in this product"
-                value={evidenceBatch}
-                onChange={setEvidenceBatch}
-                required
-                options={[
-                  { value: '', label: 'Select ingredient' },
-                  ...(
-                    item.batchDetails?.flatMap(
-                      (entry: OrderRecord) => entry.ingredientLinks ?? [],
-                    ) ?? []
-                  ).map((link: OrderRecord) => ({
-                    value: link.batchId,
-                    label: link.batchReference || short(link.batchId),
-                  })),
-                ]}
-              />
-            )}
-            <Input
-              label="Reason for requesting information"
-              value={evidenceReason}
-              onChange={setEvidenceReason}
-              maxLength={500}
-              required
-            />
-            <Input
-              label="Response deadline"
-              type="datetime-local"
-              value={evidenceDeadline}
-              onChange={setEvidenceDeadline}
-              required
-            />
-            <IngredientRequestPolicyFields
-              policy={policy}
-              onChange={setPolicy}
-              onRequirements={(required) =>
-                setClaims((current) => ({
-                  ...current,
-                  ...Object.fromEntries(
-                    INGREDIENT_REQUEST_CLAIMS.map(([key]) => [
-                      key,
-                      required.includes(key) ? ('required' as const) : ('not-requested' as const),
-                    ]),
-                  ),
-                }))
-              }
-            />
-            <div className="catalogue-claim-grid">
-              {INGREDIENT_REQUEST_CLAIMS.map(([claim, label]) => (
+            <form
+              className="catalogue-request-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (
+                  evidenceReason.trim() &&
+                  evidenceDeadline &&
+                  evidenceBatch &&
+                  requestedClaims.length
+                )
+                  void onEvidenceRequest(item, {
+                    batchId: evidenceBatch,
+                    claims: requestedClaims,
+                    policy,
+                    deadline: evidenceDeadline,
+                    reason: evidenceReason,
+                    requiredClaims: requestedClaims.filter((claim) => claims[claim] === 'required'),
+                  });
+              }}
+            >
+              <div className="catalogue-dialog-alert catalogue-dialog-alert--info">
+                <Alert
+                  type="info"
+                  message="Evidence remains confidential until the existing Supplier consent and verification workflow authorizes disclosure."
+                />
+              </div>
+              {Number(item.kind) === 2 && (
                 <SelectField
-                  key={claim}
-                  label={`${label} disclosure`}
-                  value={claims[claim] ?? 'not-requested'}
-                  onChange={(value) => setClaims((current) => ({ ...current, [claim]: value }))}
+                  label="Ingredient in this product"
+                  value={evidenceBatch}
+                  onChange={setEvidenceBatch}
+                  required
                   options={[
-                    { value: 'not-requested', label: 'Do not request' },
-                    { value: 'optional', label: 'Optional' },
-                    { value: 'required', label: 'Necessary' },
+                    { value: '', label: 'Select ingredient' },
+                    ...(
+                      item.batchDetails?.flatMap(
+                        (entry: OrderRecord) => entry.ingredientLinks ?? [],
+                      ) ?? []
+                    ).map((link: OrderRecord) => ({
+                      value: link.batchId,
+                      label: link.batchReference || short(link.batchId),
+                    })),
                   ]}
                 />
-              ))}
-            </div>
-            <div className="catalogue-detail__actions action-row">
-              <Btn type="button" variant="ghost" disabled={busy} onClick={() => onMode('details')}>
-                Back
-              </Btn>
-              <Btn type="button" variant="outline" onClick={onOpenEvidence}>
-                Open evidence responses
-              </Btn>
-              <Btn
-                disabled={
-                  busy ||
-                  !evidenceReason.trim() ||
-                  !evidenceDeadline ||
-                  !evidenceBatch ||
-                  !requestedClaims.length
+              )}
+              <Input
+                label="Reason for requesting information"
+                value={evidenceReason}
+                onChange={setEvidenceReason}
+                maxLength={500}
+                required
+              />
+              <Input
+                label="Response deadline"
+                type="datetime-local"
+                value={evidenceDeadline}
+                onChange={setEvidenceDeadline}
+                required
+              />
+              <IngredientRequestPolicyFields
+                policy={policy}
+                onChange={setPolicy}
+                onRequirements={(required) =>
+                  setClaims((current) => ({
+                    ...current,
+                    ...Object.fromEntries(
+                      INGREDIENT_REQUEST_CLAIMS.map(([key]) => [
+                        key,
+                        required.includes(key) ? ('required' as const) : ('not-requested' as const),
+                      ]),
+                    ),
+                  }))
                 }
-                type="submit"
-              >
-                {busy ? 'Submitting…' : 'Send information request'}
-              </Btn>
-            </div>
-          </form>
+              />
+              <div className="catalogue-claim-grid">
+                {INGREDIENT_REQUEST_CLAIMS.map(([claim, label]) => (
+                  <SelectField
+                    key={claim}
+                    label={`${label} disclosure`}
+                    value={claims[claim] ?? 'not-requested'}
+                    onChange={(value) => setClaims((current) => ({ ...current, [claim]: value }))}
+                    options={[
+                      { value: 'not-requested', label: 'Do not request' },
+                      { value: 'optional', label: 'Optional' },
+                      { value: 'required', label: 'Necessary' },
+                    ]}
+                  />
+                ))}
+              </div>
+              <div className="catalogue-detail__actions action-row">
+                <Btn
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => onMode('details')}
+                >
+                  Cancel
+                </Btn>
+                <Btn type="button" variant="outline" onClick={onOpenEvidence}>
+                  Open evidence responses
+                </Btn>
+                <Btn
+                  disabled={
+                    busy ||
+                    !evidenceReason.trim() ||
+                    !evidenceDeadline ||
+                    !evidenceBatch ||
+                    !requestedClaims.length
+                  }
+                  type="submit"
+                >
+                  {busy ? 'Submitting…' : 'Send information request'}
+                </Btn>
+              </div>
+            </form>
+          </Modal>
         )}
         <TechnicalDetails
           fields={[
@@ -800,7 +819,7 @@ function CatalogueDetail({
           ]}
         />
       </div>
-    </Modal>
+    </section>
   );
 }
 

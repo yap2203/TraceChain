@@ -131,6 +131,13 @@ export interface EvidenceReview {
   presentationExpiry: string;
   requestId: string;
   sharedClaims: Record<string, unknown>;
+  /** Required items the Supplier chose not to share; the evidence is valid but incomplete. */
+  unmetRequirements?: string[];
+  /** Request deadline (seconds) and what was requested, for the requester's own review. */
+  dueAt?: number;
+  requestedClaims?: string[];
+  requiredClaims?: string[];
+  purpose?: string;
   supplier: string;
   supplierName?: string;
   status: number;
@@ -213,6 +220,8 @@ export interface CompanyIdentityProofStatus {
   status: 'NOT_REQUESTED' | 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED' | 'EXPIRED';
   verifiedAt?: string;
   checks?: string[];
+  /** Required fields the holder chose not to share; the proof is valid but incomplete. */
+  missingClaims?: string[];
   credential?: {
     credentialHash: string;
     credentialId: string;

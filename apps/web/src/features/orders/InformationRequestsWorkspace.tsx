@@ -34,6 +34,8 @@ import {
 } from '../production-flow/production-flow.api';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import { workspacePath } from '../workspaces/workspace-paths';
+import { Building2, ClipboardList } from 'lucide-react';
+import { EvidenceSummaryCard, RequestSummary, evidenceDateFields } from './EvidenceIdentity';
 import {
   Alert,
   Badge,
@@ -50,7 +52,6 @@ import {
   EvidenceNextStep,
   SharedClaims,
   friendlyClaim,
-  relativeDeadline,
   DeadlineCell,
   EvidenceStatusSelect,
   matchesStatusFilter,
@@ -183,37 +184,50 @@ export function InformationRequestsWorkspace({
     return (
       <div className="information-requests-page is-detail">
         <BackNavigation to={listPath}>Evidence Exchange</BackNavigation>
-        <header className="evidence-detail-header">
-          <div>
-            <h2>{detailTitle(selected, custodyDetail)}</h2>
-            <p>
-              For {contextLabel(context as CompanyProofRequestRow['context']).toLocaleLowerCase()}
-              {selected?.subject ? ` · ${selected.subject}` : ''}
-            </p>
-          </div>
-          {selected && (
-            <div className="evidence-detail-header__status">
-              <Badge
-                label={proofStatusLabel(selected.status)}
-                variant={proofStatusVariant(selected.status)}
-              />
-              <button
-                type="button"
-                className="information-request-refresh"
-                aria-label="Refresh evidence request status"
-                title="Refresh"
-                disabled={loading}
-                onClick={() => void load()}
-              >
-                <RefreshCw size={16} aria-hidden="true" />
-              </button>
-            </div>
-          )}
-        </header>
         {error && <Alert type="error" message={error} />}
         <EvidenceDetailLayout
+          asideTitle="Request summary"
+          asideIcon={ClipboardList}
           aside={selected && <RequestDetails row={selected} actor={data?.actor} />}
         >
+          <EvidenceSummaryCard
+            icon={Building2}
+            title={
+              !selected
+                ? detailTitle(selected, custodyDetail)
+                : selected.direction === 'received'
+                  ? 'Your company'
+                  : selected.company
+            }
+            subtitle={
+              selected?.direction === 'received'
+                ? `Requested by ${selected.company}`
+                : formatRole(selected?.counterpartyRole) || undefined
+            }
+            context={`Company identity evidence · ${contextLabel(
+              context as CompanyProofRequestRow['context'],
+            )}`}
+            badges={
+              selected && (
+                <>
+                  <Badge
+                    label={proofStatusLabel(selected.status)}
+                    variant={proofStatusVariant(selected.status)}
+                  />
+                  <button
+                    type="button"
+                    className="information-request-refresh"
+                    aria-label="Refresh evidence request status"
+                    title="Refresh"
+                    disabled={loading}
+                    onClick={() => void load()}
+                  >
+                    <RefreshCw size={16} aria-hidden="true" />
+                  </button>
+                </>
+              )
+            }
+          />
           {loading && !data ? (
             <LoadingIndicator page label="Loading request…" />
           ) : selected?.status === 'UNAVAILABLE' ? (
@@ -458,66 +472,40 @@ function RequestDetails({ row, actor }: { row: CompanyProofRequestRow; actor?: s
   const received = row.direction === 'received';
   const required = row.requiredClaims ?? [];
   const optional = (row.optionalClaims ?? []).filter((claim) => !required.includes(claim));
+  const counterparty = {
+    name: row.company,
+    role: formatRole(row.counterpartyRole) || undefined,
+    wallet: row.counterpartyWallet,
+  };
+  const you = { name: 'Your company', wallet: actor, you: true };
   return (
-    <section className="evidence-request-details" aria-label="Request details">
-      <dl>
-        <div>
-          <dt>Requested by</dt>
-          <dd>
-            {received ? row.company : 'Your company'}
-            <small>{received ? shortWallet(row.counterpartyWallet) : shortWallet(actor)}</small>
-          </dd>
-        </div>
-        <div>
-          <dt>Evidence from</dt>
-          <dd>
-            {received ? 'Your company' : row.company}
-            <small>{received ? shortWallet(actor) : shortWallet(row.counterpartyWallet)}</small>
-          </dd>
-        </div>
-        <div>
-          <dt>Request for</dt>
-          <dd>
-            {contextLabel(row.context)}
-            {row.subject && <small>{row.subject}</small>}
-          </dd>
-        </div>
-        <div>
-          <dt>Deadline</dt>
-          <dd>
-            {new Date(row.expiresAt * 1000).toLocaleString()}
-            {!isClosed(row.status) && row.expiresAt * 1000 > Date.now() && (
-              <small>{deadlineText(row)}</small>
-            )}
-          </dd>
-        </div>
-        {row.verifiedAt && (
-          <div>
-            <dt>Verified</dt>
-            <dd>{new Date(row.verifiedAt).toLocaleString()}</dd>
-          </div>
-        )}
-        <div className="is-wide">
-          <dt>Purpose</dt>
-          <dd>{row.purpose}</dd>
-        </div>
-        {(required.length > 0 || optional.length > 0) && (
-          <div className="is-wide">
-            <dt>Fields requested</dt>
-            <dd className="evidence-request-details__chips">
-              {required.map((claim) => (
-                <span key={claim} className="is-required">
-                  {friendlyClaim(claim)}
-                </span>
-              ))}
-              {optional.map((claim) => (
-                <span key={claim}>{friendlyClaim(claim)} (optional)</span>
-              ))}
-            </dd>
-          </div>
-        )}
-      </dl>
-    </section>
+    <RequestSummary
+      requester={received ? counterparty : you}
+      provider={received ? you : counterparty}
+      facts={[
+        {
+          label: 'Request for',
+          value: (
+            <>
+              {contextLabel(row.context)}
+              {row.subject && <small>{row.subject}</small>}
+            </>
+          ),
+        },
+        ...evidenceDateFields({
+          dueAt: row.expiresAt,
+          open: !isClosed(row.status),
+          verifiedAt: row.verifiedAt,
+        }),
+      ]}
+      purpose={row.purpose}
+      requested={[...required, ...optional].map((claim) => ({
+        claim,
+        label: friendlyClaim(claim),
+        required: required.includes(claim),
+        state: 'requested' as const,
+      }))}
+    />
   );
 }
 
@@ -534,13 +522,6 @@ function detailTitle(row: CompanyProofRequestRow | undefined, custody: boolean) 
   return row.direction === 'received'
     ? `${row.company} asks for your company identity`
     : `Company identity from ${row.company}`;
-}
-
-function deadlineText(row: CompanyProofRequestRow) {
-  const deadline = relativeDeadline(row.expiresAt);
-  // The status badge already says Expired/Verified, so a closed row only needs the date.
-  if (isClosed(row.status) || deadline.past) return deadline.text;
-  return `Due ${deadline.text}`;
 }
 
 function isClosed(status: string) {
@@ -622,10 +603,10 @@ function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: 
         }
       />
       {status?.credential && (
-        <section className="evidence-panel__shared" aria-label="Shared company details">
-          <h4>Shared details</h4>
-          <SharedClaims values={status.credential as Record<string, unknown>} />
-        </section>
+        <SharedClaims
+          values={status.credential as Record<string, unknown>}
+          missing={status.missingClaims}
+        />
       )}
     </div>
   );
@@ -653,7 +634,7 @@ function CustodyCompanyProof({
     void load();
   }, [load]);
   if (error) return <Alert type="error" message={error} />;
-  if (!offer) return <LoadingIndicator page label="Loading custody offer…" />;
+  if (!offer) return <LoadingIndicator page label="Loading request…" />;
   const delivery = {
     distributor: offer.distributor,
     stage:

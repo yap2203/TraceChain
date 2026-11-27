@@ -5,6 +5,7 @@ import {
   toggleCompanyDisclosure,
 } from '@tracechain/shared';
 import { reportError } from '../../components/ui/feedback';
+import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { deliveryIdentity, type OrderRecord, type OrdersState } from './orders.api';
@@ -302,6 +303,8 @@ export function DeliveryIdentityPanel({
         </Btn>
       </>
     ) : undefined;
+  // Until the real status arrives, the default 'not requested' would show a wrong next step.
+  if (!status && !error) return <LoadingIndicator label="Loading request…" />;
   return (
     <section
       className="company-evidence-card evidence-panel"
@@ -392,10 +395,7 @@ export function DeliveryIdentityPanel({
         </div>
       )}
       {status?.credential && (
-        <section className="evidence-panel__shared" aria-label="Shared company details">
-          <h4>Shared details</h4>
-          <SharedClaims values={status.credential} />
-        </section>
+        <SharedClaims values={status.credential} missing={status.missingClaims} />
       )}
       {status?.checks?.length ? (
         <p className="evidence-panel__checks">Checks: {status.checks.join(' · ')}</p>

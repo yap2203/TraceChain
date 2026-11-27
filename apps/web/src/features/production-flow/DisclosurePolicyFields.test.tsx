@@ -7,7 +7,7 @@ import { CompanyRequestFields } from './CompanyRequestFields';
 import { IngredientRequestPolicyFields } from './IngredientRequestPolicyFields';
 import { IngredientClaimValue } from './IngredientClaimValue';
 afterEach(cleanup);
-it('uses checkbox selection and keeps grouped registration claims together', () => {
+it('uses a per-field request choice and keeps grouped registration claims together', () => {
   function Form() {
     const [r, setR] = useState<string[]>([...COMPANY_ALWAYS_CLAIMS]);
     const [o, setO] = useState<string[]>([]);
@@ -27,17 +27,21 @@ it('uses checkbox selection and keeps grouped registration claims together', () 
     );
   }
   render(<Form />);
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Company registration number' }));
+  fireEvent.change(screen.getByRole('combobox', { name: 'Company registration number request' }), {
+    target: { value: 'optional' },
+  });
   expect(screen.getByLabelText('optional').textContent).toBe(
     'companyRegistrationNumber,registrationCountry',
   );
-  fireEvent.click(screen.getAllByRole('button', { name: 'Required' })[0]);
+  fireEvent.change(screen.getByRole('combobox', { name: 'Company registration number request' }), {
+    target: { value: 'required' },
+  });
   expect(screen.getByLabelText('required').textContent).toContain(
     'companyRegistrationNumber,registrationCountry',
   );
   expect(screen.getByLabelText('required').textContent).toContain('companyName');
   expect(screen.getByLabelText('optional').textContent).toBe('');
-  expect(screen.getByRole('checkbox', { name: 'Application reference' })).toBeTruthy();
+  expect(screen.getByRole('combobox', { name: 'Application reference request' })).toBeTruthy();
 });
 it('uses shared request templates and explicit unknown-allergen policy', () => {
   function Form() {

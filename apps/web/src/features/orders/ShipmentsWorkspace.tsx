@@ -65,7 +65,7 @@ const stateLabel = (shipment: OrderRecord) =>
             ? 'Accepted — awaiting scanned receipt'
             : 'Awaiting Distributor review',
           'Partially received',
-          'At distributor warehouse',
+          'Received',
           'Rejected — return pending',
           'Returned to Supplier',
         ][Number(shipment.status)] ?? 'Unknown')
@@ -84,8 +84,11 @@ export function ShipmentsWorkspace({
   initialQr = '',
   initialKind,
   section,
+  embedded = false,
 }: {
   role: WorkspaceRole;
+  /** Shown inside another page (a custody offer): the host page owns back navigation. */
+  embedded?: boolean;
   initialView?: 'shipments' | 'transfer' | 'locations';
   initialKind?: 'ingredient' | 'product';
   section?: 'intake' | 'deliveries' | 'tracking' | 'profile';
@@ -100,10 +103,13 @@ export function ShipmentsWorkspace({
     [busy, setBusy] = useState(false);
   const [custodyOffers, setCustodyOffers] = useState<CustodyOffer[]>([]);
   useEffect(() => {
-    if (section === 'intake' || section === 'tracking')
-      void getCustodyOffers()
-        .then((result) => setCustodyOffers(result.offers))
-        .catch((cause) => setError(cause.message));
+    // Offers also name the other company's sites, so load them wherever shipments are listed.
+    if (role === 'retailer' || section === 'profile') return;
+    void getCustodyOffers()
+      .then((result) => setCustodyOffers(result.offers))
+      .catch((cause) => {
+        if (section === 'intake' || section === 'tracking') setError(cause.message);
+      });
   }, [section, role]);
   const [view, setView] = useState<string>(initialView),
     [kind, setKind] = useState<'ingredient' | 'product'>(
@@ -189,7 +195,10 @@ export function ShipmentsWorkspace({
   const label = (id?: string) =>
     formatLocationLabel(
       data?.locations.find((entry) => same(entry.location, id)),
-      warehouse?.warehouses.find((entry) => same(entry.location, id))?.name ?? short(id),
+      warehouse?.warehouses.find((entry) => same(entry.location, id))?.name ??
+        custodyOffers.find((offer) => same(offer.fromLocation, id))?.fromLocationName ??
+        custodyOffers.find((offer) => same(offer.toLocation, id))?.toLocationName ??
+        short(id),
     );
   const item = (id?: string) =>
     data?.catalogue.find((entry) => entry.batches?.some((batch: string) => same(batch, id)));
@@ -238,6 +247,13 @@ export function ShipmentsWorkspace({
         throw new Error('This shipment is unavailable to your company.');
       setSelected(decoded.shipmentId);
       setChecked(value);
+      // Pre-fill what is expected in the same update; the receiver only corrects differences.
+      const arriving = shipments.find((entry) => same(entry.shipmentId, decoded.shipmentId))!;
+      setQuantity(
+        (current) =>
+          current || (BigInt(arriving.quantity) - BigInt(arriving.received ?? '0')).toString(),
+      );
+      if (arriving.vehicle) setReceiveVehicle((current) => current || String(arriving.vehicle));
       setError('');
       stop.current?.();
       setCameraActive(false);
@@ -349,6 +365,14 @@ export function ShipmentsWorkspace({
         );
   const unit =
     kind === 'ingredient' && role === 'distributor' ? order?.custodyOrder.unit : stock?.unit;
+  // Delivery job: pre-fill what is reserved and the vehicle arranged; the Distributor only
+  // corrects a difference.
+  useEffect(() => {
+    if (role !== 'distributor' || kind !== 'ingredient' || !order) return;
+    setQuantity((current) => current || available.toString());
+    const arranged = order.custodyOrder?.vehicle;
+    if (arranged) setVehicle((current) => current || String(arranged).toUpperCase());
+  }, [order?.orderId]);
   const at = Math.floor(Date.parse(actual) / 1000),
     expected = Math.floor(Date.parse(eta) / 1000);
   const vehicleValid =
@@ -1499,10 +1523,14 @@ export function ShipmentsWorkspace({
                 : 'Next Action'
           }
           backLabel={distributorIngredientDelivery ? 'Ingredient deliveries' : 'Back to shipments'}
-          onBack={() => {
-            setSelected('');
-            setChecked('');
-          }}
+          onBack={
+            embedded
+              ? undefined
+              : () => {
+                  setSelected('');
+                  setChecked('');
+                }
+          }
           onRefresh={() => void run(load)}
           receiptContent={
             distributorIngredientDelivery ? deliveryTrackingContent : arrivalReceiptContent

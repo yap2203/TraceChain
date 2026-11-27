@@ -199,6 +199,8 @@ export interface CustodyOffer {
     'REQUESTED' | 'ACCEPTED' | 'SCHEDULED' | 'REJECTED' | 'DISPATCHED' | 'RECEIVED' | 'EXPIRED';
   pickupAt?: number;
   shipmentId?: string;
+  /** Shipment ID the handoff will record; lets the label be printed before pickup. */
+  plannedShipmentId?: string;
   createdAt?: string;
 }
 export const getCustodyOffers = () => request<{ offers: CustodyOffer[] }>('/custody-offers');

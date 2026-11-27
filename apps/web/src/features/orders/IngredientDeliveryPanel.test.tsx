@@ -210,6 +210,16 @@ describe('Ingredient delivery handoff', () => {
       target: { files: [new File(['qr'], 'good.png', { type: 'image/png' })] },
     });
     await screen.findByText(/Label matches this request/);
+    // Pre-filled once scanned: remaining quantity, the only receiving location, and a receipt time.
+    expect(
+      (screen.getByLabelText('Quantity physically received (g)') as HTMLInputElement).value,
+    ).toBe('10');
+    expect(
+      (screen.getByLabelText('Receiving / production location') as HTMLSelectElement).value,
+    ).toBe('factory');
+    expect(
+      (screen.getByLabelText('Actual receipt date and time') as HTMLInputElement).value,
+    ).not.toBe('');
     fireEvent.change(screen.getByLabelText('Receiving / production location'), {
       target: { value: 'factory' },
     });

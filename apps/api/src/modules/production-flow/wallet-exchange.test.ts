@@ -465,6 +465,34 @@ describe('Wallet exchange across independent API data directories', () => {
       .expect(200);
     await expect(f.store.retrieveAndDecrypt('b' + 'z'.repeat(24))).rejects.toThrow();
   });
+  it('accepts a response that withholds a required field and reports it as unmet', async () => {
+    const f = await setup();
+    const a = f.service('API-A', f.agentA);
+    const prepared = await a.prepareEvidenceRequest(f.manufacturer.address, {
+      operationId: crypto.randomUUID(),
+      batchId: f.batchId,
+      dueAt: new Date((f.now + 600) * 1000),
+      claims: ['countryOfOrigin'],
+      requiredClaims: ['countryOfOrigin'],
+      reason: 'Origin check',
+      policy: { policyVersion: 2, template: 'custom', allowUnknownAllergens: false },
+    } as any);
+    f.apply(prepared.transaction);
+    const b = f.service('API-B', f.agentB);
+    const material = await b.prepareEvidenceResponse(f.supplier.address, prepared.requestId);
+    const presentation = await f.sign(material.holderSigning, f.supplier, []);
+    const response = await b.prepareEvidenceResponse(f.supplier.address, prepared.requestId, {
+      presentation,
+    });
+    f.apply(response.transaction);
+    const view = await f
+      .service('API-A', f.agentA)
+      .reviewEvidence(f.manufacturer.address, prepared.requestId);
+    expect(view.sharedClaims).not.toHaveProperty('countryOfOrigin');
+    expect(view.unmetRequirements).toEqual([
+      'Country of origin is required.',
+    ]);
+  });
   it('opens the request and responds on empty B, then verifies on restarted A without a holder kit', async () => {
     const f = await setup();
     let a: ProductionFlowService | undefined = f.service('API-A', f.agentA);

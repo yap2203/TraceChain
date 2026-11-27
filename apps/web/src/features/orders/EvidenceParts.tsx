@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
+import { Contact, type LucideIcon } from 'lucide-react';
+import { EvidenceCard, FieldPairs, IdentifierFields } from './EvidenceIdentity';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
-import { ClaimRow } from '../workspaces/shared/ui';
+import { Alert, ClaimRow } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import './evidence-exchange.css';
 
@@ -33,10 +35,12 @@ export function ingredientEvidenceStatus(status: number, dueAt?: number) {
 export function EvidenceDetailLayout({
   aside,
   asideTitle = 'Request summary',
+  asideIcon: AsideIcon,
   children,
 }: {
   aside?: ReactNode;
   asideTitle?: string;
+  asideIcon?: LucideIcon;
   children: ReactNode;
 }) {
   if (!aside) return <div className="evidence-detail-main">{children}</div>;
@@ -44,7 +48,10 @@ export function EvidenceDetailLayout({
     <div className="evidence-detail-body">
       <div className="evidence-detail-main">{children}</div>
       <aside className="evidence-detail-aside" aria-label={asideTitle}>
-        <h3>{asideTitle}</h3>
+        <h3>
+          {AsideIcon && <AsideIcon size={18} aria-hidden="true" />}
+          {asideTitle}
+        </h3>
         {aside}
       </aside>
     </div>
@@ -105,6 +112,11 @@ export function EvidenceFieldList({
   ];
   const optional = names.filter((claim) => !required.includes(claim));
   const sharing = names.filter((claim) => selected.includes(claim)).length;
+  const always = COMPANY_ALWAYS_CLAIMS as readonly string[];
+  // Required is a label: the holder may withhold it, except the identity-binding fields.
+  const withheld = selectable
+    ? required.filter((claim) => !always.includes(claim) && !selected.includes(claim))
+    : [];
   return (
     <section className="evidence-fields" aria-labelledby="evidence-fields-title">
       <header>
@@ -131,6 +143,8 @@ export function EvidenceFieldList({
       <div className="evidence-fields__list">
         {ordered.map((claim) => {
           const isRequired = required.includes(claim);
+          // The server lists the binding fields as required; only those stay locked.
+          const locked = !selectable || (isRequired && always.includes(claim));
           return (
             <ClaimRow
               key={claim}
@@ -143,33 +157,61 @@ export function EvidenceFieldList({
                     ? 'required'
                     : 'optional'
               }
-              included={isRequired || selected.includes(claim)}
-              locked={isRequired || !selectable}
+              included={locked || selected.includes(claim)}
+              locked={locked}
               technical={technicalClaim(claim)}
               onToggle={() => onToggle(claim)}
             />
           );
         })}
       </div>
+      {withheld.length > 0 && (
+        <Alert
+          type="warning"
+          message={`Not sharing required: ${withheld.map(friendlyClaim).join(', ')}. You can still share; the requester will see the proof as incomplete and may reject it.`}
+        />
+      )}
     </section>
   );
 }
 
 /** Read-only view of claims another company shared. */
-export function SharedClaims({ values }: { values: Record<string, unknown> }) {
+export function SharedClaims({
+  values,
+  missing = [],
+}: {
+  values: Record<string, unknown>;
+  missing?: string[];
+}) {
   const entries = Object.entries(values);
   if (!entries.length) return null;
+  const business = entries.filter(([claim]) => !technicalClaim(claim));
+  const identifiers = entries.filter(([claim]) => technicalClaim(claim));
   return (
-    <dl className="evidence-shared-claims">
-      {entries.map(([claim, value]) => (
-        <div key={claim}>
-          <dt>{friendlyClaim(claim)}</dt>
-          <dd title={technicalClaim(claim) ? displayClaimValue(claim, value) : undefined}>
-            {displayClaimValue(claim, value)}
-          </dd>
-        </div>
-      ))}
-    </dl>
+    <EvidenceCard
+      icon={Contact}
+      title="Shared company information"
+      meta={`${entries.length} ${entries.length === 1 ? 'field' : 'fields'} shared`}
+    >
+      {missing.length > 0 && (
+        <Alert
+          type="warning"
+          message={`Incomplete: required ${missing.map(friendlyClaim).join(', ')} not shared. The signatures are valid; decide whether this is enough to continue.`}
+        />
+      )}
+      <FieldPairs
+        fields={business.map(([claim, value]) => ({
+          label: friendlyClaim(claim),
+          value: displayClaimValue(claim, value),
+        }))}
+      />
+      <IdentifierFields
+        fields={identifiers.map(([claim, value]) => ({
+          label: claim === 'id' ? 'Decentralized identity (DID)' : friendlyClaim(claim),
+          value: typeof value === 'string' ? value : String(value ?? ''),
+        }))}
+      />
+    </EvidenceCard>
   );
 }
 

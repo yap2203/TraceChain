@@ -72,6 +72,22 @@ export function IngredientDeliveryPanel({
     stop = useRef<() => void>(undefined),
     cameraAttempt = useRef(0);
   const qrReader = useRef(reader ?? new ZxingTransferQrReader());
+  // Once the label is scanned, pre-fill what is expected; the receiver only corrects differences.
+  // Once the label is accepted, pre-fill what is expected; the receiver only corrects differences.
+  // Runs in the same update as accepting the label, so the form never shows empty first.
+  const prefillReceipt = () => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    setOccurredAt((current) => current || now.toISOString().slice(0, 19));
+    if (!manufacturer) return;
+    setQuantity(
+      (current) =>
+        current ||
+        (BigInt(order.requested) - BigInt(order.approvedReceivedQuantity ?? '0')).toString(),
+    );
+    const own = data.locations.filter((entry) => same(entry.company, data.actor));
+    if (own.length === 1) setLocation((current: string) => current || own[0]!.location);
+  };
   const printableLabel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (supplier && stage === 1 && order.deliveryQr) {
@@ -96,6 +112,7 @@ export function IngredientDeliveryPanel({
         publicAppUrl: import.meta.env.VITE_PUBLIC_APP_URL,
       });
       setScanned(value);
+      prefillReceipt();
       setConfirmed(false);
       setError('');
       stop.current?.();
@@ -381,8 +398,9 @@ export function IngredientDeliveryPanel({
           Withdraw before pickup
         </Btn>
       )}
-      {(supplier || distributor) && [2, 3].includes(stage) && (
-        distributor ? (
+      {(supplier || distributor) &&
+        [2, 3].includes(stage) &&
+        (distributor ? (
           <Btn variant="outline" onClick={() => setRequestEvidence(true)}>
             Request Supplier company evidence
           </Btn>
@@ -396,8 +414,7 @@ export function IngredientDeliveryPanel({
           >
             Manage requested company evidence
           </a>
-        )
-      )}
+        ))}
       {requestEvidence && (
         <DeliveryIdentityPanel
           requestOnly

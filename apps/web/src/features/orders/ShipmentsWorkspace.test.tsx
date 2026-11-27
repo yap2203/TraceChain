@@ -254,6 +254,10 @@ describe('unified warehouse shipments', () => {
     const confirm = await screen.findByRole('button', { name: 'Confirm receipt with MetaMask' });
     expect(mocks.sign).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'Accept custody delivery' })).toBeNull();
+    // Pre-filled with the quantity still expected; the receiver only corrects a difference.
+    expect(
+      (screen.getByLabelText('Quantity physically received (kg)') as HTMLInputElement).value,
+    ).toBe('100');
     fireEvent.change(screen.getByLabelText('Quantity physically received (kg)'), {
       target: { value: '40' },
     });
@@ -352,9 +356,9 @@ describe('unified warehouse shipments', () => {
       ),
     ).toBeTruthy();
     expect(screen.getByText('Actual flour')).toBeTruthy();
-    expect(screen.getAllByText('Actual Supplier Company').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Actual Supplier Company/).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Actual Manufacturer Company').length).toBeGreaterThan(0);
-    expect(screen.getByText('FLOUR-2026-001')).toBeTruthy();
+    expect(screen.getByText(/FLOUR-2026-001/)).toBeTruthy();
     expect(screen.getByText('10 kg')).toBeTruthy();
     expect(screen.getByText('Manufacturer receiving dock')).toBeTruthy();
     expect(screen.getByText('WXY 7788')).toBeTruthy();
@@ -362,17 +366,16 @@ describe('unified warehouse shipments', () => {
       screen.getByText(/Review the reserved stock and route before recording physical dispatch/),
     ).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Ingredient image placeholder' })).toBeTruthy();
-    const route = screen.getByRole('list', { name: 'Route for Actual flour' });
-    expect(within(route).getByText('Supplier')).toBeTruthy();
-    expect(within(route).getByText('Distributor warehouse')).toBeTruthy();
-    expect(within(route).getByText('Manufacturer')).toBeTruthy();
-    expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+    // Journey: from the Distributor's warehouse to the Manufacturer's destination.
+    const journey = screen.getByLabelText('Delivery journey');
+    expect(journey.textContent).toContain('Your warehouse');
+    expect(journey.textContent).toContain('Actual Manufacturer Company');
     expect(screen.queryByText('No matching shipments')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record physical dispatch' })).toBeNull();
     fireEvent.click(awaitingSummary);
     expect(awaitingSummary.getAttribute('aria-pressed')).toBe('true');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Review delivery' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Review delivery' })[0]!);
 
     expect(await screen.findByRole('heading', { name: 'Ingredient delivery review' })).toBeTruthy();
     const progress = screen.getByRole('list', { name: 'Ingredient delivery progress' });
@@ -443,7 +446,7 @@ describe('unified warehouse shipments', () => {
       { name: /In transit\s*1/ },
     );
     fireEvent.click(tab);
-    expect(screen.getByText('SHP-BBBBBBBB')).toBeTruthy();
+    expect(screen.getByText(/SHP-BBBBBBBB/)).toBeTruthy();
     expect(screen.getByText(/Track the shipment until it reaches the Manufacturer/)).toBeTruthy();
 
     expect(screen.queryByLabelText('Status')).toBeNull();
@@ -455,14 +458,14 @@ describe('unified warehouse shipments', () => {
     fireEvent.change(screen.getByLabelText('Manufacturer'), {
       target: { value: 'Actual Manufacturer Company' },
     });
-    expect(screen.getByText('SHP-BBBBBBBB')).toBeTruthy();
+    expect(screen.getByText(/SHP-BBBBBBBB/)).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Search deliveries'), {
       target: { value: 'not-a-delivery' },
     });
     expect(await screen.findByText('No deliveries match your filters.')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    expect(await screen.findByText('SHP-BBBBBBBB')).toBeTruthy();
+    expect(await screen.findByText(/SHP-BBBBBBBB/)).toBeTruthy();
   });
   it('opens the existing dispatch form from the card without signing automatically', async () => {
     mocks.get.mockResolvedValue(arrangedDeliveryState());
@@ -530,10 +533,10 @@ describe('unified warehouse shipments', () => {
 
     render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
 
-    expect(await screen.findByText('Not scheduled')).toBeTruthy();
-    expect(screen.getAllByText('Not recorded').length).toBeGreaterThanOrEqual(2);
-    expect(document.querySelector('.distributor-delivery-card__main')).toBeTruthy();
-    expect(document.querySelector('.workspace-status-timeline--route')).toBeTruthy();
+    expect(await screen.findByText('Pickup Not recorded')).toBeTruthy();
+    expect(screen.getByText('Arrives Not recorded')).toBeTruthy();
+    expect(screen.getAllByText('Not recorded').length).toBeGreaterThanOrEqual(1);
+    expect(document.querySelector('.shipment-journey')).toBeTruthy();
   });
   it('shows the genuine ingredient-delivery empty state without a false shipment message', async () => {
     render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);

@@ -1,0 +1,148 @@
+/* Signed ingredient batch details: signed facts on the left, listing and privacy on the right. */
+@layer components {
+  .batch-detail {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .batch-detail__header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .batch-detail__header h2 {
+    margin: 0;
+    color: var(--c-text);
+    font-size: var(--text-title);
+  }
+  .batch-detail__header p {
+    margin: 4px 0 0;
+    color: var(--c-text2);
+    font-size: var(--text-body);
+  }
+  .batch-detail__layout {
+    display: grid;
+    gap: 16px;
+    align-items: start;
+  }
+  @media (min-width: 1100px) {
+    .batch-detail__layout {
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+    }
+  }
+  .batch-detail__main,
+  .batch-detail__aside {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+  }
+  .batch-detail__section {
+    display: grid;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--c-border);
+    border-radius: 12px;
+    background: var(--c-surface);
+  }
+  .batch-detail__section h3 {
+    margin: 0;
+    color: var(--c-text);
+    font-size: var(--text-section);
+  }
+  .batch-detail__muted {
+    margin: 0;
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  .batch-detail__text {
+    margin: 0;
+    color: var(--c-text);
+    font-size: var(--text-body);
+  }
+  .batch-detail__facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px 18px;
+    margin: 0;
+  }
+  .batch-detail__facts > div {
+    min-width: 0;
+  }
+  .batch-detail__facts dt {
+    color: var(--c-text2);
+    font-size: var(--text-label);
+  }
+  .batch-detail__facts dd {
+    margin: 2px 0 0;
+    color: var(--c-text);
+    font-size: var(--text-value);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .batch-detail__aside .batch-detail__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .batch-detail__private {
+    margin-left: 4px;
+    padding: 1px 6px;
+    border: 1px solid var(--c-border2);
+    border-radius: 999px;
+    font-size: var(--text-meta);
+  }
+  .batch-detail__certs {
+    display: grid;
+    gap: 10px;
+  }
+  .batch-detail__cert {
+    display: grid;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--c-border);
+    border-radius: 10px;
+    background: var(--c-surface2);
+  }
+  .batch-detail__cert > header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .batch-detail__cert > header strong {
+    margin-right: auto;
+    color: var(--c-text);
+    font-size: var(--text-value);
+  }
+  .batch-detail__cert > header span {
+    padding: 2px 8px;
+    border: 1px solid var(--c-border2);
+    border-radius: 999px;
+    color: var(--c-text2);
+    font-size: var(--text-meta);
+  }
+  .batch-detail__doc {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--c-border);
+    color: var(--c-text2);
+  }
+  .batch-detail__doc strong {
+    display: block;
+    color: var(--c-text);
+    font-size: var(--text-body);
+    overflow-wrap: anywhere;
+  }
+  .batch-detail__doc small {
+    color: var(--c-text2);
+    font-size: var(--text-meta);
+  }
+  .batch-detail__doc span[role='alert'] {
+    display: block;
+    color: var(--c-red);
+    font-size: var(--text-meta);
+  }
+}

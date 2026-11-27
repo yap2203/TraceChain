@@ -31,3 +31,7 @@ Treat these documents as the repository's project source of truth.
 - Do not commit generated build output, local databases, logs, caches, or environment files.
 - Remove obsolete code and files when replacing them, while preserving unrelated user work.
 - Prefer clear interface icons and natural, context-appropriate photography. Do not add artificial-looking AI imagery or decorative images without a concrete product purpose.
+
+## Engineering quality
+
+For every code change or review, follow `.claude/skills/software-engineering-quality/SKILL.md`: its workflow, trade-off order and definition of done. Read a file under its `references/` only when the task involves that topic.

@@ -1,5 +1,6 @@
 import { BackNavigation } from '../../components/ui/BackNavigation';
 import { formatLocationLabel } from './location-format';
+import { CatalogueImage } from './CatalogueMedia';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
@@ -37,6 +38,8 @@ import {
   Btn,
   Card,
   EmptyState,
+  EntityPicker,
+  type EntityOption,
   Input,
   SectionTitle,
   SelectField,
@@ -47,8 +50,10 @@ import {
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
+import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import { workspacePath } from '../workspaces/workspace-paths';
 import { DeliveryIdentityPanel } from './DeliveryIdentityPanel';
+import { ShipmentsWorkspace } from './ShipmentsWorkspace';
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const local = (offset = 0) => {
   const date = new Date(Date.now() + offset);
@@ -61,9 +66,23 @@ const statusLabel: Record<CustodyOffer['status'], string> = {
   SCHEDULED: 'Pickup arranged',
   REJECTED: 'Rejected',
   DISPATCHED: 'Handoff recorded',
-  RECEIVED: 'Received into custody',
+  RECEIVED: 'Received',
   EXPIRED: 'Expired',
 };
+const statusVariant: Record<CustodyOffer['status'], BadgeVariant> = {
+  REQUESTED: 'pending',
+  ACCEPTED: 'pending',
+  SCHEDULED: 'shared',
+  DISPATCHED: 'shared',
+  RECEIVED: 'verified',
+  REJECTED: 'rejected',
+  EXPIRED: 'rejected',
+};
+// Whose move it is: the Distributor acts on REQUESTED, ACCEPTED and DISPATCHED; the sender on SCHEDULED.
+const isMyTurn = (offer: CustodyOffer, receiver: boolean) =>
+  receiver
+    ? ['REQUESTED', 'ACCEPTED', 'DISPATCHED'].includes(offer.status)
+    : offer.status === 'SCHEDULED';
 
 function CustodyRequestDetail({
   offer,
@@ -162,12 +181,12 @@ function CustodyRequestDetail({
           : `Waiting for ${offer.distributorName} to arrange the pickup time.`
         : offer.status === 'SCHEDULED'
           ? receiver
-            ? `Waiting for ${offer.senderName} to confirm the handoff at pickup.`
-            : 'Hand the goods over at pickup, then confirm the handoff below.'
+            ? `At pickup, check the TraceChain label on the goods. ${offer.senderName} then confirms the handoff.`
+            : 'Print the label and attach it to the stock. At pickup, hand the goods over and confirm the handoff below.'
           : offer.status === 'DISPATCHED'
             ? receiver
-              ? 'Scan the shipment QR at your warehouse to confirm receipt.'
-              : `Waiting for ${offer.distributorName} to confirm warehouse receipt.`
+              ? 'When the goods arrive, scan the label on them to confirm warehouse receipt.'
+              : `In transit. ${offer.distributorName} scans the label at its warehouse to confirm receipt.`
             : offer.status === 'RECEIVED'
               ? 'Warehouse receipt is complete.'
               : offer.status === 'REJECTED'
@@ -201,18 +220,7 @@ function CustodyRequestDetail({
         <div className="workspace-custody-detail__item">
           <Package size={30} aria-hidden="true" />
           <h3>{offer.itemName}</h3>
-          <Badge
-            label={statusLabel[offer.status]}
-            variant={
-              offer.status === 'RECEIVED'
-                ? 'verified'
-                : offer.status === 'REJECTED'
-                  ? 'rejected'
-                  : offer.status === 'EXPIRED'
-                    ? 'expired'
-                    : 'pending'
-            }
-          />
+          <Badge label={statusLabel[offer.status]} variant={statusVariant[offer.status]} />
         </div>
         <StatusTimeline label="Custody request progress" steps={steps} variant="custody" />
         <div className="workspace-custody-detail__panels">
@@ -282,18 +290,6 @@ function CustodyRequestDetail({
               <Btn variant="outline" onClick={() => setRequestEvidence(true)}>
                 Request sender company evidence
               </Btn>
-            )}
-            {!receiver && ['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
-              <Link
-                className="workspace-custody-detail__evidence-link"
-                to={
-                  workspacePath(role, 'requests') +
-                  '?' +
-                  new URLSearchParams({ context: 'custody', referenceId: offer.offerId })
-                }
-              >
-                Manage requested company evidence
-              </Link>
             )}
             {requestEvidence && (
               <DeliveryIdentityPanel
@@ -382,12 +378,25 @@ function CustodyRequestDetail({
                 </div>
               </section>
             )}
+            {!receiver && qr && offer.status === 'SCHEDULED' && (
+              <section className="workspace-custody-detail__label" aria-label="Shipment label">
+                <h4>Step 1 · Print and attach the label</h4>
+                <ProductQrDisplay
+                  batchId={offer.batchId}
+                  batchReference={offer.itemName}
+                  productName={offer.itemName}
+                  labelTitle="Custody shipment label"
+                  encodedPayload={qr}
+                  instruction="Print this label and attach it to the stock before pickup. The Distributor scans it at its warehouse to confirm receipt."
+                />
+              </section>
+            )}
             {!receiver && offer.status === 'SCHEDULED' && (
               <section
                 className="workspace-custody-detail__handoff workspace-flow-page"
                 aria-label="Physical handoff confirmation"
               >
-                <h4>Confirm physical handoff at pickup</h4>
+                <h4>Step 2 · Confirm the handoff at pickup</h4>
                 <Input
                   label="Pickup vehicle registration"
                   value={vehicle}
@@ -438,7 +447,7 @@ function CustodyRequestDetail({
                         // Chain events count after the confirmation window; refresh once it passes.
                         setTimeout(() => void onChanged().catch(() => undefined), 30_000);
                         setNotice(
-                          'Physical handoff recorded. The Distributor scans receipt at its warehouse.',
+                          'Handoff recorded. The Distributor scans the label at its warehouse to confirm receipt.',
                         );
                       })
                     }
@@ -448,29 +457,31 @@ function CustodyRequestDetail({
                 </div>
               </section>
             )}
-            {offer.shipmentId && ['DISPATCHED', 'RECEIVED'].includes(offer.status) && (
+            {!receiver && offer.shipmentId && ['DISPATCHED', 'RECEIVED'].includes(offer.status) && (
               <Link
                 className="workspace-custody-detail__evidence-link"
                 to={
-                  workspacePath(role, receiver ? 'arrivals' : 'shipments') +
+                  workspacePath(role, 'shipments') +
                   '?shipmentId=' +
                   encodeURIComponent(offer.shipmentId)
                 }
               >
-                {receiver ? 'Open warehouse arrival & scan receipt' : 'Track this shipment'}
+                Track this shipment
               </Link>
             )}
           </section>
         </div>
-        {!receiver && qr && (
-          <ProductQrDisplay
-            batchId={offer.batchId}
-            batchReference={offer.itemName}
-            productName={offer.itemName}
-            labelTitle="Custody Shipment QR"
-            encodedPayload={qr}
-            instruction="Attach this label to the goods. The Distributor scans it at warehouse receipt."
-          />
+        {!receiver && qr && offer.status !== 'SCHEDULED' && (
+          <section className="workspace-custody-detail__label" aria-label="Shipment label">
+            <ProductQrDisplay
+              batchId={offer.batchId}
+              batchReference={offer.itemName}
+              productName={offer.itemName}
+              labelTitle="Custody shipment label"
+              encodedPayload={qr}
+              instruction="The Distributor scans this label at its warehouse to confirm receipt. Reprint it if the label is damaged."
+            />
+          </section>
         )}
         {!receiver &&
           !qr &&
@@ -593,6 +604,80 @@ export function CustodyOffersWorkspace({
         (Date.parse(b.createdAt ?? '') || b.expiresAt * 1000) -
         (Date.parse(a.createdAt ?? '') || a.expiresAt * 1000),
     );
+  const stockOptions: EntityOption[] = stock.map((item) => {
+    const detail = item.batchDetails?.find((entry: { batchId?: string }) =>
+      same(entry.batchId, item.batchId),
+    );
+    const summary = item.batchSummaries?.[item.batchId];
+    const available =
+      kind === 2
+        ? data?.logistics?.productStock?.find((entry) => same(entry.batchId, item.batchId))
+            ?.available
+        : (detail?.supplierAvailable ?? summary?.supplierAvailable);
+    const expiresAt = Number(detail?.expiresAt ?? 0);
+    return {
+      id: item.batchId,
+      title: item.name,
+      media: (
+        <CatalogueImage
+          path={item.imagePath}
+          category={item.category}
+          alt={`Supplier-provided image of ${item.name}`}
+        />
+      ),
+      subtitle: `Batch ${summary?.batchReference ?? item.batchReference ?? shortId(item.batchId)}`,
+      group: item.category,
+      keywords: `${item.batchId} ${item.category ?? ''}`,
+      facts: [
+        ...(available !== undefined
+          ? [{ label: 'Available', value: amount(available, item.unit) }]
+          : []),
+        ...(expiresAt
+          ? [{ label: 'Expires', value: new Date(expiresAt * 1000).toLocaleDateString() }]
+          : []),
+      ],
+      disabledReason:
+        expiresAt && expiresAt * 1000 <= Date.now()
+          ? 'This batch has expired.'
+          : available !== undefined && String(available) === '0'
+            ? 'No stock available to send.'
+            : undefined,
+    };
+  });
+  const siteAvailable = (location: string) =>
+    selectedProductStock
+      ? selectedProductStock.tracked
+        ? ((selectedProductStock.locations ?? []).find((item: OrderRecord) =>
+            same(item.location, location),
+          )?.available ?? '0')
+        : same(selectedProductStock.productionLocation, location)
+          ? selectedProductStock.available
+          : '0'
+      : undefined;
+  const siteOptions: EntityOption[] = sites.map((site) => {
+    const available = siteAvailable(site.location);
+    return {
+      id: site.location,
+      title: site.label ?? site.name ?? 'Registered location',
+      subtitle: site.address,
+      keywords: site.location,
+      facts:
+        available !== undefined && selectedItem
+          ? [{ label: 'Available here', value: amount(available, selectedItem.unit) }]
+          : [],
+    };
+  });
+  const warehouseOptions: EntityOption[] = warehouses.map((site) => {
+    const address = data?.locations.find((entry) => same(entry.location, site.location))?.address;
+    return {
+      id: site.location,
+      title: site.name,
+      subtitle: site.distributorName ?? 'Authorized Distributor',
+      group: site.distributorName,
+      keywords: `${site.distributor} ${address ?? ''}`,
+      facts: address ? [{ label: 'Address', value: address }] : [],
+    };
+  });
   const label = (location: string) =>
     formatLocationLabel(
       data?.locations.find((site) => same(site.location, location)),
@@ -600,16 +685,19 @@ export function CustodyOffersWorkspace({
         'Registered company location',
     );
   let qr: string | undefined;
+  // The label exists from "pickup arranged", using the planned ID until the handoff records it.
+  const labelShipmentId = selected?.shipmentId ?? selected?.plannedShipmentId;
   if (
-    selected?.shipmentId &&
-    ['DISPATCHED', 'RECEIVED'].includes(selected.status) &&
+    selected &&
+    labelShipmentId &&
+    ['SCHEDULED', 'DISPATCHED', 'RECEIVED'].includes(selected.status) &&
     data?.chainId &&
     data.ordersAddress &&
     import.meta.env.VITE_PUBLIC_APP_URL
   ) {
     try {
       qr = encodeShipmentQr({
-        shipmentId: selected.shipmentId as `0x${string}`,
+        shipmentId: labelShipmentId as `0x${string}`,
         kind: selected.kind === 1 ? 'ingredient' : 'product',
         chainId: data.chainId,
         ordersAddress: data.ordersAddress as `0x${string}`,
@@ -665,6 +753,20 @@ export function CustodyOffersWorkspace({
       {notice && <Alert type="success" message={notice} />}
       {loading ? (
         <LoadingIndicator page label="Loading custody offers…" />
+      ) : selected &&
+        data &&
+        receiver &&
+        selected.status === 'DISPATCHED' &&
+        selected.shipmentId ? (
+        // Goods on the way: this offer page becomes the receipt (scan the label, confirm receipt).
+        <ShipmentsWorkspace
+          key={selected.shipmentId}
+          role={role}
+          section="intake"
+          initialKind={selected.kind === 1 ? 'ingredient' : 'product'}
+          initialShipmentId={selected.shipmentId}
+          embedded
+        />
       ) : selected && data ? (
         <CustodyRequestDetail
           offer={selected}
@@ -695,32 +797,59 @@ export function CustodyOffersWorkspace({
             <Card>
               <SectionTitle title="New custody offer" />
               <div className="workspace-offer-form">
-                <SelectField
+                <EntityPicker
                   label="Your stock"
                   required
                   value={batch}
-                  onChange={setBatch}
-                  options={[
-                    { value: '', label: 'Select an owned batch' },
-                    ...stock.map((item) => ({
-                      value: item.batchId,
-                      label: `${item.name} · ${item.unit}`,
-                    })),
+                  onChange={(id) => {
+                    setBatch(id);
+                    // The quantity belongs to the previous batch's unit and availability.
+                    setQuantity('');
+                  }}
+                  options={stockOptions}
+                  dialogTitle="Choose stock to send"
+                  chooseLabel="Choose stock"
+                  confirmLabel="Use this stock"
+                  searchPlaceholder="Search name, batch reference or ID"
+                  filterLabel="Categories"
+                  sorts={[
+                    {
+                      value: 'name',
+                      label: 'Name A–Z',
+                      compare: (a, b) => a.title.localeCompare(b.title),
+                    },
+                    {
+                      value: 'available',
+                      label: 'Most available',
+                      compare: (a, b) => factNumber(b, 'Available') - factNumber(a, 'Available'),
+                    },
+                    {
+                      value: 'expiry',
+                      label: 'Expiring soonest',
+                      compare: (a, b) => factDate(a, 'Expires') - factDate(b, 'Expires'),
+                    },
                   ]}
+                  emptyText="You have no active stock to send. Register a batch first."
                 />
                 <div className="workspace-offer-field">
-                  <SelectField
+                  <EntityPicker
                     label="Pickup location"
                     required
                     value={from}
                     onChange={setFrom}
-                    options={[
-                      { value: '', label: 'Select your registered location' },
-                      ...sites.map((site) => ({
-                        value: site.location,
-                        label: formatLocationLabel(site, 'Registered location'),
-                      })),
+                    options={siteOptions}
+                    dialogTitle="Choose a pickup location"
+                    chooseLabel="Choose pickup location"
+                    confirmLabel="Use this location"
+                    searchPlaceholder="Search location or address"
+                    sorts={[
+                      {
+                        value: 'name',
+                        label: 'Name A–Z',
+                        compare: (x, y) => x.title.localeCompare(y.title),
+                      },
                     ]}
+                    emptyText="Register a pickup location in Profile first."
                   />
                   {availableAtPickup !== undefined && selectedItem && (
                     <p role="status" className="workspace-offer-availability">
@@ -729,15 +858,30 @@ export function CustodyOffersWorkspace({
                     </p>
                   )}
                 </div>
-                <SelectField
+                <EntityPicker
                   label="Distributor warehouse"
                   required
                   value={warehouse}
                   onChange={setWarehouse}
-                  options={[
-                    { value: '', label: 'Select an authorized warehouse' },
-                    ...warehouses.map((site) => ({ value: site.location, label: site.name })),
+                  options={warehouseOptions}
+                  dialogTitle="Choose a Distributor warehouse"
+                  chooseLabel="Choose warehouse"
+                  confirmLabel="Use this warehouse"
+                  searchPlaceholder="Search warehouse, Distributor or address"
+                  filterLabel="Distributors"
+                  sorts={[
+                    {
+                      value: 'name',
+                      label: 'Name A–Z',
+                      compare: (a, b) => a.title.localeCompare(b.title),
+                    },
+                    {
+                      value: 'company',
+                      label: 'Distributor A–Z',
+                      compare: (a, b) => (a.subtitle ?? '').localeCompare(b.subtitle ?? ''),
+                    },
                   ]}
+                  emptyText="No authorized Distributor warehouses are registered yet."
                 />
                 <Input
                   label={`Quantity (${selectedItem?.unit ?? 'batch unit'})`}
@@ -746,6 +890,15 @@ export function CustodyOffersWorkspace({
                   inputMode="numeric"
                   pattern="[1-9][0-9]*"
                   required
+                  disabled={!batch}
+                  hint={
+                    batch
+                      ? stockOptions.find((option) => option.id === batch)?.facts?.[0]?.label ===
+                        'Available'
+                        ? `Available: ${stockOptions.find((option) => option.id === batch)!.facts![0]!.value}`
+                        : undefined
+                      : 'Choose stock first.'
+                  }
                 />
                 <Input
                   label="Offer expiry"
@@ -755,6 +908,16 @@ export function CustodyOffersWorkspace({
                   required
                   min={local()}
                   max={batchExpiresAt ? local(batchExpiresAt * 1000 - Date.now()) : undefined}
+                  // Our reason replaces the browser's bare "must be … or earlier" message.
+                  error={
+                    !deadline
+                      ? undefined
+                      : !(Date.parse(deadline) > Date.now())
+                        ? 'Choose a time in the future.'
+                        : batchExpiresAt && Date.parse(deadline) >= batchExpiresAt * 1000
+                          ? `The offer must end before this batch expires on ${new Date(batchExpiresAt * 1000).toLocaleString()}. Choose an earlier date.`
+                          : undefined
+                  }
                   hint={
                     batchExpiresAt
                       ? 'Must be before the batch expires on ' +
@@ -815,25 +978,37 @@ export function CustodyOffersWorkspace({
                 }
               />
             ) : (
-              <Table headers={['Stock', 'Company', 'Quantity', 'Next stage', 'Action']}>
+              <Table headers={['Stock', 'Company', 'Quantity', 'Stage', '']}>
                 {visible.map((offer) => (
-                  <TR key={offer.offerId}>
+                  <TR
+                    key={offer.offerId}
+                    onClick={() => {
+                      setParams({ offerId: offer.offerId });
+                      setPickup('');
+                    }}
+                  >
                     <TD bold>{offer.itemName}</TD>
                     <TD>{receiver ? offer.senderName : offer.distributorName}</TD>
                     <TD>
                       {offer.quantity} {offer.unit}
                     </TD>
-                    <TD>{statusLabel[offer.status]}</TD>
+                    <TD>
+                      <Badge
+                        label={statusLabel[offer.status]}
+                        variant={statusVariant[offer.status]}
+                      />
+                    </TD>
                     <TD>
                       <Btn
-                        variant="outline"
+                        variant={isMyTurn(offer, receiver) ? 'primary' : 'outline'}
                         size="sm"
-                        onClick={() => {
+                        onClick={(event) => {
+                          event?.stopPropagation();
                           setParams({ offerId: offer.offerId });
                           setPickup('');
                         }}
                       >
-                        View offer
+                        {isMyTurn(offer, receiver) ? 'Take action' : 'View offer'}
                       </Btn>
                     </TD>
                   </TR>
@@ -846,3 +1021,16 @@ export function CustodyOffersWorkspace({
     </section>
   );
 }
+
+function amount(value: string | number, unit: string) {
+  try {
+    return `${BigInt(value).toLocaleString()} ${unit}`;
+  } catch {
+    return `${value} ${unit}`;
+  }
+}
+const shortId = (value: string) => `${value.slice(0, 8)}…${value.slice(-6)}`;
+const factNumber = (option: EntityOption, label: string) =>
+  Number(option.facts?.find((fact) => fact.label === label)?.value.replace(/[^\d.]/g, '') ?? 0);
+const factDate = (option: EntityOption, label: string) =>
+  Date.parse(option.facts?.find((fact) => fact.label === label)?.value ?? '') || Infinity;

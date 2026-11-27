@@ -120,10 +120,10 @@ describe('Manufacturer received evidence review', () => {
     render(<IngredientEvidence onNav={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'View evidence' }));
 
-    expect(await screen.findByText('Cocoa powder')).toBeTruthy();
+    expect((await screen.findAllByText('Cocoa powder')).length).toBeGreaterThan(0);
     expect(screen.getByText('May contain soy')).toBeTruthy();
     expect(screen.getByText(/Full disclosure:/)).toBeTruthy();
-    expect(screen.getByText('Unverified')).toBeTruthy();
+    expect(screen.getAllByText('Not verified yet').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Accept evidence' }).hasAttribute('disabled')).toBe(
       true,
     );

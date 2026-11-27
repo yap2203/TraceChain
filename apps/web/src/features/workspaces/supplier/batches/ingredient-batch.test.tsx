@@ -508,7 +508,7 @@ describe('Supplier ingredient batch workflow', () => {
       expect.objectContaining({ credentials: 'include' }),
     );
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
-    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'My ingredients' }).closest('section')!).toBeTruthy();
     expect(screen.getByText('not signed credential claims', { exact: false })).toBeTruthy();
   });
 
@@ -595,7 +595,7 @@ describe('Supplier ingredient batch workflow', () => {
     )!;
     expect(screen.queryByRole('button', { name: 'Show more' })).toBeNull();
     fireEvent.click(within(cocoaCard).getByRole('button', { name: 'View details' }));
-    const dialog = screen.getByRole('dialog');
+    const dialog = screen.getByRole('button', { name: 'My ingredients' }).closest('section')!;
     expect(within(dialog).getByText('Country of origin')).toBeTruthy();
     expect(within(dialog).getByText('Registered')).toBeTruthy();
     expect(within(dialog).getByText('Supplier-provided listing description')).toBeTruthy();
@@ -610,7 +610,7 @@ describe('Supplier ingredient batch workflow', () => {
     });
     render(<IngredientBatches onNew={vi.fn()} />);
     fireEvent.click(await screen.findByRole('heading', { name: 'Cocoa Powder' }));
-    expect(screen.getByRole('dialog')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'My ingredients' }).closest('section')!).toBeTruthy();
   });
 
   it('calculates real summaries without combining different quantity units', async () => {
@@ -734,7 +734,11 @@ describe('Supplier ingredient batch workflow', () => {
 
     const technical = screen.getByText('Technical details').closest('details');
     expect(technical?.open).toBe(false);
-    expect(within(screen.getByRole('dialog')).getByText('Authenticated Supplier')).toBeTruthy();
+    expect(
+      within(screen.getByRole('button', { name: 'My ingredients' }).closest('section')!).getByText(
+        'Authenticated Supplier',
+      ),
+    ).toBeTruthy();
 
     const invalid = new File(['unsafe'], 'ingredient.svg', { type: 'image/svg+xml' });
     fireEvent.change(screen.getByLabelText('Choose ingredient image'), {
@@ -742,7 +746,8 @@ describe('Supplier ingredient batch workflow', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Upload image' }));
     expect(await screen.findByText('Choose a PNG, JPEG or WebP image.')).toBeTruthy();
-    expect(screen.getAllByRole('img', { name: 'Cocoa image placeholder' })).toHaveLength(2);
+    // Only the details page shows now; the list is hidden behind it.
+    expect(screen.getAllByRole('img', { name: 'Cocoa image placeholder' })).toHaveLength(1);
   });
 
   it('shows distinct loading, empty and unavailable-service states without fixture batches', async () => {

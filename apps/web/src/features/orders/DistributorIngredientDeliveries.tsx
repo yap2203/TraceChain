@@ -1,24 +1,20 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import {
-  ArrowRight,
   ArrowUpDown,
-  Building2,
   CalendarClock,
   CheckCircle2,
-  Factory,
   FilterX,
   PackageCheck,
-  Scale,
   Search,
   SlidersHorizontal,
   Truck,
-  Warehouse,
 } from 'lucide-react';
 
-import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
+import { PaginationBar, usePagination } from '../../components/ui/PaginatedTable';
+import { CatalogueImage } from './CatalogueMedia';
+import { JourneyStop } from './ShipmentList';
 import type { OrderRecord, OrdersState } from './orders.api';
 import {
-  Alert,
   Badge,
   Btn,
   EmptyState,
@@ -26,9 +22,9 @@ import {
   InventorySummaryCard,
   SelectField,
   StatusTabs,
-  StatusTimeline,
-  TechnicalDetails,
+  openCardOnClick,
 } from '../workspaces/shared/ui';
+import { formatOperationalQuantity } from '../workspaces/shared/operational-format';
 
 type DeliveryTab =
   'all' | 'needs-action' | 'scheduled' | 'in-transit' | 'awaiting-receipt' | 'completed';
@@ -121,6 +117,7 @@ export function DistributorIngredientDeliveries({
             .includes(query)),
     )
     .sort((left, right) => {
+      if (left.kind !== right.kind) return left.kind === 'job' ? -1 : 1;
       if (sort === 'oldest') return left.sortTime - right.sortTime;
       if (sort === 'expected')
         return (
@@ -129,6 +126,8 @@ export function DistributorIngredientDeliveries({
         );
       return right.sortTime - left.sortTime;
     });
+  const pagination = usePagination(shown.map((record) => `${record.kind}:${record.id}`));
+  const page = shown.slice(pagination.start, pagination.end);
   const summary = {
     awaitingDispatch: records.filter((record) => record.status === 'awaiting-dispatch').length,
     inTransit: records.filter((record) => record.status === 'in-transit').length,
@@ -331,12 +330,12 @@ export function DistributorIngredientDeliveries({
 
       {shown.length ? (
         <div className="distributor-deliveries__list">
-          {shown.some((record) => record.kind === 'job') && (
+          {page.some((record) => record.kind === 'job') && (
             <DeliveryGroup
               title="Delivery jobs"
               description="Reserved stock awaiting Distributor action"
             >
-              {shown
+              {page
                 .filter((record) => record.kind === 'job')
                 .map((record) => (
                   <DeliveryCard
@@ -348,12 +347,12 @@ export function DistributorIngredientDeliveries({
                 ))}
             </DeliveryGroup>
           )}
-          {shown.some((record) => record.kind === 'shipment') && (
+          {page.some((record) => record.kind === 'shipment') && (
             <DeliveryGroup
               title="Shipment history"
               description="On-chain deliveries and receipt status"
             >
-              {shown
+              {page
                 .filter((record) => record.kind === 'shipment')
                 .map((record) => (
                   <DeliveryCard
@@ -365,6 +364,7 @@ export function DistributorIngredientDeliveries({
                 ))}
             </DeliveryGroup>
           )}
+          {shown.length > 10 && <PaginationBar pagination={pagination} label="Delivery pages" />}
         </div>
       ) : records.length ? (
         <EmptyState
@@ -410,6 +410,13 @@ function DeliveryGroup({
   );
 }
 
+const GROUP: Record<DeliveryStatus, string> = {
+  'awaiting-dispatch': 'attention',
+  'in-transit': 'transit',
+  'awaiting-receipt': 'receipt',
+  completed: 'completed',
+};
+
 function DeliveryCard({
   record,
   onReview,
@@ -419,177 +426,97 @@ function DeliveryCard({
   onReview: () => void;
   onSecondary: () => void;
 }) {
-  const secondaryLabel =
-    record.kind === 'job'
-      ? 'Record dispatch'
-      : record.status === 'completed'
-        ? 'View completed delivery'
-        : record.status === 'awaiting-receipt'
-          ? 'Awaiting Manufacturer receipt'
-          : 'View tracking';
-  const secondaryDisabled = record.kind === 'shipment' && record.status === 'awaiting-receipt';
+  const job = record.kind === 'job';
   return (
-    <article className="distributor-delivery-card">
-      <header className="distributor-delivery-card__meta">
-        <div>
+    <article
+      className={`shipment-card is-${GROUP[record.status]}`}
+      onClick={openCardOnClick(onReview)}
+    >
+      <div className="shipment-card__media">
+        <CatalogueImage
+          path={record.imagePath}
+          category={record.itemCategory ?? 'Ingredient'}
+          alt={`${record.itemName} presentation image`}
+        />
+      </div>
+      <div className="shipment-card__content">
+        <div className="shipment-card__heading">
+          <div>
+            <span>
+              {job ? 'Delivery job' : 'Ingredient delivery'} · {record.reference}
+            </span>
+            <h3>{record.itemName}</h3>
+            <p>
+              {record.batchReference} · Supplier {record.supplierName}
+            </p>
+          </div>
           <Badge
             label={record.statusLabel}
-            variant={record.status === 'completed' ? 'verified' : 'pending'}
+            variant={
+              record.status === 'completed'
+                ? 'verified'
+                : record.status === 'awaiting-dispatch'
+                  ? 'pending'
+                  : 'transfer-pending'
+            }
           />
-          <span>{record.reference}</span>
         </div>
-        <span className="distributor-delivery-card__batch">{record.batchReference}</span>
-      </header>
 
-      <div className="distributor-delivery-card__main">
-        <div className="distributor-delivery-card__image">
-          <CatalogueImage
-            path={record.imagePath}
-            category={record.itemCategory ?? 'Ingredient'}
-            alt={`${record.itemName} presentation image`}
+        <div className="shipment-journey" aria-label="Delivery journey">
+          <JourneyStop
+            role="From"
+            company="Your warehouse"
+            place={record.warehouse}
+            timeLabel="Pickup"
+            time={record.pickupAt}
+          />
+          <div className="shipment-journey__leg" aria-hidden="true">
+            <span className="shipment-journey__line" />
+            <span className="shipment-journey__vehicle">
+              {record.status === 'completed' ? <CheckCircle2 size={16} /> : <Truck size={16} />}
+            </span>
+          </div>
+          <JourneyStop
+            role="To"
+            company={record.manufacturerName}
+            logoPath={record.manufacturerLogoPath}
+            place={record.destination}
+            timeLabel={record.status === 'completed' ? 'Expected' : 'Arrives'}
+            time={record.expectedAt}
           />
         </div>
-        <div className="distributor-delivery-card__identity">
-          <span>Ingredient shipment</span>
-          <h3>{record.itemName}</h3>
-          <p className="distributor-delivery-card__quantity">
-            <Scale size={18} aria-hidden="true" />
-            <strong>
-              {record.quantity} {record.unit}
-            </strong>
+
+        <div className="shipment-card__next">
+          <dl className="shipment-card__chips">
+            <div>
+              <dt>Quantity</dt>
+              <dd>{formatOperationalQuantity(record.quantity, record.unit)}</dd>
+            </div>
+            <div>
+              <dt>Vehicle</dt>
+              <dd>{record.vehicle || 'Not recorded'}</dd>
+            </div>
+          </dl>
+          <p>
+            <span>Next</span>
+            {record.nextAction}
           </p>
-          <div className="distributor-delivery-card__companies" aria-label="Shipment companies">
-            <CompanyLine
-              label="From"
-              name={record.supplierName}
-              logoPath={record.supplierLogoPath}
-            />
-            <ArrowRight size={18} aria-hidden="true" />
-            <CompanyLine
-              label="To"
-              name={record.manufacturerName}
-              logoPath={record.manufacturerLogoPath}
-            />
-          </div>
+          {job ? (
+            <>
+              <Btn variant="outline" onClick={onReview}>
+                Review delivery
+              </Btn>
+              <Btn onClick={onSecondary}>Record dispatch</Btn>
+            </>
+          ) : (
+            <Btn variant="outline" onClick={onReview}>
+              Review delivery
+            </Btn>
+          )}
         </div>
-        <div className="distributor-delivery-card__actions action-row">
-          <Btn variant="outline" disabled={secondaryDisabled} onClick={onSecondary}>
-            {secondaryLabel}
-          </Btn>
-          <Btn onClick={onReview}>Review delivery</Btn>
-        </div>
-      </div>
-
-      <div className="distributor-delivery-card__progress">
-        <StatusTimeline
-          label={`Route for ${record.itemName}`}
-          steps={deliveryRoute(record)}
-          variant="route"
-        />
-        <dl className="distributor-delivery-card__facts">
-          <div>
-            <dt>
-              <Truck size={14} aria-hidden="true" /> Vehicle
-            </dt>
-            <dd>{record.vehicle || 'Not recorded'}</dd>
-          </div>
-          <div>
-            <dt>
-              <CalendarClock size={14} aria-hidden="true" /> Pickup date
-            </dt>
-            <dd>{formatTime(record.pickupAt, 'Not scheduled')}</dd>
-          </div>
-          <div>
-            <dt>
-              <CalendarClock size={14} aria-hidden="true" /> Expected arrival
-            </dt>
-            <dd>{formatTime(record.expectedAt, 'Not recorded')}</dd>
-          </div>
-        </dl>
-      </div>
-
-      <Alert type="info" message={`Next action: ${record.nextAction}`} />
-      <div className="distributor-delivery-card__technical">
-        <TechnicalDetails fields={technicalFields(record)} />
       </div>
     </article>
   );
-}
-
-function CompanyLine({
-  label,
-  name,
-  logoPath,
-}: {
-  label: string;
-  name: string;
-  logoPath?: string;
-}) {
-  return (
-    <div>
-      <span>{label}</span>
-      <strong>
-        <CompanyAvatar name={name} logoPath={logoPath} size="sm" />
-        {name}
-      </strong>
-    </div>
-  );
-}
-
-function deliveryRoute(record: DeliveryRecord) {
-  const shipped = record.kind === 'shipment';
-  const completed = record.status === 'completed';
-  return [
-    {
-      actor: record.supplierName,
-      icon: <Building2 size={19} />,
-      label: 'Supplier',
-      state: 'complete' as const,
-    },
-    {
-      actor: record.warehouse,
-      icon: <Warehouse size={19} />,
-      label: 'Distributor warehouse',
-      state: shipped ? ('complete' as const) : ('current' as const),
-    },
-    {
-      actor: record.manufacturerName,
-      detail: record.destination,
-      icon: <Factory size={19} />,
-      label: 'Manufacturer',
-      state: completed
-        ? ('complete' as const)
-        : shipped
-          ? ('current' as const)
-          : ('pending' as const),
-    },
-  ];
-}
-
-function technicalFields(record: DeliveryRecord) {
-  const shipment = record.shipment;
-  return [
-    { label: 'Shipment ID', value: String(shipment?.shipmentId ?? '') },
-    { label: 'Order ID', value: String(record.order.orderId ?? '') },
-    { label: 'Ingredient batch ID', value: String(record.batchId ?? '') },
-    { label: 'Supplier wallet', value: String(record.order.seller ?? shipment?.sender ?? '') },
-    {
-      label: 'Distributor wallet',
-      value: String(record.order.custodyOrder?.distributor ?? shipment?.sender ?? ''),
-    },
-    {
-      label: 'Manufacturer wallet',
-      value: String(record.order.buyer ?? shipment?.recipient ?? ''),
-    },
-    {
-      label: 'Origin location ID',
-      value: String(record.order.custodyOrder?.location ?? shipment?.fromLocation ?? ''),
-    },
-    {
-      label: 'Destination location ID',
-      value: String(record.order.custodyOrder?.receivingLocation ?? shipment?.toLocation ?? ''),
-    },
-  ];
 }
 
 function buildDeliveryRecords(
@@ -715,10 +642,6 @@ function timestamp(value: unknown) {
     return Number.isFinite(parsed) ? Math.floor(parsed / 1_000) : 0;
   }
   return Number(value) || 0;
-}
-
-function formatTime(value: number | undefined, fallback: string) {
-  return value ? new Date(value * 1_000).toLocaleString() : fallback;
 }
 
 function shortReference(value: string) {

@@ -186,7 +186,7 @@ it('separates sent and received company proof requests and opens the correct exi
   fireEvent.click(screen.getByRole('button', { name: /Warehouse Company/ }));
   expect(screen.getByText('Delivery proof manager: ' + shipment)).toBeTruthy();
   // Request details stay visible whatever the status.
-  const details = screen.getByRole('region', { name: 'Request details' });
+  const details = screen.getByRole('complementary', { name: 'Request summary' });
   expect(details.textContent).toContain('Requested by');
   expect(details.textContent).toContain('Confirm Supplier role');
   fireEvent.click(screen.getByRole('link', { name: 'Evidence Exchange' }));

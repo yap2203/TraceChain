@@ -1,0 +1,56 @@
+/* Shared TechnicalIdentifier: shortened monospace value with copy and full-value toggle. */
+@layer components {
+  .technical-identifier {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .technical-identifier code {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--c-text);
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-size: var(--text-meta);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .technical-identifier.is-boxed {
+    display: flex;
+    width: 100%;
+    padding: 8px 8px 8px 12px;
+    border: 1px solid var(--c-border);
+    border-radius: 8px;
+    background: var(--c-surface2);
+  }
+  .technical-identifier.is-expanded {
+    align-items: flex-start;
+  }
+  .technical-identifier.is-expanded code {
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+  .technical-identifier__icon {
+    display: inline-grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--c-text2);
+    cursor: pointer;
+  }
+  .technical-identifier__icon:hover {
+    background: var(--c-surface);
+    color: var(--c-teal);
+  }
+  .technical-identifier__icon:focus-visible {
+    outline: 2px solid var(--c-teal);
+    outline-offset: 1px;
+  }
+}

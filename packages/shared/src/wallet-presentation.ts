@@ -101,8 +101,9 @@ export function verifyWalletPresentation(
   if (
     !Number.isSafeInteger(c.issuedAt) ||
     !Number.isSafeInteger(c.expiresAt) ||
+    // Signed no later than now; its lifetime is bounded by the request deadline (expected.expiresAt),
+    // and the single-use challenge prevents replay, so no separate signing-age limit applies.
     c.issuedAt > expected.now + 30 ||
-    c.issuedAt < expected.now - 300 ||
     c.expiresAt <= expected.now ||
     c.expiresAt <= c.issuedAt ||
     c.expiresAt > expected.expiresAt

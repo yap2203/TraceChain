@@ -266,7 +266,9 @@ describe('browse and request-only UI', () => {
     expect(screen.getByText('MYR 12.50 / litre')).toBeTruthy();
     expect(container.querySelector('.workspace-shell')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
-    expect(container.querySelectorAll('.workspace-dialog__body')).toHaveLength(1);
+    // Details are a page now; no modal until a request form is opened.
+    expect(container.querySelectorAll('.workspace-dialog__body')).toHaveLength(0);
+    expect(container.querySelector('.catalogue-detail-page')).toBeTruthy();
     expect(container.querySelector('.catalogue-dialog-content')).toBeTruthy();
     expect(container.querySelector('.catalogue-dialog-hero')).toBeTruthy();
     expect(container.querySelector('.catalogue-stock-section')).toBeTruthy();
@@ -389,7 +391,7 @@ describe('browse and request-only UI', () => {
     );
     await screen.findByText('Registered ingredient');
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
-    fireEvent.click(screen.getAllByRole('button', { name: 'Request quantity' })[1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
     fireEvent.change(screen.getByLabelText(/Requested quantity/), { target: { value: '12' } });
     fireEvent.change(screen.getByLabelText(/Response deadline/), {
       target: { value: '2099-01-01T10:00' },
@@ -498,7 +500,7 @@ describe('browse and request-only UI', () => {
     fireEvent.click(
       within(longNameCard as HTMLElement).getByRole('button', { name: 'View details' }),
     );
-    const dialog = screen.getByRole('dialog');
+    const dialog = document.querySelector('.catalogue-detail-page') as HTMLElement;
     expect(dialog.querySelector('.catalogue-dialog-hero')).toBeTruthy();
     expect(dialog.textContent).toContain(
       'Single Origin Fermented Cocoa Beans With A Deliberately Long Catalogue Name',
@@ -625,13 +627,11 @@ describe('browse and request-only UI', () => {
       </MemoryRouter>,
     );
     await screen.findByRole('button', { name: 'Request evidence or information' });
-    expect(
-      within(screen.getByRole('dialog')).getByRole('button', { name: 'Request quantity' }),
-    ).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Request quantity' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'My requests' })).toBeNull();
     expect(screen.queryByText('Own finished product')).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back to catalogue' }));
     expect(screen.getByRole('searchbox', { name: 'Search catalogue' })).toBeTruthy();
     expect(screen.queryByText('Own finished product')).toBeNull();
     expect(api.prepareOrder).not.toHaveBeenCalled();

@@ -1,5 +1,7 @@
 import { T } from './tokens';
-import { notify } from '../../../../components/ui/feedback';
+import { TechnicalIdentifier } from './TechnicalIdentifier';
+
+export { shortIdentifier } from './TechnicalIdentifier';
 
 export interface TechnicalField {
   label: string;
@@ -25,58 +27,14 @@ export function TechnicalDetails({ fields }: { fields: TechnicalField[] }) {
       </summary>
       <dl style={{ display: 'grid', gap: 10, margin: '12px 0 0' }}>
         {visible.map((field) => (
-          <div key={field.label} style={{ display: 'grid', gap: 4 }}>
+          <div key={field.label} style={{ display: 'grid', gap: 4, minWidth: 0 }}>
             <dt style={{ color: T.text2, fontSize: 12 }}>{field.label}</dt>
-            <dd
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-                gap: 10,
-                margin: 0,
-                minWidth: 0,
-                maxWidth: '100%',
-              }}
-            >
-              <code
-                title={field.value}
-                style={{ flex: '1 1 180px', minWidth: 0, overflowWrap: 'anywhere' }}
-              >
-                {shortIdentifier(field.value)}
-              </code>
-              <button
-                type="button"
-                aria-label={`Copy ${field.label}`}
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(field.value);
-                    notify(`${field.label} copied.`, 'success');
-                  } catch {
-                    notify(
-                      'Copy failed. Please try again or select and copy the value manually.',
-                      'error',
-                    );
-                  }
-                }}
-                style={{
-                  padding: '3px 8px',
-                  border: `1px solid ${T.border2}`,
-                  borderRadius: 5,
-                  background: 'transparent',
-                  color: T.teal,
-                  cursor: 'pointer',
-                }}
-              >
-                Copy
-              </button>
+            <dd style={{ margin: 0, minWidth: 0 }}>
+              <TechnicalIdentifier label={field.label} value={field.value} />
             </dd>
           </div>
         ))}
       </dl>
     </details>
   );
-}
-
-export function shortIdentifier(value: string) {
-  return value.length > 18 ? `${value.slice(0, 10)}...${value.slice(-6)}` : value;
 }

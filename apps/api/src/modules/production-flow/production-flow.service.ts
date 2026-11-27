@@ -25,7 +25,7 @@ import {
   verifyWalletPresentation,
   type WalletProofContext,
 } from '@tracechain/shared';
-import { ingredientDetailClaims } from '@tracechain/shared';
+import { ingredientClaimLabel, ingredientDetailClaims } from '@tracechain/shared';
 import {
   COMPANY_ALWAYS_CLAIMS,
   companyDisclosureGroup,
@@ -290,7 +290,11 @@ export class ProductionFlowService {
       };
       await this.dependencies.repository.saveEvidence(workflow);
     }
-    const checked = await this.verifyCompanyIdentityPresentation(workflow, presentation);
+    const checked = await this.verifyCompanyIdentityPresentation(
+      workflow,
+      presentation,
+      this.recordedVerificationTime(workflow),
+    );
     return {
       challengeHash: id(workflow.identityProof!.challenge),
       presentationHash: id(presentation),
@@ -504,9 +508,9 @@ export class ProductionFlowService {
         challenge: proof.challenge,
         batchId: workflow.batchId || ZeroHash,
         issuedAt: this.nowSeconds(),
+        // The requester's deadline (and the credential's expiry) govern the proof lifetime.
         expiresAt: Math.min(
           proof.expiresAt,
-          this.nowSeconds() + 300,
           Math.floor(Date.parse(credential.expirationDate) / 1000),
         ),
       },
@@ -914,6 +918,21 @@ export class ProductionFlowService {
       }
       const names = await this.identityNames([workflow.supplier]);
       const expiry = Number(claims.exp ?? 0);
+      const request = JSON.parse(
+        await this.requestContent(workflow),
+      ) as EvidenceRequestPrivatePayload & {
+        requiredClaims?: string[];
+      };
+      const required = request.requiredClaims ?? request.claims ?? [];
+      // Computed from the disclosures so it holds for records recovered from chain references.
+      const unmetRequirements = request.policy
+        ? ingredientDisclosureErrors(
+            claims,
+            request.policy,
+            required,
+            String(claims.batchReference ?? ''),
+          )
+        : unmetIngredientClaims(claims, required);
       const sharedClaims = visibleIngredientClaims(
         Object.fromEntries(
           Object.entries(claims).filter(
@@ -929,6 +948,11 @@ export class ProductionFlowService {
         presentationExpiry: new Date(chain.presentationExpiresAt * 1_000).toISOString(),
         requestId,
         sharedClaims,
+        unmetRequirements,
+        dueAt: workflow.dueAt,
+        requestedClaims: request.claims ?? [],
+        purpose: request.reason,
+        requiredClaims: required,
         supplier: workflow.supplier,
         supplierName: names.get(workflow.supplier.toLowerCase()),
         status: chain.status,
@@ -963,6 +987,7 @@ export class ProductionFlowService {
       credentialExpiry: credential.expirationDate,
       credentialId: credential.id,
       disclosure: 'FULL_INGREDIENT_CREDENTIAL' as const,
+      dueAt: workflow.dueAt,
       presentationExpiry:
         presentation.expirationDate ?? new Date(chain.presentationExpiresAt * 1_000).toISOString(),
       requestId,
@@ -1257,7 +1282,6 @@ export class ProductionFlowService {
         );
       const expiresAt = Math.min(
         proof.expiresAt,
-        this.nowSeconds() + 300,
         Math.floor(new Date(credential.expirationDate).getTime() / 1000),
       );
       const sdJwt = await issueCompanyIdentitySdJwt(agent, {
@@ -1410,10 +1434,15 @@ export class ProductionFlowService {
           workflow.identityProof.presentationCid ?? '',
           'COMPANY_IDENTITY_PRESENTATION',
         );
-    const result = await this.verifyCompanyIdentityPresentation(workflow, presentation);
-    workflow.identityProof.status = 'VERIFIED';
-    workflow.identityProof.verifiedAt = this.clock().toISOString();
-    await this.dependencies.repository.saveEvidence(workflow);
+    // Re-verifying an already verified proof checks it as of its recorded verification time
+    // (historical verification); the company's current on-chain authorization is still checked.
+    const verifiedAt = this.recordedVerificationTime(workflow);
+    const result = await this.verifyCompanyIdentityPresentation(workflow, presentation, verifiedAt);
+    if (verifiedAt === undefined) {
+      workflow.identityProof.status = 'VERIFIED';
+      workflow.identityProof.verifiedAt = this.clock().toISOString();
+      await this.dependencies.repository.saveEvidence(workflow);
+    }
     return {
       ...this.identityProofSummary(workflow),
       actorWallet: session.address,
@@ -1423,6 +1452,7 @@ export class ProductionFlowService {
           ? this.sharedCompanyReferences()!.prepare('review', [requestId, false])
           : undefined,
       checks: result.checks,
+      missingClaims: result.missingClaims,
       credential:
         result.selectedClaims ??
         this.identityCredentialSummary(result.credential, result.credentialHash),
@@ -1479,6 +1509,8 @@ export class ProductionFlowService {
       (!workflow.deliveryOrderId || workflow.identityProof.expiresAt > this.nowSeconds()) &&
       (workflow.identityProof.presentationPayload || workflow.identityProof.presentationCid)
     ) {
+      // Already verified: re-check as of the recorded verification time (historical verification).
+      const verifiedAt = Date.parse(workflow.identityProof.verifiedAt ?? '');
       const checked = await this.verifyCompanyIdentityPresentation(
         workflow,
         workflow.identityProof.presentationPayload
@@ -1487,9 +1519,11 @@ export class ProductionFlowService {
               workflow.identityProof.presentationCid!,
               'COMPANY_IDENTITY_PRESENTATION',
             ),
+        Number.isFinite(verifiedAt) ? Math.floor(verifiedAt / 1000) : undefined,
       );
       return {
         ...summary,
+        missingClaims: checked.missingClaims,
         credential:
           checked.selectedClaims ??
           this.identityCredentialSummary(checked.credential, checked.credentialHash),
@@ -1604,7 +1638,7 @@ export class ProductionFlowService {
               challenge: request.challenge,
               batchId: workflow.batchId,
               issuedAt: this.nowSeconds(),
-              expiresAt: Math.min(workflow.dueAt, ingredient.expiresAt, this.nowSeconds() + 300),
+              expiresAt: Math.min(workflow.dueAt, ingredient.expiresAt),
             },
           },
         };
@@ -1634,11 +1668,7 @@ export class ProductionFlowService {
                   challenge: request.challenge,
                   batchId: workflow.batchId,
                   issuedAt: this.nowSeconds(),
-                  expiresAt: Math.min(
-                    workflow.dueAt,
-                    ingredient.expiresAt,
-                    this.nowSeconds() + 300,
-                  ),
+                  expiresAt: Math.min(workflow.dueAt, ingredient.expiresAt),
                 }
               : undefined,
             audience: workflow.requester.toLowerCase(),
@@ -1654,11 +1684,7 @@ export class ProductionFlowService {
                     requestId,
                     purpose: request.reason ?? 'Ingredient evidence verification',
                     batchId: workflow.batchId,
-                    expiresAt: Math.min(
-                      workflow.dueAt,
-                      ingredient.expiresAt,
-                      this.nowSeconds() + 300,
-                    ),
+                    expiresAt: Math.min(workflow.dueAt, ingredient.expiresAt),
                   },
                 }
               : {}),
@@ -3366,20 +3392,15 @@ export class ProductionFlowService {
     },
   ) {
     try {
+      // The holder decides what to disclose: only binding and structure are enforced here.
+      // Required fields left out make the response incomplete (reported), not invalid.
       const result = await verifyIngredientSdJwtPresentation(agent, presentation, {
         walletDomain: this.dependencies.gateway.presentationDomain?.(),
         ...input,
+        requiredClaims: [],
         now: this.nowSeconds(),
       });
       if (input.policy) {
-        const errors = ingredientDisclosureErrors(
-          result.payload,
-          input.policy,
-          input.requiredClaims,
-          String(result.payload.batchReference ?? ''),
-        );
-        if (errors.length)
-          throw new ProductionFlowApiError('EVIDENCE_POLICY_NOT_SATISFIED', errors[0], 409);
         const selectable = [
           'countryOfOrigin',
           'originCountryCode',
@@ -3456,6 +3477,17 @@ export class ProductionFlowService {
     return payload.requesterRole;
   }
 
+  /** Seconds of a recorded successful verification, while the request deadline has not passed. */
+  private recordedVerificationTime(workflow: EvidenceWorkflowRecord) {
+    const proof = workflow.identityProof;
+    const at = Date.parse(proof?.verifiedAt ?? '');
+    return proof?.status === 'VERIFIED' &&
+      Number.isFinite(at) &&
+      proof.expiresAt > this.nowSeconds()
+      ? Math.floor(at / 1000)
+      : undefined;
+  }
+
   private identityProofSummary(workflow: EvidenceWorkflowRecord) {
     const proof = workflow.identityProof;
     return {
@@ -3507,10 +3539,17 @@ export class ProductionFlowService {
     };
   }
 
+  /**
+   * `verifiedAt` (seconds): re-check an already-verified proof as of when it was verified, so a
+   * presentation whose short lifetime has since passed stays readable. Signatures, bindings and
+   * the source credential are still fully checked; only the clock is the recorded one.
+   */
   private async verifyCompanyIdentityPresentation(
     workflow: EvidenceWorkflowRecord,
     presentation: string,
+    verifiedAt?: number,
   ) {
+    const now = verifiedAt ?? this.nowSeconds();
     if (workflow.sharedIdentity) {
       const reference = await this.sharedCompanyReferences()!.get(workflow.requestId);
       if (
@@ -3522,7 +3561,7 @@ export class ProductionFlowService {
         );
     }
     const proof = workflow.identityProof;
-    if (!proof || proof.expiresAt <= this.nowSeconds())
+    if (!proof || proof.expiresAt <= now)
       throw new ProductionFlowApiError(
         'IDENTITY_PROOF_EXPIRED',
         'The company identity-proof request has expired.',
@@ -3547,8 +3586,9 @@ export class ProductionFlowService {
             challenge: proof.challenge,
             requestId: workflow.requestId,
             purpose: proof.purpose,
-            now: this.nowSeconds(),
-            requiredClaims: proof.requiredClaims ?? [],
+            now: now,
+            // Only the identity-binding claims are mandatory; other required fields are the holder's choice.
+            requiredClaims: [],
           },
         );
         const p = result.payload;
@@ -3602,7 +3642,11 @@ export class ProductionFlowService {
       } else {
         if (proof.selectiveDisclosure)
           throw new Error('This request requires the selective company identity proof.');
-        jwt = await verifyJWT(presentation, { audience: proof.audience, resolver: keyResolver });
+        jwt = await verifyJWT(presentation, {
+          audience: proof.audience,
+          resolver: keyResolver,
+          policies: { now },
+        });
       }
     } catch (error) {
       if (error instanceof ProductionFlowApiError) throw error;
@@ -3636,11 +3680,7 @@ export class ProductionFlowService {
         'The company identity proof is bound to a different holder, request, or recipient.',
         409,
       );
-    if (
-      typeof payload.exp !== 'number' ||
-      payload.exp > proof.expiresAt ||
-      payload.exp <= this.nowSeconds()
-    )
+    if (typeof payload.exp !== 'number' || payload.exp > proof.expiresAt || payload.exp <= now)
       throw new ProductionFlowApiError(
         'IDENTITY_PROOF_EXPIRED',
         'The presentation has an invalid or expired lifetime.',
@@ -3716,6 +3756,11 @@ export class ProductionFlowService {
       credential: credential.data,
       credentialHash: presentedHash,
       selectedClaims,
+      missingClaims: selectedClaims
+        ? companyDisclosureGroup(proof.requiredClaims ?? []).filter(
+            (key) => !(key in selectedClaims!),
+          )
+        : [],
       checks: [
         'AUTHORITY_SIGNATURE',
         'HOLDER_SIGNATURE',
@@ -3774,4 +3819,22 @@ function roleLabel(role: CompanyRole) {
     .split('_')
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+/** Requested-as-required ingredient claims the holder did not disclose (no-policy requests). */
+function unmetIngredientClaims(payload: Record<string, unknown>, required: string[]) {
+  const keys = Object.keys(payload);
+  const prefix: Record<string, string> = {
+    certifications: 'certification_',
+    certificationDocuments: 'certificationDocuments_',
+    qualityTests: 'qualityTest_',
+    qualityDocuments: 'qualityDocuments_',
+  };
+  return required
+    .filter((claim) =>
+      prefix[claim]
+        ? !keys.some((key) => key.startsWith(prefix[claim]!))
+        : payload[claim] == null || payload[claim] === '',
+    )
+    .map((claim) => `${ingredientClaimLabel(claim)} is required.`);
 }

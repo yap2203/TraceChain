@@ -47,14 +47,18 @@ export function EvidenceClaimSelector({
   const visible = useMemo(
     () =>
       catalogue.filter(
-        (claim) =>
-          !query || `${claim.label} ${claim.group}`.toLocaleLowerCase().includes(query),
+        (claim) => !query || `${claim.label} ${claim.group}`.toLocaleLowerCase().includes(query),
       ),
     [catalogue, query],
   );
   const groups = [...new Set(visible.map((claim) => claim.group))];
   const fields = useMemo(
-    () => classifyEvidenceClaims(catalogue.map((claim) => claim.id), required, optional),
+    () =>
+      classifyEvidenceClaims(
+        catalogue.map((claim) => claim.id),
+        required,
+        optional,
+      ),
     [catalogue, required, optional],
   );
   const selected = new Set(
@@ -66,27 +70,24 @@ export function EvidenceClaimSelector({
     const lists = evidenceClaimLists(next);
     onChange(lists.required, lists.optional);
   };
-  const setClaim = (id: string, include: boolean) => {
-    emit({ ...fields, [id]: include ? 'optional' : 'unselected' });
-  };
-  const setRequirement = (id: string, requirement: ClaimRequirement) =>
+  const setRequirement = (id: string, requirement: ClaimClassification) =>
     emit({ ...fields, [id]: requirement });
   return (
-    <fieldset className='evidence-claim-selector'>
+    <fieldset className="evidence-claim-selector">
       <legend>Business fields to request</legend>
-      <div className='evidence-claim-selector__tools'>
+      <div className="evidence-claim-selector__tools">
         <Input
-          label='Search fields'
-          type='search'
+          label="Search fields"
+          type="search"
           icon={<Search size={16} />}
           value={search}
           onChange={setSearch}
-          placeholder='Search available credential fields'
+          placeholder="Search available credential fields"
         />
-        <div className='action-row'>
+        <div className="action-row">
           <Btn
-            size='xs'
-            variant='outline'
+            size="xs"
+            variant="outline"
             onClick={() =>
               emit(
                 Object.fromEntries(
@@ -101,8 +102,8 @@ export function EvidenceClaimSelector({
             Select all
           </Btn>
           <Btn
-            size='xs'
-            variant='outline'
+            size="xs"
+            variant="outline"
             onClick={() =>
               emit(Object.fromEntries(Object.keys(fields).map((id) => [id, 'unselected'])))
             }
@@ -111,48 +112,35 @@ export function EvidenceClaimSelector({
           </Btn>
         </div>
       </div>
-      <p className='evidence-claim-selector__count'>{selected.size} field{selected.size === 1 ? '' : 's'} selected</p>
+      <p className="evidence-claim-selector__count">
+        {selected.size} field{selected.size === 1 ? '' : 's'} selected
+      </p>
       {groups.map((group) => (
-        <details key={group} open className='evidence-claim-selector__group'>
+        <details key={group} open className="evidence-claim-selector__group">
           <summary>{group}</summary>
-          <div className='evidence-claim-selector__grid'>
-            {visible.filter((claim) => claim.group === group).map((claim) => {
-              const checked = selected.has(claim.id);
-              return (
-                <div className='evidence-claim-selector__claim' key={claim.id}>
-                  <label>
-                    <input
-                      type='checkbox'
-                      checked={checked}
-                      onChange={(event) => setClaim(claim.id, event.target.checked)}
-                    />
+          <div className="evidence-claim-selector__grid">
+            {visible
+              .filter((claim) => claim.group === group)
+              .map((claim) => {
+                const value = fields[claim.id] ?? 'unselected';
+                return (
+                  <label className={`evidence-claim-selector__claim is-${value}`} key={claim.id}>
                     <span>{claim.label}</span>
-                  </label>
-                  {checked && (
-                    <div
-                      className='evidence-claim-selector__requirement'
-                      role='group'
-                      aria-label={`${claim.label} requirement`}
+                    {/* One choice per field: not requested, optional or required. */}
+                    <select
+                      aria-label={`${claim.label} request`}
+                      value={value}
+                      onChange={(event) =>
+                        setRequirement(claim.id, event.target.value as ClaimClassification)
+                      }
                     >
-                      <button
-                        type='button'
-                        aria-pressed={fields[claim.id] === 'optional'}
-                        onClick={() => setRequirement(claim.id, 'optional')}
-                      >
-                        Optional
-                      </button>
-                      <button
-                        type='button'
-                        aria-pressed={fields[claim.id] === 'required'}
-                        onClick={() => setRequirement(claim.id, 'required')}
-                      >
-                        Required
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                      <option value="unselected">Not requested</option>
+                      <option value="optional">Optional</option>
+                      <option value="required">Required</option>
+                    </select>
+                  </label>
+                );
+              })}
           </div>
         </details>
       ))}

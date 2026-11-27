@@ -135,9 +135,7 @@ it.each([false, true])(
     fireEvent.click(
       screen.getByRole('checkbox', { name: /authorize sharing only these selected claims/ }),
     );
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Sign and share' }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Sign and share' }));
     await waitFor(() => expect(walletBound ? mocks.walletSign : mocks.sign).toHaveBeenCalled());
     if (walletBound) expect(mocks.sign).not.toHaveBeenCalled();
     const selected = walletBound
@@ -163,4 +161,42 @@ it('shows a closed request as closed, with no response actions', async () => {
   expect(screen.getByText('Accepted')).toBeTruthy();
   expect(screen.queryByText('Review values to share')).toBeNull();
   expect(screen.queryByRole('button', { name: 'Decline…' })).toBeNull();
+});
+
+it('lets the holder withhold a required field, warns, and still shares', async () => {
+  mocks.details.mockResolvedValue({
+    ...request,
+    batchId: 'batch',
+    claims: ['countryOfOrigin'],
+    requiredClaims: ['countryOfOrigin'],
+    reason: 'Origin check',
+    credentialFormat: 'SD_JWT_VC',
+  });
+  mocks.prepare.mockResolvedValue({
+    state: 'HOLDER_SIGNATURE_REQUIRED',
+    holderSigning: {
+      credential: 'credential',
+      holderDid: 'did:key:holder',
+      requiredClaims: ['countryOfOrigin'],
+      audience: 'manufacturer',
+      nonce: 'nonce',
+    },
+  });
+  mocks.claims.mockResolvedValue({ countryOfOrigin: 'Ghana' });
+  const back = vi.fn();
+  render(<SelectiveDisclosure request={request} onBack={back} />);
+  fireEvent.click(await screen.findByText('Review values to share'));
+  const field = (await screen.findByRole('checkbox', {
+    name: /Country of origin/,
+  })) as HTMLInputElement;
+  expect(field.checked).toBe(true);
+  expect(field.disabled).toBe(false);
+  fireEvent.click(field);
+  expect(screen.getByText(/You are not sharing one required item/)).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole('checkbox', { name: /authorize sharing only these selected claims/ }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Sign and share' }));
+  await waitFor(() => expect(back).toHaveBeenCalled());
+  expect(mocks.sign.mock.calls[0]![2].claims).not.toContain('countryOfOrigin');
 });

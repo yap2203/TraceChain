@@ -132,8 +132,9 @@ const workspaceSections: Partial<Record<WorkspaceRole, readonly WorkspaceSection
     {
       label: 'Deliveries',
       pages: [
-        ['shipments', 'Ingredients'],
-        ['product-shipments', 'Products'],
+        ['arrivals', 'Incoming to warehouse'],
+        ['shipments', 'Outgoing ingredients'],
+        ['product-shipments', 'Outgoing products'],
       ],
     },
     {

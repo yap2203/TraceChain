@@ -112,24 +112,23 @@ describe('Manufacturer requests with Supplier-selected fulfilment', () => {
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
+    // Details are on the page; the quantity form opens in a modal on top.
+    const page = document.querySelector('.catalogue-detail-page') as HTMLElement;
     const dialog = screen.getByRole('dialog');
-    const photo = await within(dialog).findByAltText(`Supplier-provided image of ${item.name}`);
+    const photo = await within(page).findByAltText(`Supplier-provided image of ${item.name}`);
     expect(photo.classList.contains('catalogue-image--large')).toBe(true);
-    expect(within(dialog).getByText(item.sellerName)).toBeTruthy();
-    expect(within(dialog).getByText('MYR 50.00 / kg')).toBeTruthy();
-    const stock = dialog.querySelector('.catalogue-stock-section') as HTMLElement;
+    expect(within(page).getByText(item.sellerName)).toBeTruthy();
+    expect(within(page).getByText('MYR 50.00 / kg')).toBeTruthy();
+    const stock = page.querySelector('.catalogue-stock-section') as HTMLElement;
     expect(within(stock).getByText('At supplier').nextElementSibling?.textContent).toBe('100 kg');
     expect(within(stock).getByText('At distributor').nextElementSibling?.textContent).toBe(
       'No stock',
     );
     expect(within(stock).getAllByText('No stock')).toHaveLength(1);
-    const quantity = within(dialog).getByLabelText(/Requested quantity \(kg\)/);
-    const batchDetails = within(dialog).getByRole('heading', { name: 'Batch details' });
-    expect(
-      quantity.compareDocumentPosition(batchDetails) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
-    expect(within(dialog).getByText(item.batchReference)).toBeTruthy();
-    expect(within(dialog).getByText(item.evidenceAvailability)).toBeTruthy();
+    expect(within(dialog).getByLabelText(/Requested quantity \(kg\)/)).toBeTruthy();
+    expect(within(page).getByRole('heading', { name: 'Batch details' })).toBeTruthy();
+    expect(within(page).getByText(item.batchReference)).toBeTruthy();
+    expect(within(page).getByText(item.evidenceAvailability)).toBeTruthy();
   });
 
   it('keeps Supplier, Distributor and unavailable stock balances separate', () => {
@@ -271,7 +270,7 @@ describe('Manufacturer requests with Supplier-selected fulfilment', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('img', { name: 'Ingredient image placeholder' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Ingredient image placeholder' })).toBeTruthy();
     fireEvent.change(within(dialog).getByLabelText(/Requested quantity/), {
       target: { value: '21' },
     });

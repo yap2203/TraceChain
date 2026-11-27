@@ -1,3 +1,4 @@
+import { ingredientClaimLabel } from './ingredient-details.js';
 /** Versioned request policy. These lists are not authorization evidence. */
 export const DISCLOSURE_POLICY_VERSION = 2 as const;
 export interface EvidenceClaimDefinition {
@@ -391,7 +392,7 @@ export function ingredientDisclosureErrors(
       payload[key] === '' ||
       (Array.isArray(payload[key]) && !payload[key].length)
     )
-      errors.push(`Required information is unavailable: ${key}.`);
+      errors.push(`${ingredientClaimLabel(key)} is required.`);
   }
   const certificationEntries = Object.entries(payload)
     .filter(([key]) => /^certification_[a-f0-9]{32}$/.test(key))

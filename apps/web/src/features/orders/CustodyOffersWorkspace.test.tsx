@@ -25,6 +25,13 @@ vi.mock('../production-flow/production-flow.transaction', () => ({
 vi.mock('../product-traceability/ProductQrDisplay', () => ({
   ProductQrDisplay: () => <p>Shipment QR label</p>,
 }));
+vi.mock('./ShipmentsWorkspace', () => ({
+  ShipmentsWorkspace: (props: { initialShipmentId: string; embedded?: boolean }) => (
+    <p>
+      Receipt for {props.initialShipmentId} {props.embedded ? '(embedded)' : ''}
+    </p>
+  ),
+}));
 import { CustodyOffersWorkspace } from './CustodyOffersWorkspace';
 const sender = '0x1000000000000000000000000000000000000001',
   distributor = '0x2000000000000000000000000000000000000002',
@@ -233,13 +240,53 @@ it('shows the validated Manufacturer balance for the selected production pickup 
     </MemoryRouter>,
   );
 
-  fireEvent.change(await screen.findByLabelText(/^Your stock/), {
-    target: { value: 'fresh-product' },
-  });
-  fireEvent.change(screen.getByLabelText(/^Pickup location/), { target: { value: 'factory' } });
+  // Stock is chosen in the shared picker dialog, which shows availability per batch.
+  fireEvent.click(await screen.findByRole('button', { name: /Choose stock/ }));
+  const option = screen.getByRole('button', { name: /Fresh finished product/ });
+  expect(option.textContent).toContain('Available: 123 units');
+  fireEvent.click(option);
+  fireEvent.click(screen.getByRole('button', { name: 'Use this stock' }));
+  expect(screen.getByRole('button', { name: 'Change' })).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /Choose pickup location/ }));
+  const site = screen.getByRole('button', { name: /Main production floor/ });
+  expect(site.textContent).toContain('Available here: 123 units');
+  fireEvent.click(site);
+  fireEvent.click(screen.getByRole('button', { name: 'Use this location' }));
 
   expect((await screen.findByText(/Available at this pickup location:/)).textContent).toBe(
     'Available at this pickup location: 123 units',
   );
   expect(api.create).not.toHaveBeenCalled();
+});
+
+it('lets the sender print the label once pickup is arranged, before confirming the handoff', async () => {
+  vi.stubEnv('VITE_PUBLIC_APP_URL', 'https://app.example');
+  api.orders.mockResolvedValue({
+    actor: sender,
+    role: 'SUPPLIER',
+    chainId: 11155111,
+    ordersAddress: '0x3000000000000000000000000000000000000003',
+    orders: [],
+    catalogue: [],
+    locations: [],
+    logistics: { warehouses: [] },
+  });
+  offer.status = 'SCHEDULED';
+  offer.pickupAt = Math.floor(Date.now() / 1000) + 3600;
+  offer.plannedShipmentId = '0x' + 'ab'.repeat(32);
+  show(false);
+  const step1 = await screen.findByText('Step 1 · Print and attach the label');
+  const step2 = screen.getByText('Step 2 · Confirm the handoff at pickup');
+  expect(screen.getByText('Shipment QR label')).toBeTruthy();
+  // The label step comes before the handoff step on the page.
+  expect(step1.compareDocumentPosition(step2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  vi.unstubAllEnvs();
+});
+
+it('turns the Distributor offer page into the label scan and receipt once the goods are on the way', async () => {
+  offer.status = 'DISPATCHED';
+  offer.shipmentId = '0x' + 'cd'.repeat(32);
+  show(true);
+  expect(await screen.findByText(/Receipt for 0xcdcd.*embedded/)).toBeTruthy();
+  expect(screen.queryByRole('link', { name: /Open warehouse arrival/ })).toBeNull();
 });

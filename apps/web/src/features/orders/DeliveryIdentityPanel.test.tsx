@@ -115,8 +115,13 @@ it('uses locked required toggles, readable optional claims and a review modal be
   const requiredCompanyId = screen.getByRole('switch', { name: 'Share Company ID' });
   const requiredRole = screen.getByRole('switch', { name: 'Share Company role' });
   expect(requiredCompanyId.getAttribute('aria-checked')).toBe('true');
-  expect(requiredCompanyId).toHaveProperty('disabled', true);
+  // Required is a label the holder may override; identity-binding fields stay locked.
+  expect(requiredCompanyId).toHaveProperty('disabled', false);
   expect(requiredRole).toHaveProperty('disabled', true);
+  fireEvent.click(requiredCompanyId);
+  expect(screen.getByText(/Not sharing required: Company ID/)).toBeTruthy();
+  fireEvent.click(requiredCompanyId);
+  expect(screen.queryByText(/Not sharing required/)).toBeNull();
   expect(screen.getAllByText('Supplier').length).toBeGreaterThan(0);
   expect(screen.getByText('3 of 6 fields will be shared')).toBeTruthy();
   expect(
@@ -215,12 +220,9 @@ it('opens a two-step company evidence request for the distributor', async () => 
   expect(screen.getByText('Step 2 of 2 · Review and submit')).toBeTruthy();
   expect(screen.getByRole('heading', { name: /Required/ })).toBeTruthy();
   fireEvent.click(screen.getByRole('button', { name: 'Back to edit' }));
-  fireEvent.click(screen.getByRole('checkbox', { name: 'Internal company ID' }));
-  const classification = screen.getByRole('group', {
-    name: 'Internal company ID requirement',
-  });
-  fireEvent.click(within(classification).getByRole('button', { name: 'Required' }));
-  fireEvent.click(within(classification).getByRole('button', { name: 'Optional' }));
+  const classification = screen.getByRole('combobox', { name: 'Internal company ID request' });
+  fireEvent.change(classification, { target: { value: 'required' } });
+  fireEvent.change(classification, { target: { value: 'optional' } });
   fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
   fireEvent.click(screen.getByRole('button', { name: 'Submit request' }));
   await waitFor(() =>
@@ -259,7 +261,7 @@ it('shows a readable completed result and shared-evidence disclosure', async () 
   renderSupplierPanel();
   expect((await screen.findAllByText('Verified')).length).toBeGreaterThan(0);
   expect(screen.getByText('Verified. Nothing else to do.')).toBeTruthy();
-  expect(screen.getByText('Shared details')).toBeTruthy();
+  expect(screen.getByText('Shared company information')).toBeTruthy();
   expect(screen.getByText('Rimba Cocoa Ingredients')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
 });

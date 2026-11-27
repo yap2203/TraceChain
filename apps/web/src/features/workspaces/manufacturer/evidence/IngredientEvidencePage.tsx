@@ -1,4 +1,5 @@
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
+import { IngredientEvidenceReview } from '../../../production-flow/IngredientEvidenceReview';
 import {
   CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
   INGREDIENT_EVIDENCE_CLAIMS,
@@ -6,17 +7,13 @@ import {
 } from '@tracechain/shared';
 import { IngredientRequestPolicyFields } from '../../../production-flow/IngredientRequestPolicyFields';
 import { EvidenceClaimSelector } from '../../../production-flow/EvidenceClaimSelector';
-import { IngredientClaimValue } from '../../../production-flow/IngredientClaimValue';
-import { getSharedCertificationDocument } from '../../../production-flow/production-flow.api';
 import { reportError } from '../../../../components/ui/feedback';
 import { useEffect, useState } from 'react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { FileCheck } from 'lucide-react';
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import {
-  EvidenceDetailLayout,
   EvidenceHowItWorks,
-  EvidenceNextStep,
   ingredientEvidenceStatus,
   DeadlineCell,
   EvidenceStatusSelect,
@@ -41,7 +38,7 @@ import {
   type ProductionIngredient,
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
-import { Alert, Badge, Btn, EmptyState, Input, TechnicalDetails } from '../../shared/ui';
+import { Alert, Badge, Btn, EmptyState, Input } from '../../shared/ui';
 import { chainDate, shortChainId } from '../../shared/operational-format';
 import { textError, futureDateError } from '../../../validation/form-validation';
 
@@ -261,100 +258,88 @@ export function IngredientEvidence({
       (review.sharedClaims.ingredientName as string | undefined) ?? item?.name ?? 'Ingredient';
     const passed = review.verification.state === 'PASSED';
     const status = ingredientEvidenceStatus(review.status);
+    const outcome =
+      review.status === 3
+        ? {
+            tone: 'done' as const,
+            title: 'Evidence accepted',
+            message: 'You accepted this evidence. No further action is required.',
+          }
+        : review.status !== 2
+          ? {
+              tone: 'closed' as const,
+              title: `Request ${status.label.toLowerCase()}`,
+              message: 'This request is closed. No further action is possible.',
+            }
+          : passed
+            ? {
+                tone: 'action' as const,
+                title: 'Evidence verified',
+                message: 'Verification passed. Accept the evidence, or reject it with a reason.',
+              }
+            : {
+                tone: 'waiting' as const,
+                title: 'Evidence shared, not verified yet',
+                message: 'Verify the shared values before you accept them.',
+              };
     return (
       <div className="information-requests-page is-detail">
         <BackNavigation onClick={() => setReview(undefined)}>Ingredient evidence</BackNavigation>
-        <header className="evidence-detail-header">
-          <div>
-            <h2>
-              Evidence from {review.supplierName ?? 'the Supplier'} on {ingredient}
-            </h2>
-            <p>
-              {review.disclosure === 'SELECTIVE_SD_JWT'
-                ? 'Selective disclosure'
-                : 'Full disclosure: the whole ingredient credential was shared'}
-            </p>
-          </div>
-          <div className="evidence-detail-header__status">
-            <Badge label={status.label} variant={status.variant} />
-            <Badge
-              label={passed ? 'Verification passed' : 'Unverified'}
-              variant={passed ? 'verified' : 'pending'}
-            />
-          </div>
-        </header>
         {banners}
-        <EvidenceDetailLayout
-          asideTitle="Proof details"
-          aside={
-            <section className="evidence-request-details" aria-label="Proof details">
-              <dl>
-                <div>
-                  <dt>Supplier</dt>
-                  <dd>{review.supplierName ?? review.supplier}</dd>
-                </div>
-                <div>
-                  <dt>Proof valid until</dt>
-                  <dd>{new Date(review.presentationExpiry).toLocaleString()}</dd>
-                </div>
-                <div>
-                  <dt>Credential expires</dt>
-                  <dd>
-                    {review.credentialExpiry === 'Unavailable'
-                      ? 'Unavailable'
-                      : new Date(review.credentialExpiry).toLocaleString()}
-                  </dd>
-                </div>
-                {review.verification.verifiedAt && (
-                  <div>
-                    <dt>Last verified</dt>
-                    <dd>{new Date(review.verification.verifiedAt).toLocaleString()}</dd>
-                  </div>
-                )}
-              </dl>
-            </section>
+        <IngredientEvidenceReview
+          review={review}
+          ingredient={ingredient}
+          requesterRole="Manufacturer"
+          requestFor={
+            <>
+              {ingredient}
+              <small>
+                {review.disclosure === 'SELECTIVE_SD_JWT'
+                  ? 'Selective disclosure'
+                  : 'Full disclosure: the whole ingredient credential was shared'}
+              </small>
+            </>
+          }
+          status={status}
+          outcome={outcome}
+          actions={
+            review.status === 2 && (
+              <>
+                {passed ? (
+                  <Btn
+                    variant="outline"
+                    disabled={Boolean(busy)}
+                    onClick={() => setRejecting(true)}
+                  >
+                    Reject…
+                  </Btn>
+                ) : null}
+                <Btn
+                  variant={passed ? 'outline' : 'primary'}
+                  disabled={Boolean(busy)}
+                  onClick={() => void verify(review.requestId)}
+                >
+                  {busy === review.requestId ? 'Verifying…' : 'Verify evidence'}
+                </Btn>
+                <Btn
+                  disabled={!passed || Boolean(busy)}
+                  onClick={() => void accept(review.requestId)}
+                >
+                  Accept evidence
+                </Btn>
+              </>
+            )
+          }
+          howItWorks={
+            <EvidenceHowItWorks>
+              <p>
+                Verifying checks the Supplier&apos;s signature, that the proof belongs to this
+                request and recipient, and the credential&apos;s current on-chain status. Accepting
+                is a separate on-chain step, so you can verify first and decide later.
+              </p>
+            </EvidenceHowItWorks>
           }
         >
-          <EvidenceNextStep
-            tone={review.status === 3 ? 'done' : review.status === 2 ? 'default' : 'closed'}
-            message={
-              review.status === 3
-                ? 'You accepted this evidence. Nothing else to do.'
-                : review.status !== 2
-                  ? 'This request is closed.'
-                  : passed
-                    ? 'Verification passed. Accept the evidence, or reject it with a reason.'
-                    : 'Verify the shared values before you accept them.'
-            }
-            action={
-              review.status === 2 && (
-                <>
-                  {passed ? (
-                    <Btn
-                      variant="outline"
-                      disabled={Boolean(busy)}
-                      onClick={() => setRejecting(true)}
-                    >
-                      Reject…
-                    </Btn>
-                  ) : null}
-                  <Btn
-                    variant={passed ? 'outline' : 'primary'}
-                    disabled={Boolean(busy)}
-                    onClick={() => void verify(review.requestId)}
-                  >
-                    {busy === review.requestId ? 'Verifying…' : 'Verify evidence'}
-                  </Btn>
-                  <Btn
-                    disabled={!passed || Boolean(busy)}
-                    onClick={() => void accept(review.requestId)}
-                  >
-                    Accept evidence
-                  </Btn>
-                </>
-              )
-            }
-          />
           {rejecting && review.status === 2 && (
             <div className="evidence-request-form">
               <Input
@@ -378,36 +363,7 @@ export function IngredientEvidence({
               </div>
             </div>
           )}
-          <section className="evidence-panel__shared" aria-label="Shared values">
-            <h4>Shared values</h4>
-            <div className="ingredient-review-grid">
-              {Object.entries(review.sharedClaims).map(([label, value]) => (
-                <div key={label}>
-                  <IngredientClaimValue
-                    name={label}
-                    value={value}
-                    loadDocument={(id) => getSharedCertificationDocument(review.requestId, id)}
-                  />
-                </div>
-              ))}
-            </div>
-          </section>
-          <EvidenceHowItWorks>
-            <p>
-              Verifying checks the Supplier&apos;s signature, that the proof belongs to this request
-              and recipient, and the credential&apos;s current on-chain status. Accepting is a
-              separate on-chain step, so you can verify first and decide later.
-            </p>
-          </EvidenceHowItWorks>
-          <TechnicalDetails
-            fields={[
-              { label: 'Request ID', value: review.requestId },
-              { label: 'Ingredient batch ID', value: review.batchId },
-              { label: 'Credential ID', value: review.credentialId },
-              { label: 'Supplier wallet', value: review.supplier },
-            ]}
-          />
-        </EvidenceDetailLayout>
+        </IngredientEvidenceReview>
       </div>
     );
   }

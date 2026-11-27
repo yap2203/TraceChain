@@ -9,6 +9,7 @@ export { Input } from './FormFields';
 export { Textarea } from './FormFields';
 export { SelectField } from './FormFields';
 export { RadioGroup } from './FormFields';
+export { EntityPicker, type EntityOption } from './EntityPicker';
 export { SectionTitle } from './SectionTitle';
 export { StatCard } from './StatCard';
 export { Table } from './Table';
@@ -27,6 +28,7 @@ export { EmptyState } from './EmptyState';
 export { CompanyCard } from './CompanyCard';
 export { ClaimRow } from './ClaimRow';
 export { TechnicalDetails } from './TechnicalDetails';
+export { TechnicalIdentifier } from './TechnicalIdentifier';
 export { WorkflowHelp } from './WorkflowHelp';
 export {
   InventoryExpandButton,

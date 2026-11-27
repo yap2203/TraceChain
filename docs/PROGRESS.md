@@ -1,5 +1,302 @@
 # Project Progress
 
+## 2026-11-27 - Distributor Deliveries: arrivals merged, cards redesigned, status fix
+
+- **Status:** "At distributor warehouse" (custody stock received) now counts as completed
+  (green, "No action required"), not "Needs action". "Cancelled" also counts as completed.
+- **Navigation:** Warehouse arrivals is now the first tab of the Distributor's Deliveries entry:
+  "Incoming to warehouse", "Outgoing ingredients", "Outgoing products". Page IDs and URLs are
+  unchanged.
+- **Outgoing ingredients** (`DistributorIngredientDeliveries`) uses the same delivery card as
+  the shipment list:
+  - a journey from "Your warehouse" to the Manufacturer's destination;
+  - quantity and vehicle chips, the next step, and Record dispatch / Review delivery;
+  - the whole card clickable, with technical IDs and the route timeline left to the detail
+    page;
+  - delivery jobs listed first, with pagination (10 per page).
+  - `JourneyStop` and `dateTime` are now exported from `ShipmentList` and shared.
+- **Pre-fill:** recording dispatch for a delivery job pre-fills the reserved quantity still to
+  dispatch and the vehicle arranged for pickup. The receipt pre-fills now happen in the same
+  update that accepts the scanned label, so the form never flashes empty; this also removed
+  an intermittent test failure.
+- Verified: web typecheck; 447 web tests, two full runs plus 8 repeated runs of the receipt
+  tests (new tests cover the warehouse-completed grouping and the merged Deliveries tabs).
+  Not checked visually.
+
+## 2026-11-27 - Shipments list redesign, pagination and pre-filled receipts
+
+- **Shipment list** (`ShipmentList`, every role's shipments and deliveries page):
+  - delivery-style cards: a small item thumbnail, kind/name/reference and the status badge;
+  - a journey strip: From company, place and pickup time, a truck/check connector (with "via
+    Distributor" for product deliveries), then To company, place and arrival;
+  - a footer with quantity and vehicle chips, the next step and "Review shipment";
+  - a coloured left edge by group (amber needs action, teal moving, green completed), the
+    whole card clickable, and per-row technical IDs left to the detail page;
+  - pagination with the shared `usePagination`/`PaginationBar` (10 per page).
+- **Location names:** pickup and destination fall back to the names carried by custody offers,
+  so a Distributor sees the Supplier's site name instead of a raw location ID. Custody offers
+  now load on all shipment sections except Retailer and Profile.
+- **Pre-filled receipts.** Once the label is verified or scanned:
+  - Distributor custody arrival (`ShipmentsWorkspace`): quantity = remaining shipped quantity;
+    vehicle = dispatch vehicle.
+  - Manufacturer ingredient delivery receipt (`IngredientDeliveryPanel`): quantity = remaining
+    requested quantity; receipt time = now; receiving location = the only own location.
+  - All values stay editable for partial or damaged deliveries; the physical-receipt
+    declaration and MetaMask confirmation are unchanged.
+  - Already pre-filled before this change: the custody transfer receipt
+    (`ReceiptReconciliationForm`) and the transfer review screen (`ReviewAndConfirmReceipt`).
+- Verified: web typecheck; 445 web tests (new: list pagination, card click and location names;
+  pre-fill assertions on both receipts). Not checked visually.
+
+## 2026-11-27 - QR labels centred on every screen
+
+- `ProductQrDisplay` (custody offer labels, shipment receipt labels, product traceability labels
+  and product registration success) now uses one centred layout, matching the receipt QR
+  (`TransferQrDisplay`):
+  - title, item and reference centred above the QR code;
+  - the QR code in a white card with a quiet zone, border and shadow;
+  - instruction text, actions and the payload note centred below.
+- Colours now come from the workspace tokens, with the old values kept as fallbacks for the
+  public trace page.
+- Removed the product-success two-column override, so the label is identical everywhere. The
+  printed label spans the page width with the QR centred.
+- Verified: the stylesheet compiles on the dev server; 444 web tests pass. Not checked visually.
+
+## 2026-11-27 - Custody flow: label first, one page per offer
+
+Applies to both Supplier → Distributor (ingredient stock) and Manufacturer → Distributor
+(product) custody offers.
+
+- The shipment label QR was only created after the sender confirmed the handoff, which is after
+  the goods had left. The Distributor also had to switch to a separate Arrivals screen to scan it.
+- **Label before pickup.** `CustodyOffers` now returns `plannedShipmentId` for scheduled offers.
+  It uses the same derivation as the logistics dispatch (`logistics:<chain>:<orders>:<sender>:<operationId>`,
+  now in one `shipmentIdFor` helper), so a label printed when pickup is arranged matches the
+  shipment the handoff records. The ID is display-only until dispatch confirms it on chain.
+- **Sender page,** once pickup is arranged:
+  - Step 1 "Print and attach the label" (print or download);
+  - Step 2 "Confirm the handoff at pickup" (unchanged MetaMask transaction).
+  - After dispatch the label stays on the page for reprinting.
+- **Distributor page:** once the goods are on the way, the custody offer page shows the
+  warehouse receipt (scan or upload the label, then confirm receipt) inside the page.
+  `ShipmentsWorkspace` gained an `embedded` mode for this. The link to the Arrivals screen is
+  gone; scanning the label with a phone still opens `/receive/shipment` directly.
+- No contract change: the sender still records the handoff on chain.
+- Verified: API and web typecheck; 542 API tests (planned ID equals the recorded shipment ID,
+  for both kinds) and 444 web tests (label shown before the handoff step; embedded receipt for
+  the Distributor). Not checked live in the browser.
+
+## 2026-11-27 - Fix: MetaMask-signed evidence "expired" 5 minutes after signing
+
+- Root cause of the recurring "The company presentation has expired" error:
+  `verifyWalletPresentation` (`packages/shared`) rejected any MetaMask holder signature whose
+  `issuedAt` was more than 300 seconds before the check. Verifying a proof more than 5 minutes
+  after it was signed always failed, whatever deadline the requester had set. Ingredient
+  evidence signed with MetaMask had the same limit.
+- Removed that signing-age limit. The signed context must still not be from the future, must not
+  outlive the requester's deadline (`expiresAt` ≤ deadline) and must not have expired, and the
+  single-use challenge still prevents replay.
+- Proofs signed before the earlier deadline fix carry their own 5-minute `expiresAt`. They
+  still need a fresh request unless they were already verified (those are re-checked as of their
+  verification time).
+- Verified: shared build; 104 shared (new test fails with the old limit), 29 ssi and 542 API
+  tests. The API must be restarted to load the rebuilt shared package.
+
+## 2026-11-27 - Company identity evidence pages: card layout
+
+- The Evidence Exchange company identity detail page uses the same cards as ingredient evidence.
+  - Summary card: company, role and "Company identity evidence · <context>", with the status
+    badge and refresh.
+  - "Request summary" side column: Requested by ⇄ Evidence from with wallets, request for,
+    deadline and verification date, purpose, and the requested information marked Required or
+    Optional.
+- `SharedClaims` is now the "Shared company information" card, everywhere it is used, including
+  the custody and delivery panels. It shows business fields in pairs, then "Digital identity
+  information" (wallet, DID, application reference, company ID) as boxed identifiers with copy
+  and expand.
+- Verified: web typecheck, 442 web tests (two assertions updated for the renamed sections).
+  Not checked visually.
+
+## 2026-11-27 - Fix: verified company proof reported "expired" before the request deadline
+
+- After a proof was verified, the custody verify/link step (`orderIdentityAttestation`, which
+  calls `verifyCompanyIdentityProof`) re-checked the presentation as of the current time.
+  Proofs shared before the deadline fix carry a 5-minute lifetime, so this failed once those 5
+  minutes passed, even though the requester's deadline had not.
+- An already verified proof is now re-checked as of its recorded verification time while the
+  request deadline has not passed (`recordedVerificationTime`). The recorded verification time
+  is not overwritten. The company's current on-chain authorization is still checked live, and
+  verifying for the first time still uses the current time.
+- Verified: 542 API tests. The new regression test fails without the fix.
+
+## 2026-11-27 - Ingredient evidence pages: card layout
+
+- Layout stays the same: details in the main column, request summary in the side column.
+- Main column:
+  - a summary card with the ingredient, Supplier and role, status and verification badges, and
+    the current outcome with its actions;
+  - a "Shared ingredient information" card with a field count. Business fields come first;
+    identifiers (Supplier wallet, DID, batch ID, credential ID) follow as boxed values with copy
+    and expand.
+- Side column ("Request summary"):
+  - Requested by ⇄ Evidence from;
+  - request for, deadline and dates as label/value pairs;
+  - purpose;
+  - requested information, each field marked with its state.
+- Shared pieces:
+  - in `orders/EvidenceIdentity.tsx`: `EvidenceSummaryCard`, `EvidenceOutcome`, `EvidenceCard`,
+    `FieldPairs`, `IdentifierFields`, `EvidenceParties`, `RequestSummary`;
+  - `production-flow/IngredientEvidenceReview.tsx`, used by the Manufacturer and Retailer pages;
+  - `TechnicalIdentifier` now uses copy and expand icons and has a boxed style.
+- The review API adds `purpose`.
+- Verified: web typecheck, 442 web tests. Not checked visually (browser tools unavailable).
+
+## 2026-11-27 - Ingredient evidence: identity, shared fields and verification layout
+
+- New shared components:
+  - `TechnicalIdentifier` (`shared/ui`): shortened monospace value, "Show full" toggle, copies
+    the full original value. `TechnicalDetails` now uses it everywhere.
+  - In `orders/EvidenceIdentity.tsx`:
+    - `IdentityProfile`: name and role first, avatar, wallet as an identifier.
+    - `RequestedFields` and `ingredientRequestedRows`: requested fields marked Shared, Missing
+      (required) or Not shared.
+    - `verificationBadge`.
+    - `EvidenceDates`: request deadline, shared proof validity, credential expiry and
+      verification date labelled separately. The time left shows only while the request is open.
+    - `IngredientReviewAside`.
+- Manufacturer and Retailer ingredient evidence review:
+  - The side column now has Parties, Request, Verification and Dates sections.
+  - The main column shows a requested-versus-shared field list above "Shared information".
+  - The verification badge reads "Verified" only after a passed result; otherwise it reads
+    "Not verified yet" (was "Unverified" / "Verification passed").
+- Supplier share page: the side column shows Parties (requester profile with wallet and identity
+  status, and you as the evidence provider), Request and Dates.
+- The API review response adds `dueAt`, `requestedClaims` and `requiredClaims` (the
+  requester's own request), so the requester can compare requested and shared fields. No
+  verification, disclosure or authorization logic changed.
+- (Identity/evidence page rules were briefly added to the UI skill, then removed at the user's request.)
+- Verified: web and API typecheck; 442 web and 541 API tests (new component tests included).
+  Not checked visually: the browser tools did not connect this session.
+
+## 2026-11-27 - Fix: shared evidence "expired" after 5 minutes despite a later deadline
+
+- Every company and ingredient proof was capped at 5 minutes: the API set each proof's
+  lifetime to `min(deadline, now + 300)`, and the SD-JWT verifiers rejected holder signatures
+  older than 300 s. Verifying a shared proof more than 5 minutes later failed with "The company
+  presentation has expired", even though the request deadline had not passed.
+- Proof lifetime is now the requester's deadline, capped by the credential's expiry. When a
+  request deadline is known, the verifiers bound the holder signature by that deadline and the
+  single-use challenge instead of a fixed 300 s. The 300 s limit remains only when no deadline
+  is supplied, and for the one-off MetaMask wallet-binding step.
+- Proofs that were already issued keep their original 5-minute expiry, so those requests still
+  need a fresh request.
+- Verified: ssi build; 29 ssi and 541 API tests, including a new test that verifies a company
+  proof 6 minutes after it was shared. Not tested live.
+
+## 2026-11-27 - Holders choose every shared field; "Required" is a label
+
+- Ingredient and company evidence: the holder can untick any requested field, including ones
+  marked Required. Required fields start ticked. A warning says what is being withheld and that
+  the requester may reject the response. Sharing still works.
+- Fields that tie the proof to the holder stay mandatory: company name, role, wallet and DID for
+  company proofs, and the ingredient batch identity claims. Signatures, holder and wallet
+  binding, the registration number/country pair, complete lab-document context, unrequested-claim
+  checks and on-chain credential status are still enforced.
+- If the signed credential does not contain a required field at all, sharing is still blocked
+  (`REQUIRED_IDENTITY_CLAIM_MISSING`); a replacement credential is needed.
+- The API verifies with only the binding claims enforced and reports the gaps instead of
+  rejecting with `EVIDENCE_POLICY_NOT_SATISFIED`. Ingredient review returns `unmetRequirements`,
+  computed from the disclosures at review time, so records recovered from chain references
+  also show it. Company verify and status return `missingClaims`.
+- Requesters see an amber "Incomplete" notice next to the shared values and decide whether to
+  accept or reject. Cryptographic verification remains separate from that business decision.
+- Unmet-requirement messages now use field labels ("Country of origin is required.").
+- No contract, schema or credential-format change; existing records stay readable.
+- Verified: shared/ssi/API/web typecheck; 102 shared, 29 ssi, 540 API and 439 web tests,
+  including new tests for withholding a required field. Not tested live in the browser.
+
+## 2026-11-27 - Fix: verified company evidence failed to load once its presentation expired
+
+- `getCompanyIdentityProofStatus` re-checks the stored presentation to show the disclosed
+  claims to the verifier. It used the current time, so after the presentation's short lifetime
+  passed, an already-verified request failed with "The company presentation has expired".
+- `verifyCompanyIdentityPresentation` takes an optional `verifiedAt` (seconds). The status call
+  passes the server-recorded verification time, so the proof is re-checked as of when it was
+  verified (historical verification). Signatures, holder/wallet/role bindings, disclosure rules
+  and the source credential are still fully checked. Presenting and verifying still use the
+  current time.
+- Verified: API typecheck, 538 API tests (new test fails without the fix). Not re-tested live.
+
+## 2026-11-27 - Fix: company evidence detail flickered through wrong next steps
+
+- `DeliveryIdentityPanel` treated a not-yet-loaded status as "not requested", so the custody
+  company-evidence detail showed a wrong next step and then changed as each request finished.
+  It now shows a loading indicator until the real status arrives. The three sequential loading
+  states (request list, custody offer, identity status) share one label, "Loading request…".
+- Verified: web typecheck, 438 web tests. Not checked live (Chrome connection down).
+
+## 2026-11-27 - Detail pages instead of modals; per-field request dropdowns
+
+- Supplier My ingredients: "View details" (or clicking a card) opens a details page in place of
+  the list, with "< My ingredients". The open batch is tracked by ID, so the page stays open and
+  current after editing the listing or uploading an image. Edit listing and the archive
+  confirmation remain modals.
+- Catalogue items (Retailer Browse products, Manufacturer Supplier ingredients): details are a
+  page with "< Back to catalogue". "Request evidence or information" and "Request quantity" are
+  always-visible buttons that open their form in a modal ("Cancel" returns to the page). The
+  card's "Request quantity" opens the page with the quantity modal.
+- Shared `EvidenceClaimSelector` (company identity requests and evidence request forms): each
+  field has one dropdown (Not requested / Optional / Required) instead of a checkbox plus
+  Optional / Required buttons. Optional rows get a subtle teal border, Required rows a stronger
+  one. Request semantics are unchanged.
+- Verified: web typecheck, 438 web tests (tests updated for pages and dropdowns). Not checked live
+  (Chrome connection down).
+
+## 2026-11-27 - Shared entity picker; custody offer stock and warehouse selection
+
+- `enforce-ui-consistency` skill gains section 10 "Entity selection and large datasets"
+  ("Verify across screens" is now 11).
+- New shared `EntityPicker` (`shared/ui`). Closed, it shows a selected summary card with
+  "Change", or a "Choose…" button. The dialog has search over title, reference, ID and address,
+  an optional filter and sorts, a match count, paged results, a selected state, unavailable
+  records disabled with their reason, and Cancel / confirm. Search, filter and sort persist on
+  reopen. It filters client-side only; no extra chain or IPFS requests.
+- New custody offer form:
+  - "Your stock" and "Distributor warehouse" use the picker. Stock shows the batch reference,
+    available quantity, expiry and category; expired or empty batches are unselectable, with
+    the reason shown. Warehouses show the Distributor and address and can be filtered by
+    Distributor.
+  - Changing stock clears the quantity, and the quantity field shows availability.
+  - Pickup location stays a dropdown (a short list of own sites).
+  - Server-side checks are unchanged.
+- Follow-up:
+  - Pickup location uses the same picker, showing each site's address and, for products, the
+    available quantity there.
+  - The picker's closed state matches other inputs (40 px, solid border) and no longer stretches
+    to its row's height.
+  - Offers table: Stage is a coloured badge from one shared status map (green received, teal
+    arranged or handed off, amber waiting, red rejected or expired), also used on the offer
+    detail. The whole row opens the offer, and the button reads "Take action" (primary) when the
+    next step is the viewer's.
+  - `EntityOption.media`: optional thumbnail. Stock options show the batch's catalogue image
+    (lazy-loaded when visible; the category icon when no photo), in the list and in the
+    selected summary.
+- Verified: web typecheck, 438 web tests (new picker test; custody test uses the dialogs). Not
+  checked live (Chrome connection down).
+
+## 2026-11-27 - Signed batch details page redesign
+
+- `IngredientBatchDetail` ("Signed details & certificates"): header with name, batch reference
+  and status. The left column holds the signed facts: batch details (formatted quantities and
+  dates), origin (country name, not code; private address marked "Private"), allergen
+  declaration ("Unknown" as an amber tag) and certifications. Each certification is a card with
+  scope and expiry tags, issuer and reference, and document rows with Preview and Download. The
+  right column holds the editable listing, the privacy note and collapsed technical details. Raw
+  field names ("originDetails", "No expiry stated: Yes") are gone; legacy records fall back to
+  their stored text. Back link reads "My ingredients".
+- Verified: web typecheck, 437 web tests (new page test). Not checked live (Chrome connection
+  down this session).
+
 ## 2026-11-27 - Fix: registration form stayed locked after a refused attempt
 
 - The ingredient registration form locked all fields as soon as Register was pressed and never

@@ -303,7 +303,8 @@ export async function verifyIngredientSdJwtPresentation(
       ? {
           allowedKeyBindingAlgorithms: ['EdDSA'],
           expectedKeyBindingAudience: input.audience,
-          keyBindingMaxAgeSeconds: 300,
+          // Bound by the request deadline (and its single-use nonce), not a fixed 5 minutes.
+          ...(input.context ? {} : { keyBindingMaxAgeSeconds: 300 }),
           keyBindingNonce: input.nonce,
         }
       : {}),
