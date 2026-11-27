@@ -12,6 +12,8 @@ export type BadgeVariant =
   | 'matched'
   | 'mismatch'
   | 'transfer-pending'
+  /** Goods moving: in transit. */
+  | 'moving'
   | 'accepted'
   | 'rejected'
   | 'requested'
@@ -29,10 +31,11 @@ export const BADGE: Record<BadgeVariant, { bg: string; color: string; dot: strin
   invalid: { bg: T.redBg, color: T.red, dot: T.red },
   matched: { bg: T.greenBg, color: T.green, dot: T.green },
   mismatch: { bg: T.redBg, color: T.red, dot: T.red },
-  'transfer-pending': { bg: 'rgba(139,92,246,0.15)', color: '#A78BFA', dot: '#A78BFA' },
+  'transfer-pending': { bg: T.purpleBg, color: T.purple, dot: T.purple },
+  moving: { bg: T.purpleBg, color: T.purple, dot: T.purple },
   accepted: { bg: T.tealLight, color: T.teal, dot: T.teal },
   rejected: { bg: T.redBg, color: T.red, dot: T.red },
-  requested: { bg: 'rgba(139,92,246,0.15)', color: '#A78BFA', dot: '#A78BFA' },
+  requested: { bg: T.purpleBg, color: T.purple, dot: T.purple },
   shared: { bg: T.tealLight, color: T.teal, dot: T.teal },
   default: { bg: T.surface2, color: T.text2, dot: T.text3 },
 };

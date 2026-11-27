@@ -1,3 +1,4 @@
+import { shipmentStatusAccent, shipmentStatusVariant } from '../workspaces/shared/shipment-status';
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   ArrowUpDown,
@@ -430,6 +431,7 @@ function DeliveryCard({
   return (
     <article
       className={`shipment-card is-${GROUP[record.status]}`}
+      style={shipmentStatusAccent(record.statusLabel)}
       onClick={openCardOnClick(onReview)}
     >
       <div className="shipment-card__media">
@@ -450,16 +452,7 @@ function DeliveryCard({
               {record.batchReference} · Supplier {record.supplierName}
             </p>
           </div>
-          <Badge
-            label={record.statusLabel}
-            variant={
-              record.status === 'completed'
-                ? 'verified'
-                : record.status === 'awaiting-dispatch'
-                  ? 'pending'
-                  : 'transfer-pending'
-            }
-          />
+          <Badge label={record.statusLabel} variant={shipmentStatusVariant(record.statusLabel)} />
         </div>
 
         <div className="shipment-journey" aria-label="Delivery journey">

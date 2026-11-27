@@ -13,6 +13,7 @@ import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { FileCheck2, Plus, RefreshCw } from 'lucide-react';
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import {
+  EvidenceDecision,
   EvidenceHowItWorks,
   ingredientEvidenceStatus,
   DeadlineCell,
@@ -73,12 +74,10 @@ export function RetailerEvidenceRequests({
     expiryDate: 'required',
   });
   const [review, setReview] = useState<EvidenceReview>();
-  const [rejectReason, setRejectReason] = useState('');
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [refreshPending, setRefreshPending] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
   // Arriving from a product link opens the request form straight away.
   const [composing, setComposing] = useState(Boolean(initialIngredientBatchId));
   const load = async () => {
@@ -168,20 +167,9 @@ export function RetailerEvidenceRequests({
       setBusy('');
     }
   };
-  const verify = async () => {
-    if (!review) return;
-    setBusy('verify');
-    try {
-      await verifyEvidence(review.requestId);
-      setReview(await reviewEvidence(review.requestId));
-      setNotice('Verification passed. Record a separate review decision.');
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy('');
-    }
-  };
-  const decide = async (accepted: boolean) => {
+  // Same as company identity: verifying and accepting is one step; acceptance is recorded only
+  // when every check passes.
+  const decide = async (accepted: boolean, rejectReason = '') => {
     if (!review) return;
     if (!accepted) {
       const invalid = textError(rejectReason, 'Rejection reason', 500);
@@ -190,11 +178,16 @@ export function RetailerEvidenceRequests({
         return;
       }
     }
-    setBusy('decision');
+    setBusy(accepted ? 'accept' : 'reject');
     try {
-      if (accepted)
+      if (accepted) {
+        await verifyEvidence(review.requestId);
+        const checked = await reviewEvidence(review.requestId);
+        setReview(checked);
+        if (checked.verification.state !== 'PASSED')
+          throw new Error('Verification did not pass, so the evidence was not accepted.');
         await completePreparedWorkflow(() => prepareEvidenceAcceptance(review.requestId));
-      else
+      } else
         await completePreparedWorkflow(() =>
           prepareEvidenceClose(review.requestId, { reason: rejectReason, status: 'REJECTED' }),
         );
@@ -251,7 +244,6 @@ export function RetailerEvidenceRequests({
   );
 
   if (review) {
-    const passed = review.verification.state === 'PASSED';
     const source = requests.find((request) => request.requestId === review.requestId);
     const context = source ? contextFor(source) : undefined;
     const status = retailerStatus(review.status);
@@ -272,17 +264,11 @@ export function RetailerEvidenceRequests({
               title: `Request ${status.label.toLowerCase()}`,
               message: 'This request is closed. No further action is possible.',
             }
-          : passed
-            ? {
-                tone: 'action' as const,
-                title: 'Evidence verified',
-                message: 'Verification passed. Record whether the evidence is satisfactory.',
-              }
-            : {
-                tone: 'waiting' as const,
-                title: 'Evidence shared, not verified yet',
-                message: 'Verify the shared values before you record a decision.',
-              };
+          : {
+              tone: 'action' as const,
+              title: 'Evidence shared',
+              message: 'Verify and accept the evidence, or reject it with a reason.',
+            };
     return (
       <div className="information-requests-page is-detail">
         <BackNavigation onClick={() => setReview(undefined)}>Ingredient evidence</BackNavigation>
@@ -301,27 +287,12 @@ export function RetailerEvidenceRequests({
           outcome={outcome}
           actions={
             review.status === 2 && (
-              <>
-                {passed && (
-                  <Btn
-                    variant="outline"
-                    disabled={Boolean(busy)}
-                    onClick={() => setRejecting(true)}
-                  >
-                    Reject…
-                  </Btn>
-                )}
-                <Btn
-                  variant={passed ? 'outline' : 'primary'}
-                  onClick={() => void verify()}
-                  disabled={Boolean(busy)}
-                >
-                  {busy === 'verify' ? 'Verifying…' : 'Verify evidence'}
-                </Btn>
-                <Btn onClick={() => void decide(true)} disabled={!passed || Boolean(busy)}>
-                  Evidence satisfactory
-                </Btn>
-              </>
+              <EvidenceDecision
+                busy={busy}
+                recipient="the Supplier"
+                onAccept={() => void decide(true)}
+                onReject={(reason) => void decide(false, reason)}
+              />
             )
           }
           howItWorks={
@@ -334,30 +305,7 @@ export function RetailerEvidenceRequests({
               </p>
             </EvidenceHowItWorks>
           }
-        >
-          {rejecting && review.status === 2 && (
-            <div className="evidence-request-form">
-              <Input
-                label="Rejection reason"
-                value={rejectReason}
-                onChange={setRejectReason}
-                placeholder="Tell the Supplier why the evidence is not satisfactory"
-              />
-              <div className="evidence-actions">
-                <Btn variant="outline" onClick={() => setRejecting(false)}>
-                  Cancel
-                </Btn>
-                <Btn
-                  variant="danger"
-                  onClick={() => void decide(false)}
-                  disabled={!rejectReason.trim() || Boolean(busy)}
-                >
-                  Reject evidence
-                </Btn>
-              </div>
-            </div>
-          )}
-        </IngredientEvidenceReview>
+        />
       </div>
     );
   }

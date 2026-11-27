@@ -11,6 +11,7 @@ import { RefreshCw } from 'lucide-react';
 import { deliveryIdentity, type OrderRecord, type OrdersState } from './orders.api';
 import { Alert, Badge, Btn, Modal, TechnicalDetails } from '../workspaces/shared/ui';
 import {
+  EvidenceDecision,
   EvidenceFieldList,
   EvidenceHowItWorks,
   EvidenceNextStep,
@@ -70,6 +71,8 @@ export function DeliveryIdentityPanel({
   const [requestOpen, setRequestOpen] = useState(requestOnly);
   const [deadline, setDeadline] = useState('');
   const [busy, setBusy] = useState(false),
+    // Which action is running, so only its button shows the spinner.
+    [action, setAction] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const pending = useRef(false);
@@ -102,10 +105,11 @@ export function DeliveryIdentityPanel({
       active = false;
     };
   }, [order.orderId, order.delivery.identityChallenge, order.delivery.identityCredentialHash]);
-  const run = async (operation: () => Promise<void>) => {
+  const run = async (operation: () => Promise<void>, key = '') => {
     if (pending.current) return;
     pending.current = true;
     setBusy(true);
+    setAction(key);
     setError('');
     setNotice('');
     try {
@@ -117,6 +121,7 @@ export function DeliveryIdentityPanel({
     } finally {
       pending.current = false;
       setBusy(false);
+      setAction('');
     }
   };
   const submit = async (result: any) => {
@@ -158,7 +163,7 @@ export function DeliveryIdentityPanel({
       await submit(await deliveryIdentity(order.orderId, { action: 'decline' }));
       setMaterial(undefined);
       setReviewOpen(false);
-    });
+    }, 'decline');
   const loadMaterial = () =>
     run(async () => {
       const value = await deliveryIdentity(order.orderId, { action: 'material' });
@@ -169,7 +174,7 @@ export function DeliveryIdentityPanel({
           ? [...new Set<string>(value.requiredClaims ?? [])]
           : names,
       );
-    });
+    }, 'review');
   const signAndShare = () =>
     run(async () => {
       const presentation = await signCompanyPresentation(material, selectedClaims);
@@ -178,7 +183,7 @@ export function DeliveryIdentityPanel({
       setReviewOpen(false);
       setMaterial(undefined);
       setNotice('Company proof sent securely to the assigned Distributor.');
-    });
+    }, 'share');
   const closeRequest = () => {
     setRequestOpen(false);
     onRequestClose?.();
@@ -230,7 +235,7 @@ export function DeliveryIdentityPanel({
           );
           closeRequest();
           setNotice(`${sellerLabel} evidence requested through encrypted IPFS references.`);
-        })
+        }, 'request')
       }
     />
   );
@@ -268,7 +273,12 @@ export function DeliveryIdentityPanel({
       const result = await deliveryIdentity(order.orderId, { action: 'verify' });
       await submit(result);
       setStatus(result);
-    });
+    }, 'accept');
+  const reject = (reason: string) =>
+    run(async () => {
+      await submit(await deliveryIdentity(order.orderId, { action: 'reject', reason }));
+      setNotice('Company evidence rejected.');
+    }, 'reject');
   const toggleClaim = (claim: string) =>
     setSelected((current) => toggleCompanyDisclosure(current, claim, !current.includes(claim)));
   const toggleAllOptional = () =>
@@ -283,23 +293,34 @@ export function DeliveryIdentityPanel({
     holderName: evidenceHolder,
     recipient,
     verifiedAt: status?.verifiedAt,
+    expired,
   });
   const nextAction =
-    !supplier && rawStatus === 'NOT_REQUESTED' ? (
-      <Btn disabled={busy || !purpose.trim()} onClick={() => setRequestOpen(true)}>
-        Create evidence request
-      </Btn>
-    ) : !supplier && ['PRESENTED', 'SHARED'].includes(rawStatus) ? (
-      <Btn disabled={busy} onClick={() => void verify()}>
-        Verify shared evidence
+    // An expired, unverified request can be replaced by a new one.
+    !supplier && (rawStatus === 'NOT_REQUESTED' || (expired && rawStatus !== 'VERIFIED')) ? (
+      <Btn
+        loading={action === 'request'}
+        disabled={busy || !purpose.trim()}
+        onClick={() => setRequestOpen(true)}
+      >
+        {rawStatus === 'NOT_REQUESTED' ? 'Create evidence request' : 'Request again'}
       </Btn>
     ) : supplier && rawStatus === 'REQUESTED' && !material ? (
       <>
-        <Btn variant="outline" disabled={busy} onClick={() => void declineRequest()}>
-          Decline
+        <Btn
+          variant="outline"
+          loading={action === 'decline'}
+          disabled={busy}
+          onClick={() => void declineRequest()}
+        >
+          {action === 'decline' ? 'Declining…' : 'Decline'}
         </Btn>
-        <Btn disabled={busy || expired} onClick={() => void loadMaterial()}>
-          Review request
+        <Btn
+          loading={action === 'review'}
+          disabled={busy || expired}
+          onClick={() => void loadMaterial()}
+        >
+          {action === 'review' ? 'Loading…' : 'Review request'}
         </Btn>
       </>
     ) : undefined;
@@ -322,7 +343,8 @@ export function DeliveryIdentityPanel({
               aria-label="Refresh status"
               title="Refresh status"
               disabled={busy}
-              onClick={() => void run(refresh)}
+              aria-busy={action === 'refresh' || undefined}
+              onClick={() => void run(refresh, 'refresh')}
             >
               <RefreshCw size={14} aria-hidden="true" />
             </button>
@@ -351,7 +373,22 @@ export function DeliveryIdentityPanel({
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
       {!material && (
-        <EvidenceNextStep message={next.message} tone={next.tone} action={nextAction} />
+        <EvidenceNextStep
+          title={next.title}
+          message={next.message}
+          tone={next.tone}
+          action={nextAction}
+        >
+          {/* Same decision as ingredient evidence: verify and accept, or reject with a reason. */}
+          {!supplier && ['PRESENTED', 'SHARED'].includes(rawStatus) && !expired && (
+            <EvidenceDecision
+              busy={action === 'accept' || action === 'reject' ? action : busy ? 'busy' : ''}
+              recipient={evidenceHolder}
+              onAccept={() => void verify()}
+              onReject={(reason) => void reject(reason)}
+            />
+          )}
+        </EvidenceNextStep>
       )}
       {requestDialog}
       {supplier && material && (
@@ -382,8 +419,13 @@ export function DeliveryIdentityPanel({
             />
           )}
           <div className="company-evidence-card__footer is-sticky">
-            <Btn variant="outline" disabled={busy} onClick={() => void declineRequest()}>
-              Decline
+            <Btn
+              variant="outline"
+              loading={action === 'decline'}
+              disabled={busy}
+              onClick={() => void declineRequest()}
+            >
+              {action === 'decline' ? 'Declining…' : 'Decline'}
             </Btn>
             <Btn
               disabled={busy || expired || !requiredAvailable}
@@ -462,10 +504,11 @@ export function DeliveryIdentityPanel({
                 Cancel
               </Btn>
               <Btn
+                loading={action === 'share'}
                 disabled={busy || expired || !requiredAvailable}
                 onClick={() => void signAndShare()}
               >
-                Sign and share
+                {action === 'share' ? 'Signing…' : 'Sign and share'}
               </Btn>
             </div>
           </div>
@@ -481,13 +524,26 @@ function nextStep({
   holderName,
   recipient,
   verifiedAt,
+  expired = false,
 }: {
   status: string;
   holder: boolean;
   holderName: string;
   recipient: string;
   verifiedAt?: string;
-}): { message: string; tone: 'default' | 'done' | 'closed' } {
+  expired?: boolean;
+}): { title?: string; message: string; tone: 'default' | 'done' | 'closed' } {
+  if (expired && status !== 'VERIFIED')
+    return holder
+      ? {
+          message: 'This company identity request has expired. No action is possible.',
+          tone: 'closed',
+        }
+      : {
+          message:
+            'The company identity request has expired. Request it again, or continue without it.',
+          tone: 'closed',
+        };
   if (status === 'NOT_REQUESTED')
     return holder
       ? { message: 'No evidence has been requested.', tone: 'closed' }
@@ -503,18 +559,28 @@ function nextStep({
     return holder
       ? { message: `Shared. Waiting for ${recipient} to verify.`, tone: 'done' }
       : {
-          message: `${holderName} shared their details. Verify them to continue.`,
+          title: 'Evidence shared',
+          message: 'Verify and accept the evidence, or reject it with a reason.',
           tone: 'default',
         };
   if (status === 'VERIFIED')
     return {
+      title: 'Evidence verified and accepted',
       message: verifiedAt
-        ? `Verified on ${formatEvidenceDate(verifiedAt)}. Nothing else to do.`
-        : 'Verified. Nothing else to do.',
+        ? `Accepted on ${formatEvidenceDate(verifiedAt)}. No further action is required.`
+        : 'No further action is required.',
       tone: 'done',
     };
-  if (['DECLINED', 'REJECTED'].includes(status))
-    return { message: 'The request was declined or failed verification.', tone: 'closed' };
+  if (status === 'REJECTED')
+    return holder
+      ? { message: `${recipient} rejected the shared evidence.`, tone: 'closed' }
+      : {
+          title: 'Evidence rejected',
+          message: 'You rejected this evidence. No further action is possible.',
+          tone: 'closed',
+        };
+  if (status === 'DECLINED')
+    return { message: `${holder ? 'You' : holderName} declined this request.`, tone: 'closed' };
   return {
     message: holder
       ? 'This request has closed. No action is possible.'
@@ -532,8 +598,8 @@ export function proofStatusLabel(status?: string) {
       PRESENTED: 'Evidence shared',
       SHARED: 'Evidence shared',
       VERIFIED: 'Verified',
-      DECLINED: 'Verification failed',
-      REJECTED: 'Verification failed',
+      DECLINED: 'Declined',
+      REJECTED: 'Rejected',
       EXPIRED: 'Expired',
       UNAVAILABLE: 'Unavailable',
     }[status ?? 'NOT_REQUESTED'] ?? 'Status unavailable'

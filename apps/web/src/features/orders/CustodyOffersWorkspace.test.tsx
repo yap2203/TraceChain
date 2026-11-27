@@ -25,13 +25,6 @@ vi.mock('../production-flow/production-flow.transaction', () => ({
 vi.mock('../product-traceability/ProductQrDisplay', () => ({
   ProductQrDisplay: () => <p>Shipment QR label</p>,
 }));
-vi.mock('./ShipmentsWorkspace', () => ({
-  ShipmentsWorkspace: (props: { initialShipmentId: string; embedded?: boolean }) => (
-    <p>
-      Receipt for {props.initialShipmentId} {props.embedded ? '(embedded)' : ''}
-    </p>
-  ),
-}));
 import { CustodyOffersWorkspace } from './CustodyOffersWorkspace';
 const sender = '0x1000000000000000000000000000000000000001',
   distributor = '0x2000000000000000000000000000000000000002',
@@ -66,8 +59,7 @@ beforeEach(() => {
     logistics: { warehouses: [] },
   });
   api.act.mockImplementation(async (_id, input) => {
-    offer.status =
-      input.action === 'accept' ? 'ACCEPTED' : input.action === 'reject' ? 'REJECTED' : 'SCHEDULED';
+    offer.status = input.action === 'reject' ? 'REJECTED' : 'SCHEDULED';
     if (input.pickupAt) offer.pickupAt = input.pickupAt;
     return { offer };
   });
@@ -86,119 +78,166 @@ function show(receiver = true) {
     </MemoryRouter>,
   );
 }
-it('requires Distributor acceptance then explicit pickup scheduling without moving inventory', async () => {
+
+const pickupValue = (hours = 1) => {
+  const date = new Date(Date.now() + hours * 3600000);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+};
+const fillArrangement = () => {
+  fireEvent.change(screen.getByLabelText(/Planned custody pickup/), {
+    target: { value: pickupValue(1) },
+  });
+  fireEvent.change(screen.getByLabelText(/Pickup vehicle registration/), {
+    target: { value: 'vab 1234' },
+  });
+  fireEvent.change(screen.getByLabelText(/Expected warehouse arrival/), {
+    target: { value: pickupValue(5) },
+  });
+};
+const supplierState = {
+  actor: sender,
+  role: 'SUPPLIER',
+  orders: [],
+  catalogue: [],
+  locations: [],
+  logistics: { warehouses: [] },
+};
+it('accepts only together with a pickup time, completing the offer without moving inventory', async () => {
   show();
   await screen.findByText('Actual ingredient');
   expect(screen.getByRole('heading', { name: 'Custody offer' })).toBeTruthy();
   expect(screen.getByRole('link', { name: 'Custody offers' }).getAttribute('href')).toBe(
     '/distributor/intake',
   );
-  expect(screen.getByRole('region', { name: 'Transfer details' })).toBeTruthy();
-  expect(screen.getByRole('region', { name: 'Next action' })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Accept custody offer' }));
-  await screen.findByLabelText(/Planned custody pickup/);
-  const date = new Date(Date.now() + 3600000);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  fireEvent.change(screen.getByLabelText(/Planned custody pickup/), {
-    target: { value: date.toISOString().slice(0, 16) },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Confirm pickup time' }));
+  const accept = await screen.findByRole('button', { name: 'Accept with pickup arrangement' });
+  expect((accept as HTMLButtonElement).disabled).toBe(true);
+  fillArrangement();
+  await waitFor(() => expect((accept as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(accept);
   await waitFor(() =>
-    expect(api.act).toHaveBeenLastCalledWith(
+    expect(api.act).toHaveBeenCalledWith(
       offerId,
-      expect.objectContaining({ action: 'schedule', pickupAt: expect.any(Number) }),
+      expect.objectContaining({
+        action: 'accept',
+        pickupAt: expect.any(Number),
+        vehicle: 'VAB 1234',
+        expectedAt: expect.any(Number),
+      }),
     ),
   );
+  expect(await screen.findByRole('button', { name: 'Open shipment' })).toBeTruthy();
+  expect(screen.getByText(/Custody offer complete/)).toBeTruthy();
   expect(api.prepare).not.toHaveBeenCalled();
   expect(api.sign).not.toHaveBeenCalled();
 });
-it('opens the custody company-evidence request in a modal without leaving the offer', async () => {
+it('explains a pickup time that has already passed instead of silently disabling accept', async () => {
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'Request sender company evidence' }));
-  expect(await screen.findByRole('dialog', { name: /Request company evidence/ })).toBeTruthy();
-  expect(screen.getAllByText('Actual Supplier').length).toBeGreaterThan(0);
-  expect(screen.getByRole('heading', { name: 'Custody offer' })).toBeTruthy();
-});
-it('presents the Supplier custody request detail as a compact workflow', async () => {
-  api.orders.mockResolvedValue({
-    actor: sender,
-    role: 'SUPPLIER',
-    orders: [],
-    catalogue: [],
-    locations: [],
-    logistics: { warehouses: [] },
+  await screen.findByRole('button', { name: 'Accept with pickup arrangement' });
+  fillArrangement();
+  fireEvent.change(screen.getByLabelText(/Planned custody pickup/), {
+    target: { value: '2020-01-01T10:00' },
   });
-  show(false);
+  expect(await screen.findByText(/This time has passed/)).toBeTruthy();
+  expect(
+    (screen.getByRole('button', { name: 'Accept with pickup arrangement' }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+});
+it('links the company evidence request to Evidence Exchange instead of a modal', async () => {
+  show();
+  const link = await screen.findByRole('link', { name: 'Request sender company evidence' });
+  expect(link.getAttribute('href')).toBe(
+    '/distributor/information-requests/sent?context=custody&referenceId=' + offerId,
+  );
 
+  expect(screen.queryByRole('dialog')).toBeNull();
+});
+it('disables accept and reject until requested company evidence is verified', async () => {
+  api.identity.mockResolvedValue({
+    status: 'PRESENTED',
+    expiresAt: Math.floor(Date.now() / 1000) + 600,
+  });
+  show();
+  await screen.findByText(/available after the requested company evidence is verified/);
+  expect(
+    (screen.getByRole('button', { name: 'Accept with pickup arrangement' }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect((screen.getByRole('button', { name: 'Reject offer' }) as HTMLButtonElement).disabled).toBe(
+    true,
+  );
+  expect(screen.getByRole('link', { name: 'View in Evidence Exchange' })).toBeTruthy();
+});
+it('reports an expired company request and lets the Distributor request again or decide', async () => {
+  api.identity.mockResolvedValue({
+    status: 'REQUESTED',
+    expiresAt: Math.floor(Date.now() / 1000) - 60,
+  });
+  show();
+  expect(await screen.findByText(/The company identity request has expired/)).toBeTruthy();
+  expect(screen.getByRole('link', { name: 'Request company evidence again' })).toBeTruthy();
+  expect((screen.getByRole('button', { name: 'Reject offer' }) as HTMLButtonElement).disabled).toBe(
+    false,
+  );
+  fillArrangement();
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: 'Accept with pickup arrangement' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+});
+it('presents the Supplier custody request detail as a two-step offer', async () => {
+  api.orders.mockResolvedValue(supplierState);
+  show(false);
   await screen.findByRole('heading', { name: 'Custody offer' });
   expect(screen.getByRole('link', { name: 'Send to custody' }).getAttribute('href')).toBe(
     '/supplier/transfers',
   );
-  expect(screen.getByRole('button', { name: 'Refresh' })).toBeTruthy();
-
-  const timeline = screen.getByRole('list', { name: 'Custody request progress' });
+  const timeline = screen.getByRole('list', { name: 'Custody offer progress' });
   const stages = within(timeline).getAllByRole('listitem');
-  expect(stages).toHaveLength(5);
+  expect(stages).toHaveLength(2);
   expect(stages[0]?.classList.contains('is-complete')).toBe(true);
-  expect(stages[1]?.classList.contains('is-current')).toBe(true);
   expect(stages[1]?.getAttribute('aria-current')).toBe('step');
-  expect(within(timeline).getAllByText('Actual Supplier')).toHaveLength(2);
-  expect(within(timeline).getAllByText('Actual Distributor')).toHaveLength(3);
-
-  expect(screen.getByRole('region', { name: 'Transfer details' })).toBeTruthy();
-  expect(screen.getByRole('region', { name: 'Next action' })).toBeTruthy();
-  expect(screen.getByText('Actual source site')).toBeTruthy();
-  expect(screen.getByText('Actual warehouse')).toBeTruthy();
-  expect(screen.getByText(/Stock moves only after physical handoff/)).toBeTruthy();
-
+  expect(
+    screen.getByText('Waiting for Actual Distributor to accept with a pickup time, or reject.'),
+  ).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Accept with pickup arrangement' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
   const technical = screen.getByText('Technical details').closest('details');
   expect(technical?.open).toBe(false);
 });
 it('rejects a custody offer without a dispatch or stock transaction', async () => {
   show();
-  fireEvent.click(await screen.findByRole('button', { name: 'Reject offer' }));
+  const reject = await screen.findByRole('button', { name: 'Reject offer' });
+  await waitFor(() => expect((reject as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(reject);
   await screen.findByText('Custody offer rejected. No stock moved.');
   expect(api.sign).not.toHaveBeenCalled();
   expect(api.prepare).not.toHaveBeenCalled();
 });
-it('keeps expired Distributor requests visible without actionable workflow controls', async () => {
+it('keeps expired offers visible without actionable controls', async () => {
   offer.status = 'EXPIRED';
-  api.orders.mockResolvedValue({
-    actor: sender,
-    role: 'SUPPLIER',
-    orders: [],
-    catalogue: [],
-    locations: [],
-    logistics: { warehouses: [] },
-  });
+  api.orders.mockResolvedValue(supplierState);
   show(false);
-
-  expect(await screen.findByText('Expired')).toBeTruthy();
-  expect(screen.getByText('This custody offer expired before the handoff.')).toBeTruthy();
-  expect(screen.queryByRole('button', { name: 'Accept custody offer' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Confirm pickup time' })).toBeNull();
+  expect(
+    await screen.findByText(
+      'This custody offer expired before pickup was arranged. No stock moved.',
+    ),
+  ).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Accept with pickup arrangement' })).toBeNull();
 });
-it('keeps the sender waiting until pickup is arranged and exposes only sender handoff controls afterwards', async () => {
-  api.orders.mockResolvedValue({
-    actor: sender,
-    role: 'SUPPLIER',
-    orders: [],
-    catalogue: [],
-    locations: [],
-    logistics: { warehouses: [] },
-  });
-  const view = show(false);
-  await screen.findByText('Waiting for Actual Distributor to accept or reject the offer.');
-  expect(screen.queryByRole('button', { name: 'Accept custody offer' })).toBeNull();
-  expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
-  view.unmount();
+it('sends the sender to Shipments for the label and handoff once pickup is arranged', async () => {
+  api.orders.mockResolvedValue(supplierState);
   offer.status = 'SCHEDULED';
   offer.pickupAt = Math.floor(Date.now() / 1000) + 3600;
   show(false);
-  const handoff = await screen.findByRole('button', { name: 'Confirm handoff with MetaMask' });
-  expect((handoff as HTMLButtonElement).disabled).toBe(true);
-  expect(screen.queryByRole('button', { name: 'Confirm pickup time' })).toBeNull();
+  expect(
+    await screen.findByText(/Print the label and confirm the handoff in Shipments/),
+  ).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Open shipment' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
 });
 
 it('shows the validated Manufacturer balance for the selected production pickup location', async () => {
@@ -257,36 +296,4 @@ it('shows the validated Manufacturer balance for the selected production pickup 
     'Available at this pickup location: 123 units',
   );
   expect(api.create).not.toHaveBeenCalled();
-});
-
-it('lets the sender print the label once pickup is arranged, before confirming the handoff', async () => {
-  vi.stubEnv('VITE_PUBLIC_APP_URL', 'https://app.example');
-  api.orders.mockResolvedValue({
-    actor: sender,
-    role: 'SUPPLIER',
-    chainId: 11155111,
-    ordersAddress: '0x3000000000000000000000000000000000000003',
-    orders: [],
-    catalogue: [],
-    locations: [],
-    logistics: { warehouses: [] },
-  });
-  offer.status = 'SCHEDULED';
-  offer.pickupAt = Math.floor(Date.now() / 1000) + 3600;
-  offer.plannedShipmentId = '0x' + 'ab'.repeat(32);
-  show(false);
-  const step1 = await screen.findByText('Step 1 · Print and attach the label');
-  const step2 = screen.getByText('Step 2 · Confirm the handoff at pickup');
-  expect(screen.getByText('Shipment QR label')).toBeTruthy();
-  // The label step comes before the handoff step on the page.
-  expect(step1.compareDocumentPosition(step2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  vi.unstubAllEnvs();
-});
-
-it('turns the Distributor offer page into the label scan and receipt once the goods are on the way', async () => {
-  offer.status = 'DISPATCHED';
-  offer.shipmentId = '0x' + 'cd'.repeat(32);
-  show(true);
-  expect(await screen.findByText(/Receipt for 0xcdcd.*embedded/)).toBeTruthy();
-  expect(screen.queryByRole('link', { name: /Open warehouse arrival/ })).toBeNull();
 });

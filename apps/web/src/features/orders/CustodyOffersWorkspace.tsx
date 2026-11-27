@@ -4,34 +4,31 @@ import { CatalogueImage } from './CatalogueMedia';
 import { reportError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CalendarClock,
   CheckCircle2,
   ClipboardCheck,
   Clock3,
-  Handshake,
   Hourglass,
   Inbox,
   Package,
   RefreshCw,
   Send,
-  Warehouse,
+  ShieldCheck,
+  Truck,
   XCircle,
 } from 'lucide-react';
 import {
   actCustodyOffer,
   createCustodyOffer,
+  deliveryIdentity,
   getCustodyOffers,
   getOrders,
-  prepareCustodyOffer,
   type CustodyOffer,
   type OrderRecord,
   type OrdersState,
 } from './orders.api';
-import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
-import { ProductQrDisplay } from '../product-traceability/ProductQrDisplay';
-import { encodeShipmentQr } from '@tracechain/shared';
 import {
   Alert,
   Badge,
@@ -42,7 +39,6 @@ import {
   type EntityOption,
   Input,
   SectionTitle,
-  SelectField,
   StatusTimeline,
   Table,
   TD,
@@ -52,177 +48,221 @@ import {
 import type { WorkspaceRole } from '../workspaces/workspace-navigation';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import { workspacePath } from '../workspaces/workspace-paths';
-import { DeliveryIdentityPanel } from './DeliveryIdentityPanel';
-import { ShipmentsWorkspace } from './ShipmentsWorkspace';
+import { proofStatusLabel, proofStatusVariant } from './DeliveryIdentityPanel';
 const same = (a?: string, b?: string) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 const local = (offset = 0) => {
   const date = new Date(Date.now() + offset);
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 16);
 };
+// The custody offer ends once pickup is arranged; handoff and receipt belong to the shipment.
 const statusLabel: Record<CustodyOffer['status'], string> = {
   REQUESTED: 'Awaiting acceptance',
   ACCEPTED: 'Pickup time needed',
   SCHEDULED: 'Pickup arranged',
   REJECTED: 'Rejected',
-  DISPATCHED: 'Handoff recorded',
+  DISPATCHED: 'In shipment',
   RECEIVED: 'Received',
   EXPIRED: 'Expired',
 };
 const statusVariant: Record<CustodyOffer['status'], BadgeVariant> = {
   REQUESTED: 'pending',
   ACCEPTED: 'pending',
-  SCHEDULED: 'shared',
-  DISPATCHED: 'shared',
+  SCHEDULED: 'verified',
+  DISPATCHED: 'moving',
   RECEIVED: 'verified',
   REJECTED: 'rejected',
   EXPIRED: 'rejected',
 };
-// Whose move it is: the Distributor acts on REQUESTED, ACCEPTED and DISPATCHED; the sender on SCHEDULED.
+const inShipment = (offer: CustodyOffer) =>
+  ['SCHEDULED', 'DISPATCHED', 'RECEIVED'].includes(offer.status);
+// Whose move it is on this page: only the Distributor, until pickup is arranged.
 const isMyTurn = (offer: CustodyOffer, receiver: boolean) =>
-  receiver
-    ? ['REQUESTED', 'ACCEPTED', 'DISPATCHED'].includes(offer.status)
-    : offer.status === 'SCHEDULED';
+  receiver && ['REQUESTED', 'ACCEPTED'].includes(offer.status);
+/** Shipments page for an offer: by recorded shipment once handed off, else by offer. */
+export const custodyShipmentPath = (role: WorkspaceRole, offer: CustodyOffer) =>
+  // The Distributor receives custody stock under warehouse arrivals; senders track it under shipments.
+  workspacePath(
+    role,
+    role === 'distributor' ? 'arrivals' : offer.kind === 2 ? 'product-shipments' : 'shipments',
+  ) +
+  (offer.shipmentId
+    ? '?shipmentId=' + encodeURIComponent(offer.shipmentId)
+    : '?offerId=' + encodeURIComponent(offer.offerId));
+/** The custody offer's company evidence request in Evidence Exchange. */
+const custodyEvidencePath = (role: WorkspaceRole, offerId: string, receiver: boolean) =>
+  workspacePath(role, receiver ? 'sent-requests' : 'requests') +
+  '?context=custody&referenceId=' +
+  encodeURIComponent(offerId);
+
+/**
+ * Whether the Distributor may decide on an offer, given its company evidence request.
+ * Pending evidence blocks both decisions; an expired, unverified request no longer blocks.
+ */
+export function custodyProofGate(status?: string, expiresAt = 0) {
+  if (!status) return undefined;
+  const verified = status === 'VERIFIED';
+  const expired =
+    !verified && (status === 'EXPIRED' || (expiresAt > 0 && expiresAt <= Date.now() / 1000));
+  const open = status === 'NOT_REQUESTED' || verified || expired;
+  return {
+    status,
+    expired,
+    canAccept: open,
+    // A declined or failed request can never verify, so rejecting stays possible.
+    canReject: open || ['DECLINED', 'REJECTED'].includes(status),
+  };
+}
 
 function CustodyRequestDetail({
   offer,
   role,
   receiver,
-  actor,
   busy,
   pickup,
   setPickup,
-  vehicle,
-  setVehicle,
-  actual,
-  setActual,
-  eta,
-  setEta,
-  confirmed,
-  setConfirmed,
-  qr,
   run,
   setNotice,
   locationLabel,
-  data,
-  onChanged,
 }: {
   offer: CustodyOffer;
   role: WorkspaceRole;
   receiver: boolean;
-  actor: string;
-  busy: boolean;
+  busy: string;
   pickup: string;
   setPickup: (value: string) => void;
-  vehicle: string;
-  setVehicle: (value: string) => void;
-  actual: string;
-  setActual: (value: string) => void;
-  eta: string;
-  setEta: (value: string) => void;
-  confirmed: boolean;
-  setConfirmed: (value: boolean) => void;
-  qr?: string;
-  run: (action: () => Promise<void>) => Promise<void>;
+  run: (key: string, action: () => Promise<void>) => Promise<void>;
   setNotice: (value: string) => void;
   locationLabel: (location: string) => string;
-  data: OrdersState;
-  onChanged: () => Promise<void>;
 }) {
-  const [requestEvidence, setRequestEvidence] = useState(false);
-  const currentStage: Partial<Record<CustodyOffer['status'], number>> = {
-    REQUESTED: 1,
-    ACCEPTED: 2,
-    SCHEDULED: 3,
-    DISPATCHED: 4,
-    RECEIVED: 5,
-  };
-  const activeStage = currentStage[offer.status];
+  const navigate = useNavigate();
+  const [proof, setProof] = useState<{ status: string; expiresAt?: number }>(),
+    [proofError, setProofError] = useState('');
+  const loadProof = useCallback(async () => {
+    setProofError('');
+    try {
+      setProof(await deliveryIdentity(offer.offerId, { action: 'status' }));
+    } catch (cause) {
+      if (/not found|not requested|request company identity first/i.test((cause as Error).message))
+        setProof({ status: 'NOT_REQUESTED' });
+      else setProofError(reportError(cause, 'Company evidence status is unavailable.'));
+    }
+  }, [offer.offerId]);
+  useEffect(() => {
+    void loadProof();
+  }, [loadProof, offer.status]);
+  const gate = custodyProofGate(proof?.status, Number(proof?.expiresAt ?? 0));
+  const deciding = receiver && ['REQUESTED', 'ACCEPTED'].includes(offer.status);
+  // Until the handoff, the Distributor can still change the arrangement (e.g. a late pickup).
+  const rearranging = receiver && offer.status === 'SCHEDULED' && !offer.shipmentId;
+  // Re-check time rules while the form is open, so a pickup time that passes shows its message.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!deciding && !rearranging) return;
+    const timer = setInterval(() => setTick((value) => value + 1), 30_000);
+    return () => clearInterval(timer);
+  }, [deciding, rearranging]);
+  const atLocal = (seconds?: number) => (seconds ? local(seconds * 1000 - Date.now()) : '');
+  const [vehicle, setVehicle] = useState(offer.vehicle ?? ''),
+    [eta, setEta] = useState(atLocal(offer.expectedAt));
+  useEffect(() => {
+    if (offer.pickupAt) setPickup(atLocal(offer.pickupAt));
+  }, [offer.offerId, offer.pickupAt]);
   const terminal = offer.status === 'REJECTED' || offer.status === 'EXPIRED';
-  // A closed offer keeps the steps it reached: sent always, accept + pickup when a pickup was set.
-  const reachedBeforeClose = offer.pickupAt ? 3 : 1;
+  const done = inShipment(offer);
   const steps = [
     { actor: offer.senderName, icon: <Send size={30} />, label: 'Offer sent' },
     {
       actor: offer.distributorName,
       icon: <ClipboardCheck size={30} />,
-      label: 'Distributor accepts',
-    },
-    {
-      actor: offer.distributorName,
-      icon: <CalendarClock size={30} />,
-      label: 'Pickup arranged',
-    },
-    { actor: offer.senderName, icon: <Handshake size={30} />, label: 'Physical handoff' },
-    {
-      actor: offer.distributorName,
-      icon: <Warehouse size={30} />,
-      label: 'Warehouse received',
+      label: 'Accepted · pickup arranged',
     },
   ].map((step, index) => ({
     ...step,
     state:
-      offer.status === 'RECEIVED' ||
-      (terminal ? index < reachedBeforeClose : activeStage !== undefined && index < activeStage)
+      index === 0 || done
         ? ('complete' as const)
-        : !terminal && index === activeStage
+        : !terminal
           ? ('current' as const)
           : ('pending' as const),
   }));
+  // Same rules as the server; each is explained under the field instead of a silent grey button.
+  const pickupError = !pickup
+    ? undefined
+    : !(Date.parse(pickup) > Date.now())
+      ? 'This time has passed. Choose a pickup time in the future.'
+      : Date.parse(pickup) >= offer.expiresAt * 1000
+        ? `Choose a pickup before the offer expires on ${new Date(offer.expiresAt * 1000).toLocaleString()}.`
+        : undefined;
+  const pickupValid = !!pickup && !pickupError;
+  const vehicleError =
+    vehicle && !/^(?=.*[A-Z0-9])[A-Z0-9 -]{2,32}$/.test(vehicle)
+      ? 'Use 2–32 letters, numbers, spaces or hyphens.'
+      : undefined;
+  const etaError =
+    eta && pickup && !(Date.parse(eta) > Date.parse(pickup))
+      ? 'Choose a time after the pickup.'
+      : undefined;
+  const arrangementValid = pickupValid && !!vehicle && !!eta && !vehicleError && !etaError;
+  const evidenceHref = custodyEvidencePath(role, offer.offerId, receiver);
+  const requested = !!gate && gate.status !== 'NOT_REQUESTED';
   // Speak to the viewer: an instruction on their turn, a waiting message otherwise.
-  const nextAction =
-    offer.status === 'REQUESTED'
+  const nextAction = done
+    ? `Custody offer complete. ${
+        offer.status === 'SCHEDULED'
+          ? receiver
+            ? `Pickup and handoff continue in Shipments; ${offer.senderName} confirms the handoff.`
+            : 'Print the label and confirm the handoff in Shipments.'
+          : offer.status === 'DISPATCHED'
+            ? receiver
+              ? 'Confirm warehouse receipt in Shipments.'
+              : `In transit. ${offer.distributorName} confirms receipt in Shipments.`
+            : 'Warehouse receipt is recorded in Shipments.'
+      }`
+    : offer.status === 'REQUESTED'
       ? receiver
-        ? 'Review this offer, then accept or reject it.'
-        : `Waiting for ${offer.distributorName} to accept or reject the offer.`
+        ? !gate
+          ? 'Checking company evidence…'
+          : gate.canAccept
+            ? 'Choose the pickup time, then accept, or reject the offer.'
+            : gate.canReject
+              ? 'The company evidence was declined or failed verification. You can reject this offer.'
+              : 'Accept and reject become available after the requested company evidence is verified.'
+        : `Waiting for ${offer.distributorName} to accept with a pickup time, or reject.`
       : offer.status === 'ACCEPTED'
         ? receiver
           ? 'Choose the pickup time for this stock.'
           : `Waiting for ${offer.distributorName} to arrange the pickup time.`
-        : offer.status === 'SCHEDULED'
-          ? receiver
-            ? `At pickup, check the TraceChain label on the goods. ${offer.senderName} then confirms the handoff.`
-            : 'Print the label and attach it to the stock. At pickup, hand the goods over and confirm the handoff below.'
-          : offer.status === 'DISPATCHED'
-            ? receiver
-              ? 'When the goods arrive, scan the label on them to confirm warehouse receipt.'
-              : `In transit. ${offer.distributorName} scans the label at its warehouse to confirm receipt.`
-            : offer.status === 'RECEIVED'
-              ? 'Warehouse receipt is complete.'
-              : offer.status === 'REJECTED'
-                ? 'This custody offer was rejected.'
-                : 'This custody offer expired before the handoff.';
-  const NextIcon =
-    offer.status === 'REQUESTED'
+        : offer.status === 'REJECTED'
+          ? 'This custody offer was rejected. No stock moved.'
+          : 'This custody offer expired before pickup was arranged. No stock moved.';
+  const NextIcon = done
+    ? CheckCircle2
+    : offer.status === 'REQUESTED'
       ? Hourglass
       : offer.status === 'ACCEPTED'
         ? CalendarClock
-        : offer.status === 'SCHEDULED'
-          ? Handshake
-          : offer.status === 'DISPATCHED'
-            ? Warehouse
-            : offer.status === 'RECEIVED'
-              ? CheckCircle2
-              : offer.status === 'REJECTED'
-                ? XCircle
-                : Clock3;
-  const stockNotice =
-    offer.status === 'REJECTED' || offer.status === 'EXPIRED'
-      ? 'No stock moved for this custody offer.'
-      : offer.status === 'DISPATCHED' || offer.status === 'RECEIVED'
-        ? 'Stock moved when the physical handoff was confirmed.'
-        : 'Stock moves only after physical handoff is confirmed.';
+        : offer.status === 'REJECTED'
+          ? XCircle
+          : Clock3;
 
   return (
     <div className="workspace-custody-detail">
-      <Alert type="info" message={stockNotice} />
+      <Alert
+        type="info"
+        message={
+          terminal
+            ? 'No stock moved for this custody offer.'
+            : 'Stock moves only after the physical handoff is confirmed in Shipments.'
+        }
+      />
       <Card>
         <div className="workspace-custody-detail__item">
           <Package size={30} aria-hidden="true" />
           <h3>{offer.itemName}</h3>
           <Badge label={statusLabel[offer.status]} variant={statusVariant[offer.status]} />
         </div>
-        <StatusTimeline label="Custody request progress" steps={steps} variant="custody" />
+        <StatusTimeline label="Custody offer progress" steps={steps} variant="custody" />
         <div className="workspace-custody-detail__panels">
           <section
             className="workspace-custody-detail__panel workspace-custody-detail__panel--transfer"
@@ -252,6 +292,22 @@ function CustodyRequestDetail({
                 <div>
                   <dt>Planned pickup</dt>
                   <dd>{new Date(offer.pickupAt * 1000).toLocaleString()}</dd>
+                </div>
+              )}
+              {offer.pickupAt && (
+                <div>
+                  <dt>Pickup vehicle</dt>
+                  <dd>{offer.vehicle ?? 'Not arranged yet'}</dd>
+                </div>
+              )}
+              {offer.pickupAt && (
+                <div>
+                  <dt>Expected warehouse arrival</dt>
+                  <dd>
+                    {offer.expectedAt
+                      ? new Date(offer.expectedAt * 1000).toLocaleString()
+                      : 'Not arranged yet'}
+                  </dd>
                 </div>
               )}
             </dl>
@@ -286,64 +342,50 @@ function CustodyRequestDetail({
               </span>
               <p>{nextAction}</p>
             </div>
-            {receiver && ['REQUESTED', 'ACCEPTED', 'SCHEDULED'].includes(offer.status) && (
-              <Btn variant="outline" onClick={() => setRequestEvidence(true)}>
-                Request sender company evidence
-              </Btn>
-            )}
-            {requestEvidence && (
-              <DeliveryIdentityPanel
-                requestOnly
-                data={data}
-                order={{
-                  orderId: offer.offerId,
-                  seller: offer.sender,
-                  buyer: offer.distributor,
-                  expiresAt: offer.expiresAt,
-                  proposedBatch: offer.batchId,
-                  delivery: {
-                    distributor: offer.distributor,
-                    batchId: offer.batchId,
-                    identityChallenge: '',
-                  },
-                }}
-                requestedBy={offer.distributorName}
-                onChanged={onChanged}
-                onRequestClose={() => setRequestEvidence(false)}
-              />
-            )}
-            {receiver && offer.status === 'REQUESTED' && (
-              <div className="workspace-location-actions action-row">
-                <Btn
-                  variant="danger"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await actCustodyOffer(offer.offerId, { action: 'reject' });
-                      setNotice('Custody offer rejected. No stock moved.');
-                    })
+            <section className="workspace-pickup-plan" aria-label="Company evidence">
+              <h4>
+                <ShieldCheck size={18} />
+                Company evidence
+                {gate && (
+                  <Badge
+                    label={gate.expired ? 'Expired' : proofStatusLabel(gate.status)}
+                    variant={gate.expired ? 'rejected' : proofStatusVariant(gate.status)}
+                  />
+                )}
+              </h4>
+              {proofError ? (
+                <Alert type="error" message={proofError} />
+              ) : !gate ? (
+                <LoadingIndicator size="small" label="Checking company evidence…" />
+              ) : gate.expired ? (
+                <Alert
+                  type="warning"
+                  message={
+                    receiver
+                      ? 'The company identity request has expired. Request it again, or accept or reject without it.'
+                      : 'The company identity request has expired.'
                   }
-                >
-                  Reject offer
-                </Btn>
-                <Btn
-                  disabled={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      await actCustodyOffer(offer.offerId, { action: 'accept' });
-                      setNotice('Offer accepted. Arrange the pickup time next.');
-                    })
-                  }
-                >
-                  Accept custody offer
-                </Btn>
-              </div>
-            )}
-            {receiver && ['ACCEPTED', 'SCHEDULED'].includes(offer.status) && !offer.shipmentId && (
+                />
+              ) : null}
+              {gate && (requested || deciding) && (
+                <Link className="workspace-custody-detail__evidence-link" to={evidenceHref}>
+                  {!requested
+                    ? 'Request sender company evidence'
+                    : deciding && gate.expired
+                      ? 'Request company evidence again'
+                      : 'View in Evidence Exchange'}
+                </Link>
+              )}
+            </section>
+            {(deciding || rearranging) && (
               <section className="workspace-pickup-plan" aria-label="Pickup arrangement">
                 <h4>
                   <CalendarClock size={18} />
-                  Arrange pickup
+                  {offer.status === 'REQUESTED'
+                    ? 'Accept with pickup arrangement'
+                    : offer.status === 'ACCEPTED'
+                      ? 'Arrange pickup'
+                      : 'Update pickup arrangement'}
                 </h4>
                 <Input
                   label="Planned custody pickup"
@@ -351,65 +393,19 @@ function CustodyRequestDetail({
                   value={pickup}
                   onChange={setPickup}
                   required
+                  disabled={!gate?.canAccept}
                   min={local()}
                   max={local(offer.expiresAt * 1000 - Date.now())}
+                  error={pickupError}
                 />
-                <div className="action-row">
-                  <Btn
-                    disabled={
-                      busy ||
-                      !(
-                        Date.parse(pickup) > Date.now() &&
-                        Date.parse(pickup) < offer.expiresAt * 1000
-                      )
-                    }
-                    onClick={() =>
-                      void run(async () => {
-                        await actCustodyOffer(offer.offerId, {
-                          action: 'schedule',
-                          pickupAt: Math.floor(Date.parse(pickup) / 1000),
-                        });
-                        setNotice('Pickup time shared with the sender.');
-                      })
-                    }
-                  >
-                    {offer.pickupAt ? 'Update pickup time' : 'Confirm pickup time'}
-                  </Btn>
-                </div>
-              </section>
-            )}
-            {!receiver && qr && offer.status === 'SCHEDULED' && (
-              <section className="workspace-custody-detail__label" aria-label="Shipment label">
-                <h4>Step 1 · Print and attach the label</h4>
-                <ProductQrDisplay
-                  batchId={offer.batchId}
-                  batchReference={offer.itemName}
-                  productName={offer.itemName}
-                  labelTitle="Custody shipment label"
-                  encodedPayload={qr}
-                  instruction="Print this label and attach it to the stock before pickup. The Distributor scans it at its warehouse to confirm receipt."
-                />
-              </section>
-            )}
-            {!receiver && offer.status === 'SCHEDULED' && (
-              <section
-                className="workspace-custody-detail__handoff workspace-flow-page"
-                aria-label="Physical handoff confirmation"
-              >
-                <h4>Step 2 · Confirm the handoff at pickup</h4>
                 <Input
                   label="Pickup vehicle registration"
                   value={vehicle}
                   onChange={(value) => setVehicle(value.toUpperCase())}
                   maxLength={32}
                   required
-                />
-                <Input
-                  label="Actual handoff time"
-                  type="datetime-local"
-                  value={actual}
-                  onChange={setActual}
-                  required
+                  disabled={!gate?.canAccept}
+                  error={vehicleError}
                 />
                 <Input
                   label="Expected warehouse arrival"
@@ -417,81 +413,69 @@ function CustodyRequestDetail({
                   value={eta}
                   onChange={setEta}
                   required
+                  disabled={!gate?.canAccept}
+                  min={pickup || local()}
+                  error={etaError}
+                  hint="Shared with the sender. The handoff time is recorded when the sender confirms it."
                 />
-                <label className="workspace-custody-detail__confirmation">
-                  <input
-                    type="checkbox"
-                    checked={confirmed}
-                    onChange={(event) => setConfirmed(event.target.checked)}
-                  />
-                  The goods were physically handed to this Distributor.
-                </label>
-                <div className="action-row">
+                <div className="workspace-decision-actions">
+                  {offer.status === 'REQUESTED' && (
+                    <Btn
+                      variant="danger"
+                      loading={busy === 'reject'}
+                      disabled={!!busy || !gate?.canReject}
+                      onClick={() =>
+                        void run('reject', async () => {
+                          await actCustodyOffer(offer.offerId, { action: 'reject' });
+                          setNotice('Custody offer rejected. No stock moved.');
+                        })
+                      }
+                    >
+                      {busy === 'reject' ? 'Rejecting…' : 'Reject offer'}
+                    </Btn>
+                  )}
                   <Btn
-                    icon={<Send size={16} />}
-                    disabled={
-                      busy ||
-                      !confirmed ||
-                      !/^(?=.*[A-Z0-9])[A-Z0-9 -]{2,32}$/.test(vehicle) ||
-                      !(Date.parse(actual) <= Date.now() && Date.parse(eta) > Date.now())
-                    }
+                    loading={busy === 'accept'}
+                    disabled={!!busy || !gate?.canAccept || !arrangementValid}
                     onClick={() =>
-                      void run(async () => {
-                        const prepared = await prepareCustodyOffer(offer.offerId, {
-                          vehicle,
-                          occurredAt: Math.floor(Date.parse(actual) / 1000),
+                      void run('accept', async () => {
+                        await actCustodyOffer(offer.offerId, {
+                          action: offer.status === 'REQUESTED' ? 'accept' : 'schedule',
+                          pickupAt: Math.floor(Date.parse(pickup) / 1000),
+                          vehicle: vehicle.trim(),
                           expectedAt: Math.floor(Date.parse(eta) / 1000),
                         });
-                        await submitProductionTransaction(prepared.transaction, actor);
-                        setConfirmed(false);
-                        // Chain events count after the confirmation window; refresh once it passes.
-                        setTimeout(() => void onChanged().catch(() => undefined), 30_000);
                         setNotice(
-                          'Handoff recorded. The Distributor scans the label at its warehouse to confirm receipt.',
+                          rearranging
+                            ? 'Pickup arrangement updated and shared with the sender.'
+                            : 'Pickup arranged. The custody offer is complete; handoff and receipt continue in Shipments.',
                         );
                       })
                     }
                   >
-                    Confirm handoff with MetaMask
+                    {busy === 'accept'
+                      ? 'Saving…'
+                      : offer.status === 'REQUESTED'
+                        ? 'Accept with pickup arrangement'
+                        : offer.status === 'ACCEPTED'
+                          ? 'Confirm pickup'
+                          : 'Update pickup arrangement'}
                   </Btn>
                 </div>
               </section>
             )}
-            {!receiver && offer.shipmentId && ['DISPATCHED', 'RECEIVED'].includes(offer.status) && (
-              <Link
-                className="workspace-custody-detail__evidence-link"
-                to={
-                  workspacePath(role, 'shipments') +
-                  '?shipmentId=' +
-                  encodeURIComponent(offer.shipmentId)
-                }
-              >
-                Track this shipment
-              </Link>
+            {done && (
+              <div className="action-row">
+                <Btn
+                  icon={<Truck size={16} />}
+                  onClick={() => navigate(custodyShipmentPath(role, offer))}
+                >
+                  Open shipment
+                </Btn>
+              </div>
             )}
           </section>
         </div>
-        {!receiver && qr && offer.status !== 'SCHEDULED' && (
-          <section className="workspace-custody-detail__label" aria-label="Shipment label">
-            <ProductQrDisplay
-              batchId={offer.batchId}
-              batchReference={offer.itemName}
-              productName={offer.itemName}
-              labelTitle="Custody shipment label"
-              encodedPayload={qr}
-              instruction="The Distributor scans this label at its warehouse to confirm receipt. Reprint it if the label is damaged."
-            />
-          </section>
-        )}
-        {!receiver &&
-          !qr &&
-          offer.shipmentId &&
-          ['DISPATCHED', 'RECEIVED'].includes(offer.status) && (
-            <Alert
-              type="info"
-              message="The shipment is recorded, but its QR label is unavailable. Open shipment tracking to check the configured QR URL before warehouse receipt."
-            />
-          )}
         <div className="workspace-custody-detail__technical">
           <TechnicalDetails
             fields={[
@@ -499,6 +483,7 @@ function CustodyRequestDetail({
               { label: 'Batch', value: offer.batchId },
               { label: 'Source location', value: offer.fromLocation },
               { label: 'Warehouse location', value: offer.toLocation },
+              ...(offer.shipmentId ? [{ label: 'Shipment', value: offer.shipmentId }] : []),
             ]}
           />
         </div>
@@ -515,10 +500,11 @@ export function CustodyOffersWorkspace({
   receiver?: boolean;
 }) {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const [data, setData] = useState<OrdersState>(),
     [offers, setOffers] = useState<CustodyOffer[]>([]),
     [loading, setLoading] = useState(true),
-    [busy, setBusy] = useState(false),
+    [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
   const [batch, setBatch] = useState(''),
@@ -527,10 +513,6 @@ export function CustodyOffersWorkspace({
     [quantity, setQuantity] = useState(''),
     [deadline, setDeadline] = useState(''),
     [pickup, setPickup] = useState('');
-  const [vehicle, setVehicle] = useState(''),
-    [actual, setActual] = useState(local()),
-    [eta, setEta] = useState(''),
-    [confirmed, setConfirmed] = useState(false);
   const load = useCallback(async () => {
     const [result, state] = await Promise.all([getCustodyOffers(), getOrders()]);
     setOffers(result.offers);
@@ -549,9 +531,10 @@ export function CustodyOffersWorkspace({
       active = false;
     };
   }, [load]);
-  const run = async (action: () => Promise<void>) => {
+  // The key names the running action, so only its button shows the spinner.
+  const run = async (key: string, action: () => Promise<void>) => {
     if (busy) return;
-    setBusy(true);
+    setBusy(key);
     setError('');
     setNotice('');
     try {
@@ -560,7 +543,7 @@ export function CustodyOffersWorkspace({
     } catch (cause) {
       setError(reportError(cause, 'The custody offer could not be updated.'));
     } finally {
-      setBusy(false);
+      setBusy('');
     }
   };
   const selected = offers.find((offer) => same(offer.offerId, params.get('offerId') ?? ''));
@@ -684,29 +667,6 @@ export function CustodyOffersWorkspace({
       warehouses.find((site) => same(site.location, location))?.name ??
         'Registered company location',
     );
-  let qr: string | undefined;
-  // The label exists from "pickup arranged", using the planned ID until the handoff records it.
-  const labelShipmentId = selected?.shipmentId ?? selected?.plannedShipmentId;
-  if (
-    selected &&
-    labelShipmentId &&
-    ['SCHEDULED', 'DISPATCHED', 'RECEIVED'].includes(selected.status) &&
-    data?.chainId &&
-    data.ordersAddress &&
-    import.meta.env.VITE_PUBLIC_APP_URL
-  ) {
-    try {
-      qr = encodeShipmentQr({
-        shipmentId: labelShipmentId as `0x${string}`,
-        kind: selected.kind === 1 ? 'ingredient' : 'product',
-        chainId: data.chainId,
-        ordersAddress: data.ordersAddress as `0x${string}`,
-        publicAppUrl: import.meta.env.VITE_PUBLIC_APP_URL,
-      });
-    } catch {
-      /* The configured shipment screen displays locator errors. */
-    }
-  }
   return (
     <section
       className="workspace-flow-page"
@@ -722,8 +682,9 @@ export function CustodyOffersWorkspace({
             <Btn
               variant="outline"
               icon={<RefreshCw size={16} />}
-              disabled={loading || busy}
-              onClick={() => void run(async () => {})}
+              loading={busy === 'refresh'}
+              disabled={loading || !!busy}
+              onClick={() => void run('refresh', async () => {})}
             >
               Refresh
             </Btn>
@@ -736,8 +697,9 @@ export function CustodyOffersWorkspace({
             <Btn
               variant="outline"
               icon={<RefreshCw size={16} />}
-              disabled={loading || busy}
-              onClick={() => void run(async () => {})}
+              loading={busy === 'refresh'}
+              disabled={loading || !!busy}
+              onClick={() => void run('refresh', async () => {})}
             >
               Refresh
             </Btn>
@@ -753,43 +715,17 @@ export function CustodyOffersWorkspace({
       {notice && <Alert type="success" message={notice} />}
       {loading ? (
         <LoadingIndicator page label="Loading custody offers…" />
-      ) : selected &&
-        data &&
-        receiver &&
-        selected.status === 'DISPATCHED' &&
-        selected.shipmentId ? (
-        // Goods on the way: this offer page becomes the receipt (scan the label, confirm receipt).
-        <ShipmentsWorkspace
-          key={selected.shipmentId}
-          role={role}
-          section="intake"
-          initialKind={selected.kind === 1 ? 'ingredient' : 'product'}
-          initialShipmentId={selected.shipmentId}
-          embedded
-        />
       ) : selected && data ? (
         <CustodyRequestDetail
           offer={selected}
           role={role}
           receiver={receiver}
-          actor={data.actor}
           busy={busy}
           pickup={pickup}
           setPickup={setPickup}
-          vehicle={vehicle}
-          setVehicle={setVehicle}
-          actual={actual}
-          setActual={setActual}
-          eta={eta}
-          setEta={setEta}
-          confirmed={confirmed}
-          setConfirmed={setConfirmed}
-          qr={qr}
           run={run}
           setNotice={setNotice}
           locationLabel={label}
-          data={data}
-          onChanged={load}
         />
       ) : (
         <>
@@ -930,8 +866,9 @@ export function CustodyOffersWorkspace({
               <div className="action-row">
                 <Btn
                   icon={<Send size={16} />}
+                  loading={busy === 'create'}
                   disabled={
-                    busy ||
+                    !!busy ||
                     !batch ||
                     !from ||
                     !chosenWarehouse ||
@@ -940,7 +877,7 @@ export function CustodyOffersWorkspace({
                     (!!batchExpiresAt && Date.parse(deadline) >= batchExpiresAt * 1000)
                   }
                   onClick={() =>
-                    void run(async () => {
+                    void run('create', async () => {
                       const result = await createCustodyOffer({
                         operationId: crypto.randomUUID(),
                         kind,
@@ -956,7 +893,7 @@ export function CustodyOffersWorkspace({
                     })
                   }
                 >
-                  Send custody offer
+                  {busy === 'create' ? 'Sending…' : 'Send custody offer'}
                 </Btn>
               </div>
               {!sites.length && (
@@ -1004,11 +941,18 @@ export function CustodyOffersWorkspace({
                         size="sm"
                         onClick={(event) => {
                           event?.stopPropagation();
-                          setParams({ offerId: offer.offerId });
-                          setPickup('');
+                          if (inShipment(offer)) navigate(custodyShipmentPath(role, offer));
+                          else {
+                            setParams({ offerId: offer.offerId });
+                            setPickup('');
+                          }
                         }}
                       >
-                        {isMyTurn(offer, receiver) ? 'Take action' : 'View offer'}
+                        {isMyTurn(offer, receiver)
+                          ? 'Take action'
+                          : inShipment(offer)
+                            ? 'Open shipment'
+                            : 'View offer'}
                       </Btn>
                     </TD>
                   </TR>

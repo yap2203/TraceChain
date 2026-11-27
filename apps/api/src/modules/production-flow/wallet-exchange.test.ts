@@ -274,6 +274,7 @@ async function setup() {
             status: 2,
           });
         if (method === 'review') references.get(key)!.status = args[1] ? 4 : 3;
+        if (method === 'reject') references.get(key)!.status = 5;
         if (method === 'registerBinding')
           bindings.set(activePresenter!, {
             sourceHash: args[0],
@@ -655,4 +656,72 @@ describe('Wallet exchange across independent API data directories', () => {
       expect(await f.agentB.didManagerFind()).toHaveLength(0);
     },
   );
+  it('lets the requesting company reject shared company evidence with a reason', async () => {
+    const f = await setup();
+    const presenter = f.manufacturer,
+      verifier = f.supplier;
+    const a = f.service('API-A', f.agentA);
+    f.setPresenter(presenter.address);
+    f.apply((await a.prepareCompanyWalletBinding(presenter.address)).transaction);
+    f.setVerifier(verifier.address);
+    const requestId = id('company-reject');
+    const started = await a.startOrderIdentity(verifier.address, {
+      orderId: requestId,
+      buyer: presenter.address,
+      seller: verifier.address,
+      batchId: f.batchId,
+      purpose: 'Review requesting company',
+      expiresAt: f.now + 600,
+      requiredClaims: ['companyName'],
+      optionalClaims: [],
+      selectiveDisclosure: true,
+    });
+    f.apply(started.referenceTransaction);
+    const http = await serve(a);
+    const base = `/api/production-flow/evidence-requests/${requestId}/company-identity`;
+    // Nothing to reject before the presenter has shared a response.
+    await request(http)
+      .post(base + '/reject')
+      .set('Cookie', `test-session=${verifier.address}`)
+      .send({ reason: 'Too early' })
+      .expect(409);
+    const material = (
+      await request(http)
+        .get(base + '/material')
+        .set('Cookie', `test-session=${presenter.address}`)
+        .expect(200)
+    ).body;
+    const presentation = await f.sign(material, presenter, material.requiredClaims!);
+    f.apply(
+      (
+        await request(http)
+          .post(base + '/present')
+          .set('Cookie', `test-session=${presenter.address}`)
+          .send({ presentation })
+          .expect(200)
+      ).body.transaction,
+    );
+    // Only the requesting company rejects, and a reason is required.
+    await request(http)
+      .post(base + '/reject')
+      .set('Cookie', `test-session=${presenter.address}`)
+      .send({ reason: 'Not mine to reject' })
+      .expect(403);
+    await request(http)
+      .post(base + '/reject')
+      .set('Cookie', `test-session=${verifier.address}`)
+      .send({ reason: ' ' })
+      .expect(400);
+    const rejected = (
+      await request(http)
+        .post(base + '/reject')
+        .set('Cookie', `test-session=${verifier.address}`)
+        .send({ reason: 'Registration number does not match' })
+        .expect(200)
+    ).body;
+    f.apply(rejected.transaction);
+    expect((await a.getCompanyIdentityProofStatus(verifier.address, requestId)).status).toBe(
+      'REJECTED',
+    );
+  });
 });

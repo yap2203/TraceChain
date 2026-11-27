@@ -208,7 +208,16 @@ describe('browse and request-only UI', () => {
           active: true,
           batches: ['batch'],
           batchDetails: [{ batchId: 'batch', supplierAvailable: '100' }],
-          custodyPositions: [],
+          custodyPositions: [
+            {
+              positionId: 'position',
+              batchId: 'batch',
+              warehouseName: 'Warehouse A',
+              distributorName: 'Distributor A',
+              available: '40',
+              orderable: true,
+            },
+          ],
         },
       ],
     });
@@ -221,7 +230,9 @@ describe('browse and request-only UI', () => {
     await screen.findByText('Cocoa powder');
     expect(screen.getByRole('heading', { name: 'Supplier ingredients' })).toBeTruthy();
     expect(
-      screen.getByText('Browse supplier ingredients, check stock, or request evidence.'),
+      screen.getByText(
+        'Ingredients held in Distributor custody and not expired. Each card shows which custody holds the stock.',
+      ),
     ).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Registered ingredients & products' })).toBeNull();
     expect(screen.getByText('1 ingredient')).toBeTruthy();
@@ -611,6 +622,16 @@ describe('browse and request-only UI', () => {
           kind: 1,
           unit: 'kg',
           batches: ['batch'],
+          custodyPositions: [
+            {
+              positionId: 'position',
+              batchId: 'batch',
+              warehouseName: 'Warehouse A',
+              distributorName: 'Distributor A',
+              available: '40',
+              orderable: true,
+            },
+          ],
         },
         {
           itemId: 'product',

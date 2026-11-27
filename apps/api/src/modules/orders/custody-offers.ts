@@ -35,6 +35,10 @@ export interface CustodyOffer {
   status:
     'REQUESTED' | 'ACCEPTED' | 'SCHEDULED' | 'REJECTED' | 'DISPATCHED' | 'RECEIVED' | 'EXPIRED';
   pickupAt?: number;
+  /** Arranged by the Distributor with the pickup time. */
+  vehicle?: string;
+  /** Expected warehouse arrival, arranged by the Distributor with the pickup time. */
+  expectedAt?: number;
   dispatchOperationId?: string;
   shipmentId?: string;
   /** Shipment ID the handoff will record, known once pickup is arranged, so the label can be
@@ -117,24 +121,25 @@ export class CustodyOffers {
       !same(offer.ordersAddress, gateway.address)
     )
       return undefined;
+    // A stale offer (reset chain, missing batch) is dropped here, before reads that would throw.
     const registrationBlockHash = await this.registration(offer.kind, offer.batchId);
     if (!registrationBlockHash || !same(registrationBlockHash, offer.registrationBlockHash))
       return undefined;
-    const batch = await gateway.read(
-      offer.kind === 1 ? 'ingredients' : 'products',
-      offer.kind === 1 ? 'getBatch' : 'getProduct',
-      [offer.batchId],
-    );
+    const [batch, fromOwner, toOwner] = await Promise.all([
+      gateway.read(
+        offer.kind === 1 ? 'ingredients' : 'products',
+        offer.kind === 1 ? 'getBatch' : 'getProduct',
+        [offer.batchId],
+      ),
+      gateway.read('orders', 'locationOwner', [offer.fromLocation]),
+      gateway.read('orders', 'locationOwner', [offer.toLocation]),
+    ]);
     if (
       !same(offer.kind === 1 ? batch.supplier : batch.manufacturer, offer.sender) ||
       !same(batch.metadataHash, offer.metadataHash)
     )
       return undefined;
-    if (
-      !same(await gateway.read('orders', 'locationOwner', [offer.fromLocation]), offer.sender) ||
-      !same(await gateway.read('orders', 'locationOwner', [offer.toLocation]), offer.distributor)
-    )
-      return undefined;
+    if (!same(fromOwner, offer.sender) || !same(toOwner, offer.distributor)) return undefined;
     if (offer.shipmentId) {
       const shipment = await gateway.read(
         offer.kind === 1 ? 'delivery' : 'custody',
@@ -186,16 +191,15 @@ export class CustodyOffers {
         'Custody request storage is unavailable.',
         503,
       );
-    const rows = [];
-    for (const record of await this.dependencies.repository.listPrivate('transfers')) {
-      if (
-        record.recordType !== 'custody-offer' ||
-        !record.participants?.some((wallet) => same(wallet, session.address))
-      )
-        continue;
-      const offer = await this.lookup(record.id, session.address);
-      if (offer) rows.push(offer);
-    }
+    const records = (await this.dependencies.repository.listPrivate('transfers')).filter(
+      (record) =>
+        record.recordType === 'custody-offer' &&
+        record.participants?.some((wallet) => same(wallet, session.address)),
+    );
+    // Offers are independent; their chain reads batch through multicall when issued together.
+    const rows = (
+      await Promise.all(records.map((record) => this.lookup(record.id, session.address)))
+    ).filter((offer): offer is CustodyOffer => offer !== undefined);
     return { offers: rows.sort((left, right) => right.createdAt.localeCompare(left.createdAt)) };
   }
   /** Same derivation as the logistics dispatch (orders.service), so a printed label matches. */
@@ -337,7 +341,12 @@ export class CustodyOffers {
   async act(
     sessionId: string | undefined,
     offerId: string,
-    input: { action: 'accept' | 'reject' | 'schedule'; pickupAt?: number },
+    input: {
+      action: 'accept' | 'reject' | 'schedule';
+      pickupAt?: number;
+      vehicle?: string;
+      expectedAt?: number;
+    },
   ) {
     return this.exclusive(offerId, async () => {
       const session = await this.dependencies.session(sessionId),
@@ -368,21 +377,18 @@ export class CustodyOffers {
           'This offer cannot be changed at its current stage.',
         );
       if (input.action !== 'reject') await this.dependencies.proofCheck(sessionId, offer);
-      if (input.action === 'accept') {
-        if (offer.status !== 'REQUESTED')
-          throw new CustodyOfferError(
-            'OFFER_ALREADY_REVIEWED',
-            'This offer has already been reviewed.',
-          );
-        offer.status = 'ACCEPTED';
-        offer.reviewedAt = new Date().toISOString();
-        offer.reviewedBy = session.address;
-      } else if (input.action === 'reject') {
+      if (input.action === 'reject') {
         offer.status = 'REJECTED';
         offer.reviewedAt = new Date().toISOString();
         offer.reviewedBy = session.address;
       } else {
-        if (!['ACCEPTED', 'SCHEDULED'].includes(offer.status))
+        if (input.action === 'accept' && offer.status !== 'REQUESTED')
+          throw new CustodyOfferError(
+            'OFFER_ALREADY_REVIEWED',
+            'This offer has already been reviewed.',
+          );
+        // 'schedule' remains for offers accepted before acceptance carried the pickup time.
+        if (input.action === 'schedule' && !['ACCEPTED', 'SCHEDULED'].includes(offer.status))
           throw new CustodyOfferError('ACCEPT_FIRST', 'Accept this offer before arranging pickup.');
         if (
           !input.pickupAt ||
@@ -394,6 +400,24 @@ export class CustodyOffers {
             'Choose a future pickup before the request expires.',
             400,
           );
+        if (!input.vehicle)
+          throw new CustodyOfferError(
+            'PICKUP_VEHICLE_REQUIRED',
+            'Enter the pickup vehicle registration.',
+            400,
+          );
+        if (!input.expectedAt || input.expectedAt <= input.pickupAt)
+          throw new CustodyOfferError(
+            'INVALID_ARRIVAL_TIME',
+            'Choose an expected warehouse arrival after the pickup time.',
+            400,
+          );
+        offer.vehicle = input.vehicle;
+        offer.expectedAt = input.expectedAt;
+        if (input.action === 'accept') {
+          offer.reviewedAt = new Date().toISOString();
+          offer.reviewedBy = session.address;
+        }
         offer.pickupAt = input.pickupAt;
         offer.pickupArrangedAt = new Date().toISOString();
         offer.status = 'SCHEDULED';
@@ -402,11 +426,7 @@ export class CustodyOffers {
       return { offer };
     });
   }
-  async prepare(
-    sessionId: string | undefined,
-    offerId: string,
-    input: { vehicle: string; occurredAt: number; expectedAt: number },
-  ) {
+  async prepare(sessionId: string | undefined, offerId: string) {
     return this.exclusive(offerId, async () => {
       const session = await this.dependencies.session(sessionId),
         offer = await this.get(sessionId, offerId);
@@ -436,10 +456,28 @@ export class CustodyOffers {
           'The Distributor must accept and schedule pickup before handoff.',
         );
       await this.dependencies.proofCheck(sessionId, offer);
+      // Only the Distributor arranges vehicle and arrival, with the pickup.
+      const { vehicle, expectedAt } = offer;
+      if (!vehicle || !expectedAt)
+        throw new CustodyOfferError(
+          'PICKUP_DETAILS_REQUIRED',
+          'The Distributor must arrange the pickup vehicle and expected warehouse arrival first.',
+          409,
+        );
+      // The handoff is recorded when the sender confirms it.
+      const occurredAt = Math.floor(Date.now() / 1000);
+      if (expectedAt <= occurredAt)
+        throw new CustodyOfferError(
+          'ARRIVAL_TIME_PASSED',
+          'The planned warehouse arrival has passed. Ask the Distributor to update the pickup arrangement.',
+          409,
+        );
       const operationId = offer.dispatchOperationId ?? offer.operationId;
       const shipmentId = this.shipmentIdFor(session.address, operationId);
       const prepared = await this.dependencies.prepare(sessionId, {
-        ...input,
+        vehicle,
+        occurredAt,
+        expectedAt,
         operationId,
         action: offer.kind === 1 ? 'stock-dispatch' : 'product-dispatch',
         batchId: offer.batchId,

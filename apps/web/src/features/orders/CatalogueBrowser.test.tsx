@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { CatalogueBrowser } from './CatalogueBrowser';
 afterEach(() => {
   cleanup();
@@ -295,5 +296,65 @@ describe('Manufacturer requests with Supplier-selected fulfilment', () => {
       }),
     );
     expect(request.mock.calls[0][1]).not.toHaveProperty('positionId');
+  });
+});
+
+describe('Manufacturer custody-only ingredient browsing', () => {
+  const now = Math.floor(Date.now() / 1000);
+  const ingredient = (name: string, expiresAt: number, positions: object[]) => ({
+    itemId: name,
+    batches: ['batch-' + name],
+    name,
+    kind: 1,
+    seller: 'supplier',
+    sellerName: 'Supplier Co',
+    active: true,
+    credentialStatus: 1,
+    unit: 'g',
+    batchDetails: [{ batchId: 'batch-' + name, supplierAvailable: '500', expiresAt }],
+    custodyPositions: positions.map((position) => ({ batchId: 'batch-' + name, ...position })),
+  });
+  const held = {
+    positionId: 'p1',
+    distributor: 'distributor',
+    location: 'warehouse',
+    warehouseName: 'North warehouse',
+    distributorName: 'Bayu Logistics',
+    available: '120',
+    orderable: true,
+  };
+  it('shows only unexpired ingredients in custody, naming the custody that holds them', () => {
+    render(
+      <MemoryRouter>
+        <CatalogueBrowser
+          actor="manufacturer"
+          role="manufacturer"
+          items={[
+            ingredient('Held cocoa', now + 86_400 * 60, [held]),
+            ingredient('Supplier only', now + 86_400 * 60, []),
+            ingredient('Expired in custody', now - 60, [{ ...held, positionId: 'p2' }]),
+            ingredient('Empty custody', now + 86_400 * 60, [
+              { ...held, positionId: 'p3', available: '0' },
+            ]),
+          ]}
+          busy={false}
+          onQuantityRequest={vi.fn()}
+          onEvidenceRequest={vi.fn()}
+          onOpenEvidence={vi.fn()}
+          presentation={{ ...manufacturerPresentation, custodyOnly: true }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Held cocoa')).toBeTruthy();
+    expect(screen.queryByText('Supplier only')).toBeNull();
+    expect(screen.queryByText('Expired in custody')).toBeNull();
+    expect(screen.queryByText('Empty custody')).toBeNull();
+    expect(screen.getByText('North warehouse · Bayu Logistics · 120 g')).toBeTruthy();
+    expect(screen.queryByText('At supplier')).toBeNull();
+    // Laid out like the Supplier's "My ingredients", with a request action on each card.
+    expect(screen.getByText('Ingredients in custody')).toBeTruthy();
+    expect(screen.getByRole('group', { name: 'Ingredient view' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Request quantity' }));
+    expect(screen.getByRole('dialog', { name: /Request quantity — Held cocoa/ })).toBeTruthy();
   });
 });

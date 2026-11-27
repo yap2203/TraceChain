@@ -65,7 +65,7 @@ describe('Manufacturer received evidence review', () => {
     expect(mocks.getEvidenceDetails).toHaveBeenCalledWith('selected');
     expect(mocks.verifyEvidence).not.toHaveBeenCalled();
   });
-  it('shows authorized full-disclosure claims and keeps view, verify and acceptance separate', async () => {
+  it('shows authorized full-disclosure claims and records acceptance only when verify and accept passes', async () => {
     const requestId = `0x${'11'.repeat(32)}`;
     mocks.listProductionIngredients.mockResolvedValue({ batches: [] });
     mocks.listEvidenceRequests.mockResolvedValue({
@@ -124,12 +124,12 @@ describe('Manufacturer received evidence review', () => {
     expect(screen.getByText('May contain soy')).toBeTruthy();
     expect(screen.getByText(/Full disclosure:/)).toBeTruthy();
     expect(screen.getAllByText('Not verified yet').length).toBeGreaterThan(0);
-    expect(screen.getByRole('button', { name: 'Accept evidence' }).hasAttribute('disabled')).toBe(
-      true,
-    );
+    expect(screen.getByRole('button', { name: 'Reject…' })).toBeTruthy();
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Verify evidence' }).at(-1)!);
+    // The review still reports "not verified", so verify-and-accept records nothing.
+    fireEvent.click(screen.getByRole('button', { name: 'Verify and accept' }));
     await waitFor(() => expect(mocks.verifyEvidence).toHaveBeenCalledWith(requestId));
+    expect(await screen.findByText(/Verification did not pass/)).toBeTruthy();
     expect(mocks.prepareEvidenceAcceptance).not.toHaveBeenCalled();
   });
 });

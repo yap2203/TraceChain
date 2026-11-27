@@ -328,7 +328,7 @@ export function OrdersPage({
                   : 'Review requests, arrange delivery and track receipt.'
                 : mode === 'browse'
                   ? role === 'manufacturer'
-                    ? 'Browse supplier ingredients, check stock, or request evidence.'
+                    ? 'Ingredients held in Distributor custody and not expired. Each card shows which custody holds the stock.'
                     : 'Open an item to see its registered details or send a request.'
                   : role === 'supplier'
                     ? evidenceOnly
@@ -405,6 +405,7 @@ export function OrdersPage({
                     supplier: 'At supplier',
                     distributor: 'At distributor',
                   },
+                  custodyOnly: true,
                 }
               : undefined
           }

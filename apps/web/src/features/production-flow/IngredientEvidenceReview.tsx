@@ -2,10 +2,9 @@ import type { ReactNode } from 'react';
 import { ClipboardList, FileCheck, Leaf } from 'lucide-react';
 import { Alert, Badge, TechnicalDetails } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
-import { EvidenceDetailLayout } from '../orders/EvidenceParts';
+import { EvidenceDetailLayout, EvidenceNextStep } from '../orders/EvidenceParts';
 import {
   EvidenceCard,
-  EvidenceOutcome,
   EvidenceSummaryCard,
   INGREDIENT_IDENTIFIER_CLAIMS,
   IdentifierFields,
@@ -40,8 +39,9 @@ export function IngredientEvidenceReview({
   requestFor: ReactNode;
   status: { label: string; variant: BadgeVariant };
   outcome: { tone: OutcomeTone; title: string; message: string };
+  /** The decision (EvidenceDecision), shown in the Next step box like company identity. */
   actions?: ReactNode;
-  /** Shown under the summary card, e.g. the rejection form. */
+  /** Shown under the Next step box. */
   children?: ReactNode;
   howItWorks?: ReactNode;
 }) {
@@ -84,9 +84,14 @@ export function IngredientEvidenceReview({
             <Badge label={verification.label} variant={verification.variant} />
           </>
         }
+      />
+      <EvidenceNextStep
+        tone={outcome.tone === 'done' ? 'done' : outcome.tone === 'closed' ? 'closed' : 'default'}
+        title={outcome.title}
+        message={outcome.message}
       >
-        <EvidenceOutcome {...outcome} action={actions} />
-      </EvidenceSummaryCard>
+        {actions}
+      </EvidenceNextStep>
       {children}
       <EvidenceCard
         icon={FileCheck}

@@ -17,6 +17,7 @@ contract CompanyProofRegistry {
     event Requested(bytes32 indexed requestId, address indexed verifier, address indexed presenter);
     event Responded(bytes32 indexed requestId, bytes32 responseHash, string responseCid);
     event Reviewed(bytes32 indexed requestId, uint8 status);
+    event Rejected(bytes32 indexed requestId, bytes32 reasonHash);
     error InvalidState(); error Unauthorized();
     constructor(IStakeholderRegistry registry) { if (address(registry).code.length == 0) revert InvalidState(); stakeholders = registry; }
     function registerBinding(bytes32 sourceHash, bytes32 contentHash, string calldata cid) external {
@@ -51,6 +52,15 @@ contract CompanyProofRegistry {
         if (declined) { if (p.presenter != msg.sender || p.status != 1) revert Unauthorized(); p.status = 4; }
         else { if (p.verifier != msg.sender || p.status != 2 || p.expiresAt <= block.timestamp) revert Unauthorized(); p.status = 3; }
         emit Reviewed(requestId, p.status);
+    }
+    /// @notice The verifier rejects a shared response (status 5), recording only a hash of its reason.
+    function reject(bytes32 requestId, bytes32 reasonHash) external {
+        Proof storage p = proofs[requestId]; _active(msg.sender);
+        if (p.verifier != msg.sender || p.status != 2) revert Unauthorized();
+        if (reasonHash == bytes32(0)) revert InvalidState();
+        p.status = 5;
+        emit Reviewed(requestId, 5);
+        emit Rejected(requestId, reasonHash);
     }
     function get(bytes32 requestId) external view returns (Proof memory) { return proofs[requestId]; }
 }

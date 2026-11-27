@@ -303,7 +303,8 @@ it('verifies an ingredient-linked company proof only after explicit action and s
       <InformationRequestsWorkspace role="supplier" />
     </MemoryRouter>,
   );
-  const button = await screen.findByRole('button', { name: 'Verify company proof' });
+  const button = await screen.findByRole('button', { name: 'Verify and accept' });
+  expect(screen.getByRole('button', { name: 'Reject…' })).toBeTruthy();
   expect(api.verify).not.toHaveBeenCalled();
   fireEvent.click(button);
   expect(await screen.findByText(/Signature and holder checks passed/)).toBeTruthy();

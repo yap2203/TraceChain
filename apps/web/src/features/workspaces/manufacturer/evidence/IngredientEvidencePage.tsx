@@ -13,6 +13,7 @@ import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { FileCheck } from 'lucide-react';
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import {
+  EvidenceDecision,
   EvidenceHowItWorks,
   ingredientEvidenceStatus,
   DeadlineCell,
@@ -94,8 +95,6 @@ export function IngredientEvidence({
       active = false;
     };
   }, [hideComposer, requestId]);
-  const [rejectReason, setRejectReason] = useState('');
-  const [rejecting, setRejecting] = useState(false);
   // Display only: ingredient names for batch IDs.
   const catalogue = useOverviewSource(loadCatalogue, 'Ingredient names could not be loaded.');
   const [claimChoices, setClaimChoices] = useState<
@@ -174,32 +173,23 @@ export function IngredientEvidence({
     }
   };
 
-  const accept = async (requestId: string) => {
-    setBusy(requestId);
-    setError('');
-    setNotice('');
-    try {
-      await completePreparedWorkflow(() => prepareEvidenceAcceptance(requestId));
-      setNotice('The cryptographically verified evidence is accepted for this Manufacturer.');
-      await load();
-    } catch (cause) {
-      setError(reportError(cause, 'Evidence acceptance failed.'));
-    } finally {
-      setBusy('');
-    }
-  };
-
-  const verify = async (requestId: string) => {
-    setBusy(requestId);
+  // Same as company identity: verifying and accepting is one step; acceptance is recorded only
+  // when every check passes.
+  const verifyAndAccept = async (requestId: string) => {
+    setBusy('accept');
     setError('');
     setNotice('');
     try {
       const result = await verifyEvidence(requestId);
       setVerified((current) => ({ ...current, [requestId]: result.verifiedAt }));
-      setReview(await reviewEvidence(requestId));
-      setNotice(
-        'The presentation and credential checks passed. Review the result before separately accepting it.',
-      );
+      const checked = await reviewEvidence(requestId);
+      setReview(checked);
+      if (checked.verification.state !== 'PASSED')
+        throw new Error('Verification did not pass, so the evidence was not accepted.');
+      await completePreparedWorkflow(() => prepareEvidenceAcceptance(requestId));
+      setNotice('Evidence verified and accepted.');
+      setReview(undefined);
+      await load();
     } catch (cause) {
       setError(reportError(cause, 'Evidence verification failed.'));
     } finally {
@@ -219,14 +209,14 @@ export function IngredientEvidence({
     }
   };
 
-  const reject = async () => {
+  const reject = async (rejectReason: string) => {
     if (!review) return;
     const invalid = textError(rejectReason, 'Rejection reason', 500);
     if (invalid) {
       setError(invalid);
       return;
     }
-    setBusy(`reject:${review.requestId}`);
+    setBusy('reject');
     setError('');
     try {
       await completePreparedWorkflow(() =>
@@ -234,7 +224,6 @@ export function IngredientEvidence({
       );
       setNotice('The received evidence was rejected on chain.');
       setReview(undefined);
-      setRejectReason('');
       await load();
     } catch (cause) {
       setError(reportError(cause, 'Evidence rejection failed.'));
@@ -256,7 +245,6 @@ export function IngredientEvidence({
     const item = nameFor(review.batchId);
     const ingredient =
       (review.sharedClaims.ingredientName as string | undefined) ?? item?.name ?? 'Ingredient';
-    const passed = review.verification.state === 'PASSED';
     const status = ingredientEvidenceStatus(review.status);
     const outcome =
       review.status === 3
@@ -271,17 +259,11 @@ export function IngredientEvidence({
               title: `Request ${status.label.toLowerCase()}`,
               message: 'This request is closed. No further action is possible.',
             }
-          : passed
-            ? {
-                tone: 'action' as const,
-                title: 'Evidence verified',
-                message: 'Verification passed. Accept the evidence, or reject it with a reason.',
-              }
-            : {
-                tone: 'waiting' as const,
-                title: 'Evidence shared, not verified yet',
-                message: 'Verify the shared values before you accept them.',
-              };
+          : {
+              tone: 'action' as const,
+              title: 'Evidence shared',
+              message: 'Verify and accept the evidence, or reject it with a reason.',
+            };
     return (
       <div className="information-requests-page is-detail">
         <BackNavigation onClick={() => setReview(undefined)}>Ingredient evidence</BackNavigation>
@@ -304,66 +286,25 @@ export function IngredientEvidence({
           outcome={outcome}
           actions={
             review.status === 2 && (
-              <>
-                {passed ? (
-                  <Btn
-                    variant="outline"
-                    disabled={Boolean(busy)}
-                    onClick={() => setRejecting(true)}
-                  >
-                    Reject…
-                  </Btn>
-                ) : null}
-                <Btn
-                  variant={passed ? 'outline' : 'primary'}
-                  disabled={Boolean(busy)}
-                  onClick={() => void verify(review.requestId)}
-                >
-                  {busy === review.requestId ? 'Verifying…' : 'Verify evidence'}
-                </Btn>
-                <Btn
-                  disabled={!passed || Boolean(busy)}
-                  onClick={() => void accept(review.requestId)}
-                >
-                  Accept evidence
-                </Btn>
-              </>
+              <EvidenceDecision
+                busy={busy}
+                recipient="the Supplier"
+                onAccept={() => void verifyAndAccept(review.requestId)}
+                onReject={(reason) => void reject(reason)}
+              />
             )
           }
           howItWorks={
             <EvidenceHowItWorks>
               <p>
-                Verifying checks the Supplier&apos;s signature, that the proof belongs to this
-                request and recipient, and the credential&apos;s current on-chain status. Accepting
-                is a separate on-chain step, so you can verify first and decide later.
+                Verify and accept checks the Supplier&apos;s signature, that the proof belongs to
+                this request and recipient, and the credential&apos;s current on-chain status, then
+                records the acceptance with one MetaMask transaction. Nothing is recorded if a check
+                fails.
               </p>
             </EvidenceHowItWorks>
           }
-        >
-          {rejecting && review.status === 2 && (
-            <div className="evidence-request-form">
-              <Input
-                label="Rejection reason"
-                maxLength={500}
-                value={rejectReason}
-                onChange={setRejectReason}
-                placeholder="Tell the Supplier why the evidence is rejected"
-              />
-              <div className="evidence-actions">
-                <Btn variant="outline" onClick={() => setRejecting(false)}>
-                  Cancel
-                </Btn>
-                <Btn
-                  variant="danger"
-                  disabled={!rejectReason.trim() || Boolean(busy)}
-                  onClick={() => void reject()}
-                >
-                  Reject evidence
-                </Btn>
-              </div>
-            </div>
-          )}
-        </IngredientEvidenceReview>
+        />
       </div>
     );
   }
@@ -483,6 +424,7 @@ export function IngredientEvidence({
                   !Object.values(claimChoices).some((value) => value !== 'none') ||
                   Boolean(busy)
                 }
+                loading={busy === 'request'}
                 onClick={() => void requestEvidence()}
               >
                 {busy === 'request' ? 'Confirming…' : 'Request evidence with MetaMask'}
@@ -534,6 +476,12 @@ export function IngredientEvidence({
                     <tr
                       key={request.requestId}
                       className={request.status === 2 ? 'is-actionable' : undefined}
+                      // Like the Supplier's list, the whole row opens the evidence once there is any.
+                      onClick={
+                        request.status >= 2 && !busy
+                          ? () => void view(request.requestId)
+                          : undefined
+                      }
                     >
                       <td>
                         <strong>{request.supplierName ?? 'Verified Supplier'}</strong>
@@ -562,8 +510,12 @@ export function IngredientEvidence({
                           <Btn
                             size="xs"
                             variant={request.status === 2 ? 'primary' : 'outline'}
+                            loading={busy === `view:${request.requestId}`}
                             disabled={Boolean(busy)}
-                            onClick={() => void view(request.requestId)}
+                            onClick={(event) => {
+                              event?.stopPropagation();
+                              void view(request.requestId);
+                            }}
                           >
                             {busy === `view:${request.requestId}` ? 'Loading…' : 'View evidence'}
                           </Btn>

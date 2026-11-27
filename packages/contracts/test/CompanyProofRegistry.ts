@@ -145,10 +145,38 @@ describe('Company proof shared references', () => {
       );
     await f.proofs.connect(f.manufacturer).review(request, true);
     expect((await f.proofs.get(request)).status).to.equal(4);
+    // A requested proof cannot be rejected before a response exists.
+    await expect(f.proofs.connect(f.supplier).reject(request, ethers.id('reason'))).to.revert(
+      ethers,
+    );
     await expect(
       f.proofs
         .connect(f.manufacturer)
         .respond(request, ethers.id('challenge'), ethers.id('response'), 'ipfs:response'),
     ).to.revert(ethers);
+  });
+  it('lets only the verifier reject a shared response, with a reason hash', async () => {
+    const f = await networkHelpers.loadFixture(fixture);
+    const request = ethers.id('reject');
+    await f.proofs
+      .connect(f.supplier)
+      .request(
+        request,
+        f.manufacturer.address,
+        ethers.id('challenge'),
+        f.expiry,
+        ethers.id('request'),
+        'ipfs:request',
+      );
+    await f.proofs
+      .connect(f.manufacturer)
+      .respond(request, ethers.id('challenge'), ethers.id('response'), 'ipfs:response');
+    await expect(f.proofs.connect(f.manufacturer).reject(request, ethers.id('reason'))).to.revert(
+      ethers,
+    );
+    await expect(f.proofs.connect(f.supplier).reject(request, ethers.ZeroHash)).to.revert(ethers);
+    await f.proofs.connect(f.supplier).reject(request, ethers.id('reason'));
+    expect((await f.proofs.get(request)).status).to.equal(5);
+    await expect(f.proofs.connect(f.supplier).review(request, false)).to.revert(ethers);
   });
 });

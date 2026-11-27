@@ -167,6 +167,13 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     action((service, session) => service.informationRequests(session)),
   );
   const wallet = z.string().regex(/^0x[0-9a-fA-F]{40}$/);
+  const vehicleRegistration = z
+    .string()
+    .trim()
+    .toUpperCase()
+    .min(2)
+    .max(32)
+    .regex(/^(?=.*[A-Z0-9])[A-Z0-9 -]+$/);
   router.get(
     '/custody-offers',
     action((service, session) => service.listCustodyOffers(session)),
@@ -208,6 +215,8 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
           .object({
             action: z.enum(['accept', 'reject', 'schedule']),
             pickupAt: z.number().int().positive().optional(),
+            vehicle: vehicleRegistration.optional(),
+            expectedAt: z.number().int().positive().optional(),
           })
           .strict()
           .parse(request.body),
@@ -216,26 +225,14 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
   );
   router.post(
     '/custody-offers/:offerId/prepare',
-    action((service, session, request) =>
-      service.prepareCustodyOffer(
-        session,
-        hash.parse(request.params.offerId),
-        z
-          .object({
-            vehicle: z
-              .string()
-              .trim()
-              .toUpperCase()
-              .min(2)
-              .max(32)
-              .regex(/^(?=.*[A-Z0-9])[A-Z0-9 -]+$/),
-            occurredAt: z.number().int().positive(),
-            expectedAt: z.number().int().positive(),
-          })
-          .strict()
-          .parse(request.body),
-      ),
-    ),
+    action((service, session, request) => {
+      // The sender only confirms: the Distributor arranged vehicle and arrival with the pickup,
+      // and the server records the handoff time. Any submitted values are refused.
+      z.object({})
+        .strict()
+        .parse(request.body ?? {});
+      return service.prepareCustodyOffer(session, hash.parse(request.params.offerId));
+    }),
   );
   router.get(
     '/branding/me',
@@ -374,6 +371,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       .object({ action: z.literal('present'), presentation: z.string().min(100).max(300000) })
       .strict(),
     z.object({ action: z.enum(['material', 'verify', 'decline', 'status']) }).strict(),
+    z.object({ action: z.literal('reject'), reason: z.string().trim().min(1).max(500) }).strict(),
   ]);
   router.post(
     '/:orderId/delivery/identity',

@@ -1,28 +1,34 @@
 import { Copy, LockKeyhole } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 
 export function ClaimRow({
   label,
   value,
   requirement,
+  requirementLabel,
   included,
   locked = false,
   technical = false,
   onToggle,
 }: {
   label: string;
-  value: string;
+  /** Text, or richer content such as a certification or a document preview. */
+  value: ReactNode;
   requirement: 'required' | 'optional' | 'always';
+  /** Overrides the tag text, e.g. "Choose one" for a row in a required group. */
+  requirementLabel?: string;
   included: boolean;
   locked?: boolean;
   technical?: boolean;
   onToggle?: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-  const displayValue = technical ? shortenTechnicalValue(value) : value;
+  // Only plain technical text is shortened and copyable.
+  const text = technical && typeof value === 'string' ? value : undefined;
+  const displayValue = text ? shortenTechnicalValue(text) : value;
 
   const copyValue = async () => {
-    await navigator.clipboard?.writeText(value);
+    await navigator.clipboard?.writeText(text ?? '');
     setCopied(true);
   };
 
@@ -34,12 +40,12 @@ export function ClaimRow({
           <span
             className={`evidence-claim-row__requirement is-${requirement === 'always' ? 'required' : requirement}`}
           >
-            {requirement === 'optional' ? 'Optional' : 'Required'}
+            {requirementLabel ?? (requirement === 'optional' ? 'Optional' : 'Required')}
           </span>
         </div>
-        <span className="evidence-claim-row__value" title={technical ? value : undefined}>
+        <div className="evidence-claim-row__value" title={text}>
           {displayValue}
-          {technical && (
+          {text && (
             <button
               type="button"
               className="evidence-claim-row__copy"
@@ -50,7 +56,7 @@ export function ClaimRow({
               <Copy size={13} aria-hidden="true" />
             </button>
           )}
-        </span>
+        </div>
       </div>
       <div className="evidence-claim-row__control">
         <button

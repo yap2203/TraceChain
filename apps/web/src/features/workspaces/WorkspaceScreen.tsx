@@ -129,6 +129,7 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
         }
         initialView="shipments"
         initialShipmentId={params.get('shipmentId') ?? ''}
+        initialOfferId={params.get('offerId') ?? ''}
         initialOrderId={params.get('orderId') ?? ''}
         initialBatchId={params.get('batchId') ?? ''}
       />

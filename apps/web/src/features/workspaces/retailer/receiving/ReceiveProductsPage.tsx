@@ -1,3 +1,4 @@
+import { shipmentStatusVariant } from '../../shared/shipment-status';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { PackageCheck, QrCode } from 'lucide-react';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
@@ -40,7 +41,10 @@ export function ReceiveProductList({
                 <TD>{t.quantity}</TD>
                 <TD muted>{chainDate(t.dispatchedAt)}</TD>
                 <TD>
-                  <Badge label={transferStatuses[t.status]} variant="transfer-pending" />
+                  <Badge
+                    label={transferStatuses[t.status]}
+                    variant={shipmentStatusVariant(transferStatuses[t.status] ?? 'Unknown')}
+                  />
                 </TD>
                 <TD>
                   <div className="action-row">

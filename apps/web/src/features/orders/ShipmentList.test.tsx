@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { ShipmentList } from './ShipmentList';
+import { shipmentStatusVariant } from '../workspaces/shared/shipment-status';
 
 afterEach(cleanup);
 
@@ -59,4 +60,43 @@ it('counts a received custody shipment as completed', () => {
   );
   expect(document.querySelector('.shipment-card.is-completed')).toBeTruthy();
   expect(screen.getByText('No action required')).toBeTruthy();
+});
+
+it('lists arranged pickups as "Waiting for pickup" and filters them', () => {
+  const pickup = { ...shipment(2), status: undefined, vehicle: '', pickupOfferId: 'offer' };
+  render(
+    <ShipmentList
+      shipments={[pickup, shipment(1)] as never}
+      catalogue={[]}
+      locationName={() => 'Warehouse A'}
+      statusLabel={(entry) => (entry.pickupOfferId ? 'Waiting for pickup' : 'In transit')}
+      onOpen={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('2 shipments')).toBeTruthy();
+  fireEvent.click(screen.getAllByRole('button', { name: /Waiting for pickup/ })[0]!);
+  expect(screen.getByText('1 shipment')).toBeTruthy();
+  expect(screen.getByText('Item 2')).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'View pickup' })).toBeTruthy();
+  expect(screen.getByText(/prints the label and confirms the handoff/)).toBeTruthy();
+});
+
+it('colours shipment statuses by the shared meaning of each colour', () => {
+  const colour = (label: string) => shipmentStatusVariant(label);
+  // amber waiting / needs action
+  expect(colour('Awaiting Distributor review')).toBe('pending');
+  expect(colour('Waiting for pickup')).toBe('pending');
+  // purple moving
+  expect(colour('In transit')).toBe('moving');
+  expect(colour('Dispatched')).toBe('moving');
+  expect(colour('Sent to manufacturer')).toBe('moving');
+  // teal ready to check
+  expect(colour('Awaiting receipt')).toBe('shared');
+  expect(colour('Awaiting Receipt')).toBe('shared');
+  // green done, red failed, grey void
+  expect(colour('Received')).toBe('verified');
+  expect(colour('Received by manufacturer')).toBe('verified');
+  expect(colour('Rejected — return pending')).toBe('rejected');
+  expect(colour('Discrepancy')).toBe('rejected');
+  expect(colour('Cancelled')).toBe('expired');
 });

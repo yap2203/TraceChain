@@ -28,6 +28,7 @@ import { CompanyIdentityProofAction } from '../production-flow/CompanyIdentityPr
 import {
   getCompanyIdentityProofStatus,
   listEvidenceRequests,
+  rejectCompanyIdentityProof,
   requestCompanyIdentityProof,
   verifyCompanyIdentityProof,
   type CompanyIdentityProofStatus,
@@ -48,6 +49,7 @@ import {
 } from '../workspaces/shared/ui';
 import { CompanyAvatar } from './CatalogueMedia';
 import {
+  EvidenceDecision,
   EvidenceDetailLayout,
   EvidenceNextStep,
   SharedClaims,
@@ -547,7 +549,24 @@ function contextLabel(context: CompanyProofRequestRow['context']) {
 function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: WorkspaceRole }) {
   const [status, setStatus] = useState<CompanyIdentityProofStatus>(),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState('');
+  // Same decision as ingredient evidence: verify and accept in one step, or reject with a reason.
+  const decide = (key: 'accept' | 'reject', reason = '') => {
+    setBusy(key);
+    setError('');
+    void (
+      key === 'accept'
+        ? verifyCompanyIdentityProof(row.requestId)
+        : rejectCompanyIdentityProof(row.requestId, reason)
+    )
+      .then(async (result) => {
+        if (result.transaction && result.actorWallet)
+          await submitProductionTransaction(result.transaction, result.actorWallet);
+        setStatus({ ...result, ...(await getCompanyIdentityProofStatus(row.requestId)) });
+      })
+      .catch((cause) => setError(reportError(cause, 'Company evidence could not be updated.')))
+      .finally(() => setBusy(''));
+  };
   useEffect(() => {
     void getCompanyIdentityProofStatus(row.requestId)
       .then(setStatus)
@@ -561,47 +580,20 @@ function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: 
       </>
     );
   const current = status?.status ?? row.status;
-  const canVerify = ['PRESENTED', 'VERIFIED'].includes(current);
+  const outcome = companyOutcome(current, row.company);
   return (
     <div className="evidence-panel">
       {error && <Alert type="error" message={error} />}
-      <EvidenceNextStep
-        tone={current === 'VERIFIED' ? 'done' : canVerify ? 'default' : 'closed'}
-        message={
-          current === 'VERIFIED'
-            ? 'Verified. Nothing else to do.'
-            : canVerify
-              ? `${row.company} shared their details. Verify them to continue.`
-              : isClosed(current)
-                ? 'This request has closed.'
-                : `Waiting for ${row.company} to respond.`
-        }
-        action={
-          canVerify &&
-          current !== 'VERIFIED' && (
-            <Btn
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                setError('');
-                void verifyCompanyIdentityProof(row.requestId)
-                  .then(async (result) => {
-                    if (result.transaction && result.actorWallet)
-                      await submitProductionTransaction(result.transaction, result.actorWallet);
-                    setStatus({
-                      ...result,
-                      ...(await getCompanyIdentityProofStatus(row.requestId)),
-                    });
-                  })
-                  .catch((error) => setError(error.message))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              {busy ? 'Verifying…' : 'Verify company identity'}
-            </Btn>
-          )
-        }
-      />
+      <EvidenceNextStep tone={outcome.tone} title={outcome.title} message={outcome.message}>
+        {current === 'PRESENTED' && (
+          <EvidenceDecision
+            busy={busy}
+            recipient={row.company}
+            onAccept={() => decide('accept')}
+            onReject={(reason) => decide('reject', reason)}
+          />
+        )}
+      </EvidenceNextStep>
       {status?.credential && (
         <SharedClaims
           values={status.credential as Record<string, unknown>}
@@ -726,7 +718,7 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
   const [deadline, setDeadline] = useState('');
   const [status, setStatus] = useState<CompanyIdentityProofStatus>(),
     [error, setError] = useState(''),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState('');
   useEffect(() => {
     let active = true;
     void getCompanyIdentityProofStatus(requestId)
@@ -740,26 +732,29 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
       active = false;
     };
   }, [requestId]);
-  const run = async (verify: boolean) => {
-    setBusy(true);
+  const run = async (action: 'accept' | 'reject' | 'request', reason = '') => {
+    setBusy(action);
     setError('');
     try {
       const normalized = normalizeCompanyRequestFields(required, optional);
-      const result = verify
-        ? await verifyCompanyIdentityProof(requestId)
-        : await requestCompanyIdentityProof(requestId, {
-            purpose,
-            requiredClaims: normalized.required,
-            optionalClaims: normalized.optional,
-            ...(deadline ? { expiresAt: Math.floor(Date.parse(deadline) / 1000) } : {}),
-          });
+      const result =
+        action === 'accept'
+          ? await verifyCompanyIdentityProof(requestId)
+          : action === 'reject'
+            ? await rejectCompanyIdentityProof(requestId, reason)
+            : await requestCompanyIdentityProof(requestId, {
+                purpose,
+                requiredClaims: normalized.required,
+                optionalClaims: normalized.optional,
+                ...(deadline ? { expiresAt: Math.floor(Date.parse(deadline) / 1000) } : {}),
+              });
       if (result.transaction && result.actorWallet)
         await submitProductionTransaction(result.transaction, result.actorWallet);
       setStatus({ ...result, ...(await getCompanyIdentityProofStatus(requestId)) });
     } catch (cause) {
       setError(reportError(cause, 'Company proof action failed.'));
     } finally {
-      setBusy(false);
+      setBusy('');
     }
   };
   if (!status)
@@ -771,29 +766,27 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
     );
   if (role !== 'supplier') return <CompanyIdentityProofAction requestId={requestId} role={role} />;
   const canRequest = ['NOT_REQUESTED', 'EXPIRED'].includes(status.status);
-  const canVerify = status.status === 'PRESENTED';
+  const outcome = canRequest
+    ? {
+        tone: 'default' as const,
+        title: 'Not requested',
+        message:
+          'Ask the requesting company to prove its identity before you share ingredient evidence.',
+      }
+    : companyOutcome(status.status, 'The company', status.verifiedAt);
   return (
     <div className="evidence-panel">
       {error && <Alert type="error" message={error} />}
-      <EvidenceNextStep
-        tone={status.status === 'VERIFIED' ? 'done' : 'default'}
-        message={
-          canRequest
-            ? 'Ask the requesting company to prove its identity before you share ingredient evidence.'
-            : canVerify
-              ? 'The company shared its details. Verify them to continue.'
-              : status.status === 'VERIFIED'
-                ? `Verified${status.verifiedAt ? ` on ${new Date(status.verifiedAt).toLocaleString()}` : ''}. Nothing else to do.`
-                : 'Waiting for the company to respond.'
-        }
-        action={
-          canVerify && (
-            <Btn disabled={busy} onClick={() => void run(true)}>
-              Verify company proof
-            </Btn>
-          )
-        }
-      />
+      <EvidenceNextStep tone={outcome.tone} title={outcome.title} message={outcome.message}>
+        {status.status === 'PRESENTED' && (
+          <EvidenceDecision
+            busy={busy}
+            recipient="the requesting company"
+            onAccept={() => void run('accept')}
+            onReject={(reason) => void run('reject', reason)}
+          />
+        )}
+      </EvidenceNextStep>
       {canRequest && (
         <div className="evidence-request-form">
           <CompanyRequestFields
@@ -807,8 +800,12 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
           <Input label="Purpose" value={purpose} onChange={setPurpose} maxLength={500} />
           <Input label="Deadline" type="datetime-local" value={deadline} onChange={setDeadline} />
           <div className="company-evidence-card__footer">
-            <Btn disabled={busy || !purpose.trim()} onClick={() => void run(false)}>
-              Request company proof
+            <Btn
+              loading={busy === 'request'}
+              disabled={!purpose.trim() || Boolean(busy)}
+              onClick={() => void run('request')}
+            >
+              {busy === 'request' ? 'Requesting…' : 'Request company proof'}
             </Btn>
           </div>
         </div>
@@ -818,4 +815,39 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
       ) : null}
     </div>
   );
+}
+
+/** Requester-side outcome of a company identity request, worded like ingredient evidence. */
+function companyOutcome(status: string, company: string, verifiedAt?: string) {
+  if (status === 'VERIFIED')
+    return {
+      tone: 'done' as const,
+      title: 'Evidence verified and accepted',
+      message: verifiedAt
+        ? `Accepted on ${new Date(verifiedAt).toLocaleString()}. No further action is required.`
+        : 'No further action is required.',
+    };
+  if (status === 'PRESENTED' || status === 'SHARED')
+    return {
+      tone: 'default' as const,
+      title: 'Evidence shared',
+      message: 'Verify and accept the evidence, or reject it with a reason.',
+    };
+  if (status === 'REJECTED')
+    return {
+      tone: 'closed' as const,
+      title: 'Evidence rejected',
+      message: 'You rejected this evidence. No further action is possible.',
+    };
+  if (isClosed(status))
+    return {
+      tone: 'closed' as const,
+      title: `Request ${proofStatusLabel(status).toLowerCase()}`,
+      message: 'This request is closed. No further action is possible.',
+    };
+  return {
+    tone: 'default' as const,
+    title: 'Awaiting response',
+    message: `Waiting for ${company} to respond.`,
+  };
 }

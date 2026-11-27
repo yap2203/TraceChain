@@ -11,7 +11,7 @@
     "test": "hardhat test",
     "typecheck": "tsc --noEmit",
     "dev:seed-custody-transfer": "tsx scripts/seed-custody-transfer.ts",
-    "deploy:sepolia": "hardhat ignition deploy ignition/modules/TraceChain.ts --network sepolia --deployment-id tracechain-sepolia-storage-v2",
+    "deploy:sepolia": "hardhat ignition deploy ignition/modules/TraceChain.ts --network sepolia --deployment-id tracechain-sepolia-v3",
     "postdeploy:sepolia": "tsx scripts/configure-sepolia.ts",
     "configure:sepolia": "tsx scripts/configure-sepolia.ts"
   },

@@ -129,6 +129,10 @@ export class OrdersService {
         // The 5-minute presentation is verified cryptographically once; later custody steps use
         // the recorded outcome. Callers already require live on-chain authorization of both parties.
         const proof = await this.flow.companyIdentityProofOutcome(requestId, offer.distributor);
+        // Business rule: an expired, unverified request no longer gates the offer; the
+        // Distributor may request again or decide without it.
+        if (proof.status !== 'VERIFIED' && workflow.identityProof.expiresAt <= Date.now() / 1000)
+          return;
         if (proof.status !== 'VERIFIED' || !same(proof.presenterWallet ?? '', offer.sender))
           throw new OrdersError(
             'COMPANY_PROOF_REQUIRED',
@@ -137,18 +141,24 @@ export class OrdersService {
       },
     }));
   }
-  private async offerView(offer: CustodyOffer) {
+  private async offerBatchSummary(offer: CustodyOffer) {
     const batch = await this.gateway.read(
       offer.kind === 1 ? 'ingredients' : 'products',
       offer.kind === 1 ? 'getBatch' : 'getProduct',
       [offer.batchId],
     );
-    const summary = await this.discoverBatch(offer.kind, offer.batchId, batch);
-    const identities = (await this.directory?.resolveMany([offer.sender, offer.distributor])) ?? [];
+    return this.discoverBatch(offer.kind, offer.batchId, batch);
+  }
+  private async offerView(offer: CustodyOffer) {
+    const [summary, resolved, events] = await Promise.all([
+      this.offerBatchSummary(offer),
+      this.directory?.resolveMany([offer.sender, offer.distributor]),
+      this.gateway.events('orders', 'LocationRegistered'),
+    ]);
+    const identities = resolved ?? [];
     const name = (wallet: string) =>
       identities.find((identity) => same(identity.walletAddress, wallet))?.companyName ??
       'Company name unavailable';
-    const events = await this.gateway.events('orders', 'LocationRegistered');
     const locationName = async (location: string, owner: string) => {
       const alias = await this.locationAlias(location, owner);
       if (alias) return alias;
@@ -166,24 +176,31 @@ export class OrdersService {
       }
       return 'Location name unavailable';
     };
+    const [fromLocationName, fromLocationAddress, toLocationName, toLocationAddress] =
+      await Promise.all([
+        locationName(offer.fromLocation, offer.sender),
+        this.locationAddress(
+          offer.fromLocation,
+          offer.sender,
+          events.find((e) => same(e.location, offer.fromLocation))?.detailsHash,
+        ),
+        locationName(offer.toLocation, offer.distributor),
+        this.locationAddress(
+          offer.toLocation,
+          offer.distributor,
+          events.find((e) => same(e.location, offer.toLocation))?.detailsHash,
+        ),
+      ]);
     return {
       ...offer,
       itemName: summary.name ?? 'Registered batch',
       batchReference: summary.batchReference,
       senderName: name(offer.sender),
       distributorName: name(offer.distributor),
-      fromLocationName: await locationName(offer.fromLocation, offer.sender),
-      fromLocationAddress: await this.locationAddress(
-        offer.fromLocation,
-        offer.sender,
-        events.find((e) => same(e.location, offer.fromLocation))?.detailsHash,
-      ),
-      toLocationName: await locationName(offer.toLocation, offer.distributor),
-      toLocationAddress: await this.locationAddress(
-        offer.toLocation,
-        offer.distributor,
-        events.find((e) => same(e.location, offer.toLocation))?.detailsHash,
-      ),
+      fromLocationName,
+      fromLocationAddress,
+      toLocationName,
+      toLocationAddress,
     };
   }
   async listCustodyOffers(sessionId?: string) {
@@ -208,12 +225,8 @@ export class OrdersService {
     const result = await this.offers().act(sessionId, offerId, input);
     return { offer: await this.offerView(result.offer) };
   }
-  async prepareCustodyOffer(
-    sessionId: string | undefined,
-    offerId: string,
-    input: Parameters<CustodyOffers['prepare']>[2],
-  ) {
-    return this.offers().prepare(sessionId, offerId, input);
+  async prepareCustodyOffer(sessionId: string | undefined, offerId: string) {
+    return this.offers().prepare(sessionId, offerId);
   }
   private requireResourceOwner(owner: string | undefined, actor: string) {
     if (!owner || !same(owner, actor))
@@ -231,99 +244,110 @@ export class OrdersService {
         'The company proof request service is unavailable.',
         503,
       );
-    const rows: ChainRecord[] = [];
-    const sharedRecords = (await this.flow.listSharedCompanyRequests?.(sessionId)) ?? [];
+    const flow = this.flow;
+    const sharedRecords = (await flow.listSharedCompanyRequests?.(sessionId)) ?? [];
+    // Shared records were just loaded and hash-checked against the registry; reloading them
+    // for their status repeated the same chain read, IPFS fetch and decryption.
+    const sharedIds = new Set(sharedRecords.map((record) => record.requestId));
     const localRecords = await this.repository.listEvidence().catch((error) => {
       if (!sharedRecords.length) throw error;
       return [];
     });
     const records = new Map(localRecords.map((record) => [record.requestId, record]));
     for (const record of sharedRecords) records.set(record.requestId, record);
-    for (const record of records.values()) {
-      if (
-        !record.identityProof ||
-        (!same(record.requester, session.address) && !same(record.supplier, session.address))
-      )
-        continue;
-      const counterparty = same(record.requester, session.address)
-        ? record.supplier
-        : record.requester;
-      let status: string =
-        record.identityProof.expiresAt <= Date.now() / 1000
-          ? 'EXPIRED'
-          : record.identityProof.status;
-      try {
-        if (!record.deliveryOrderId) {
-          const context = await this.gateway.read(
-            record.orderContext ? 'orders' : 'evidence',
-            record.orderContext ? 'getOrder' : 'getRequest',
-            [record.requestId],
-          );
-          if (
-            !same(record.requester, record.orderContext ? context.buyer : context.requester) ||
-            !same(record.supplier, record.orderContext ? context.seller : context.supplier)
-          )
-            throw new OrdersError(
-              'PROOF_CONTEXT_UNAVAILABLE',
-              'The original company proof context is no longer available.',
-              404,
-            );
-        }
-        // Recorded outcome: re-verifying the short-lived presentation would mark verified rows unavailable.
-        const current = await this.flow.companyIdentityProofOutcome(
-          record.requestId,
-          session.address,
-        );
-        status =
+    // Rows are independent; chain reads batch through multicall when issued together.
+    const rows = await Promise.all(
+      [...records.values()].map(async (record): Promise<ChainRecord | undefined> => {
+        if (
+          !record.identityProof ||
+          (!same(record.requester, session.address) && !same(record.supplier, session.address))
+        )
+          return undefined;
+        const counterparty = same(record.requester, session.address)
+          ? record.supplier
+          : record.requester;
+        let status: string =
           record.identityProof.expiresAt <= Date.now() / 1000
             ? 'EXPIRED'
-            : (current.status ?? 'REQUESTED');
-      } catch (cause) {
-        if (
-          !(cause instanceof Error) ||
-          !('status' in cause) ||
-          ![403, 404, 409].includes(Number(cause.status))
-        )
-          throw cause;
-        status = 'UNAVAILABLE';
-      }
-      const company = await this.directory?.resolve(counterparty);
-      const offer = record.deliveryOrderId
-        ? await this.offers().lookup(record.deliveryOrderId, session.address)
-        : undefined;
-      rows.push({
-        sharedReference: record.sharedIdentity === true,
-        requestId: record.requestId,
-        referenceId: record.deliveryOrderId ?? record.requestId,
-        context: record.deliveryOrderId
-          ? offer
-            ? 'custody'
-            : 'delivery'
-          : record.orderContext
-            ? 'order'
-            : 'ingredient',
-        // Display context only; every value here is already visible to both participants.
-        counterpartyWallet: counterparty,
-        counterpartyRole: company?.role,
-        subject: offer
-          ? `${(await this.offerView(offer)).itemName} · ${offer.quantity} ${offer.unit}`
-          : undefined,
-        requiredClaims: record.identityProof.requiredClaims ?? [],
-        optionalClaims: record.identityProof.optionalClaims ?? [],
-        verifiedAt: record.identityProof.verifiedAt,
-        direction: same(record.requester, session.address) ? 'received' : 'sent',
-        company: company?.companyName ?? counterparty,
-        purpose: record.identityProof.purpose,
-        requestedFieldsCount: new Set([
-          ...(record.identityProof.requiredClaims ?? []),
-          ...(record.identityProof.optionalClaims ?? []),
-        ]).size,
-        requiredFieldsCount: new Set(record.identityProof.requiredClaims ?? []).size,
-        expiresAt: record.identityProof.expiresAt,
-        status,
-      });
-    }
-    return { requests: rows, actor: session.address };
+            : record.identityProof.status;
+        try {
+          if (!record.deliveryOrderId) {
+            const context = await this.gateway.read(
+              record.orderContext ? 'orders' : 'evidence',
+              record.orderContext ? 'getOrder' : 'getRequest',
+              [record.requestId],
+            );
+            if (
+              !same(record.requester, record.orderContext ? context.buyer : context.requester) ||
+              !same(record.supplier, record.orderContext ? context.seller : context.supplier)
+            )
+              throw new OrdersError(
+                'PROOF_CONTEXT_UNAVAILABLE',
+                'The original company proof context is no longer available.',
+                404,
+              );
+          }
+          // Recorded outcome: re-verifying the short-lived presentation would mark verified rows unavailable.
+          const current = sharedIds.has(record.requestId)
+            ? { status: record.identityProof.status }
+            : await flow.companyIdentityProofOutcome(record.requestId, session.address);
+          status =
+            record.identityProof.expiresAt <= Date.now() / 1000
+              ? 'EXPIRED'
+              : (current.status ?? 'REQUESTED');
+        } catch (cause) {
+          if (
+            !(cause instanceof Error) ||
+            !('status' in cause) ||
+            ![403, 404, 409].includes(Number(cause.status))
+          )
+            throw cause;
+          status = 'UNAVAILABLE';
+        }
+        const [company, offer] = await Promise.all([
+          this.directory?.resolve(counterparty),
+          record.deliveryOrderId
+            ? this.offers().lookup(record.deliveryOrderId, session.address)
+            : undefined,
+        ]);
+        return {
+          sharedReference: record.sharedIdentity === true,
+          requestId: record.requestId,
+          referenceId: record.deliveryOrderId ?? record.requestId,
+          context: record.deliveryOrderId
+            ? offer
+              ? 'custody'
+              : 'delivery'
+            : record.orderContext
+              ? 'order'
+              : 'ingredient',
+          // Display context only; every value here is already visible to both participants.
+          counterpartyWallet: counterparty,
+          counterpartyRole: company?.role,
+          // Only the item name is needed; the full offer view also scans location events.
+          subject: offer
+            ? `${(await this.offerBatchSummary(offer)).name ?? 'Registered batch'} · ${offer.quantity} ${offer.unit}`
+            : undefined,
+          requiredClaims: record.identityProof.requiredClaims ?? [],
+          optionalClaims: record.identityProof.optionalClaims ?? [],
+          verifiedAt: record.identityProof.verifiedAt,
+          direction: same(record.requester, session.address) ? 'received' : 'sent',
+          company: company?.companyName ?? counterparty,
+          purpose: record.identityProof.purpose,
+          requestedFieldsCount: new Set([
+            ...(record.identityProof.requiredClaims ?? []),
+            ...(record.identityProof.optionalClaims ?? []),
+          ]).size,
+          requiredFieldsCount: new Set(record.identityProof.requiredClaims ?? []).size,
+          expiresAt: record.identityProof.expiresAt,
+          status,
+        };
+      }),
+    );
+    return {
+      requests: rows.filter((row): row is ChainRecord => row !== undefined),
+      actor: session.address,
+    };
   }
   private async prepareWarehouseTransaction(
     actor: string,
@@ -1473,13 +1497,14 @@ export class OrdersService {
     sessionId: string | undefined,
     orderId: string,
     input: {
-      action: 'request' | 'material' | 'present' | 'verify' | 'decline' | 'status';
+      action: 'request' | 'material' | 'present' | 'verify' | 'decline' | 'status' | 'reject';
       purpose?: string;
       expiresAt?: number;
       required?: boolean;
       requiredClaims?: string[];
       optionalClaims?: string[];
       presentation?: string;
+      reason?: string;
     },
     deliveryIdentity = false,
   ) {
@@ -1612,6 +1637,8 @@ export class OrdersService {
     }
     if (input.action === 'material')
       return this.flow.getCompanyIdentityProofMaterial(sessionId, orderId);
+    if (input.action === 'reject')
+      return this.flow.rejectCompanyIdentityProof(sessionId, orderId, input.reason ?? '');
     if (input.action === 'status') {
       try {
         return await this.flow.getCompanyIdentityProofStatus(sessionId, orderId);

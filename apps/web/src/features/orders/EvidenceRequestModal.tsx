@@ -86,7 +86,7 @@ export function EvidenceRequestModal({
       {confirmLimit ? (
         <Btn onClick={useContextDeadline}>Use {contextDeadlineLabel} deadline</Btn>
       ) : review ? (
-        <Btn disabled={busy || !valid} onClick={onSubmit}>
+        <Btn loading={busy} disabled={!valid} onClick={onSubmit}>
           {busy ? 'Submitting…' : 'Submit request'}
         </Btn>
       ) : (

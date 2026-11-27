@@ -1,3 +1,4 @@
+import { shipmentStatusVariant } from '../../shared/shipment-status';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { Box, MapPin, PackageCheck, Truck, Warehouse } from 'lucide-react';
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
@@ -88,7 +89,7 @@ export function ReceiveProduct({
           <h3>Transfer Summary</h3>
           <Badge
             label={transferStatuses[transfer.status] ?? 'Unknown'}
-            variant={received ? 'active' : 'transfer-pending'}
+            variant={shipmentStatusVariant(transferStatuses[transfer.status] ?? 'Unknown')}
           />
         </div>
         <dl className="workspace-arrival-summary__facts workspace-process-summary-facts">

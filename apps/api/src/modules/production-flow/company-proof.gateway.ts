@@ -9,6 +9,7 @@ const abi = [
   'function request(bytes32,address,bytes32,uint64,bytes32,string)',
   'function respond(bytes32,bytes32,bytes32,string)',
   'function review(bytes32,bool)',
+  'function reject(bytes32,bytes32)',
   'function bindings(address) view returns(bytes32 sourceHash,bytes32 contentHash,string cid)',
   'function registerBinding(bytes32,bytes32,string)',
   'event Requested(bytes32 indexed requestId,address indexed verifier,address indexed presenter)',
@@ -30,7 +31,7 @@ export interface CompanyProofReferences {
   list(wallet: string): Promise<string[]>;
   binding(wallet: string): Promise<{ sourceHash: string; contentHash: string; cid: string }>;
   prepare(
-    method: 'request' | 'respond' | 'review' | 'registerBinding',
+    method: 'request' | 'respond' | 'review' | 'reject' | 'registerBinding',
     args: unknown[],
   ): PreparedTransaction;
 }

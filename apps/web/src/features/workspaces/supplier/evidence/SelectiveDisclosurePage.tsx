@@ -1,7 +1,6 @@
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { ClipboardList, Leaf } from 'lucide-react';
 import {
-  EvidenceOutcome,
   EvidenceSummaryCard,
   RequestSummary,
   evidenceDateFields,
@@ -29,6 +28,7 @@ import { reportError } from '../../../../components/ui/feedback';
 import {
   EvidenceDetailLayout,
   EvidenceHowItWorks,
+  EvidenceNextStep,
   ingredientEvidenceStatus,
 } from '../../../orders/EvidenceParts';
 import { proofStatusLabel, proofStatusVariant } from '../../../orders/DeliveryIdentityPanel';
@@ -51,7 +51,7 @@ import {
   type ProductionEvidenceRequest,
 } from '../../../production-flow/production-flow.api';
 import { completePreparedWorkflow } from '../../../production-flow/production-flow.transaction';
-import { Alert, Badge, Btn, Input, TechnicalDetails } from '../../shared/ui';
+import { Alert, Badge, Btn, ClaimRow, Input, Modal, TechnicalDetails } from '../../shared/ui';
 import { chainDate } from '../../shared/operational-format';
 import { textError } from '../../../validation/form-validation';
 import { PresentationSigningSettingsLink } from '../../../didcomm/HolderSigningKeyPanel';
@@ -66,7 +66,7 @@ export function SelectiveDisclosure({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [details, setDetails] = useState<EvidenceDetails>();
-  const [approved, setApproved] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState('');
   const [optionalClaims, setOptionalClaims] = useState<string[]>([]);
   const [preview, setPreview] = useState<Record<string, unknown>>();
@@ -99,7 +99,7 @@ export function SelectiveDisclosure({
     setPreview(undefined);
     setPreviewCredential('');
     setPreviewExpiresAt(undefined);
-    setApproved(false);
+    setReviewOpen(false);
     setOptionalClaims([]);
     void getEvidenceDetails(request.requestId)
       .then(setDetails)
@@ -239,6 +239,11 @@ export function SelectiveDisclosure({
           (claim) => !isRetiredIngredientClaim(claim),
         )
       : [];
+  // Rows shown and rows shared; the older format shares every field.
+  const fieldRows = legacy ? Object.keys(preview ?? {}) : requestedRows;
+  const sharedRows = legacy
+    ? fieldRows
+    : requestedRows.filter((claim) => optionalClaims.includes(claim));
   const unmet =
     !legacy && preview && details ? disclosureGaps(details, preview, optionalClaims) : [];
   const status = ingredientEvidenceStatus(request.status, request.dueAt);
@@ -334,19 +339,21 @@ export function SelectiveDisclosure({
           subtitle={`Requested by ${requester}${requesterRole ? ` · ${requesterRole}` : ''}`}
           context="Ingredient evidence request"
           badges={<Badge label={status.label} variant={status.variant} />}
-        >
-          <EvidenceOutcome
-            {...outcome}
-            action={
-              open &&
-              !preview && (
-                <Btn disabled={busy || !details} onClick={() => void loadPreview()}>
-                  {busy ? 'Loading…' : 'Review values to share'}
-                </Btn>
-              )
-            }
-          />
-        </EvidenceSummaryCard>
+        />
+        {/* Same Next step box as every other evidence page. */}
+        <EvidenceNextStep
+          tone={outcome.tone === 'closed' ? 'closed' : 'default'}
+          title={outcome.title}
+          message={outcome.message}
+          action={
+            open &&
+            !preview && (
+              <Btn loading={busy} disabled={!details} onClick={() => void loadPreview()}>
+                {busy ? 'Loading…' : 'Review values to share'}
+              </Btn>
+            )
+          }
+        />
         {open && (
           <>
             {hasRetiredRequiredClaim && (
@@ -362,75 +369,83 @@ export function SelectiveDisclosure({
               />
             )}
 
+            {/* Same layout as the company identity response (EvidenceFieldList + ClaimRow). */}
             {preview && (
-              <section
-                className="evidence-card evidence-fields evidence-share-card"
-                aria-labelledby="ingredient-fields-title"
-              >
-                <header>
-                  <h4 id="ingredient-fields-title">
-                    {legacy ? 'Values to share' : 'Fields to share'}
-                  </h4>
-                  {previewExpiresAt && (
-                    <strong>Proof valid until {chainDate(previewExpiresAt)}</strong>
-                  )}
-                </header>
-                <div className="ingredient-share-list">
-                  {legacy &&
-                    Object.entries(preview).map(([name, value]) => (
-                      <div key={name} className="ingredient-share-row">
-                        <IngredientClaimValue
-                          name={name}
-                          value={value}
-                          loadDocument={(documentId) =>
-                            getCertificationDocument(details!.batchId, documentId)
+              <div className="company-evidence-card__material">
+                <section className="evidence-fields" aria-labelledby="ingredient-fields-title">
+                  <header>
+                    <h4 id="ingredient-fields-title">Fields requested</h4>
+                    <strong>
+                      {sharedRows.length} of {fieldRows.length} fields will be shared
+                    </strong>
+                  </header>
+                  <p className="evidence-fields__note">
+                    Certifications are Supplier-provided, not independently verified. Documents are
+                    shared in full.
+                  </p>
+                  <div className="evidence-fields__list">
+                    {fieldRows.map((claim) => {
+                      const required = details?.requiredClaims.includes(claim) ?? false;
+                      // A row expanded from a required group: sharing one of the group meets it.
+                      const inRequiredGroup = requestGroups(claim).some((group) =>
+                        details?.requiredClaims.includes(group),
+                      );
+                      return (
+                        <ClaimRow
+                          key={claim}
+                          label={legacy ? ingredientClaimLabel(claim) : shareLabel(claim, preview)}
+                          requirement={
+                            legacy
+                              ? 'always'
+                              : required || inRequiredGroup
+                                ? 'required'
+                                : 'optional'
                           }
-                        />
-                      </div>
-                    ))}
-                  {requestedRows.map((claim) => {
-                    const required = details?.requiredClaims.includes(claim) ?? false;
-                    const included = optionalClaims.includes(claim);
-                    return (
-                      <div
-                        key={claim}
-                        className={`ingredient-share-row${included ? ' is-included' : ''}`}
-                      >
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={included}
-                            disabled={busy}
-                            onChange={(event) =>
-                              setOptionalClaims((current) =>
-                                toggleIngredientDisclosure(
-                                  current,
-                                  claim,
-                                  event.target.checked,
-                                  preview,
-                                ),
-                              )
-                            }
-                          />
-                          <strong>{shareLabel(claim, preview)}</strong>
-                          <span className={required ? 'is-required' : undefined}>
-                            {required ? 'Required' : 'Optional'}
-                          </span>
-                        </label>
-                        <IngredientClaimValue
-                          name={claim}
-                          value={preview[claim]}
-                          loadDocument={(documentId) =>
-                            getCertificationDocument(
-                              details?.batchId ?? request.ingredientBatchId,
-                              documentId,
+                          requirementLabel={
+                            !legacy &&
+                            !required &&
+                            inRequiredGroup &&
+                            claim !== 'productionDateMeaning'
+                              ? 'Choose one'
+                              : undefined
+                          }
+                          included={sharedRows.includes(claim)}
+                          // The older credential format shares every field.
+                          locked={legacy}
+                          onToggle={() =>
+                            setOptionalClaims((current) =>
+                              toggleIngredientDisclosure(
+                                current,
+                                claim,
+                                !current.includes(claim),
+                                preview,
+                              ),
                             )
                           }
+                          value={
+                            <IngredientClaimValue
+                              name={claim}
+                              value={preview[claim]}
+                              notes={false}
+                              loadDocument={(documentId) =>
+                                getCertificationDocument(
+                                  details?.batchId ?? request.ingredientBatchId,
+                                  documentId,
+                                )
+                              }
+                            />
+                          }
                         />
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                  {unmet.length > 0 && (
+                    <Alert
+                      type="warning"
+                      message={`You are not sharing ${unmet.length === 1 ? 'one required item' : `${unmet.length} required items`}: ${unmet.join(' ')} ${requester} may reject an incomplete response.`}
+                    />
+                  )}
+                </section>
                 {!legacy && (
                   <details className="evidence-how-it-works">
                     <summary>Always included and kept private</summary>
@@ -466,26 +481,10 @@ export function SelectiveDisclosure({
                     </p>
                   </details>
                 )}
-                {unmet.length > 0 && (
-                  <Alert
-                    type="warning"
-                    message={`You are not sharing ${unmet.length === 1 ? 'one required item' : `${unmet.length} required items`}. You can still share; ${requester} will see the response as incomplete and may reject it. ${unmet.join(' ')}`}
-                  />
-                )}
                 {holderDid && preview.vct !== 'urn:tracechain:credential:ingredient:sd-jwt:v3' && (
                   <PresentationSigningSettingsLink role="supplier" />
                 )}
-                <label className="ingredient-share-consent">
-                  <input
-                    type="checkbox"
-                    checked={approved}
-                    onChange={(event) => setApproved(event.target.checked)}
-                  />
-                  {legacy
-                    ? 'I reviewed and authorize full disclosure of all displayed credential claims and document references to this exact recipient.'
-                    : 'I reviewed this disclosure and authorize sharing only these selected claims for this exact request and recipient.'}
-                </label>
-              </section>
+              </div>
             )}
 
             {declining && (
@@ -499,7 +498,7 @@ export function SelectiveDisclosure({
                 />
               </div>
             )}
-            <div className="evidence-actions">
+            <div className="company-evidence-card__footer is-sticky">
               {declining ? (
                 <>
                   <Btn variant="outline" disabled={busy} onClick={() => setDeclining(false)}>
@@ -507,10 +506,11 @@ export function SelectiveDisclosure({
                   </Btn>
                   <Btn
                     variant="danger"
-                    disabled={busy || !declineReason.trim()}
+                    loading={busy}
+                    disabled={!declineReason.trim()}
                     onClick={() => void decline()}
                   >
-                    Decline request
+                    {busy ? 'Declining…' : 'Decline request'}
                   </Btn>
                 </>
               ) : (
@@ -520,15 +520,68 @@ export function SelectiveDisclosure({
                   </Btn>
                   {preview && (
                     <Btn
-                      disabled={busy || !approved || !details || hasRetiredRequiredClaim}
-                      onClick={() => void respond()}
+                      disabled={busy || !details || hasRetiredRequiredClaim}
+                      onClick={() => setReviewOpen(true)}
                     >
-                      {busy ? 'Signing…' : legacy ? 'Share full credential' : 'Sign and share'}
+                      Review and sign proof
                     </Btn>
                   )}
                 </>
               )}
             </div>
+            {reviewOpen && preview && (
+              <Modal
+                title="Sign and share ingredient evidence"
+                onClose={() => setReviewOpen(false)}
+                width={560}
+              >
+                <div className="company-evidence-review">
+                  <dl>
+                    <div>
+                      <dt>Recipient</dt>
+                      <dd>{requester}</dd>
+                    </div>
+                    <div>
+                      <dt>Purpose</dt>
+                      <dd>{details?.reason ?? 'Not provided'}</dd>
+                    </div>
+                    {previewExpiresAt && (
+                      <div>
+                        <dt>Valid until</dt>
+                        <dd>{chainDate(previewExpiresAt)}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <div>
+                    <h4>Fields being shared</h4>
+                    <ul>
+                      {sharedRows.map((claim) => (
+                        <li key={claim}>
+                          {legacy ? ingredientClaimLabel(claim) : shareLabel(claim, preview)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <p>
+                    {legacy
+                      ? 'Signing authorizes full disclosure of all displayed credential claims and document references to this exact recipient.'
+                      : 'Signing authorizes sharing only these selected fields for this exact request and recipient.'}
+                  </p>
+                  <div className="company-evidence-review__actions action-row">
+                    <Btn variant="outline" disabled={busy} onClick={() => setReviewOpen(false)}>
+                      Cancel
+                    </Btn>
+                    <Btn
+                      loading={busy}
+                      disabled={!details || hasRetiredRequiredClaim}
+                      onClick={() => void respond()}
+                    >
+                      {busy ? 'Signing…' : legacy ? 'Share full credential' : 'Sign and share'}
+                    </Btn>
+                  </div>
+                </div>
+              </Modal>
+            )}
           </>
         )}
 
@@ -625,4 +678,14 @@ function disclosureGaps(
         : disclosed[claim] == null,
     )
     .map((claim) => `${ingredientClaimLabel(claim)} is required.`);
+}
+
+/** The requested groups a shared row was expanded from (see expandIngredientRequestedClaims). */
+function requestGroups(claim: string): string[] {
+  if (claim.startsWith('certificationDocuments_')) return ['certificationDocuments'];
+  if (claim.startsWith('certification_')) return ['certifications', 'certificationDocuments'];
+  if (claim.startsWith('qualityDocuments_')) return ['qualityDocuments'];
+  if (claim.startsWith('qualityTest_')) return ['qualityTests', 'qualityDocuments'];
+  if (claim === 'productionDateMeaning') return ['productionDate'];
+  return [];
 }

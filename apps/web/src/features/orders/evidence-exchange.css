@@ -337,6 +337,29 @@
     flex-shrink: 0;
     gap: 8px;
   }
+  .evidence-next-step {
+    flex-wrap: wrap;
+  }
+  .evidence-next-step__title {
+    display: block;
+    margin-top: 2px;
+    color: var(--c-text);
+    font-size: var(--text-value);
+  }
+  .evidence-next-step__body {
+    flex: 1 1 100%;
+  }
+  /* Same decision layout on every evidence page: secondary left, primary right. */
+  .evidence-decision {
+    display: grid;
+    gap: 10px;
+  }
+  .evidence-decision__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+  }
 
   .evidence-fields {
     display: grid;
@@ -355,6 +378,17 @@
     color: var(--c-text2);
     font-size: var(--text-body);
     font-weight: 500;
+  }
+  /* Rich values (certifications, documents) fill the row instead of shrinking to one column. */
+  .evidence-claim-row__value > div {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .evidence-fields__note {
+    margin: 0;
+
+    color: var(--c-text2);
+    font-size: var(--text-label);
   }
   .evidence-fields__list {
     display: grid;
@@ -558,46 +592,48 @@
   }
 
   /* Ingredient values (share and review): label/value pairs in a grid, notes muted, files on one line. */
-  :is(.ingredient-share-row, .ingredient-review-grid > div) dl {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) dl {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
     gap: 10px 18px;
     margin: 6px 0 0;
   }
-  :is(.ingredient-share-row, .ingredient-review-grid > div) dl > div {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) dl > div {
     min-width: 0;
   }
-  :is(.ingredient-share-row, .ingredient-review-grid > div) dt {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) dt {
     color: var(--c-text2);
     font-size: var(--text-label);
   }
-  :is(.ingredient-share-row, .ingredient-review-grid > div) dd {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) dd {
     margin: 2px 0 0;
     color: var(--c-text);
     font-size: var(--text-value);
     font-weight: 600;
     overflow-wrap: anywhere;
   }
-  :is(.ingredient-share-row, .ingredient-review-grid > div) p {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) p {
     margin: 8px 0 0;
     color: var(--c-text2);
     font-size: var(--text-label);
   }
   /* A simple value sits right under its label and reads as a value, not a note. */
-  :is(.ingredient-share-row, .ingredient-review-grid > div) strong + p {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) strong + p {
     margin-top: 2px;
     color: var(--c-text);
     font-size: var(--text-value);
     font-weight: 600;
   }
-  /* The share row's checkbox label already names the field. */
-  .ingredient-share-row > label + div > strong:first-child {
+  /* The share row's title already names the field. */
+  :is(.ingredient-share-row > label + div, .evidence-claim-row__value > div) > strong:first-child {
     display: none;
   }
-  .ingredient-share-row > label + div > strong:first-child + p {
+  :is(.ingredient-share-row > label + div, .evidence-claim-row__value > div)
+    > strong:first-child
+    + p {
     margin-top: 0;
   }
-  :is(.ingredient-share-row, .ingredient-review-grid > div) .my-3 {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) .my-3 {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -610,7 +646,7 @@
     background: var(--c-surface);
     font-size: var(--text-body);
   }
-  :is(.ingredient-share-row, .ingredient-review-grid > div) .my-3 .action-row {
+  :is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) .my-3 .action-row {
     display: flex;
     gap: 8px;
     margin: 0;
@@ -622,7 +658,7 @@
 }
 
 /* Unlayered: the older workspace .action-row rule would otherwise push the file buttons onto their own line. */
-:is(.ingredient-share-row, .ingredient-review-grid > div) .my-3 .action-row {
+:is(.ingredient-share-row, .ingredient-review-grid > div, .evidence-claim-row__value) .my-3 .action-row {
   width: auto;
   margin: 0;
   justify-content: flex-end;

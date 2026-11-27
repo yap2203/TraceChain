@@ -1,3 +1,4 @@
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { type ReactNode, type CSSProperties, type MouseEventHandler } from 'react';
 
 export type BtnVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
@@ -24,6 +25,7 @@ export function Btn({
   variant = 'primary',
   size = 'md',
   disabled = false,
+  loading = false,
   full = false,
   icon,
   style: sx,
@@ -37,6 +39,8 @@ export function Btn({
   variant?: BtnVariant;
   size?: BtnSize;
   disabled?: boolean;
+  /** Spinner in place of the icon while this button's own action runs; also disables it. */
+  loading?: boolean;
   full?: boolean;
   icon?: ReactNode;
   style?: CSSProperties;
@@ -51,13 +55,20 @@ export function Btn({
       aria-current={ariaCurrent}
       aria-pressed={ariaPressed}
       aria-label={ariaLabel}
+      aria-busy={loading || undefined}
       onClick={onClick}
-      disabled={disabled || (!onClick && type !== 'submit')}
+      disabled={disabled || loading || (!onClick && type !== 'submit')}
       title={!onClick && type !== 'submit' ? 'This action is not available yet' : undefined}
-      className={`workspace-button inline-flex flex-row flex-nowrap items-center justify-center gap-[6px] font-semibold font-ui min-w-0 max-w-full border border-solid transition-all duration-150 ease-[ease] ${variants[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer opacity-100'}`}
+      className={`workspace-button inline-flex flex-row flex-nowrap items-center justify-center gap-[6px] font-semibold font-ui min-w-0 max-w-full border border-solid transition-all duration-150 ease-[ease] ${variants[variant]} ${sizes[size]} ${full ? 'w-full' : ''} ${disabled || loading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer opacity-100'}`}
       style={sx}
     >
-      {icon && <span className="workspace-button__icon">{icon}</span>}
+      {loading ? (
+        <span className="workspace-button__icon workspace-button__spinner">
+          <LoadingIndicator size="small" label="Working" />
+        </span>
+      ) : (
+        icon && <span className="workspace-button__icon">{icon}</span>
+      )}
       <span className="workspace-button__label">{children}</span>
     </button>
   );

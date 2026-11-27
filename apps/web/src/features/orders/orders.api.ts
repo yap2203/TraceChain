@@ -198,6 +198,9 @@ export interface CustodyOffer {
   status:
     'REQUESTED' | 'ACCEPTED' | 'SCHEDULED' | 'REJECTED' | 'DISPATCHED' | 'RECEIVED' | 'EXPIRED';
   pickupAt?: number;
+  /** Pickup vehicle and expected warehouse arrival, arranged by the Distributor with the pickup. */
+  vehicle?: string;
+  expectedAt?: number;
   shipmentId?: string;
   /** Shipment ID the handoff will record; lets the label be printed before pickup. */
   plannedShipmentId?: string;
@@ -210,16 +213,19 @@ export const createCustodyOffer = (input: Record<string, unknown>) =>
   request<{ offer: CustodyOffer }>('/custody-offers', input);
 export const actCustodyOffer = (
   offerId: string,
-  input: { action: 'accept' | 'reject' | 'schedule'; pickupAt?: number },
+  input: {
+    action: 'accept' | 'reject' | 'schedule';
+    pickupAt?: number;
+    vehicle?: string;
+    expectedAt?: number;
+  },
 ) =>
   request<{ offer: CustodyOffer }>(`/custody-offers/${encodeURIComponent(offerId)}/action`, input);
-export const prepareCustodyOffer = (
-  offerId: string,
-  input: { vehicle: string; occurredAt: number; expectedAt: number },
-) =>
+// The sender only confirms: the Distributor arranged vehicle and arrival, the server records the time.
+export const prepareCustodyOffer = (offerId: string) =>
   request<{ transaction: PreparedTransaction; resultId: string; offerId: string }>(
     `/custody-offers/${encodeURIComponent(offerId)}/prepare`,
-    input,
+    {},
   );
 export interface CompanyProofRequestRow {
   sharedReference?: boolean;

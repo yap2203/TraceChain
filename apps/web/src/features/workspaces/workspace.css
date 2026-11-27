@@ -23,6 +23,8 @@
     --c-amber-bg: rgba(255, 215, 64, 0.1);
     --c-red: #ff5252;
     --c-red-bg: rgba(255, 82, 82, 0.1);
+    --c-purple: #a78bfa;
+    --c-purple-bg: rgba(167, 139, 250, 0.14);
     --c-grey: #546e7a;
     --c-grey-bg: rgba(84, 110, 122, 0.15);
     --c-bg: #070b14;
@@ -63,6 +65,8 @@
     --c-amber-bg: rgba(217, 119, 6, 0.08);
     --c-red: #dc2626;
     --c-red-bg: rgba(220, 38, 38, 0.08);
+    --c-purple: #7c3aed;
+    --c-purple-bg: rgba(124, 58, 237, 0.08);
     --c-grey: #64748b;
     --c-grey-bg: rgba(100, 116, 139, 0.1);
     --c-bg: #f0f4f8;
@@ -289,6 +293,16 @@
   }
   .workspace-button__icon {
     @apply shrink-0;
+  }
+  /* A short delay keeps instant actions from flashing a spinner. */
+  .workspace-button__spinner {
+    opacity: 0;
+    animation: workspace-button-spinner-in 0s linear 150ms forwards;
+  }
+  @keyframes workspace-button-spinner-in {
+    to {
+      opacity: 1;
+    }
   }
   .workspace-button svg {
     @apply block shrink-0 m-0;
@@ -1075,6 +1089,10 @@
   .catalogue-card__facts > div,
   .catalogue-detail__facts > div {
     @apply flex gap-[12px] justify-between min-w-[0];
+  }
+  /* One line per custody holding (warehouse · Distributor · quantity). */
+  .catalogue-custody-line {
+    @apply block;
   }
   .catalogue-card__facts dt,
   .catalogue-detail__facts dt {
@@ -3080,7 +3098,7 @@
 
 .shipment-summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -3143,16 +3161,6 @@
 .shipment-card:focus-within {
   outline: 2px solid color-mix(in srgb, var(--c-teal) 60%, transparent);
   outline-offset: 2px;
-}
-.shipment-card.is-attention {
-  border-left-color: var(--c-amber);
-}
-.shipment-card.is-transit,
-.shipment-card.is-receipt {
-  border-left-color: var(--c-teal);
-}
-.shipment-card.is-completed {
-  border-left-color: var(--c-green);
 }
 
 .shipment-card__media {
@@ -4205,6 +4213,15 @@
     @apply flex gap-[8px] items-center m-0;
     color: var(--c-navy);
   }
+  /* Decision buttons share the width equally: secondary left, primary right. */
+  .workspace-decision-actions {
+    @apply grid gap-[10px] w-full;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+  .workspace-decision-actions > button {
+    @apply w-full;
+  }
   .workspace-request-section {
     @apply border-t border-solid border-ws-border pt-[24px] mt-[8px];
   }
@@ -4396,9 +4413,12 @@
     @apply m-0 text-[20px] leading-tight min-w-0 break-words;
     color: var(--c-navy);
   }
+  /* One equal column per step, so any number of steps fills the card width. */
   .workspace-status-timeline--custody {
-    @apply grid-cols-5 gap-[28px] mb-0;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    @apply gap-[28px] mb-0;
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
   }
   .workspace-status-timeline--custody li {
     @apply relative flex-col items-center gap-[10px] p-0 text-center overflow-visible;
@@ -4410,15 +4430,16 @@
     border: 0;
     background: transparent;
   }
+  /* Connector from this icon's edge to the next icon's edge, across the column gap. */
   .workspace-status-timeline--custody li:not(:last-child)::after {
-    content: '→';
+    content: '';
     position: absolute;
-    top: 24px;
-    left: calc(50% + 42px);
-    width: calc(100% - 54px);
-    color: var(--c-border2);
-    font-size: 24px;
-    line-height: 1;
+    top: 33px;
+    left: calc(50% + 46px);
+    width: calc(100% + 28px - 92px);
+    height: 2px;
+    border-radius: 2px;
+    background: var(--c-border2);
   }
   .workspace-status-timeline--custody .workspace-status-timeline__icon {
     @apply relative w-[68px] h-[68px];
@@ -4436,7 +4457,7 @@
     @apply text-[12px] leading-snug;
   }
   .workspace-status-timeline--custody li.is-complete::after {
-    color: color-mix(in srgb, var(--c-green) 60%, var(--c-border2));
+    background: color-mix(in srgb, var(--c-green) 60%, var(--c-border2));
   }
   .workspace-status-timeline--custody li.is-complete .workspace-status-timeline__icon {
     background: var(--c-green-bg);
@@ -4819,6 +4840,10 @@
   .workspace-custody-detail__facts {
     @apply grid grid-cols-2 gap-x-[22px] gap-y-[14px] m-0;
   }
+  /* Full-width cards (the pickup panel) have room for three columns. */
+  .workspace-custody-detail__facts--wide {
+    @apply grid-cols-3;
+  }
   .workspace-custody-detail__facts dt {
     @apply text-[12px] mb-[3px];
     color: var(--c-text2);
@@ -4909,8 +4934,14 @@
     transform: rotate(180deg);
   }
   @container workspace (max-width: 900px) {
+    .workspace-custody-detail__facts--wide {
+      @apply grid-cols-2;
+    }
     .workspace-status-timeline--custody {
       gap: 18px;
+    }
+    .workspace-status-timeline--custody li:not(:last-child)::after {
+      width: calc(100% + 18px - 92px);
     }
     .workspace-custody-detail__panels {
       grid-template-columns: minmax(0, 1fr);
@@ -4920,18 +4951,17 @@
     .workspace-status-timeline--custody {
       @apply grid-cols-1 gap-[28px];
       grid-template-columns: minmax(0, 1fr);
+      grid-auto-flow: row;
     }
     .workspace-status-timeline--custody li {
       @apply flex-row text-left items-center;
     }
     .workspace-status-timeline--custody li:not(:last-child)::after {
-      content: '↓';
       top: auto;
       bottom: -24px;
-      left: 23px;
-      width: 20px;
-      font-size: 20px;
-      text-align: center;
+      left: 26px;
+      width: 2px;
+      height: 20px;
     }
     .workspace-status-timeline--custody .workspace-status-timeline__icon {
       @apply w-[54px] h-[54px] shrink-0;

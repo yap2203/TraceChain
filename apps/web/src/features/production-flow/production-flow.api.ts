@@ -288,6 +288,12 @@ export const declineCompanyIdentityProof = (requestId: string) =>
   request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/decline`, {
     method: 'POST',
   });
+/** The requesting company rejects shared company evidence; only a reason hash is recorded. */
+export const rejectCompanyIdentityProof = (requestId: string, reason: string) =>
+  request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/reject`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
 export const verifyCompanyIdentityProof = (requestId: string) =>
   request<CompanyIdentityProofStatus>(`/evidence-requests/${requestId}/company-identity/verify`, {
     method: 'POST',

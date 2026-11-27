@@ -28,7 +28,7 @@ export interface EvidenceWorkflowRecord {
     presenterRole: string;
     presenterWallet: string;
     purpose: string;
-    status: 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED';
+    status: 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED' | 'REJECTED';
     presentationPayload?: EncryptedCredentialPayload;
     presentationCid?: string;
     verifiedAt?: string;

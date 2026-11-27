@@ -66,12 +66,11 @@ it('previews legacy full disclosure read-only, then shares only after explicit a
   await screen.findByText('Legacy source value');
   expect(mocks.prepare).not.toHaveBeenCalled();
   expect(mocks.sign).not.toHaveBeenCalled();
-  const share = screen.getByRole('button', {
-    name: 'Share full credential',
-  }) as HTMLButtonElement;
-  expect(share.disabled).toBe(true);
-  fireEvent.click(screen.getByRole('checkbox', { name: /authorize full disclosure/ }));
-  fireEvent.click(share);
+  // Approval is the review dialog, as for company identity: nothing is signed before it.
+  fireEvent.click(screen.getByRole('button', { name: 'Review and sign proof' }));
+  expect(screen.getByText(/authorizes full disclosure/)).toBeTruthy();
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Share full credential' }));
   await waitFor(() => expect(back).toHaveBeenCalledTimes(1));
   expect(mocks.prepare).toHaveBeenCalledWith('request');
   expect(mocks.sign).not.toHaveBeenCalled();
@@ -121,20 +120,25 @@ it.each([false, true])(
     });
     render(<SelectiveDisclosure request={request} onBack={vi.fn()} />);
     fireEvent.click(await screen.findByText('Review values to share'));
-    fireEvent.click(
-      await screen.findByRole('checkbox', { name: /Supporting document: certificate.png/ }),
-    );
+    const documentSwitch = await screen.findByRole('switch', {
+      name: /Share Supporting document: certificate.png/,
+    });
+    // "certifications" is required as a group: sharing one entry meets it, so entries say "Choose one".
+    const tag = (name: RegExp) =>
+      screen
+        .getByRole('switch', { name })
+        .closest('.evidence-claim-row')!
+        .querySelector('.evidence-claim-row__requirement')!.textContent;
+    expect(tag(/Share Supplier-provided certification: Organic/)).toBe('Choose one');
+    expect(tag(/Share Supporting document: certificate.png/)).toBe('Optional');
+    fireEvent.click(documentSwitch);
     expect(
-      (
-        screen.getByRole('checkbox', {
-          name: /Supplier-provided certification: Organic/,
-        }) as HTMLInputElement
-      ).checked,
-    ).toBe(true);
+      screen
+        .getByRole('switch', { name: /Share Supplier-provided certification: Organic/ })
+        .getAttribute('aria-checked'),
+    ).toBe('true');
     expect(screen.queryByText('Never share this address')).toBeNull();
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: /authorize sharing only these selected claims/ }),
-    );
+    fireEvent.click(screen.getByRole('button', { name: 'Review and sign proof' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sign and share' }));
     await waitFor(() => expect(walletBound ? mocks.walletSign : mocks.sign).toHaveBeenCalled());
     if (walletBound) expect(mocks.sign).not.toHaveBeenCalled();
@@ -186,16 +190,14 @@ it('lets the holder withhold a required field, warns, and still shares', async (
   const back = vi.fn();
   render(<SelectiveDisclosure request={request} onBack={back} />);
   fireEvent.click(await screen.findByText('Review values to share'));
-  const field = (await screen.findByRole('checkbox', {
-    name: /Country of origin/,
-  })) as HTMLInputElement;
-  expect(field.checked).toBe(true);
+  const field = (await screen.findByRole('switch', {
+    name: /Share Country of origin/,
+  })) as HTMLButtonElement;
+  expect(field.getAttribute('aria-checked')).toBe('true');
   expect(field.disabled).toBe(false);
   fireEvent.click(field);
   expect(screen.getByText(/You are not sharing one required item/)).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole('checkbox', { name: /authorize sharing only these selected claims/ }),
-  );
+  fireEvent.click(screen.getByRole('button', { name: 'Review and sign proof' }));
   fireEvent.click(screen.getByRole('button', { name: 'Sign and share' }));
   await waitFor(() => expect(back).toHaveBeenCalled());
   expect(mocks.sign.mock.calls[0]![2].claims).not.toContain('countryOfOrigin');

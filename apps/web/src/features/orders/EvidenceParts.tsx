@@ -1,8 +1,8 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Contact, type LucideIcon } from 'lucide-react';
 import { EvidenceCard, FieldPairs, IdentifierFields } from './EvidenceIdentity';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
-import { Alert, ClaimRow } from '../workspaces/shared/ui';
+import { Alert, Btn, ClaimRow, Input } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import './evidence-exchange.css';
 
@@ -60,21 +60,92 @@ export function EvidenceDetailLayout({
 
 /** The single "what happens next" box every evidence detail shows. */
 export function EvidenceNextStep({
+  title,
   message,
   action,
   tone = 'default',
+  children,
 }: {
+  /** Short outcome, e.g. "Evidence shared"; the message explains it. */
+  title?: ReactNode;
   message: ReactNode;
   action?: ReactNode;
   tone?: 'default' | 'done' | 'closed';
+  /** Full-width content under the message, such as an EvidenceDecision. */
+  children?: ReactNode;
 }) {
   return (
     <div className={`evidence-next-step is-${tone}`}>
       <div>
         <span>Next step</span>
+        {title && <strong className="evidence-next-step__title">{title}</strong>}
         <p>{message}</p>
       </div>
       {action && <div className="evidence-next-step__action">{action}</div>}
+      {children && <div className="evidence-next-step__body">{children}</div>}
+    </div>
+  );
+}
+
+/**
+ * The requester's decision on shared evidence, identical for company identity and ingredient
+ * evidence: "Verify and accept" in one step, or reject with a reason.
+ */
+export function EvidenceDecision({
+  busy,
+  onAccept,
+  onReject,
+  recipient,
+  disabled = false,
+}: {
+  /** Which action is running: 'accept', 'reject' or ''. */
+  busy: string;
+  onAccept: () => void;
+  onReject: (reason: string) => void;
+  /** Who is told the reason, e.g. "the Supplier". */
+  recipient: string;
+  disabled?: boolean;
+}) {
+  const [rejecting, setRejecting] = useState(false),
+    [reason, setReason] = useState('');
+  if (rejecting)
+    return (
+      <div className="evidence-decision">
+        <Input
+          label="Rejection reason"
+          value={reason}
+          onChange={setReason}
+          maxLength={500}
+          required
+          placeholder={`Tell ${recipient} why the evidence is rejected`}
+        />
+        <div className="evidence-decision__actions">
+          <Btn variant="outline" disabled={Boolean(busy)} onClick={() => setRejecting(false)}>
+            Cancel
+          </Btn>
+          <Btn
+            variant="danger"
+            loading={busy === 'reject'}
+            disabled={!reason.trim() || Boolean(busy)}
+            onClick={() => onReject(reason.trim())}
+          >
+            {busy === 'reject' ? 'Rejecting…' : 'Reject evidence'}
+          </Btn>
+        </div>
+      </div>
+    );
+  return (
+    <div className="evidence-decision__actions">
+      <Btn
+        variant="outline"
+        disabled={disabled || Boolean(busy)}
+        onClick={() => setRejecting(true)}
+      >
+        Reject…
+      </Btn>
+      <Btn loading={busy === 'accept'} disabled={disabled || Boolean(busy)} onClick={onAccept}>
+        {busy === 'accept' ? 'Verifying…' : 'Verify and accept'}
+      </Btn>
     </div>
   );
 }

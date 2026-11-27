@@ -35,10 +35,13 @@ export function IngredientClaimValue({
   name,
   value,
   loadDocument,
+  notes = true,
 }: {
   name: string;
   value: unknown;
   loadDocument?: (id: string) => Promise<PrivateEvidenceFile>;
+  /** False when the page states the verification and full-file notes once instead. */
+  notes?: boolean;
 }) {
   const [preview, setPreview] = useState<{ url: string; file: PrivateEvidenceFile }>(),
     [error, setError] = useState(''),
@@ -93,6 +96,7 @@ export function IngredientClaimValue({
               name={`${name.startsWith('quality') ? 'qualityTest' : 'certification'}_${index + 1}`}
               value={item}
               loadDocument={loadDocument}
+              notes={notes}
             />
           ))}
         </div>
@@ -132,7 +136,7 @@ export function IngredientClaimValue({
             : String(value ?? 'Unavailable')}
         </p>
       )}
-      {object && name.startsWith('certification') && (
+      {notes && object && name.startsWith('certification') && (
         <p className="text-sm text-ws-text2">
           Supplier-provided certification; the stated authority has not independently verified this
           document through TraceChain.
@@ -140,14 +144,16 @@ export function IngredientClaimValue({
       )}
       {object && Array.isArray(object.documents) && (
         <>
-          <p>
-            The complete selected file will be shared. Structured selective disclosure cannot redact
-            information inside a PDF or image.
-          </p>
+          {notes && (
+            <p>
+              The complete selected file will be shared. Structured selective disclosure cannot
+              redact information inside a PDF or image.
+            </p>
+          )}
           {object.documents.map((document: any) => (
             <div key={document.id} className="my-3">
               <span>
-                {document.fileName} · {document.size} bytes
+                {document.fileName} · {(Number(document.size) / 1024).toFixed(1)} KB
               </span>
               <div className="action-row">
                 <Btn

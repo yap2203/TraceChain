@@ -1,5 +1,23 @@
 # Project Progress
 
+## 2026-11-27 - Custody offer: accept with pickup time, evidence gate, handoff in Shipments
+
+- **Accept includes the pickup time.** The `accept` action now requires `pickupAt` and moves
+  the offer straight to `SCHEDULED`, which completes the custody offer. `schedule` is kept
+  for offers accepted earlier.
+- **Company evidence gate.** The custody offer page shows the evidence status and links to
+  the request in Evidence Exchange; the in-page modal is gone. Accept and reject stay
+  disabled until the evidence is verified. An expired, unverified request no longer blocks:
+  the page says so and offers "Request again". The API gate matches.
+- **Shipments.** Handoff and receipt moved there: "Waiting for pickup" rows in the shipment list (with their own status filter) and
+  `CustodyPickupPanel` (label + handoff), opened with `?offerId=`.
+- **Loading.** The shared `Btn` has a `loading` prop: a spinner that fades in after 150 ms.
+  It is used on custody, company identity and ingredient evidence actions.
+- Record and the Manufacturer → Retailer checklist: `docs/CUSTODY_OFFER_WORKFLOW.md`.
+  No contract change.
+- Verified: web and API typecheck; web tests 305/305; API order and production-flow tests
+  255/255. Not checked in the browser.
+
 ## 2026-11-27 - Distributor Deliveries: arrivals merged, cards redesigned, status fix
 
 - **Status:** "At distributor warehouse" (custody stock received) now counts as completed

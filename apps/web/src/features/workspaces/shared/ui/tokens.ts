@@ -11,6 +11,8 @@ export const T = {
   amberBg: 'var(--c-amber-bg)',
   red: 'var(--c-red)',
   redBg: 'var(--c-red-bg)',
+  purple: 'var(--c-purple)',
+  purpleBg: 'var(--c-purple-bg)',
   grey: 'var(--c-grey)',
   greyBg: 'var(--c-grey-bg)',
   bg: 'var(--c-bg)',

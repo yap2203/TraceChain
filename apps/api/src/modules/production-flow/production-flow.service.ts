@@ -389,10 +389,8 @@ export class ProductionFlowService {
     const session = await this.dependencies.authService.requireSession(sessionId);
     const references = this.sharedCompanyReferences()!;
     const ids = await references.list(session.address);
-    const records: EvidenceWorkflowRecord[] = [];
-    for (const requestId of ids)
-      records.push(await this.requireWorkflow(requestId, session.address));
-    return records;
+    // shortcut: unbounded parallel IPFS reads; add a concurrency limit or cache if lists grow large.
+    return Promise.all(ids.map((requestId) => this.requireWorkflow(requestId, session.address)));
   }
 
   private async walletCompanyMaterial(session: SessionRecord, workflow: EvidenceWorkflowRecord) {
@@ -1490,6 +1488,49 @@ export class ProductionFlowService {
         409,
       );
     workflow.identityProof.status = 'DECLINED';
+    await this.dependencies.repository.saveEvidence(workflow);
+    return this.identityProofSummary(workflow);
+  }
+
+  /**
+   * The verifier rejects shared company evidence after reviewing it, like rejecting ingredient
+   * evidence: only a hash of the reason is recorded.
+   */
+  async rejectCompanyIdentityProof(
+    sessionId: string | undefined,
+    requestId: string,
+    reason: string,
+  ) {
+    const session = await this.requireIdentitySession(sessionId, requestId, false);
+    const workflow = await this.requireWorkflow(requestId, session.address);
+    if (!sameAddress(session.address, workflow.supplier))
+      throw new ProductionFlowApiError(
+        'IDENTITY_PROOF_ACCESS_DENIED',
+        'Only the requesting company can reject the received evidence.',
+        403,
+      );
+    if (!reason.trim())
+      throw new ProductionFlowApiError('REJECT_REASON_REQUIRED', 'Enter a rejection reason.', 400);
+    if (workflow.sharedIdentity) {
+      if ((await this.sharedCompanyReferences()!.get(requestId))?.status !== 2)
+        throw new ProductionFlowApiError(
+          'IDENTITY_PROOF_REPLAY',
+          'Only shared evidence that is not yet decided can be rejected.',
+          409,
+        );
+      return {
+        ...this.identityProofSummary(workflow),
+        actorWallet: session.address,
+        transaction: this.sharedCompanyReferences()!.prepare('reject', [requestId, id(reason)]),
+      };
+    }
+    if (workflow.identityProof?.status !== 'PRESENTED')
+      throw new ProductionFlowApiError(
+        'IDENTITY_PROOF_REPLAY',
+        'Only shared evidence that is not yet decided can be rejected.',
+        409,
+      );
+    workflow.identityProof.status = 'REJECTED';
     await this.dependencies.repository.saveEvidence(workflow);
     return this.identityProofSummary(workflow);
   }
@@ -3094,13 +3135,15 @@ export class ProductionFlowService {
           ...value.identityProof,
           presentationCid: reference.responseCid || undefined,
           status:
-            reference.status === 4
-              ? ('DECLINED' as const)
-              : reference.status === 3
-                ? ('VERIFIED' as const)
-                : reference.status === 2
-                  ? ('PRESENTED' as const)
-                  : ('REQUESTED' as const),
+            reference.status === 5
+              ? ('REJECTED' as const)
+              : reference.status === 4
+                ? ('DECLINED' as const)
+                : reference.status === 3
+                  ? ('VERIFIED' as const)
+                  : reference.status === 2
+                    ? ('PRESENTED' as const)
+                    : ('REQUESTED' as const),
         },
       } as EvidenceWorkflowRecord;
     }

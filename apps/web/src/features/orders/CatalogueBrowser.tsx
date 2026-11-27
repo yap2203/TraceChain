@@ -1,3 +1,4 @@
+import { CustodyIngredientList } from './CustodyIngredientList';
 import {
   CURRENT_INGREDIENT_REQUEST_CLAIMS as INGREDIENT_REQUEST_CLAIMS,
   type IngredientRequestPolicy,
@@ -48,6 +49,11 @@ export interface CataloguePresentation {
   resultNoun?: { singular: string; plural: string };
   ingredientStockLabels?: { supplier: string; distributor: string };
   distributorStockRequired?: boolean;
+  /**
+   * Show only ingredients held in Distributor custody (unexpired, orderable stock), name the
+   * custody holding them, and request only from that custody.
+   */
+  custodyOnly?: boolean;
 }
 
 export function CatalogueBrowser({
@@ -80,10 +86,12 @@ export function CatalogueBrowser({
       items.filter(
         (entry) =>
           !entry.archived &&
+          (!presentation?.custodyOnly ||
+            (Number(entry.kind) === 1 && custodyStock(entry).length > 0)) &&
           (role !== 'manufacturer' || Number(entry.kind) === 1 || same(entry.seller, actor)) &&
           (role !== 'retailer' || Number(entry.kind) === 2),
       ),
-    [actor, items, role],
+    [actor, items, role, presentation?.custodyOnly],
   );
   const [selected, setSelected] = useState<OrderRecord>();
   const openedBatch = useRef<string | undefined>(undefined);
@@ -189,6 +197,17 @@ export function CatalogueBrowser({
         locations={locations}
         onRegisterLocation={onRegisterLocation}
         presentation={presentation}
+      />
+    );
+  // Manufacturer's Supplier ingredients: the "My ingredients" layout, custody stock only.
+  if (presentation?.custodyOnly)
+    return (
+      <CustodyIngredientList
+        items={eligible}
+        custody={custodyStock}
+        custodyName={custodyName}
+        onDetails={(item) => open(item, 'details')}
+        onRequest={(item) => open(item, 'quantity')}
       />
     );
   return (
@@ -361,7 +380,18 @@ function CatalogueCard({
             <dt>Origin</dt>
             <dd>{item.countryOfOrigin || 'Not provided by Manufacturer'}</dd>
           </div>
-          {Number(item.kind) === 1 && presentation?.ingredientStockLabels ? (
+          {Number(item.kind) === 1 && presentation?.custodyOnly ? (
+            <div>
+              <dt>In custody</dt>
+              <dd>
+                {custodyStock(item).map((position) => (
+                  <span className="catalogue-custody-line" key={position.positionId}>
+                    {custodyName(position)} · {stockValue(position.available, item.unit)}
+                  </span>
+                ))}
+              </dd>
+            </div>
+          ) : Number(item.kind) === 1 && presentation?.ingredientStockLabels ? (
             <>
               <div>
                 <dt>{presentation.ingredientStockLabels.supplier}</dt>
@@ -456,9 +486,14 @@ function CatalogueDetail({
     expiryDate: 'required',
   });
   const [receiving, setReceiving] = useState('');
-  const [source, setSource] = useState('seller');
-  const sources: OrderRecord[] =
-    Number(item.kind) === 1 ? (item.custodyPositions ?? []) : (item.storageLocations ?? []);
+  const custodyOnly = presentation?.custodyOnly && Number(item.kind) === 1;
+  const sources: OrderRecord[] = custodyOnly
+    ? custodyStock(item)
+    : Number(item.kind) === 1
+      ? (item.custodyPositions ?? [])
+      : (item.storageLocations ?? []);
+  // Custody-only browsing requests from a custody holding, never from the Supplier's own stock.
+  const [source, setSource] = useState(custodyOnly ? '0' : 'seller');
   const chosenSource = sources.find((entry, index) => String(index) === source);
   const requiresLocation = Number(item.kind) === 1 || Number(item.kind) === 2;
 
@@ -514,7 +549,15 @@ function CatalogueDetail({
             <p>Balances are shown separately and are never combined.</p>
           </div>
           <dl className="catalogue-stock-grid">
-            {Number(item.kind) === 1 && presentation?.ingredientStockLabels ? (
+            {Number(item.kind) === 1 && presentation?.custodyOnly ? (
+              custodyStock(item).map((position) => (
+                <Fact
+                  key={position.positionId}
+                  label={custodyName(position)}
+                  value={`${stockValue(position.available, item.unit)} · expires ${date(batchExpiry(item, position.batchId))}`}
+                />
+              ))
+            ) : Number(item.kind) === 1 && presentation?.ingredientStockLabels ? (
               <>
                 <Fact label={presentation.ingredientStockLabels.supplier} value={stock.supplier} />
                 <Fact
@@ -599,13 +642,15 @@ function CatalogueDetail({
                 value={source}
                 onChange={setSource}
                 options={[
-                  { value: 'seller', label: 'Seller stock · request Distributor pickup' },
+                  ...(custodyOnly
+                    ? []
+                    : [{ value: 'seller', label: 'Seller stock · request Distributor pickup' }]),
                   ...sources.flatMap((entry, index) =>
                     BigInt(entry.available ?? '0') > 0n
                       ? [
                           {
                             value: String(index),
-                            label: `${entry.warehouseName ?? 'Distributor warehouse'} · ${entry.available} ${item.unit} available`,
+                            label: `${custodyOnly ? custodyName(entry) : (entry.warehouseName ?? 'Distributor warehouse')} · ${entry.available} ${item.unit} available`,
                           },
                         ]
                       : [],
@@ -915,4 +960,28 @@ function availability(item: OrderRecord, batch: OrderRecord | undefined) {
     .filter((entry: OrderRecord) => entry.orderable)
     .reduce((sum: bigint, entry: OrderRecord) => sum + BigInt(entry.available), 0n);
   return `Supplier: ${batch?.supplierAvailable ?? 'Unavailable'} ${item.unit} · Distributor custody: ${custody} ${item.unit}`;
+}
+
+/** Orderable custody holdings with stock, excluding batches that have expired. */
+function custodyStock(item: OrderRecord): OrderRecord[] {
+  return (item.custodyPositions ?? []).filter((position: OrderRecord) => {
+    const expiresAt = Number(batchExpiry(item, position.batchId));
+    return (
+      position.orderable &&
+      isStockQuantity(position.available) &&
+      BigInt(position.available) > 0n &&
+      !(expiresAt && expiresAt <= Date.now() / 1000)
+    );
+  });
+}
+
+function batchExpiry(item: OrderRecord, batchId: string) {
+  return item.batchDetails?.find((entry: OrderRecord) => same(entry.batchId, batchId))?.expiresAt;
+}
+
+/** Which custody holds the stock: the warehouse and its Distributor. */
+function custodyName(position: OrderRecord) {
+  return [position.warehouseName ?? 'Distributor warehouse', position.distributorName]
+    .filter(Boolean)
+    .join(' · ');
 }

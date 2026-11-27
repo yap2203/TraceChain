@@ -260,7 +260,7 @@ it('shows a readable completed result and shared-evidence disclosure', async () 
   });
   renderSupplierPanel();
   expect((await screen.findAllByText('Verified')).length).toBeGreaterThan(0);
-  expect(screen.getByText('Verified. Nothing else to do.')).toBeTruthy();
+  expect(screen.getByText('Evidence verified and accepted')).toBeTruthy();
   expect(screen.getByText('Shared company information')).toBeTruthy();
   expect(screen.getByText('Rimba Cocoa Ingredients')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
@@ -309,10 +309,38 @@ it('does not allow an expired request to enter the signing flow', async () => {
   });
   renderSupplierPanel();
   expect((await screen.findAllByText('Expired')).length).toBeGreaterThanOrEqual(1);
-  expect(screen.getByText('This request has closed. No action is possible.')).toBeTruthy();
+  expect(
+    screen.getByText('This company identity request has expired. No action is possible.'),
+  ).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Review and sign proof' })).toBeNull();
   expect(screen.queryByRole('button', { name: 'Sign and share' })).toBeNull();
+});
+
+it('lets the Distributor request again once an unverified request has expired', async () => {
+  mocks.identity.mockResolvedValue({ status: 'REQUESTED', purpose: 'Verify seller', expiresAt: 1 });
+  render(
+    <DeliveryIdentityPanel
+      order={{
+        orderId: 'custody-offer-1',
+        seller: 'supplier',
+        expiresAt: Math.floor(Date.now() / 1000) + 7_200,
+        delivery: { identityChallenge: 'challenge', distributor: 'distributor' },
+      }}
+      data={{
+        actor: 'distributor',
+        role: 'DISTRIBUTOR',
+        orders: [],
+        catalogue: [],
+        locations: [],
+        shipments: [],
+      }}
+      onChanged={vi.fn().mockResolvedValue(undefined)}
+    />,
+  );
+  expect(await screen.findByText(/The company identity request has expired/)).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: 'Request again' }));
+  expect(screen.getByText('Step 1 of 2 · Configure request')).toBeTruthy();
 });
 
 function renderSupplierPanel() {

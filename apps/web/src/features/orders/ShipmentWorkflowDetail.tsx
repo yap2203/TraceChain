@@ -14,6 +14,7 @@ import {
 import type { OrderRecord } from './orders.api';
 import { CatalogueImage } from './CatalogueMedia';
 import { Alert, Badge, Btn, Card, StatusTimeline, TechnicalDetails } from '../workspaces/shared/ui';
+import { shipmentStatusVariant } from '../workspaces/shared/shipment-status';
 import type { TechnicalField } from '../workspaces/shared/ui/TechnicalDetails';
 
 const when = (value: unknown) =>
@@ -38,6 +39,7 @@ export function ShipmentWorkflowDetail({
   additionalContent,
   technicalFields,
   workflowVariant = 'shipment',
+  statusLabel,
 }: {
   shipment: OrderRecord;
   catalogueItem?: OrderRecord;
@@ -57,6 +59,8 @@ export function ShipmentWorkflowDetail({
   additionalContent?: ReactNode;
   technicalFields: TechnicalField[];
   workflowVariant?: 'shipment' | 'ingredient-delivery';
+  /** The status the shipment list shows, so list and detail always agree. */
+  statusLabel?: string;
 }) {
   const status = Number(shipment.status);
   const complete = status >= 3;
@@ -178,10 +182,14 @@ export function ShipmentWorkflowDetail({
       <Card>
         <div className="workspace-arrival-summary__heading">
           <h3>Shipment Summary</h3>
-          <Badge
-            label={complete ? 'Received' : qrVerified ? 'Ready to confirm' : 'Awaiting receipt'}
-            variant={complete ? 'verified' : qrVerified ? 'accepted' : 'pending'}
-          />
+          {statusLabel && !(qrVerified && !complete) ? (
+            <Badge label={statusLabel} variant={shipmentStatusVariant(statusLabel)} />
+          ) : (
+            <Badge
+              label={complete ? 'Received' : qrVerified ? 'Ready to confirm' : 'Awaiting receipt'}
+              variant={complete ? 'verified' : qrVerified ? 'accepted' : 'shared'}
+            />
+          )}
         </div>
         <div className="workspace-arrival-summary">
           <div className="workspace-arrival-summary__identity">

@@ -436,6 +436,33 @@ describe('private custody and company proof inbox', () => {
     expect((await f.service.informationRequests('session')).requests[0].status).toBe('UNAVAILABLE');
     expect(status).not.toHaveBeenCalled();
   });
+  it('lists shared company requests from their single verified load, without reloading each one', async () => {
+    const f = fixture(seller, true, CompanyRole.SUPPLIER);
+    Object.assign(f.repository, { listEvidence: vi.fn().mockResolvedValue([]) });
+    const shared = (n: string, status: string) => ({
+      requestId: id(n),
+      requester: buyer,
+      supplier: seller,
+      sharedIdentity: true,
+      identityProof: { purpose: n, expiresAt: 2000000000, status },
+    });
+    const outcome = vi.fn();
+    Object.assign(f.service, {
+      flow: {
+        listSharedCompanyRequests: vi
+          .fn()
+          .mockResolvedValue([shared('a', 'VERIFIED'), shared('b', 'PRESENTED')]),
+        companyIdentityProofOutcome: outcome,
+      },
+    });
+    f.gateway.read.mockResolvedValue({ buyer, seller, requester: buyer, supplier: seller });
+    const { requests } = await f.service.informationRequests('session');
+    expect(requests.map((row) => [row.purpose, row.status])).toEqual([
+      ['a', 'VERIFIED'],
+      ['b', 'PRESENTED'],
+    ]);
+    expect(outcome).not.toHaveBeenCalled();
+  });
   it.each([
     [outsider, CompanyRole.DISTRIBUTOR, 1, 1],
     ['0x4000000000000000000000000000000000000004', CompanyRole.DISTRIBUTOR, 0, 0],

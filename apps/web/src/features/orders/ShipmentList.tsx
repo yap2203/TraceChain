@@ -1,7 +1,16 @@
 import { useMemo, useState } from 'react';
-import { CalendarClock, CheckCircle2, Filter, Package, Search, Truck } from 'lucide-react';
+import {
+  CalendarClock,
+  CheckCircle2,
+  Filter,
+  Hourglass,
+  Package,
+  Search,
+  Truck,
+} from 'lucide-react';
 import { PaginationBar, usePagination } from '../../components/ui/PaginatedTable';
 
+import { shipmentStatusAccent, shipmentStatusVariant } from '../workspaces/shared/shipment-status';
 import {
   Badge,
   Btn,
@@ -16,7 +25,7 @@ import { formatOperationalQuantity } from '../workspaces/shared/operational-form
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
 import type { OrderRecord } from './orders.api';
 
-type ShipmentFilter = 'all' | 'attention' | 'transit' | 'receipt' | 'completed';
+type ShipmentFilter = 'all' | 'attention' | 'pickup' | 'transit' | 'receipt' | 'completed';
 type ShipmentSort = 'newest' | 'arrival' | 'item';
 
 export function ShipmentList({
@@ -41,6 +50,8 @@ export function ShipmentList({
       attention: shipments.filter(
         (entry) => shipmentGroup(entry, statusLabel(entry)) === 'attention',
       ).length,
+      pickup: shipments.filter((entry) => shipmentGroup(entry, statusLabel(entry)) === 'pickup')
+        .length,
       transit: shipments.filter((entry) => shipmentGroup(entry, statusLabel(entry)) === 'transit')
         .length,
       receipt: shipments.filter((entry) => shipmentGroup(entry, statusLabel(entry)) === 'receipt')
@@ -99,6 +110,13 @@ export function ShipmentList({
           onClick={() => setFilter(filter === 'attention' ? 'all' : 'attention')}
         />
         <InventorySummaryCard
+          label="Waiting for pickup"
+          value={counts.pickup}
+          icon={<Hourglass size={20} />}
+          selected={filter === 'pickup'}
+          onClick={() => setFilter(filter === 'pickup' ? 'all' : 'pickup')}
+        />
+        <InventorySummaryCard
           label="In transit"
           value={counts.transit}
           icon={<Truck size={20} />}
@@ -128,6 +146,7 @@ export function ShipmentList({
         tabs={[
           { value: 'all', label: 'All', count: shipments.length },
           { value: 'attention', label: 'Needs action', count: counts.attention },
+          { value: 'pickup', label: 'Waiting for pickup', count: counts.pickup },
           { value: 'transit', label: 'In transit', count: counts.transit },
           { value: 'receipt', label: 'Awaiting receipt', count: counts.receipt },
           { value: 'completed', label: 'Completed', count: counts.completed },
@@ -171,6 +190,7 @@ export function ShipmentList({
             options={[
               { value: 'all', label: 'All statuses' },
               { value: 'attention', label: 'Needs action' },
+              { value: 'pickup', label: 'Waiting for pickup' },
               { value: 'transit', label: 'In transit' },
               { value: 'receipt', label: 'Awaiting receipt' },
               { value: 'completed', label: 'Completed' },
@@ -226,6 +246,7 @@ export function ShipmentList({
               return (
                 <article
                   className={`shipment-card is-${group}`}
+                  style={shipmentStatusAccent(state)}
                   key={entry.shipmentId}
                   onClick={openCardOnClick(open)}
                 >
@@ -245,16 +266,7 @@ export function ShipmentList({
                         <h3>{name}</h3>
                         <p>{item?.batchReference ?? 'Batch reference unavailable'}</p>
                       </div>
-                      <Badge
-                        label={state}
-                        variant={
-                          group === 'completed'
-                            ? 'verified'
-                            : group === 'attention'
-                              ? 'pending'
-                              : 'transfer-pending'
-                        }
-                      />
+                      <Badge label={state} variant={shipmentStatusVariant(state)} />
                     </div>
 
                     <div className="shipment-journey" aria-label="Shipment journey">
@@ -296,10 +308,10 @@ export function ShipmentList({
                       </dl>
                       <p>
                         <span>Next</span>
-                        {nextShipmentAction(group, recipient)}
+                        {nextShipmentAction(group, recipient, sender)}
                       </p>
                       <Btn variant="outline" onClick={open}>
-                        Review shipment
+                        {group === 'pickup' ? 'View pickup' : 'Review shipment'}
                       </Btn>
                     </div>
                   </div>
@@ -355,6 +367,7 @@ function catalogueItem(catalogue: OrderRecord[], batchId?: string) {
 
 function shipmentGroup(entry: OrderRecord, label: string): Exclude<ShipmentFilter, 'all'> {
   const value = label.toLocaleLowerCase();
+  if (/waiting for pickup/.test(value)) return 'pickup';
   if (/received|completed|returned|cancelled/.test(value)) return 'completed';
   if (/rejected|discrepancy|review|action/.test(value)) return 'attention';
   if (/awaiting.*receipt|arrived|partially/.test(value)) return 'receipt';
@@ -384,8 +397,13 @@ export function dateTime(value: unknown) {
   return Number(value) ? new Date(Number(value) * 1_000).toLocaleString() : 'Not recorded';
 }
 
-function nextShipmentAction(group: Exclude<ShipmentFilter, 'all'>, recipient: string) {
+function nextShipmentAction(
+  group: Exclude<ShipmentFilter, 'all'>,
+  recipient: string,
+  sender: string,
+) {
   if (group === 'completed') return 'No action required';
+  if (group === 'pickup') return `${sender} prints the label and confirms the handoff at pickup`;
   if (group === 'receipt') return `${recipient} reviews and confirms physical receipt`;
   if (group === 'transit') return 'Track the physical shipment until arrival';
   return 'Open the shipment and review its current requirement';

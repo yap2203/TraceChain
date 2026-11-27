@@ -486,19 +486,51 @@ describe('custody offer, acceptance, pickup and handoff', () => {
       { ...f.repo, findEvidence: async () => ({ identityProof: {} }) } as any,
       flow as any,
     );
-    const accept = () => service.actCustodyOffer('s', offer.offerId, { action: 'accept' });
+    const accept = () =>
+      service.actCustodyOffer('s', offer.offerId, {
+        action: 'accept',
+        pickupAt: Math.floor(Date.now() / 1000) + 600,
+        vehicle: 'VAB 1234',
+        expectedAt: Math.floor(Date.now() / 1000) + 7200,
+      });
     await expect(accept()).rejects.toMatchObject({ code: 'COMPANY_PROOF_REQUIRED' });
     Object.assign(outcome, { status: 'VERIFIED', presenterWallet: foreign });
     await expect(accept()).rejects.toMatchObject({ code: 'COMPANY_PROOF_REQUIRED' });
     outcome.presenterWallet = source;
-    await accept();
-    await service.actCustodyOffer('s', offer.offerId, {
-      action: 'schedule',
-      pickupAt: Math.floor(Date.now() / 1000) + 600,
-    });
+    expect((await accept()).offer.status).toBe('SCHEDULED');
     // The outcome is read for the offer's verifier; the short-lived presentation is never re-verified.
     expect(flow.companyIdentityProofOutcome).toHaveBeenCalledWith(expect.any(String), carrier);
     expect(flow.getCompanyIdentityProofStatus).not.toHaveBeenCalled();
+  });
+  it('lets the Distributor decide once an unverified company request has expired', async () => {
+    const f = fixture();
+    const { offer } = await f.offers.create('s', input);
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+    const flow = {
+      companyIdentityProofOutcome: vi.fn(async () => ({
+        status: 'REQUESTED',
+        presenterWallet: source,
+      })),
+      getCompanyIdentityProofStatus: vi.fn(),
+    };
+    const proof = { expiresAt: Math.floor(Date.now() / 1000) + 300 };
+    const service = new OrdersService(
+      f.auth as any,
+      f.gateway,
+      f.store as any,
+      { ...f.repo, findEvidence: async () => ({ identityProof: proof }) } as any,
+      flow as any,
+    );
+    const accept = () =>
+      service.actCustodyOffer('s', offer.offerId, {
+        action: 'accept',
+        pickupAt: Math.floor(Date.now() / 1000) + 600,
+        vehicle: 'VAB 1234',
+        expectedAt: Math.floor(Date.now() / 1000) + 7200,
+      });
+    await expect(accept()).rejects.toMatchObject({ code: 'COMPANY_PROOF_REQUIRED' });
+    proof.expiresAt = Math.floor(Date.now() / 1000) - 1;
+    expect((await accept()).offer.status).toBe('SCHEDULED');
   });
   it.each([1, 2] as const)(
     'coordinates kind %s without moving stock until the original sender confirms handoff',
@@ -509,21 +541,39 @@ describe('custody offer, acceptance, pickup and handoff', () => {
       expect(f.prepare).not.toHaveBeenCalled();
       expect(f.gateway.prepare).not.toHaveBeenCalled();
       f.actor(carrier, CompanyRole.DISTRIBUTOR);
-      await f.offers.act('s', offer.offerId, { action: 'accept' });
+      // Acceptance carries the pickup time, vehicle and arrival, so the offer is arranged in one step.
+      const pickupAt = Math.floor(Date.now() / 1000) + 600;
+      await expect(f.offers.act('s', offer.offerId, { action: 'accept' })).rejects.toMatchObject({
+        code: 'INVALID_PICKUP_TIME',
+      });
+      await expect(
+        f.offers.act('s', offer.offerId, { action: 'accept', pickupAt, expectedAt: pickupAt + 60 }),
+      ).rejects.toMatchObject({ code: 'PICKUP_VEHICLE_REQUIRED' });
+      await expect(
+        f.offers.act('s', offer.offerId, {
+          action: 'accept',
+          pickupAt,
+          vehicle: 'VAB 1234',
+          expectedAt: pickupAt,
+        }),
+      ).rejects.toMatchObject({ code: 'INVALID_ARRIVAL_TIME' });
       await f.offers.act('s', offer.offerId, {
-        action: 'schedule',
+        action: 'accept',
         pickupAt: Math.floor(Date.now() / 1000) + 600,
+        vehicle: 'VAB 1234',
+        expectedAt: Math.floor(Date.now() / 1000) + 7200,
       });
       f.actor(source, kind === 1 ? CompanyRole.SUPPLIER : CompanyRole.MANUFACTURER);
       // The label can be printed once pickup is arranged; it must match the shipment the handoff records.
       const planned = (await f.offers.get('s', offer.offerId)).plannedShipmentId;
       expect(planned).toMatch(/^0x[0-9a-f]{64}$/);
-      const payload = {
-        vehicle: 'VAB 1234',
-        occurredAt: Math.floor(Date.now() / 1000),
-        expectedAt: Math.floor(Date.now() / 1000) + 3600,
-      };
-      await f.offers.prepare('s', offer.offerId, payload);
+      // The sender only confirms: vehicle and arrival come from the arrangement, the time from now.
+      const before = Math.floor(Date.now() / 1000);
+      await f.offers.prepare('s', offer.offerId);
+      const sent = f.prepare.mock.calls[0]![1];
+      expect(sent.vehicle).toBe('VAB 1234');
+      expect(sent.expectedAt).toBe((await f.offers.get('s', offer.offerId)).expectedAt);
+      expect(sent.occurredAt).toBeGreaterThanOrEqual(before);
       expect(f.prepare).toHaveBeenCalledWith(
         's',
         expect.objectContaining({

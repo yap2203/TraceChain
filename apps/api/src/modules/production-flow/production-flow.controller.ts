@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { ZodError } from 'zod';
+import { ZodError, z } from 'zod';
 
 import { AuthError } from '../auth/auth.service.js';
 import {
@@ -17,7 +17,9 @@ import {
 import { ProductionFlowApiError, ProductionFlowService } from './production-flow.service.js';
 
 export class ProductionFlowController {
-  prepareCompanyWalletBinding = this.action((request) => this.service.prepareCompanyWalletBinding(this.session(request)));
+  prepareCompanyWalletBinding = this.action((request) =>
+    this.service.prepareCompanyWalletBinding(this.session(request)),
+  );
   certificationDocument = this.action((request) =>
     this.service.certificationDocument(
       this.session(request),
@@ -101,6 +103,16 @@ export class ProductionFlowController {
     this.service.declineCompanyIdentityProof(
       this.session(request),
       requestIdSchema.parse(request.params).requestId,
+    ),
+  );
+  rejectCompanyIdentityProof = this.action((request) =>
+    this.service.rejectCompanyIdentityProof(
+      this.session(request),
+      requestIdSchema.parse(request.params).requestId,
+      z
+        .object({ reason: z.string().trim().min(1).max(500) })
+        .strict()
+        .parse(request.body).reason,
     ),
   );
   getCompanyIdentityProofStatus = this.action((request) =>

@@ -40,6 +40,10 @@ export function createProductionFlowRouter(controller: ProductionFlowController)
     '/evidence-requests/:requestId/company-identity/decline',
     controller.declineCompanyIdentityProof,
   );
+  router.post(
+    '/evidence-requests/:requestId/company-identity/reject',
+    controller.rejectCompanyIdentityProof,
+  );
   router.get(
     '/evidence-requests/:requestId/company-identity',
     controller.getCompanyIdentityProofStatus,
