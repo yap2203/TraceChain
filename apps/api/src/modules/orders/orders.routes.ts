@@ -27,8 +27,9 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
     ) =>
     async (request: any, response: any, next: any) => {
       try {
-        const timed = await timeOrderRead(() =>
-          operation(resolve(), request.cookies?.[cookieName], request),
+        const timed = await timeOrderRead(
+          () => operation(resolve(), request.cookies?.[cookieName], request),
+          request.method === 'GET',
         );
         response.setHeader('Server-Timing', timed.header);
         response.json(timed.result);
@@ -351,11 +352,23 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       .strict()
       .superRefine((input, ctx) => {
         if (new Set(input.requiredClaims).size !== input.requiredClaims.length)
-          ctx.addIssue({ code: 'custom', path: ['requiredClaims'], message: 'Claim identifiers must be unique.' });
+          ctx.addIssue({
+            code: 'custom',
+            path: ['requiredClaims'],
+            message: 'Claim identifiers must be unique.',
+          });
         if (new Set(input.optionalClaims).size !== input.optionalClaims.length)
-          ctx.addIssue({ code: 'custom', path: ['optionalClaims'], message: 'Claim identifiers must be unique.' });
+          ctx.addIssue({
+            code: 'custom',
+            path: ['optionalClaims'],
+            message: 'Claim identifiers must be unique.',
+          });
         if (input.requiredClaims.some((key) => input.optionalClaims.includes(key)))
-          ctx.addIssue({ code: 'custom', path: ['optionalClaims'], message: 'A claim cannot be both Required and Optional.' });
+          ctx.addIssue({
+            code: 'custom',
+            path: ['optionalClaims'],
+            message: 'A claim cannot be both Required and Optional.',
+          });
       }),
     z
       .object({ action: z.literal('present'), presentation: z.string().min(100).max(300000) })

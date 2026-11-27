@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { JsonRpcProvider, type JsonRpcPayload } from 'ethers';
+import { timeOrderRead } from './read-timing.js';
 import {
   ApiRpcProvider,
   MultiRpcProvider,
@@ -456,6 +457,41 @@ describe('Multi-RPC routing', () => {
     await vi.runAllTimersAsync();
     expect((await result)[0].result).toBe('0x1');
     expect(labels).toEqual(['primary']);
+  });
+  it('pins latest eth_call to a confirmed block only for page-load requests', async () => {
+    vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '2');
+    const tags: unknown[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      const entries = (Array.isArray(input) ? input : [input]) as JsonRpcPayload[];
+      return entries.map((entry) => {
+        if (entry.method === 'eth_call') tags.push((entry.params as unknown[])[1]);
+        return {
+          jsonrpc: '2.0',
+          id: entry.id,
+          result: entry.method === 'eth_blockNumber' ? '0x64' : '0x1',
+        };
+      });
+    });
+    const provider = pool();
+    const eth = (): JsonRpcPayload => ({
+      jsonrpc: '2.0',
+      id: 7,
+      method: 'eth_call',
+      params: [{ to: '0x0000000000000000000000000000000000000001', data: '0x' }, 'latest'],
+    });
+    // Workflow read (no request context): must see the real latest state.
+    const outside = provider._send(eth());
+    await vi.runAllTimersAsync();
+    await outside;
+    // Orders read: pinned to head (100) minus 2 confirmations.
+    const inside = timeOrderRead(() => provider._send(eth()));
+    await vi.runAllTimersAsync();
+    await inside;
+    // Action request (POST): checks the newest state, so it is not pinned.
+    const action = timeOrderRead(() => provider._send(eth()), false);
+    await vi.runAllTimersAsync();
+    await action;
+    expect(tags).toEqual(['latest', '0x62', 'latest']);
   });
   it('fails over immediately from a primary rate limit to the secondary', async () => {
     const labels: string[] = [];

@@ -8,6 +8,7 @@ import {
 import {
   countRead,
   currentConfirmedReadBlock,
+  pinsConfirmedReads,
   recordRpcEndpoint,
   setConfirmedReadBlock,
 } from './read-timing.js';
@@ -550,7 +551,10 @@ export class MultiRpcProvider extends JsonRpcProvider {
     // sent to the primary exactly once and never failed over.
     if (entries.some((entry) => !reads.has(entry.method)))
       return this.ordinary[0].provider._send(payload);
+    // Pin to a confirmed block only for page loads. Actions and workflow reads (e.g. right after
+    // the user's own transaction) must see the real latest state.
     if (
+      pinsConfirmedReads() &&
       entries.some(
         (entry) =>
           entry.method === 'eth_call' &&

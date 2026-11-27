@@ -1,5 +1,34 @@
 # Project Progress
 
+## 2026-11-27 - Fix: registration form stayed locked after a refused attempt
+
+- The ingredient registration form locked all fields as soon as Register was pressed and never
+  unlocked. If the server refused (for example `WORKFLOW_CONFLICT`: the batch reference already
+  has a registration with different details) or MetaMask was cancelled, nothing could be
+  corrected.
+- Now the form unlocks when the attempt sent no transaction (none submitted, none confirmed);
+  after any transaction it stays locked as before, so nothing is registered twice.
+- `WORKFLOW_CONFLICT` shows a plain message under the batch reference on step 1: use a different
+  reference, or find the existing batch in My ingredients.
+- Verified: web typecheck, 436 web tests (new conflict test; cancel/revert tests now expect an
+  editable form).
+
+## 2026-11-27 - Fix: ingredient registration always reported a stale read
+
+- Cause: `MultiRpcProvider` pinned every `latest` eth_call to head minus
+  `CHAIN_EVENT_CONFIRMATIONS` (2 on Sepolia), even outside the orders read context, where the
+  pinned block could not be stored. Ingredient registration reads its workflow state straight
+  after its own transaction, so it always saw the pre-transaction state and stopped with "This
+  transaction already confirmed, but the blockchain read is behind".
+- Fix: pin only for page loads. `timeOrderRead(operation, pinReads)` carries the flag and
+  `pinsConfirmedReads()` checks it. Orders GET routes keep their consistent confirmed snapshot.
+  Orders POST actions (image upload, order and custody actions) and all other routes read the real
+  latest block. This also fixes the ingredient image upload right after registration, which
+  failed with a 503 "order ledger is unavailable" because the owner check could not see the new
+  batch yet.
+- Verified: API typecheck, 537 API tests (new pinning test covering no context, page load and
+  action). Not re-tested with a live MetaMask registration.
+
 ## 2026-11-27 - Clickable form steps
 
 - Shared `StepProgress` takes optional `onSelect` / `disabled`; with them, each step is a button

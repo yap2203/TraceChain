@@ -332,6 +332,7 @@ export function RegisterBatch({
     setStarted(true);
     setError('');
     let confirmationPending = false;
+    let sent = false;
     try {
       setStatus('Preparing registration…');
       let workflow = await prepareWorkflow(frozen.current);
@@ -353,6 +354,7 @@ export function RegisterBatch({
         const currentStage = workflow.state;
         await submitTransaction(workflow.transaction, workflow.supplierWallet, (stage) => {
           confirmationPending = stage === 'submitted';
+          if (stage === 'submitted') sent = true;
           if (stage !== 'wallet')
             setStatus(
               stage === 'submitted'
@@ -382,6 +384,21 @@ export function RegisterBatch({
       // Done: go straight to the new record, unless the image error needs reading first.
       if (!imageFailed) onCompleted?.(workflow.batchId);
     } catch (cause) {
+      // Nothing reached the chain in this attempt (server refused or MetaMask cancelled):
+      // unlock the form so entries can be corrected. After any transaction, it stays locked.
+      if (!sent && confirmedStages.current.size === 0) {
+        setStarted(false);
+        frozen.current = undefined;
+      }
+      if ((cause as { code?: string }).code === 'WORKFLOW_CONFLICT') {
+        const message = `Batch reference "${draft.reference.trim()}" is already used by another registration. Use a different batch reference, or find that batch in My ingredients if it was already registered.`;
+        setError(message);
+        setStatus('');
+        setStep(0);
+        setErrors({ reference: message });
+        focusError();
+        return;
+      }
       setError(
         reportError(
           cause,

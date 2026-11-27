@@ -220,6 +220,35 @@ describe('Supplier ingredient batch workflow', () => {
     expect(screen.getByRole('button', { name: 'Retry registration' })).toBeTruthy();
     expect(screen.getAllByText('Cocoa Powder').length).toBeGreaterThan(0);
   });
+  it('unlocks the form when the server refuses before any transaction', async () => {
+    const prepareWorkflow = vi
+      .fn()
+      .mockRejectedValue(
+        new batchApi.IngredientBatchRequestError(
+          'WORKFLOW_CONFLICT',
+          'This batch ID already has a different registration workflow.',
+          409,
+        ),
+      );
+    const submitTransaction = vi.fn();
+    render(
+      <RegisterBatch
+        onBack={vi.fn()}
+        prepareWorkflow={prepareWorkflow}
+        submitTransaction={submitTransaction}
+      />,
+    );
+    completeForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
+    const reference = (await screen.findByLabelText(
+      /Supplier batch reference/,
+    )) as HTMLInputElement;
+    expect(screen.getAllByText(/is already used by another registration/).length).toBeGreaterThan(
+      0,
+    );
+    expect(reference.closest('fieldset')?.disabled).toBe(false);
+    expect(submitTransaction).not.toHaveBeenCalled();
+  });
   it('navigates with the step indicator, validating before moving forward', async () => {
     render(<RegisterBatch onBack={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: 'Enter information manually' }));
@@ -430,7 +459,9 @@ describe('Supplier ingredient batch workflow', () => {
       completeForm();
       fireEvent.click(screen.getByRole('button', { name: 'Register with MetaMask' }));
       await screen.findByText(message);
-      expect(screen.getByRole('button', { name: 'Retry registration' })).toBeTruthy();
+      // Nothing changed on chain, so entries stay and the form is editable again.
+      expect(screen.getByRole('button', { name: 'Register with MetaMask' })).toBeTruthy();
+      expect(screen.getAllByText('Cocoa Powder').length).toBeGreaterThan(0);
     },
   );
 

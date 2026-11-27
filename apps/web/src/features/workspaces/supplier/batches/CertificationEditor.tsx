@@ -458,7 +458,7 @@ export function CertificationEditor({
               <div className="ingredient-certification-card__footer">
                 <Btn
                   size="sm"
-                  variant="ghost"
+                  variant="danger"
                   icon={<Trash2 size={14} aria-hidden="true" />}
                   disabled={disabled}
                   onClick={() =>

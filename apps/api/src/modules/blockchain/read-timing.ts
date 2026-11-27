@@ -7,6 +7,7 @@ type Counts = {
   failovers: number;
   endpointLabels: Set<string>;
   confirmedBlock?: number;
+  pinReads: boolean;
 };
 const context = new AsyncLocalStorage<Counts>();
 export function countRead(kind: 'rpc' | 'scans' | 'ipfs') {
@@ -19,6 +20,10 @@ export function recordRpcEndpoint(label: string, failedOver = false) {
   counts.endpointLabels.add(label);
   if (failedOver) counts.failovers++;
 }
+/** True inside a timed page-load request, where reads share one block a few confirmations behind head. */
+export function pinsConfirmedReads() {
+  return context.getStore()?.pinReads === true;
+}
 export function currentConfirmedReadBlock() {
   return context.getStore()?.confirmedBlock;
 }
@@ -26,13 +31,15 @@ export function setConfirmedReadBlock(block: number) {
   const counts = context.getStore();
   if (counts) counts.confirmedBlock = block;
 }
-export async function timeOrderRead<T>(operation: () => Promise<T>) {
+// pinReads: only page loads use the confirmed snapshot; actions must check the newest state.
+export async function timeOrderRead<T>(operation: () => Promise<T>, pinReads = true) {
   const counts: Counts = {
     rpc: 0,
     scans: 0,
     ipfs: 0,
     failovers: 0,
     endpointLabels: new Set(),
+    pinReads,
   };
   const started = performance.now();
   const result = await context.run(counts, operation);

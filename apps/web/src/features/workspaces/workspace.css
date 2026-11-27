@@ -5880,9 +5880,10 @@
   font-size: 12px;
   font-weight: 600;
 }
+/* Choices share the full width evenly; they wrap on narrow screens. */
 .workspace-radio-group__options {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
 }
 .workspace-radio-group__options > label {
