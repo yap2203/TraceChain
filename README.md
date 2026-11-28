@@ -578,6 +578,9 @@ The current version includes a responsive React application, five stakeholder wo
 
 ## Current implementation status
 
+Contract transactions show a blocking loading screen while awaiting MetaMask and blockchain
+confirmation. Screen interaction resumes when confirmation finishes or the transaction fails.
+
 | Area                                     | Status                                                                                       |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Public login and company-registration UI | Three-step onboarding submits real local applications; optional logo is encrypted off-chain  |

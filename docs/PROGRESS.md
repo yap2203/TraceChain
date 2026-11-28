@@ -1,5 +1,13 @@
 # Project Progress
 
+## 2026-11-28 - Block screen interaction during transactions
+
+- Added a shared full-screen loading dialog from wallet submission through the caller's receipt
+  confirmation. Native modal behavior blocks background clicks and keyboard interaction, and Escape
+  keeps the loading dialog open. Completion, wallet rejection and receipt failures release it.
+- The loading text distinguishes MetaMask confirmation from blockchain confirmation. Existing
+  transaction callers and receipt handling use the shared submission helper.
+
 ## 2026-11-28 - Company issuance journal recovery and Sepolia Orders diagnosis
 
 - Preserved the active zero-byte issuance journal under a backup name. Unreadable journals now

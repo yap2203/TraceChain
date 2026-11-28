@@ -1,5 +1,6 @@
 import { LoadingIndicator } from './components/ui/LoadingIndicator';
 import { Notifications } from './components/ui/Notifications';
+import { TransactionProgress } from './components/ui/TransactionProgress';
 import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 
@@ -37,6 +38,7 @@ function App() {
   return (
     <>
       <Notifications />
+      <TransactionProgress />
       <Routes>
         <Route path="/" element={<Navigate replace to="/login" />} />
         <Route path="/login" element={<LoginPage />} />
