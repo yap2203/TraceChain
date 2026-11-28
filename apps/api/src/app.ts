@@ -8,7 +8,7 @@ import {
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
-import { getRpcPerformanceMetrics } from './modules/blockchain/rpc-provider.js';
+import { getRpcPerformanceMetrics, isRpcUnavailableError } from './modules/blockchain/rpc-provider.js';
 
 import { env } from './config/env.js';
 import { loadBlockchainEnvironment } from './config/blockchain-env.js';
@@ -737,6 +737,17 @@ export function createApp({
 
       if (error instanceof IssuanceJournalError) {
         response.status(503).json({ error: { code: error.code, message: error.message } });
+        return;
+      }
+
+      if (isRpcUnavailableError(error)) {
+        response.setHeader('Retry-After', '30');
+        response.status(503).json({
+          error: {
+            code: 'BLOCKCHAIN_UNAVAILABLE',
+            message: 'Blockchain providers are temporarily busy. Please retry shortly.',
+          },
+        });
         return;
       }
 

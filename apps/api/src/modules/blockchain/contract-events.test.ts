@@ -113,6 +113,25 @@ describe('Public chain event pagination', () => {
     expect(logs.map((log) => Number(log.args.amount))).toEqual([12_000, 17_000, 22_000]);
     expect(logs[0].eventName).toBe('Supplied');
   });
+  it('resumes after a failed log page without rescanning completed pages', async () => {
+    vi.stubEnv('CHAIN_EVENT_START_BLOCK', '12000');
+    const f = fixture();
+    const read = f.provider.getLogs.getMockImplementation()!;
+    let fail = true;
+    f.provider.getLogs.mockImplementation(async (filter) => {
+      if (filter.fromBlock === 22000 && fail) {
+        fail = false;
+        throw new Error('All configured RPC providers are temporarily unavailable.');
+      }
+      return read(filter);
+    });
+    await expect(queryContractEvents(f.contract, supplierAFilter)).rejects.toThrow('unavailable');
+    const logs = await queryContractEvents(f.contract, supplierAFilter);
+    expect(logs).toHaveLength(3);
+    expect(f.provider.getLogs.mock.calls.map(([filter]) => filter.fromBlock)).toEqual([
+      12000, 17000, 22000, 22000,
+    ]);
+  });
   it('shares one contract scan across event types and filters', async () => {
     vi.stubEnv('CHAIN_EVENT_START_BLOCK', '12000');
     const f = fixture();
@@ -245,20 +264,23 @@ describe('Shared multi-contract scan', () => {
     expect(f.provider.getBlockNumber).toHaveBeenCalledTimes(1);
   });
 
-  it('halves a range the provider rejects for returning too many results', async () => {
-    vi.stubEnv('CHAIN_EVENT_HEAD_CACHE_MS', '0');
-    const f = fixture();
-    f.provider.getLogs
-      .mockRejectedValueOnce(new Error('query returned more than 10000 results'))
-      .mockImplementation(async (filter: any) =>
-        f.queryFilter('*', filter.fromBlock, filter.toBlock),
-      );
-    await queryContractEvents(f.contract, notedFilter);
-    expect(f.queryFilter.mock.calls).toEqual([
-      ['*', 24_000, 24_002],
-      ['*', 24_003, 24_005],
-    ]);
-  });
+  it.each(['query returned more than 10000 results', 'block range exceeds limit'])(
+    'halves a rejected range: %s',
+    async (message) => {
+      vi.stubEnv('CHAIN_EVENT_HEAD_CACHE_MS', '0');
+      const f = fixture();
+      f.provider.getLogs
+        .mockRejectedValueOnce(new Error(message))
+        .mockImplementation(async (filter: any) =>
+          f.queryFilter('*', filter.fromBlock, filter.toBlock),
+        );
+      await queryContractEvents(f.contract, notedFilter);
+      expect(f.queryFilter.mock.calls).toEqual([
+        ['*', 24_000, 24_002],
+        ['*', 24_003, 24_005],
+      ]);
+    },
+  );
 });
 
 describe('Persisted contract event index', () => {

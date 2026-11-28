@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventLog, Log, type BaseContract, type Provider } from 'ethers';
 import { countRead } from './read-timing.js';
+import { isRpcLogRangeError } from './rpc-provider.js';
 
 const DEFAULT_PAGE_SIZE = 5_000;
 const deploymentBlocks = new WeakMap<Provider, Map<string, Promise<number>>>();
@@ -196,47 +197,30 @@ async function scanAll(provider: Provider, scanner: ProviderScanner, confirmedHe
     groups.set(start, [...(groups.get(start) ?? []), index]);
   }
   if (!groups.size) return;
-  const [scanned, checkpoint] = await Promise.all([
-    Promise.all(
-      [...groups].map(async ([start, indexes]) => ({
-        indexes,
-        logs: await readLogs(
-          provider,
-          indexes.map((index) => index.address),
-          start,
-          confirmedHead,
-        ),
-      })),
-    ),
-    provider.getBlock(confirmedHead),
-  ]);
-  const local = members[0]!.local;
-  if (!checkpoint?.hash && !local)
-    throw new Error('The RPC provider did not return a confirmed block hash.');
-  for (const { indexes, logs } of scanned)
-    for (const index of indexes) {
-      const additions = logs.filter((log) => log.address.toLowerCase() === index.address);
-      index.logs = deduplicateLogs([...index.logs, ...additions]);
-      index.lastProcessedBlock = confirmedHead;
-      index.checkpointHash = checkpoint?.hash ?? `local:${confirmedHead}`;
-      notifyIndex({ key: index.key, kind: 'scan', block: confirmedHead, logs: additions });
-      if (!index.local && storeDirectory) persistIndex(index, index.key, storeDirectory);
-    }
-}
-
-async function readLogs(provider: Provider, addresses: string[], from: number, to: number) {
   const pageSize = integerEnvironment('CHAIN_EVENT_PAGE_SIZE', DEFAULT_PAGE_SIZE, 1, 100_000);
-  const logs: StoredLog[] = [];
-  for (let pageStart = from; pageStart <= to; pageStart += pageSize)
-    logs.push(
-      ...(await readLogRange(
+  // Commit each complete page so a later outage does not discard successful catch-up work.
+  for (const [start, indexes] of groups) {
+    for (let from = start; from <= confirmedHead; from += pageSize) {
+      const to = Math.min(confirmedHead, from + pageSize - 1);
+      const logs = await readLogRange(
         provider,
-        addresses,
-        pageStart,
-        Math.min(to, pageStart + pageSize - 1),
-      )),
-    );
-  return logs;
+        indexes.map((index) => index.address),
+        from,
+        to,
+      );
+      const checkpoint = await provider.getBlock(to);
+      if (!checkpoint?.hash && !indexes[0]!.local)
+        throw new Error('The RPC provider did not return a confirmed block hash.');
+      for (const index of indexes) {
+        const additions = logs.filter((log) => log.address.toLowerCase() === index.address);
+        index.logs = deduplicateLogs([...index.logs, ...additions]);
+        index.lastProcessedBlock = to;
+        index.checkpointHash = checkpoint?.hash ?? `local:${to}`;
+        notifyIndex({ key: index.key, kind: 'scan', block: to, logs: additions });
+        if (!index.local && storeDirectory) persistIndex(index, index.key, storeDirectory);
+      }
+    }
+  }
 }
 
 /** Halves a range the provider rejects for returning too many results. */
@@ -255,20 +239,13 @@ async function readLogRange(
     });
     return page.map(storedLog);
   } catch (cause) {
-    if (to <= from || !tooManyResults(cause)) throw cause;
+    if (to <= from || !isRpcLogRangeError(cause)) throw cause;
     const middle = Math.floor((from + to) / 2);
     return [
       ...(await readLogRange(provider, addresses, from, middle)),
       ...(await readLogRange(provider, addresses, middle + 1, to)),
     ];
   }
-}
-
-function tooManyResults(cause: unknown) {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  return /more than \d+ results|query returned more than|too many results|response size (?:is )?(?:too large|exceed)/i.test(
-    message,
-  );
 }
 
 function storedLog(log: Log | EventLog): StoredLog {

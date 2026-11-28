@@ -7,10 +7,26 @@ import {
   getRpcPerformanceMetrics,
   resetRpcPerformanceMetrics,
   isRpcRateLimitError,
+  isRpcUnavailableError,
   type RpcTransportConfiguration,
 } from './rpc-provider.js';
 
 describe('Shared API RPC transport', () => {
+  it('classifies wrapped provider outages without treating contract reverts as outages', () => {
+    expect(
+      isRpcUnavailableError({
+        code: 'UNKNOWN_ERROR',
+        error: {
+          code: -32000,
+          message: 'All configured RPC providers are temporarily unavailable.',
+        },
+      }),
+    ).toBe(true);
+    expect(isRpcUnavailableError({ code: 3, message: 'execution reverted' })).toBe(false);
+    expect(isRpcUnavailableError({ code: -32005, message: 'block range exceeds limit' })).toBe(
+      false,
+    );
+  });
   it('recognizes nested provider rate limits without confusing ordinary reverts', () => {
     expect(
       isRpcRateLimitError({
@@ -564,6 +580,38 @@ describe('Multi-RPC routing', () => {
     await vi.runAllTimersAsync();
     await result;
     expect(labels).toEqual(['logs-primary']);
+  });
+  it('returns log range limits for adaptive splitting without opening the provider circuit', async () => {
+    const labels: string[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      labels.push((this as ApiRpcProvider).endpointLabel);
+      const entry = input as JsonRpcPayload;
+      const filter = (entry.params as any[])[0];
+      return filter.toBlock === '0x1388'
+        ? ([
+            {
+              jsonrpc: '2.0',
+              id: entry.id,
+              error: { code: -32005, message: 'block range exceeds limit' },
+            },
+          ] as any)
+        : [{ jsonrpc: '2.0', id: entry.id, result: [] }];
+    });
+    const provider = pool(true);
+    const request = (toBlock: string): JsonRpcPayload => ({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_getLogs',
+      params: [{ fromBlock: '0x1', toBlock }],
+    });
+    const large = provider._send(request('0x1388'));
+    await vi.runAllTimersAsync();
+    expect((await large)[0]).toHaveProperty('error');
+    const small = provider._send(request('0xa'));
+    await vi.runAllTimersAsync();
+    expect((await small)[0].result).toEqual([]);
+    expect(labels).toEqual(['logs-primary', 'logs-primary']);
+    expect(getRpcPerformanceMetrics().circuitOpens).toBe(0);
   });
   it('splits the exact remaining log range for a smaller fallback and orders results', async () => {
     vi.stubEnv('CHAIN_EVENT_FALLBACK_PAGE_SIZE', '10');

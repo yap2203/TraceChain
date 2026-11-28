@@ -1027,6 +1027,7 @@ function endpointMetrics(label: string): RpcEndpointMetrics {
 
 function isThrottled(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
+  if (isRpcLogRangeError(value)) return false;
   const error = value as {
     code?: number | string;
     message?: string;
@@ -1055,6 +1056,22 @@ function isThrottled(value: unknown): boolean {
     isThrottled(error.cause) ||
     isThrottled(error.info?.error)
   );
+}
+
+export function isRpcLogRangeError(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const error = value as { message?: string; error?: unknown; info?: { error?: unknown } };
+  return (
+    /more than \d+ results|query returned more than|too many results|response size (?:is )?(?:too large|exceed)|block range[^.]* (?:limit|exceed|too (?:large|wide))|limited to[^.]*block|maximum[^.]*block range/i.test(
+      error.message ?? '',
+    ) ||
+    isRpcLogRangeError(error.error) ||
+    isRpcLogRangeError(error.info?.error)
+  );
+}
+
+export function isRpcUnavailableError(value: unknown) {
+  return isTransientFailure(value);
 }
 
 function isTimeout(value: unknown): boolean {
