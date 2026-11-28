@@ -18,7 +18,7 @@ export function Table({
             {headers.map((h) => (
               <th
                 key={h}
-                className="px-[16px] py-[10px] text-left text-[12px] text-ws-text2 font-semibold tracking-[0.05em] uppercase whitespace-nowrap border-b [border-bottom-style:solid] border-ws-border"
+                className="px-[16px] py-[10px] text-left text-[length:var(--text-label,13px)] text-ws-text2 font-semibold tracking-[0.05em] uppercase whitespace-nowrap border-b [border-bottom-style:solid] border-ws-border"
               >
                 {h}
               </th>
@@ -62,7 +62,7 @@ export function TD({
 }) {
   return (
     <td
-      className={`px-[16px] py-[12px] text-[13px] ${mono ? 'font-code' : 'font-ui'} ${muted ? 'text-ws-text2' : 'text-ws-text'} ${bold ? 'font-semibold' : 'font-normal'}`}
+      className={`px-[16px] py-[12px] text-[length:var(--text-body,14px)] ${mono ? 'font-code' : 'font-ui'} ${muted ? 'text-ws-text2' : 'text-ws-text'} ${bold ? 'font-semibold' : 'font-normal'}`}
     >
       {children}
     </td>

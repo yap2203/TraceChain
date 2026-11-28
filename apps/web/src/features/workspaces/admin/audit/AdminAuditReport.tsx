@@ -105,7 +105,7 @@ export default function AdminAuditReport() {
     applications,
     credentials,
   };
-  if (loading) return <LoadingIndicator page label="Loading registry audit…" />;
+  if (loading) return <LoadingIndicator page layout="table" label="Loading registry audit…" />;
   return (
     <div>
       <SectionTitle

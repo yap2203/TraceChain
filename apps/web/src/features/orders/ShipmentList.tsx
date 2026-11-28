@@ -1,6 +1,6 @@
-import { shipmentNeedsAction } from './delivery-state';
+import { shipmentNeedsAction, shipmentNextAction } from './delivery-state';
 import { useMemo, useState } from 'react';
-import { CheckCircle2, Filter, Package, Search, Truck } from 'lucide-react';
+import { CheckCircle2, Package, Search, Truck } from 'lucide-react';
 import { PaginationBar, usePagination } from '../../components/ui/PaginatedTable';
 
 import { shipmentStatusAccent, shipmentStatusVariant } from '../workspaces/shared/shipment-status';
@@ -38,7 +38,6 @@ export function ShipmentList({
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<ShipmentFilter>('all');
   const [sort, setSort] = useState<ShipmentSort>('newest');
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const counts = useMemo(
     () => ({
       attention: shipments.filter((entry) =>
@@ -126,14 +125,6 @@ export function ShipmentList({
           onChange={setSearch}
           placeholder="Item, company, location or shipment reference"
         />
-        <Btn
-          variant="outline"
-          icon={<Filter size={16} />}
-          aria-expanded={filtersOpen}
-          onClick={() => setFiltersOpen((value) => !value)}
-        >
-          Filters
-        </Btn>
         <SelectField
           label="Sort"
           value={sort}
@@ -145,34 +136,19 @@ export function ShipmentList({
           ]}
         />
       </div>
-      {filtersOpen && (
-        <div className="shipment-filter-panel">
-          <SelectField
-            label="Shipment status"
-            value={filter}
-            onChange={(value) => setFilter(value as ShipmentFilter)}
-            options={[
-              { value: 'all', label: 'All statuses' },
-              { value: 'attention', label: 'Needs action' },
-              { value: 'pickup', label: 'Waiting for pickup' },
-              { value: 'transit', label: 'In transit' },
-              { value: 'receipt', label: 'Awaiting receipt' },
-              { value: 'completed', label: 'Completed' },
-            ]}
-          />
-          <Btn
-            variant="ghost"
-            disabled={!search && filter === 'all' && sort === 'newest'}
-            onClick={() => {
-              setSearch('');
-              setFilter('all');
-              setSort('newest');
-            }}
-          >
-            Clear filters
-          </Btn>
-        </div>
-      )}
+      <div className="flex justify-end">
+        <Btn
+          variant="ghost"
+          disabled={!search && filter === 'all' && sort === 'newest'}
+          onClick={() => {
+            setSearch('');
+            setFilter('all');
+            setSort('newest');
+          }}
+        >
+          Clear filters
+        </Btn>
+      </div>
 
       <div className="shipment-results-heading">
         <strong aria-live="polite">
@@ -272,7 +248,9 @@ export function ShipmentList({
                       </dl>
                       <p>
                         <span>Next</span>
-                        {nextShipmentAction(group, recipient, sender)}
+                        {actor
+                          ? shipmentNextAction(entry, actor)
+                          : nextShipmentAction(group, recipient, sender)}
                       </p>
                       <Btn variant="outline" onClick={open}>
                         View details

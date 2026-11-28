@@ -546,11 +546,7 @@ export function nextAction(order: OrderRecord, actor: string) {
   if (state.group === 'closed') return 'No action required.';
   if (same(actor, order.seller) && hasValue(order.identityCredentialHash))
     return 'Review the verified company evidence and record your decision.';
-  return same(order.seller, actor)
-    ? 'Review the request and record your decision.'
-    : Number(order.kind) === 2 || order.productDelivery
-      ? 'Await the Manufacturer response.'
-      : 'Await the Supplier response.';
+  return same(order.seller, actor) ? 'Review the request and record your decision.' : state.label;
 }
 
 function compareRequests(left: OrderRecord, right: OrderRecord, sort: RequestSort) {

@@ -133,7 +133,7 @@ export function ProductHistory({ onView }: { onView: (batch: string) => void }) 
       </div>
       {(error || operationalError) && <Alert type="error" message={error || operationalError} />}
       {loading ? (
-        <LoadingIndicator page label="Resolving blockchain custody history" />
+        <LoadingIndicator page layout="detail" label="Resolving blockchain custody history" />
       ) : !filtered.length ? (
         <EmptyState
           icon={<Search size={22} />}

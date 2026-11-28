@@ -1,4 +1,5 @@
 import { BackNavigation } from '../../components/ui/BackNavigation';
+import type { ReactNode } from 'react';
 import {
   ArrowRight,
   Building2,
@@ -48,6 +49,7 @@ export function DistributorIngredientDispatchForm({
   valid,
   onBack,
   onRefresh,
+  refreshStatus,
   onManageLocations,
   missingLocation,
   onSubmit,
@@ -74,6 +76,7 @@ export function DistributorIngredientDispatchForm({
   valid: boolean;
   onBack: () => void;
   onRefresh: () => void;
+  refreshStatus?: ReactNode;
   onManageLocations: () => void;
   missingLocation: boolean;
   onSubmit: () => void;
@@ -167,9 +170,12 @@ export function DistributorIngredientDispatchForm({
           <h2>Record ingredient dispatch</h2>
           <p>Confirm the reserved stock, route and physical road-dispatch details.</p>
         </div>
-        <Btn variant="outline" icon={<RefreshCw size={16} />} disabled={busy} onClick={onRefresh}>
-          Refresh
-        </Btn>
+        <div className="flex flex-wrap items-center gap-3">
+          {refreshStatus}
+          <Btn variant="outline" icon={<RefreshCw size={16} />} disabled={busy} onClick={onRefresh}>
+            Refresh
+          </Btn>
+        </div>
       </header>
 
       <StatusTimeline label="Ingredient dispatch progress" steps={timeline} variant="arrival" />

@@ -26,7 +26,7 @@ export function ReceiveProduct({
   const { data, error, loading } = useOperationalData();
   const transfer = data.transfers.find((entry) => entry.transferId === shipmentId);
   if (error) return <Alert type="error" message={error} />;
-  if (loading) return <LoadingIndicator page label="Reading CustodyTransfer…" />;
+  if (loading) return <LoadingIndicator page layout="detail" label="Reading CustodyTransfer…" />;
   if (!transfer)
     return (
       <EmptyState

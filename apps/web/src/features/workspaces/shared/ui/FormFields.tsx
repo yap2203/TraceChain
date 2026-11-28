@@ -3,7 +3,7 @@ import { openDatePicker } from '../../../../components/ui/date-picker';
 import { useId, useState, type InputHTMLAttributes, type ReactNode } from 'react';
 
 const inputClasses =
-  'min-w-0 max-w-full w-full bg-ws-surface border border-solid border-ws-border2 rounded-[8px] px-[12px] py-[9px] text-[13px] text-ws-text focus:border-ws-teal transition-[border-color] duration-150 ease-[ease]';
+  'min-w-0 max-w-full w-full bg-ws-surface border border-solid border-ws-border2 rounded-[8px] px-[12px] py-[9px] text-[length:var(--text-body,14px)] text-ws-text focus:border-ws-teal transition-[border-color] duration-150 ease-[ease]';
 
 export function FormField({
   label,
@@ -22,7 +22,7 @@ export function FormField({
 }) {
   return (
     <div className="workspace-form-field flex flex-col gap-[5px] min-w-0">
-      <label className="grid gap-[5px] text-[12px] font-semibold text-ws-text2 min-w-0">
+      <label className="grid gap-[5px] text-[length:var(--text-label,13px)] font-semibold text-ws-text2 min-w-0">
         <span>
           <RequiredLabel label={label} required={required} />
         </span>
@@ -32,7 +32,7 @@ export function FormField({
         <div
           id={descriptionId}
           role={error ? 'alert' : undefined}
-          className={`text-[12px] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
+          className={`text-[length:var(--text-label,13px)] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
         >
           {error || hint}
         </div>
@@ -236,7 +236,7 @@ export function RadioGroup({
         <div
           id={descriptionId}
           role={error ? 'alert' : undefined}
-          className={`text-[12px] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
+          className={`text-[length:var(--text-label,13px)] ${error ? 'text-ws-red' : 'text-ws-text3'}`}
         >
           {error || hint}
         </div>

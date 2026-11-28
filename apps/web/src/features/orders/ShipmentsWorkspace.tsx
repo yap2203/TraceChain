@@ -143,6 +143,8 @@ export function ShipmentsWorkspace({
     setSelectedDeliveryOrder(routeParams.get('orderId') ?? '');
     setPickupOfferId(routeParams.get('offerId') ?? '');
   }, [routeLocation.search]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [data, setData] = useState<OrdersState>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -201,8 +203,18 @@ export function ShipmentsWorkspace({
   const focusedList =
     view === 'shipments' && !selected && !selectedDeliveryOrder && !reviewDeliveryOrderId;
   const load = useCallback(
-    async (refresh = false) =>
-      setData(await getOrders(focusedList ? 'shipment-workspace' : undefined, { refresh })),
+    async (refresh = false) => {
+      setRefreshing(true);
+      setRefreshFailed(false);
+      try {
+        setData(await getOrders(focusedList ? 'shipment-workspace' : undefined, { refresh }));
+      } catch (cause) {
+        setRefreshFailed(true);
+        throw cause;
+      } finally {
+        setRefreshing(false);
+      }
+    },
     [focusedList],
   );
   useEffect(() => {
@@ -941,14 +953,17 @@ export function ShipmentsWorkspace({
                       : 'Track product deliveries from Manufacturers via Distributors.'
           }
           action={
-            <Btn
-              variant="outline"
-              icon={<RefreshCw size={16} />}
-              disabled={busy}
-              onClick={() => void run(() => load(true))}
-            >
-              {busy ? 'Refreshing…' : 'Refresh'}
-            </Btn>
+            <div className="flex flex-wrap items-center gap-3">
+              <ReadModelStatus state={data} refreshing={refreshing} failed={refreshFailed} />
+              <Btn
+                variant="outline"
+                icon={<RefreshCw size={16} />}
+                disabled={busy}
+                onClick={() => void run(() => load(true))}
+              >
+                Refresh
+              </Btn>
+            </div>
           }
         />
       )}
@@ -985,7 +1000,6 @@ export function ShipmentsWorkspace({
       )}
       {error && <Alert type="error" announce={false} message={error} />}{' '}
       {notice && <Alert type="success" message={notice} />}
-      <ReadModelStatus state={data} />
       {!data.shipmentReviewSupported && (
         <Alert
           type="warning"
@@ -1305,6 +1319,9 @@ export function ShipmentsWorkspace({
         )}
       {distributorIngredientDispatch && order && (
         <DistributorIngredientDispatchForm
+          refreshStatus={
+            <ReadModelStatus state={data} refreshing={refreshing} failed={refreshFailed} />
+          }
           data={data}
           order={order}
           item={item(order.custodyOrder.batchId)}
@@ -1568,6 +1585,9 @@ export function ShipmentsWorkspace({
       )}
       {shipment && view === 'shipments' && workflowDetail && (
         <ShipmentWorkflowDetail
+          refreshStatus={
+            <ReadModelStatus state={data} refreshing={refreshing} failed={refreshFailed} />
+          }
           shipment={shipment}
           statusLabel={listStatus(shipment)}
           catalogueItem={shipmentItem}

@@ -238,7 +238,7 @@ export function InformationRequestsWorkspace({
             }
           />
           {loading && !data ? (
-            <LoadingIndicator page label="Loading request…" />
+            <LoadingIndicator page layout="detail" label="Loading request…" />
           ) : selected?.status === 'UNAVAILABLE' ? (
             <EvidenceNextStep
               tone="closed"
@@ -366,7 +366,7 @@ export function InformationRequestsWorkspace({
       {showEvidence ? (
         <Fragment key={ingredientMount}>{children}</Fragment>
       ) : loading ? (
-        <LoadingIndicator page label="Loading evidence requests…" />
+        <LoadingIndicator page layout="table" label="Loading evidence requests…" />
       ) : visibleRows.length ? (
         <div className="evidence-table-card">
           <PaginatedTable>
@@ -655,7 +655,7 @@ function CustodyCompanyProof({
     void load();
   }, [load]);
   if (error) return <Alert type="error" message={error} />;
-  if (!offer) return <LoadingIndicator page label="Loading request…" />;
+  if (!offer) return <LoadingIndicator page layout="detail" label="Loading request…" />;
   const delivery = {
     distributor: offer.distributor,
     stage:
@@ -790,7 +790,7 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
     return (
       <>
         {error && <Alert type="error" message={error} />}
-        {!error && <LoadingIndicator page label="Loading request…" />}
+        {!error && <LoadingIndicator page layout="detail" label="Loading request…" />}
       </>
     );
   if (role !== 'supplier') return <CompanyIdentityProofAction requestId={requestId} role={role} />;

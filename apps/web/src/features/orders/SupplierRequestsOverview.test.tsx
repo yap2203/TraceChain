@@ -204,7 +204,7 @@ it('shows the actual Supplier and a waiting status for Manufacturer requests, wi
   );
   expect(screen.getByRole('columnheader', { name: 'Supplier' })).toBeTruthy();
   expect(screen.queryByRole('columnheader', { name: /Retailer/ })).toBeNull();
-  expect(screen.getAllByText('Awaiting Supplier response').length).toBeGreaterThan(0);
+  expect(screen.getAllByText('Waiting for Supplier').length).toBeGreaterThan(0);
   expect(screen.queryByText('Needs your review')).toBeNull();
   expect(screen.getByRole('button', { name: /Awaiting response/ })).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Needs action/ })).toBeNull();

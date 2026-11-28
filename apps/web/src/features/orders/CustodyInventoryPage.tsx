@@ -59,7 +59,9 @@ export function CustodyInventoryPage({
   const [view, setView] = useState<InventoryView>(() => readInventoryView(role, kind));
   const [params, setParams] = useSearchParams();
 
+  const [refreshing, setRefreshing] = useState(false);
   const load = useCallback(async (refresh = false) => {
+    setRefreshing(true);
     setError('');
     try {
       setData(await getOrders('custody-inventory', { refresh }));
@@ -73,6 +75,8 @@ export function CustodyInventoryPage({
             }
           : current,
       );
+    } finally {
+      setRefreshing(false);
     }
   }, []);
 
@@ -171,13 +175,20 @@ export function CustodyInventoryPage({
         title={copy.title}
         sub={copy.subtitle}
         action={
-          <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={() => void load(true)}>
-            Refresh inventory
-          </Btn>
+          <div className="flex flex-wrap items-center gap-3">
+            <ReadModelStatus state={data} refreshing={!!data && refreshing} />
+            <Btn
+              variant="outline"
+              icon={<RefreshCw size={16} />}
+              disabled={refreshing}
+              onClick={() => void load(true)}
+            >
+              Refresh inventory
+            </Btn>
+          </div>
         }
       />
 
-      <ReadModelStatus state={data} />
       {error && <Alert type="error" message={error} />}
       {!data.warehouseSupported && (
         <Alert

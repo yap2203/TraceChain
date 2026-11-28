@@ -165,7 +165,11 @@ export function PersonalPermissions({ company }: { company: ChainCredential }) {
         </p>
       )}
       {loading && permissions.length === 0 && (
-        <LoadingIndicator page label="Reading company permissions from the blockchain..." />
+        <LoadingIndicator
+          page
+          layout="form"
+          label="Reading company permissions from the blockchain..."
+        />
       )}
       {account && !loading && !error && permissions.length === 0 && (
         <p className="admin-company-note">

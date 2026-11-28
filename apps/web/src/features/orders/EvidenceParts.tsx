@@ -4,7 +4,7 @@ import { useState, type ReactNode } from 'react';
 import { Contact, type LucideIcon } from 'lucide-react';
 import { EvidenceCard, FieldPairs, IdentifierFields, verificationBadge } from './EvidenceIdentity';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
-import { Alert, Badge, Btn, ClaimRow, Input } from '../workspaces/shared/ui';
+import { Alert, Badge, Btn, ClaimRow, Input, TechnicalDetails } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import './evidence-exchange.css';
 
@@ -180,18 +180,21 @@ export function EvidenceVerificationSummary({
     <section aria-label="Technical verification" className="grid gap-[8px]">
       <Badge label={badge.label} variant={badge.variant} />
       <p>
-        {verification?.message ??
-          (state === 'PASSED'
-            ? 'Required technical checks passed. Acceptance is a separate decision.'
-            : 'Shared content is untrusted until verification passes.')}
+        {state === 'PASSED'
+          ? 'Checks passed. Acceptance is separate.'
+          : (verification?.message ?? 'Shared content is untrusted until verification passes.')}
       </p>
-      {verification?.checks?.length ? (
-        <ul className="m-0 pl-[20px]">
-          {verification.checks.map((check) => (
-            <li key={check}>{check.replaceAll('_', ' ').toLowerCase()}</li>
-          ))}
-        </ul>
-      ) : null}
+      <TechnicalDetails
+        fields={[
+          ...(verification?.checks ?? []).map((check, index) => ({
+            label: `Check ${index + 1}`,
+            value: check.replaceAll('_', ' ').toLowerCase(),
+          })),
+          ...(state === 'PASSED' && verification?.message
+            ? [{ label: 'Verification details', value: verification.message }]
+            : []),
+        ]}
+      />
     </section>
   );
 }

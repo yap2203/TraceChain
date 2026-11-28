@@ -231,7 +231,7 @@ export function ManufacturerInformationRequests({
       />
       {error && <Alert type="warning" message={error} />}
       {loading ? (
-        <LoadingIndicator page label="Loading information requests…" />
+        <LoadingIndicator page layout="table" label="Loading information requests…" />
       ) : (
         <Card padding="0">
           <Table headers={['Company', 'Request type', 'Reference', 'Deadline', 'Status', '']}>

@@ -102,3 +102,16 @@ it('shows missing disclosures without revealing values and treats preview text a
   expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeTruthy();
   expect(document.querySelector('img')).toBeNull();
 });
+
+it('keeps a concise verification result visible and detailed checks collapsed', () => {
+  render(
+    <EvidenceVerificationSummary
+      verification={{ state: 'PASSED', checks: ['SIGNATURE_VERIFIED', 'ISSUER_TRUSTED'] }}
+    />,
+  );
+  expect(screen.getByText('Verification passed')).toBeTruthy();
+  const technical = screen.getByText('Technical details').closest('details');
+  expect(technical?.open).toBe(false);
+  expect(technical?.textContent).toContain('signature verified');
+  expect(technical?.textContent).toContain('issuer trusted');
+});

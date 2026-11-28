@@ -81,7 +81,6 @@ export function DistributorIngredientDeliveries({
 }) {
   const [tab, setTab] = useState<DeliveryTab>('all');
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<'all' | DeliveryStatus>('all');
   const [warehouse, setWarehouse] = useState('');
   const [supplier, setSupplier] = useState('');
   const [manufacturer, setManufacturer] = useState('');
@@ -99,7 +98,6 @@ export function DistributorIngredientDeliveries({
     .filter(
       (record) =>
         (tab === 'all' || record.tab === tab) &&
-        (status === 'all' || record.status === status) &&
         (!warehouse || record.warehouse === warehouse) &&
         (!supplier || record.supplierName === supplier) &&
         (!manufacturer || record.manufacturerName === manufacturer) &&
@@ -163,22 +161,16 @@ export function DistributorIngredientDeliveries({
       count: records.filter((record) => record.tab === 'completed').length,
     },
   ];
-  const detailedFiltersActive =
-    status !== 'all' || warehouse !== '' || supplier !== '' || manufacturer !== '';
+  const detailedFiltersActive = warehouse !== '' || supplier !== '' || manufacturer !== '';
   const filtersActive =
     tab !== 'all' || Boolean(search.trim()) || detailedFiltersActive || sort !== 'newest';
   const clearFilters = () => {
     setTab('all');
     setSearch('');
-    setStatus('all');
     setWarehouse('');
     setSupplier('');
     setManufacturer('');
     setSort('newest');
-  };
-  const filterSummary = (next: DeliveryStatus) => {
-    setTab('all');
-    setStatus(next);
   };
 
   return (
@@ -191,33 +183,21 @@ export function DistributorIngredientDeliveries({
           label="Awaiting dispatch"
           value={summary.awaitingDispatch}
           icon={<PackageCheck size={29} />}
-          selected={status === 'awaiting-dispatch'}
-          onClick={() => filterSummary('awaiting-dispatch')}
-          variant="navigation"
         />
         <InventorySummaryCard
           label="In transit"
           value={summary.inTransit}
           icon={<Truck size={29} />}
-          selected={status === 'in-transit'}
-          onClick={() => filterSummary('in-transit')}
-          variant="navigation"
         />
         <InventorySummaryCard
           label="Awaiting Manufacturer receipt"
           value={summary.awaitingReceipt}
           icon={<CalendarClock size={29} />}
-          selected={status === 'awaiting-receipt'}
-          onClick={() => filterSummary('awaiting-receipt')}
-          variant="navigation"
         />
         <InventorySummaryCard
           label="Completed"
           value={summary.completed}
           icon={<CheckCircle2 size={29} />}
-          selected={status === 'completed'}
-          onClick={() => filterSummary('completed')}
-          variant="navigation"
         />
       </div>
 
@@ -227,7 +207,6 @@ export function DistributorIngredientDeliveries({
         value={tab}
         onChange={(next) => {
           setTab(next);
-          setStatus('all');
         }}
       />
 
@@ -267,18 +246,6 @@ export function DistributorIngredientDeliveries({
 
       {filtersOpen && (
         <div id="ingredient-delivery-filters" className="distributor-deliveries__filter-panel">
-          <SelectField
-            label="Status"
-            value={status}
-            onChange={(value) => setStatus(value as typeof status)}
-            options={[
-              { value: 'all', label: 'All statuses' },
-              { value: 'awaiting-dispatch', label: 'Awaiting dispatch' },
-              { value: 'in-transit', label: 'In transit' },
-              { value: 'awaiting-receipt', label: 'Awaiting receipt' },
-              { value: 'completed', label: 'Completed' },
-            ]}
-          />
           <SelectField
             label="Warehouse"
             value={warehouse}

@@ -94,7 +94,7 @@ describe('Manufacturer Distributor Retailer product delivery', () => {
     expect(
       (
         screen.getByRole('button', {
-          name: 'Confirm product delivery from custody',
+          name: 'Arrange delivery',
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
@@ -103,7 +103,7 @@ describe('Manufacturer Distributor Retailer product delivery', () => {
     fireEvent.change(screen.getByLabelText('Manufacturer pickup location'), {
       target: { value: 'factory' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Request Distributor delivery' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange delivery' }));
     await waitFor(() =>
       expect(m.prepare).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -196,7 +196,7 @@ it('marks approval complete and arrangement current even when the delivery struc
   expect(
     screen.getByText('Manufacturer approves').closest('li')?.classList.contains('is-complete'),
   ).toBe(true);
-  expect(screen.getByRole('button', { name: 'Request Distributor delivery' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Arrange delivery' })).toBeTruthy();
   rerender(
     <ProductDeliveryPanel
       data={base}
@@ -204,7 +204,7 @@ it('marks approval complete and arrangement current even when the delivery struc
       onChanged={vi.fn()}
     />,
   );
-  expect(screen.queryByRole('button', { name: 'Request Distributor delivery' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Arrange delivery' })).toBeNull();
   expect(screen.getByText('Distributor reviewing request')).toBeTruthy();
   expect(m.prepare).not.toHaveBeenCalled();
   expect(m.sign).not.toHaveBeenCalled();

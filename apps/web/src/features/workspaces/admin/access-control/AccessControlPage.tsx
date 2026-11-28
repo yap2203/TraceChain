@@ -74,7 +74,7 @@ export default function AccessControl({ section }: { section?: Tab } = {}) {
     }
   };
 
-  if (loading) return <LoadingIndicator page label="Loading permissions..." />;
+  if (loading) return <LoadingIndicator page layout="form" label="Loading permissions..." />;
   const active = section ?? tab;
   return (
     <div>

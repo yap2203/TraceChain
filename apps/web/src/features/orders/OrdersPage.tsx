@@ -103,6 +103,7 @@ export function OrdersPage({
   const summaryList = !selected && !evidenceOnly && tab === 'orders' && role !== 'distributor';
   const loadGeneration = useRef(0);
   const listLoadStart = useRef<number | undefined>(undefined);
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [pendingDecision, setPendingDecision] = useState<1 | 2>();
   const [decisionReason, setDecisionReason] = useState('');
   const [receiptConfirmed, setReceiptConfirmed] = useState(false);
@@ -134,6 +135,7 @@ export function OrdersPage({
       const generation = ++loadGeneration.current;
       if (summaryList) listLoadStart.current = performance.now();
       setLoading(true);
+      setRefreshFailed(false);
       try {
         const result = await getOrders(
           summaryList ? 'order-list' : selected ? 'order-detail' : undefined,
@@ -151,6 +153,9 @@ export function OrdersPage({
           setData(result);
           setError('');
         }
+      } catch (cause) {
+        if (generation === loadGeneration.current) setRefreshFailed(true);
+        throw cause;
       } finally {
         if (generation === loadGeneration.current) setLoading(false);
       }
@@ -335,7 +340,7 @@ export function OrdersPage({
             <p>
               {mode === 'manage'
                 ? role === 'distributor'
-                  ? 'Review delivery offers, optionally verify the Supplier company proof, then scan the package label to confirm physical pickup.'
+                  ? 'Review assigned deliveries and confirm physical pickup.'
                   : role === 'manufacturer' && fixedDirection !== 'received'
                     ? 'From Suppliers, delivered by Distributors.'
                     : role === 'retailer'
@@ -352,24 +357,23 @@ export function OrdersPage({
                     : 'Find products, request quantities and track delivery. No payments are processed.'}
             </p>
           </div>
-          <Btn
-            variant="outline"
-            icon={<RefreshCw size={16} />}
-            disabled={busy}
-            onClick={() =>
-              void run(async () => {
-                await load();
-                setNotice(
-                  'Requests refreshed. Changes recorded by other stakeholders are now shown.',
-                );
-              })
-            }
-          >
-            {busy ? 'Working…' : 'Refresh data'}
-          </Btn>
+          <div className="flex flex-wrap items-center gap-3">
+            <ReadModelStatus state={data} refreshing={!!data && loading} failed={refreshFailed} />
+            <Btn
+              variant="outline"
+              icon={<RefreshCw size={16} />}
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await load();
+                })
+              }
+            >
+              {busy ? 'Working…' : 'Refresh data'}
+            </Btn>
+          </div>
         </header>
       )}
-      <ReadModelStatus state={data} />
       {role !== 'supplier' && mode === 'combined' && !evidenceOnly && (
         <nav aria-label="Browse and requests" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <Btn
@@ -920,11 +924,13 @@ export function OrdersPage({
                             variant="danger"
                             disabled={
                               busy ||
+                              !!pendingDecision ||
                               !activeOrder ||
                               !order.isRequestOnly ||
                               Number(order.decision?.status) !== 0
                             }
                             onClick={() => {
+                              setError('');
                               setPendingDecision(2);
                               setDecisionReason('');
                             }}
@@ -934,11 +940,13 @@ export function OrdersPage({
                           <Btn
                             disabled={
                               busy ||
+                              !!pendingDecision ||
                               !activeOrder ||
                               !order.isRequestOnly ||
                               Number(order.decision?.status) !== 0
                             }
                             onClick={() => {
+                              setError('');
                               setPendingDecision(1);
                               setDecisionReason('Request approved');
                             }}
@@ -949,15 +957,18 @@ export function OrdersPage({
                       )}
                     </div>
                     {pendingDecision && Number(order.decision?.status) === 0 && (
-                      <Card>
-                        <h4>
-                          {pendingDecision === 1 ? 'Approve this request?' : 'Reject this request?'}
-                        </h4>
+                      <Modal
+                        title={pendingDecision === 1 ? 'Approve request' : 'Reject request'}
+                        onClose={() => {
+                          if (!busy) setPendingDecision(undefined);
+                        }}
+                      >
+                        {error && <Alert type="error" announce={false} message={error} />}
                         <p>
                           {pendingDecision === 1 &&
                           (order.custodyOrder || order.details?.custodySource)
-                            ? 'Approval records this order decision. Arrange delivery in a separate confirmation; physical dispatch is a later action.'
-                            : 'This records your decision. No payment or physical dispatch takes place.'}
+                            ? 'Approval records your decision. Delivery arrangement and dispatch are separate.'
+                            : 'Records your decision. No payment or stock movement.'}
                         </p>
                         <Input
                           label="Decision reason"
@@ -976,6 +987,7 @@ export function OrdersPage({
                           </Btn>
                           <Btn
                             variant={pendingDecision === 2 ? 'danger' : 'primary'}
+                            loading={busy}
                             disabled={busy || !decisionReason.trim()}
                             onClick={() =>
                               void run(async () => {
@@ -999,16 +1011,14 @@ export function OrdersPage({
                                     'Order decision confirmed. Refresh records; do not repeat approval. Arrange delivery separately after the record refreshes.',
                                   );
                                 }
-                                setNotice(
-                                  'Decision recorded successfully. Physical dispatch is a separate step.',
-                                );
+                                setNotice('Decision recorded. Dispatch is separate.');
                               })
                             }
                           >
                             Confirm {pendingDecision === 1 ? 'approval' : 'rejection'}
                           </Btn>
                         </div>
-                      </Card>
+                      </Modal>
                     )}
                   </>
                 )}

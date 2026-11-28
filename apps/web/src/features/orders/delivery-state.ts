@@ -15,8 +15,8 @@ export function requestDisplayStatus(order: OrderRecord, actor?: string) {
       ...state,
       label:
         Number(order.kind) === 2 || order.productDelivery
-          ? 'Awaiting Manufacturer response'
-          : 'Awaiting Supplier response',
+          ? 'Waiting for Manufacturer'
+          : 'Waiting for Supplier',
       needsAction,
     };
   return { ...state, needsAction };
@@ -55,4 +55,24 @@ export function shipmentNeedsAction(shipment: OrderRecord, actor?: string) {
     Number(shipment.status) === 4 &&
     sameWallet(shipment.sender, actor)
   );
+}
+
+/** Uses the same viewer eligibility as shipment filters and navigation counts. */
+export function shipmentNextAction(shipment: OrderRecord, actor: string) {
+  if (shipmentNeedsAction(shipment, actor)) {
+    if (shipment.workflowOrderId)
+      return Number(shipment.productDelivery?.stage) === 2
+        ? 'Review delivery request'
+        : 'Record dispatch';
+    if (shipment.pickupOfferId) return 'Confirm handoff';
+    if (sameWallet(shipment.sender, actor) && Number(shipment.status) === 4)
+      return 'Confirm returned goods';
+    return 'Confirm receipt';
+  }
+  if (shipment.pickupOfferId)
+    return `Waiting for ${shipment.senderName ?? 'sender'} to confirm handoff`;
+  if (shipment.workflowOrderId) return 'Waiting for the assigned Distributor';
+  if (shipmentNeedsAction(shipment, shipment.recipient))
+    return `Waiting for ${shipment.recipientName ?? (shipment.kind === 'product' && shipment.orderId ? 'Retailer' : 'recipient')} to confirm receipt`;
+  return 'No action required';
 }

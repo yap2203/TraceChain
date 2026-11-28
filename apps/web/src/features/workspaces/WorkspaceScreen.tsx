@@ -191,7 +191,12 @@ export function WorkspaceScreen({ role, page: tab }: { role: WorkspaceRole; page
     if (tab === 'overview') return <ManufacturerOverview onNav={nav} />;
     if (tab === 'products') {
       if (subView === 'products-new')
-        return <CreateProductBatch onBack={() => setSearchParams({})} />;
+        return (
+          <CreateProductBatch
+            onBack={() => setSearchParams({})}
+            onViewProduct={(id) => goTo('product-detail', id)}
+          />
+        );
       if (subView === 'product-detail')
         return (
           <ProductBatchDetail

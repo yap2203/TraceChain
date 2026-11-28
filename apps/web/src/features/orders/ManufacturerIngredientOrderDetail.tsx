@@ -18,6 +18,7 @@ import type { ReactNode } from 'react';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
 import type { OrderRecord, OrdersState } from './orders.api';
 import { nextAction as orderNextAction, requestStatus } from './RequestsOverview';
+import { ReadModelStatus } from './ReadModelStatus';
 import { Alert, Badge, Btn, Card, StatusTimeline, TechnicalDetails } from '../workspaces/shared/ui';
 
 export function ManufacturerIngredientOrderDetail({
@@ -197,9 +198,12 @@ export function ManufacturerIngredientOrderDetail({
             <p>Order and delivery details</p>
           </div>
         </div>
-        <Btn variant="outline" icon={<RefreshCw size={16} />} disabled={busy} onClick={onRefresh}>
-          Refresh
-        </Btn>
+        <div className="flex flex-wrap items-center gap-3">
+          <ReadModelStatus state={data} refreshing={busy} />
+          <Btn variant="outline" icon={<RefreshCw size={16} />} disabled={busy} onClick={onRefresh}>
+            Refresh
+          </Btn>
+        </div>
       </header>
 
       <StatusTimeline label="Order progress" steps={orderProgress} variant="arrival" />

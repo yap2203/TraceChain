@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   complete: vi.fn(),
   imagePayload: vi.fn(),
   uploadImage: vi.fn(),
+  back: vi.fn(),
+  view: vi.fn(),
 }));
 vi.mock('../../../production-flow/production-flow.api', () => ({
   listProductionIngredients: mocks.ingredients,
@@ -76,7 +78,7 @@ afterEach(() => {
 });
 describe('multi-ingredient production', () => {
   it('shows only the current step and validates a forward header jump with focus', async () => {
-    render(<CreateProductBatch onBack={vi.fn()} />);
+    render(<CreateProductBatch onBack={mocks.back} onViewProduct={mocks.view} />);
     expect(screen.getByRole('heading', { name: '1. Product details' })).toBeTruthy();
     expect(screen.queryByRole('heading', { name: '2. Product presentation' })).toBeNull();
     const review = screen.getByRole('button', { name: /Review and create/ });
@@ -92,7 +94,7 @@ describe('multi-ingredient production', () => {
     expect(mocks.prepare).not.toHaveBeenCalled();
   });
   const setup = async () => {
-    render(<CreateProductBatch onBack={vi.fn()} />);
+    render(<CreateProductBatch onBack={mocks.back} onViewProduct={mocks.view} />);
     for (const [label, value] of [
       ['Product name', 'Chocolate'],
       ['Product batch reference', 'CHOC-1'],
@@ -161,6 +163,12 @@ describe('multi-ingredient production', () => {
     expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
     expect(screen.getByRole('button', { name: 'View product' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Back to products' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'View product' }));
+    expect(mocks.view).toHaveBeenCalledWith('product');
+    expect(mocks.back).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to products' }));
+    expect(mocks.back).toHaveBeenCalledOnce();
+    expect(mocks.view).toHaveBeenCalledTimes(1);
   });
   it('reopens and focuses an invalid earlier field on final validation without signing', async () => {
     await setup();

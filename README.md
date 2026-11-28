@@ -1117,10 +1117,16 @@ detail view, alongside independent Technical details/help disclosures. Server-pa
 tables have one server pager. Request labels and needs-action badges use the viewer's role in the
 record: waiting for a Supplier response is not a Manufacturer review action. Operational and overview
 refreshes retain validated content, show refreshing feedback and keep failures distinct from empty data.
+Order decisions use the shared reason/confirmation dialog; opening or cancelling it never requests a
+transaction. Confirmed decisions remain protected during refresh recovery. Product creation offers
+separate detail and list destinations using the existing query URLs. Shipment status is selected once
+via tabs; additional ingredient-delivery filters cover companies and warehouses. Refresh metadata is
+compact and relative beside Refresh, with explicit stale/failed states; its local clock never polls RPC.
+Evidence keeps disclosed content and the verification outcome visible, with detailed checks collapsed.
 Navigation and page tabs use a shared red needs-action badge (hidden at zero, 99+ above 99). Counts
 observe existing wallet/session-bound query results only: no new polling or RPC requests. Normal
 refreshes update them; confirmed actions invalidate old counts. Failed/stale or not-yet-loaded sources
-show no current count rather than false zeroes. These are action counts, not unread notifications.
+show a neutral unavailable indicator rather than a red number or false zero; destinations not yet loaded remain quiet. These are action counts, not unread notifications.
 
 Success notifications disappear after 4 seconds; error notifications after 7 seconds. Only the exact
 current sidebar page is highlighted, including the single Evidence Exchange destination.

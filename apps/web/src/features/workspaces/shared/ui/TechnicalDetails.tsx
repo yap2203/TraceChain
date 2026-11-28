@@ -22,13 +22,13 @@ export function TechnicalDetails({ fields }: { fields: TechnicalField[] }) {
         overflow: 'hidden',
       }}
     >
-      <summary style={{ color: T.text2, cursor: 'pointer', fontSize: 12 }}>
+      <summary style={{ color: T.text2, cursor: 'pointer', fontSize: 'var(--text-label,13px)' }}>
         Technical details
       </summary>
       <dl style={{ display: 'grid', gap: 10, margin: '12px 0 0' }}>
         {visible.map((field) => (
           <div key={field.label} style={{ display: 'grid', gap: 4, minWidth: 0 }}>
-            <dt style={{ color: T.text2, fontSize: 12 }}>{field.label}</dt>
+            <dt style={{ color: T.text2, fontSize: 'var(--text-label,13px)' }}>{field.label}</dt>
             <dd style={{ margin: 0, minWidth: 0 }}>
               <TechnicalIdentifier label={field.label} value={field.value} />
             </dd>

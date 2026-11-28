@@ -750,8 +750,15 @@ describe('browse and request-only UI', () => {
     expect(screen.getByRole('button', { name: 'Request company evidence' })).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(screen.getByRole('dialog', { name: 'Approve request' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Approve' }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Reject' }).hasAttribute('disabled')).toBe(true);
     expect(screen.getByRole('button', { name: 'Confirm approval' })).toBeTruthy();
     expect(api.prepareOrder).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Approve request' })).toBeNull();
+    expect(api.prepareOrder).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Approve' }).hasAttribute('disabled')).toBe(false);
   });
   it('does not credit approved ingredients until the Manufacturer explicitly confirms a receipt', async () => {
     api.getOrders.mockResolvedValue({
@@ -858,9 +865,7 @@ describe('browse and request-only UI', () => {
     );
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }));
-    expect(
-      await screen.findByRole('button', { name: 'Request Distributor delivery' }),
-    ).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Arrange delivery' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
     expect(api.prepareOrder).toHaveBeenCalledTimes(1);

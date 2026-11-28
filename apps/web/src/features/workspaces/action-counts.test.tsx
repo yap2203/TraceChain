@@ -148,3 +148,12 @@ it('uses server aggregate order counts and a consistent accessible 99+ badge', (
   render(<ActionCountBadge count={0} label="Orders" />);
   expect(screen.queryByText('0')).toBeNull();
 });
+
+it('distinguishes a failed count from confirmed zero without showing a red number', () => {
+  const { container, rerender } = render(<ActionCountBadge count={null} label="Orders" />);
+  expect(screen.getByRole('img', { name: 'Orders action count unavailable' })).toBeTruthy();
+  expect(container.querySelector('.workspace-action-count')).toBeNull();
+  rerender(<ActionCountBadge count={0} label="Orders" />);
+  expect(screen.queryByRole('img')).toBeNull();
+  expect(screen.queryByText('0')).toBeNull();
+});

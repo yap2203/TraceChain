@@ -234,7 +234,7 @@ export function InformationRequests({
         </div>
         {error && <Alert type="error" message={error} />}
         {loading ? (
-          <LoadingIndicator page label="Loading ingredient evidence requests…" />
+          <LoadingIndicator page layout="table" label="Loading ingredient evidence requests…" />
         ) : !receivedShown.length ? (
           <EmptyState
             icon={<Inbox size={30} />}
@@ -390,7 +390,7 @@ export function InformationRequests({
         value={search}
         onChange={setSearch}
       />
-      {loading && <LoadingIndicator page label="Loading evidence requests..." />}
+      {loading && <LoadingIndicator page layout="table" label="Loading evidence requests..." />}
       {direction === 'received' && error && <Alert type="error" message={error} />}
       {direction === 'sent' && sentError && <Alert type="error" message={sentError} />}
       {!loading && direction === 'received' && (

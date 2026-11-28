@@ -227,7 +227,8 @@ export function SelectiveDisclosure({
       setBusy(false);
     }
   };
-  if (!details && !error) return <LoadingIndicator page label="Loading evidence request…" />;
+  if (!details && !error)
+    return <LoadingIndicator page layout="detail" label="Loading evidence request…" />;
   const legacy = details?.credentialFormat === 'JWT_VC';
   const requester = request.requesterName ?? request.manufacturerName ?? 'The requesting company';
   const ingredient = batchInfo?.ingredientName ?? (preview?.ingredientName as string | undefined);

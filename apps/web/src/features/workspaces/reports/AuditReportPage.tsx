@@ -72,7 +72,7 @@ export default function AuditReport() {
       'text/csv',
     );
 
-  if (loading) return <LoadingIndicator page label="Loading records…" />;
+  if (loading) return <LoadingIndicator page layout="table" label="Loading records…" />;
   return (
     <div>
       <SectionTitle

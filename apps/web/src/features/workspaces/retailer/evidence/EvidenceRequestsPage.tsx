@@ -223,7 +223,8 @@ export function RetailerEvidenceRequests({
     }
   };
 
-  if (loading) return <LoadingIndicator page label="Loading ingredient evidence requests…" />;
+  if (loading)
+    return <LoadingIndicator page layout="table" label="Loading ingredient evidence requests…" />;
   const contextFor = (request: { ingredientBatchId: string; productBatchId?: string }) =>
     options.find(
       (option) =>

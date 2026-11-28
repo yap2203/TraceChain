@@ -13,10 +13,10 @@ const variants: Record<BtnVariant, string> = {
   danger: 'bg-ws-red text-white border-ws-red',
 };
 const sizes: Record<BtnSize, string> = {
-  xs: 'min-h-[28px] px-[10px] py-[4px] text-[12px] rounded-[6px]',
-  sm: 'min-h-[32px] px-[14px] py-[6px] text-[12px] rounded-[7px]',
-  md: 'min-h-[38px] px-[18px] py-[9px] text-[13px] rounded-[8px]',
-  lg: 'min-h-[44px] px-[24px] py-[12px] text-[14px] rounded-[9px]',
+  xs: 'min-h-[28px] px-[10px] py-[4px] text-[length:var(--text-label,13px)] rounded-[6px]',
+  sm: 'min-h-[32px] px-[14px] py-[6px] text-[length:var(--text-label,13px)] rounded-[7px]',
+  md: 'min-h-[38px] px-[18px] py-[9px] text-[length:var(--text-body,14px)] rounded-[8px]',
+  lg: 'min-h-[44px] px-[24px] py-[12px] text-[length:var(--text-body,14px)] rounded-[9px]',
 };
 
 export function Btn({

@@ -1,5 +1,15 @@
 # Project Progress
 
+## 2026-11-28 - Focused workflow usability follow-up
+
+- Verified and replaced inline order decision confirmation with the shared accessible modal, reason/consequences, Cancel/Confirm and disabled background decision controls. Opening/cancelling does not prepare a transaction; confirmed approval and refresh-recovery protection remain intact.
+- Product creation View product opens the confirmed new batch detail; Back to products opens the list through existing query routes and browser history. Added direct navigation/back and real success-callback regressions.
+- Shipment lists use one status selector. Ingredient-delivery summary cards are informational, and Filters retains useful warehouse/company criteria. Search, sorting, clearing and single pagination remain; next actions share recipient/sender eligibility with existing filters and counts.
+- Replaced repeated refresh paragraphs/notices with compact relative update, refreshing, stale and failed status beside Refresh. A local display clock updates age without network polling; existing records remain during background refresh. Dispatcher/detail and custody inventory consumers reuse it.
+- Matched existing skeleton variants to table/detail/form consumers across roles and applicable Admin pages. Kept evidence disclosures and concise verification outcomes visible, moving detailed checks into Technical details. Unavailable action counts use one subtle accessible neutral indicator, while known zero and unloaded destinations stay quiet.
+- Reused typography tokens for shared instruction/action text and shortened equivalent delivery/decision labels. No backend, contract, key, authorization, selective-disclosure, stock-rule, QR or deployment changes; no new dependency or standalone onward-transfer feature.
+- Validation: 541 frontend tests across 84 files passed, plus the final three refresh-status regressions, frontend/API/shared/SSI typechecks, production build, changed-file Prettier and Git whitespace checks. Root typecheck still fails on four existing CompanyProofRegistry.reject contract-test typings; repository-wide formatting reports unrelated existing issues. Interactive desktop/mobile rendering and live MetaMask journeys remain unverified.
+
 ## 2026-11-28 - Minimal shared stakeholder presentation
 
 - Replaced buying/selling and vague shipment tabs with goods/counterparty labels across Supplier, Manufacturer, Distributor and Retailer navigation. Existing routes, links, carrier/owner/recipient responsibilities and stock workflows are unchanged.

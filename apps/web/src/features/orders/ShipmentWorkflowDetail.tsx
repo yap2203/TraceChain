@@ -35,6 +35,7 @@ export function ShipmentWorkflowDetail({
   backLabel,
   onBack,
   onRefresh,
+  refreshStatus,
   receiptContent,
   additionalContent,
   technicalFields,
@@ -55,6 +56,7 @@ export function ShipmentWorkflowDetail({
   backLabel?: string;
   onBack?: () => void;
   onRefresh: () => void;
+  refreshStatus?: ReactNode;
   receiptContent: ReactNode;
   additionalContent?: ReactNode;
   technicalFields: TechnicalField[];
@@ -172,9 +174,12 @@ export function ShipmentWorkflowDetail({
           <h2>{title}</h2>
           <p>{subtitle}</p>
         </div>
-        <Btn variant="outline" icon={<RefreshCw size={16} />} disabled={busy} onClick={onRefresh}>
-          Refresh
-        </Btn>
+        <div className="flex flex-wrap items-center gap-3">
+          {refreshStatus}
+          <Btn variant="outline" icon={<RefreshCw size={16} />} disabled={busy} onClick={onRefresh}>
+            Refresh
+          </Btn>
+        </div>
       </header>
 
       <StatusTimeline label="Shipment progress" steps={progress} variant="arrival" />

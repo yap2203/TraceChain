@@ -53,7 +53,13 @@ type SubmittedProduct = {
   request: ProductPreparationInput;
 };
 
-export function CreateProductBatch({ onBack }: { onBack: () => void }) {
+export function CreateProductBatch({
+  onBack,
+  onViewProduct,
+}: {
+  onBack: () => void;
+  onViewProduct: (batchId: string) => void;
+}) {
   const [step, setStep] = useState(0);
   const [focusField, setFocusField] = useState('');
   const [focusRequest, setFocusRequest] = useState(0);
@@ -532,7 +538,7 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           >
             Transfer product
           </Btn>
-          <Btn onClick={onBack}>View product</Btn>
+          <Btn onClick={() => onViewProduct(createdProduct.batchId)}>View product</Btn>
           <Btn variant="outline" onClick={onBack}>
             Back to products
           </Btn>
@@ -788,7 +794,9 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             Choose received ingredients and the amount to use. Remaining stock updates
             automatically; ingredient evidence is optional.
           </p>
-          {stockLoading && <LoadingIndicator page label="Reading ingredient stock…" />}
+          {stockLoading && (
+            <LoadingIndicator page layout="table" label="Reading ingredient stock…" />
+          )}
           {stockError && <Alert type="error" message={stockError} />}
           {!stockLoading && ingredients.length === 0 ? (
             <Alert

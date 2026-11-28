@@ -82,7 +82,7 @@ export function CompanyCredentials() {
     }
   };
   if (loading && credentials.length === 0)
-    return <LoadingIndicator page label="Loading records…" />;
+    return <LoadingIndicator page layout="table" label="Loading records…" />;
   if (selected)
     return (
       <CredDetail

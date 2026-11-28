@@ -382,9 +382,7 @@ export function ProductDeliveryPanel({
                 })
               }
             >
-              {mode === '1'
-                ? 'Request Distributor delivery'
-                : 'Confirm product delivery from custody'}
+              Arrange delivery
             </Btn>
           </div>
         </div>

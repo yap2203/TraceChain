@@ -331,7 +331,7 @@ export function DeliveryIdentityPanel({
       </>
     ) : undefined;
   // Until the real status arrives, the default 'not requested' would show a wrong next step.
-  if (!status && !error) return <LoadingIndicator label="Loading request…" />;
+  if (!status && !error) return <LoadingIndicator page layout="detail" label="Loading request…" />;
   if (!status)
     return (
       <div className="evidence-panel">

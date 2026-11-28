@@ -386,8 +386,10 @@ describe('unified warehouse shipments', () => {
       await screen.findByRole('heading', { name: 'Ingredients to Manufacturers' }),
     ).toBeTruthy();
     expect(screen.getByText('Manage ingredient shipments to Manufacturers.')).toBeTruthy();
-    const awaitingSummary = screen.getByRole('button', { name: /Awaiting dispatch\s*1/ });
-    expect(awaitingSummary).toBeTruthy();
+    expect(
+      screen.getByText('Awaiting dispatch', { selector: '.ingredient-summary-card span' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Awaiting dispatch/ })).toBeNull();
     expect(
       within(screen.getByRole('group', { name: 'Ingredient delivery status' })).getByRole(
         'button',
@@ -411,8 +413,9 @@ describe('unified warehouse shipments', () => {
     expect(journey.textContent).toContain('Actual Manufacturer Company');
     expect(screen.queryByText('No matching shipments')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Record physical dispatch' })).toBeNull();
-    fireEvent.click(awaitingSummary);
-    expect(awaitingSummary.getAttribute('aria-pressed')).toBe('true');
+    const needsAction = screen.getByRole('button', { name: /Needs action\s*1/ });
+    fireEvent.click(needsAction);
+    expect(needsAction.getAttribute('aria-pressed')).toBe('true');
 
     fireEvent.click(screen.getAllByRole('button', { name: 'View details' })[0]!);
 
@@ -478,8 +481,8 @@ describe('unified warehouse shipments', () => {
 
     render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
 
-    // Summary card and filter chip share the name; both are buttons.
-    expect((await screen.findAllByRole('button', { name: /In transit\s*1/ })).length).toBe(2);
+    // Only the status chip selects a status; summary cards are read-only.
+    expect((await screen.findAllByRole('button', { name: /In transit\s*1/ })).length).toBe(1);
     const tab = within(screen.getByRole('group', { name: 'Ingredient delivery status' })).getByRole(
       'button',
       { name: /In transit\s*1/ },
@@ -490,7 +493,7 @@ describe('unified warehouse shipments', () => {
 
     expect(screen.queryByLabelText('Status')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    expect(screen.getByLabelText('Status')).toBeTruthy();
+    expect(screen.queryByLabelText('Status')).toBeNull();
     expect(screen.getByLabelText('Warehouse')).toBeTruthy();
     expect(screen.getByLabelText('Supplier')).toBeTruthy();
     expect(screen.getByLabelText('Manufacturer')).toBeTruthy();

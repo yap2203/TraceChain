@@ -100,3 +100,34 @@ it('colours shipment statuses by the shared meaning of each colour', () => {
   expect(colour('Discrepancy')).toBe('rejected');
   expect(colour('Cancelled')).toBe('expired');
 });
+
+it('has one status control, keeps search/sort/clear and uses recipient-aware action text', () => {
+  const row = {
+    ...shipment(1),
+    kind: 'product',
+    sender: 'sender',
+    recipient: 'recipient',
+    recipientName: 'Retailer One',
+  };
+  const props = {
+    shipments: [row],
+    catalogue: [],
+    locationName: () => 'Site',
+    statusLabel: () => 'Dispatched',
+    onOpen: vi.fn(),
+  };
+  const { rerender } = render(<ShipmentList {...props} actor="sender" />);
+  expect(screen.queryByRole('button', { name: 'Filters' })).toBeNull();
+  expect(screen.queryByRole('combobox', { name: 'Shipment status' })).toBeNull();
+  expect(screen.getByText('Waiting for Retailer One to confirm receipt')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /Needs action/ }));
+  expect(screen.getByText('No shipments match these filters')).toBeTruthy();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Clear filters' })[0]);
+  expect(screen.getByText('Item 1')).toBeTruthy();
+  rerender(<ShipmentList {...props} actor="recipient" />);
+  expect(screen.getByText('Confirm receipt')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: /Needs action/ }));
+  expect(screen.getByText('1 shipment')).toBeTruthy();
+  expect(screen.getByRole('combobox', { name: 'Sort' })).toBeTruthy();
+  expect(props.onOpen).not.toHaveBeenCalled();
+});

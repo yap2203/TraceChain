@@ -247,7 +247,8 @@ export function IngredientEvidence({
     }
   };
 
-  if (loading) return <LoadingIndicator page label="Loading ingredient evidence requests…" />;
+  if (loading)
+    return <LoadingIndicator page layout="table" label="Loading ingredient evidence requests…" />;
   const nameFor = (id?: string) => (id ? catalogueItem(catalogue.data, id) : undefined);
   const banners = (
     <>
