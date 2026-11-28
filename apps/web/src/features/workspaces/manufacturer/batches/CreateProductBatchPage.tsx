@@ -54,6 +54,26 @@ type SubmittedProduct = {
 };
 
 export function CreateProductBatch({ onBack }: { onBack: () => void }) {
+  const [step, setStep] = useState(0);
+  const [focusField, setFocusField] = useState('');
+  const [focusRequest, setFocusRequest] = useState(0);
+  const wizardRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!focusRequest) return;
+    const panel = wizardRef.current?.querySelector(`[data-product-step="${step}"]`);
+    const control = Array.from(
+      panel?.querySelectorAll<HTMLElement>(
+        'input:not([hidden]),select,textarea,[data-focus-field]',
+      ) ?? [],
+    ).find(
+      (element) =>
+        !!focusField &&
+        (element.getAttribute('data-focus-field') === focusField ||
+          element.getAttribute('aria-label') === focusField ||
+          element.closest('label')?.textContent?.trim().startsWith(focusField)),
+    );
+    (control ?? panel?.querySelector<HTMLElement>('h3'))?.focus();
+  }, [step, focusField, focusRequest]);
   const [ingredients, setIngredients] = useState<ProductionIngredient[]>([]);
   const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -184,8 +204,83 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
       ? 'Enter a non-negative unit price with at most two decimal places.'
       : '';
   const datesError = producedAt && expiresAt ? productionDateError(producedAt, expiresAt) : '';
-  const detailsComplete =
-    !!productName && !!batchReference && !!quantity && !!unit && !!producedAt && !!expiresAt;
+  const stepIssue = (page: number): { field: string; message: string } | undefined => {
+    const invalidIngredient = selections.find((entry) => entry.error);
+    const checks: [string, string | undefined][] =
+      page === 0
+        ? [
+            ['Product name', textError(productName, 'Product name', 160)],
+            ['Product batch reference', referenceError(batchReference)],
+            ['Quantity produced', quantityError(quantity)],
+            [
+              'Custom product unit',
+              textError(unit, 'Unit', 31) ||
+                (!/^[A-Za-z0-9._/-]+$/.test(unit.trim())
+                  ? 'Unit contains unsupported characters.'
+                  : ''),
+            ],
+            ['Production date', !producedAt ? 'Enter a production date.' : ''],
+            ['Expiry date', productionDateError(producedAt, expiresAt)],
+          ]
+        : page === 1
+          ? [
+              [
+                'Production stock location',
+                !productionLocation
+                  ? 'Select the receiving / production location holding your ingredients.'
+                  : '',
+              ],
+              ['Product category', category ? textError(category, 'Category', 100) : ''],
+              [
+                'Country of manufacture',
+                origin ? textError(origin, 'Country of manufacture', 120) : '',
+              ],
+              [
+                'Product description',
+                description ? textError(description, 'Description', 1000) : '',
+              ],
+              ['Indicative price', priceError],
+              [
+                'Currency code',
+                price && !/^[A-Z]{3}$/.test(currency) ? 'Enter a three-letter currency code.' : '',
+              ],
+              ['Product image', imageError],
+            ]
+          : [
+              ['', stockLoading ? 'Wait for ingredient stock to finish loading.' : stockError],
+              [
+                invalidIngredient
+                  ? `Quantity to use for ${names[invalidIngredient.ingredient.batchId] ?? shortChainId(invalidIngredient.ingredient.batchId)}`
+                  : '',
+                invalidIngredient?.error,
+              ],
+              [
+                '',
+                !links.length || links.length > 50
+                  ? 'Select between 1 and 50 valid ingredient batches.'
+                  : '',
+              ],
+            ];
+    const failed = checks.find(([, message]) => !!message);
+    return failed ? { field: failed[0], message: failed[1]! } : undefined;
+  };
+  const navigateStep = (target: number) => {
+    if (busy) return;
+    if (target > step)
+      for (let page = 0; page < target; page++) {
+        const issue = stepIssue(page);
+        if (issue) {
+          setStep(page);
+          setError(issue.message);
+          setFocusField(issue.field);
+          setFocusRequest((value) => value + 1);
+          return;
+        }
+      }
+    setError('');
+    setFocusField('');
+    setStep(target);
+  };
   const refreshStock = async (location: string) => {
     try {
       setConfirmedStock((await listProductionIngredients(location, 'production')).batches);
@@ -234,30 +329,16 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
     await refreshStock(submitted.request.productionLocation ?? '');
   };
   const submit = async () => {
-    const validationError =
-      textError(productName, 'Product name', 160) ||
-      referenceError(batchReference) ||
-      (category ? textError(category, 'Category', 100) : '') ||
-      (origin ? textError(origin, 'Country of manufacture', 120) : '') ||
-      (description ? textError(description, 'Description', 1_000) : '') ||
-      (price && !/^(0|[1-9]\d{0,11})(\.\d{1,2})?$/.test(price)
-        ? 'Enter a non-negative unit price with at most two decimal places.'
-        : '') ||
-      (price && !/^[A-Z]{3}$/.test(currency) ? 'Enter a three-letter currency code.' : '') ||
-      quantityError(quantity) ||
-      textError(unit, 'Unit', 31) ||
-      (!/^[A-Za-z0-9._/-]+$/.test(unit.trim()) ? 'Unit contains unsupported characters.' : '') ||
-      productionDateError(producedAt, expiresAt) ||
-      (!productionLocation
-        ? 'Select the receiving / production location holding your ingredients.'
-        : '') ||
-      (selections.find((entry) => entry.error)?.error ?? '') ||
-      (!links.length || links.length > 50
-        ? 'Select between 1 and 50 valid ingredient batches.'
-        : '');
-    if (validationError) {
-      setError(validationError);
-      return;
+    if (busy || step !== 3) return;
+    for (let page = 0; page < 3; page++) {
+      const issue = stepIssue(page);
+      if (issue) {
+        setStep(page);
+        setError(issue.message);
+        setFocusField(issue.field);
+        setFocusRequest((value) => value + 1);
+        return;
+      }
     }
     const submittedProductName = productName.trim();
     const submittedBatchReference = batchReference.trim();
@@ -425,6 +506,9 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             variant="outline"
             onClick={() => {
               setCreatedProduct(undefined);
+              setStep(0);
+              setError('');
+              setFocusField('');
               setProductName('');
               setBatchReference('');
               setQuantity('');
@@ -485,8 +569,8 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="workspace-editor">
-      <BackNavigation onClick={onBack}>Back</BackNavigation>
+    <div className="workspace-editor product-wizard" ref={wizardRef}>
+      <BackNavigation onClick={onBack}>Back to products</BackNavigation>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <h2 style={{ margin: 0, color: T.navy }}>Create Product Batch</h2>
       </div>
@@ -497,407 +581,429 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
           'Ingredients and quantities',
           'Review and create',
         ]}
-        current={!detailsComplete ? 0 : !productionLocation ? 1 : links.length === 0 ? 2 : 3}
+        current={step}
+        completed={[0, 1, 2].filter((page) => !stepIssue(page))}
+        onSelect={navigateStep}
+        disabled={busy}
       />
       {error && <Alert type="error" message={error} />}
-      <Card>
-        <h3>1. Product details</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Input
-            label="Product name"
-            maxLength={160}
-            value={productName}
-            onChange={setProductName}
-            error={productNameError || undefined}
-            required
-          />
-          <Input
-            label="Product batch reference"
-            maxLength={120}
-            pattern="[A-Za-z0-9._:/-]+"
-            value={batchReference}
-            onChange={setBatchReference}
-            error={batchReferenceError || undefined}
-            required
-          />
-          <Input
-            label="Quantity produced"
-            inputMode="numeric"
-            pattern="[1-9][0-9]{0,38}"
-            maxLength={39}
-            value={quantity}
-            onChange={setQuantity}
-            error={outputQuantityError || undefined}
-            required
-          />
-          <SelectField
-            label="Product output unit"
-            value={['each', 'kg', 'g', 'litre', 'ml'].includes(unit) ? unit : 'custom'}
-            onChange={(value) => setUnit(value === 'custom' ? '' : value)}
-            options={['each', 'kg', 'g', 'litre', 'ml', 'custom'].map((value) => ({
-              value,
-              label: value === 'custom' ? 'Other unit' : value,
-            }))}
-          />
-          {!['each', 'kg', 'g', 'litre', 'ml'].includes(unit) && (
+      <div hidden={step !== 0} data-product-step="0">
+        <Card>
+          <h3 tabIndex={-1}>1. Product details</h3>
+          <div className="product-wizard__fields">
             <Input
-              label="Custom product unit"
-              value={unit}
-              onChange={setUnit}
-              maxLength={31}
+              label="Product name"
+              maxLength={160}
+              value={productName}
+              onChange={setProductName}
+              error={productNameError || undefined}
               required
             />
-          )}
-          <Input
-            label="Production date"
-            type="date"
-            value={producedAt}
-            onChange={setProducedAt}
-            required
-          />
-          <Input
-            label="Expiry date"
-            type="date"
-            value={expiresAt}
-            onChange={setExpiresAt}
-            error={datesError || undefined}
-            required
-          />
-        </div>
-      </Card>
-      <Card>
-        <h3>2. Product presentation</h3>
-        <p style={{ color: T.text2 }}>
-          These catalogue details are encrypted off chain and remain separate from the signed and
-          on-chain product identity.
-        </p>
-        <label style={{ display: 'grid', gap: 6 }}>
-          Production location <RequiredMarker />
-          <select
-            aria-label="Production stock location"
-            value={productionLocation}
-            onChange={(event) => setProductionLocation(event.target.value)}
-          >
-            <option value="">Select your registered receiving / production location</option>
-            {locations.map((location) => (
-              <option key={location.location} value={location.location}>
-                {formatLocationLabel(location, location.location)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 14 }}>
-          <Input
-            label="Product category (optional)"
-            maxLength={100}
-            value={category}
-            onChange={setCategory}
-          />
-          <Input
-            label="Country of manufacture (optional)"
-            maxLength={120}
-            value={origin}
-            onChange={setOrigin}
-          />
-          <Input
-            label={`Indicative price per ${unit || 'unit'} (optional)`}
-            value={price}
-            onChange={setPrice}
-            type="number"
-            min="0"
-            step="0.01"
-            error={priceError || undefined}
-            hint="Indicative catalogue price only; this is not a payment or on-chain sale price."
-          />
-          <Input
-            label="Currency code"
-            value={currency}
-            onChange={(value) => setCurrency(value.toUpperCase())}
-            maxLength={3}
-          />
-        </div>
-        <div style={{ marginTop: 14 }}>
-          <Textarea
-            label="Product description (optional)"
-            value={description}
-            onChange={setDescription}
-            maxLength={1_000}
-            rows={4}
-          />
-        </div>
-        <div className="ingredient-photo-review">
-          <div>
-            <span className="ingredient-photo-review__label">Product image (optional)</span>
-            {imagePreview && imageFile ? (
-              <>
-                <img src={imagePreview} alt="Product image preview" />
-                <span className="ingredient-photo-review__filename" title={imageFile.name}>
-                  {imageFile.name}
-                </span>
-              </>
-            ) : (
-              <span className="ingredient-photo-review__empty">No image selected</span>
-            )}
-          </div>
-          <div>
-            <input
-              ref={imageInputRef}
-              aria-label="Product image"
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              hidden
-              disabled={busy}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-                  setImageError('Choose a PNG, JPEG or WebP image.');
-                  event.currentTarget.value = '';
-                  return;
-                }
-                if (file.size > 2 * 1024 * 1024) {
-                  setImageError('Images must not exceed 2 MB.');
-                  event.currentTarget.value = '';
-                  return;
-                }
-                setImageError('');
-                setImageFile(file);
-              }}
+            <Input
+              label="Product batch reference"
+              maxLength={120}
+              pattern="[A-Za-z0-9._:/-]+"
+              value={batchReference}
+              onChange={setBatchReference}
+              error={batchReferenceError || undefined}
+              required
             />
-            <Btn
-              variant="outline"
-              size="sm"
-              disabled={busy}
-              onClick={() => imageInputRef.current?.click()}
+            <Input
+              label="Quantity produced"
+              inputMode="numeric"
+              pattern="[1-9][0-9]{0,38}"
+              maxLength={39}
+              value={quantity}
+              onChange={setQuantity}
+              error={outputQuantityError || undefined}
+              required
+            />
+            <SelectField
+              label="Product output unit"
+              value={['each', 'kg', 'g', 'litre', 'ml'].includes(unit) ? unit : 'custom'}
+              onChange={(value) => setUnit(value === 'custom' ? '' : value)}
+              options={['each', 'kg', 'g', 'litre', 'ml', 'custom'].map((value) => ({
+                value,
+                label: value === 'custom' ? 'Other unit' : value,
+              }))}
+            />
+            {!['each', 'kg', 'g', 'litre', 'ml'].includes(unit) && (
+              <Input
+                label="Custom product unit"
+                value={unit}
+                onChange={setUnit}
+                maxLength={31}
+                required
+              />
+            )}
+            <Input
+              label="Production date"
+              type="date"
+              value={producedAt}
+              onChange={setProducedAt}
+              required
+            />
+            <Input
+              label="Expiry date"
+              type="date"
+              value={expiresAt}
+              onChange={setExpiresAt}
+              error={datesError || undefined}
+              required
+            />
+          </div>
+        </Card>
+      </div>
+      <div hidden={step !== 1} data-product-step="1">
+        <Card>
+          <h3 tabIndex={-1}>2. Product presentation</h3>
+          <p style={{ color: T.text2 }}>
+            These catalogue details are encrypted off chain and remain separate from the signed and
+            on-chain product identity.
+          </p>
+          <label style={{ display: 'grid', gap: 6 }}>
+            Production location <RequiredMarker />
+            <select
+              aria-label="Production stock location"
+              value={productionLocation}
+              onChange={(event) => setProductionLocation(event.target.value)}
             >
-              {imageFile ? 'Replace image' : 'Choose image'}
-            </Btn>
-            {imageFile && (
+              <option value="">Select your registered receiving / production location</option>
+              {locations.map((location) => (
+                <option key={location.location} value={location.location}>
+                  {formatLocationLabel(location, location.location)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="product-wizard__fields" style={{ marginTop: 14 }}>
+            <Input
+              label="Product category (optional)"
+              maxLength={100}
+              value={category}
+              onChange={setCategory}
+            />
+            <Input
+              label="Country of manufacture (optional)"
+              maxLength={120}
+              value={origin}
+              onChange={setOrigin}
+            />
+            <Input
+              label={`Indicative price per ${unit || 'unit'} (optional)`}
+              value={price}
+              onChange={setPrice}
+              type="number"
+              min="0"
+              step="0.01"
+              error={priceError || undefined}
+              hint="Indicative catalogue price only; this is not a payment or on-chain sale price."
+            />
+            <Input
+              label="Currency code"
+              value={currency}
+              onChange={(value) => setCurrency(value.toUpperCase())}
+              maxLength={3}
+            />
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Textarea
+              label="Product description (optional)"
+              value={description}
+              onChange={setDescription}
+              maxLength={1_000}
+              rows={4}
+            />
+          </div>
+          <div className="ingredient-photo-review" tabIndex={-1} data-focus-field="Product image">
+            <div>
+              <span className="ingredient-photo-review__label">Product image (optional)</span>
+              {imagePreview && imageFile ? (
+                <>
+                  <img src={imagePreview} alt="Product image preview" />
+                  <span className="ingredient-photo-review__filename" title={imageFile.name}>
+                    {imageFile.name}
+                  </span>
+                </>
+              ) : (
+                <span className="ingredient-photo-review__empty">No image selected</span>
+              )}
+            </div>
+            <div>
+              <input
+                ref={imageInputRef}
+                aria-label="Product image"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (!file) return;
+                  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+                    setImageError('Choose a PNG, JPEG or WebP image.');
+                    event.currentTarget.value = '';
+                    return;
+                  }
+                  if (file.size > 2 * 1024 * 1024) {
+                    setImageError('Images must not exceed 2 MB.');
+                    event.currentTarget.value = '';
+                    return;
+                  }
+                  setImageError('');
+                  setImageFile(file);
+                }}
+              />
               <Btn
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 disabled={busy}
-                onClick={() => {
-                  setImageFile(undefined);
-                  setImageError('');
-                  if (imageInputRef.current) imageInputRef.current.value = '';
-                }}
+                onClick={() => imageInputRef.current?.click()}
               >
-                Remove image
+                {imageFile ? 'Replace image' : 'Choose image'}
               </Btn>
-            )}
-          </div>
-        </div>
-        {imageError && <Alert type="error" message={imageError} />}
-      </Card>
-      <Card>
-        <h3>3. Select received ingredients</h3>
-        <p style={{ color: T.text2, fontSize: 12, marginTop: 0 }}>
-          Choose received ingredients and the amount to use. Remaining stock updates automatically;
-          ingredient evidence is optional.
-        </p>
-        {stockLoading && <LoadingIndicator page label="Reading ingredient stock…" />}
-        {stockError && <Alert type="error" message={stockError} />}
-        {!stockLoading && ingredients.length === 0 ? (
-          <Alert
-            type="warning"
-            message="No received ingredient stock is available here. Confirm receipt of a Supplier-approved request at this location first. Ingredient evidence is optional."
-          />
-        ) : (
-          <div style={{ display: 'grid', gap: 10 }}>
-            {ingredients.map((ingredient) => {
-              const selection = selections.find(
-                (entry) => entry.ingredient.batchId === ingredient.batchId,
-              );
-              return (
-                <div
-                  key={ingredient.batchId}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
-                    alignItems: 'center',
-                    gap: 12,
-                    border: `1px solid ${T.border}`,
-                    borderRadius: 9,
-                    padding: 12,
+              {imageFile && (
+                <Btn
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setImageFile(undefined);
+                    setImageError('');
+                    if (imageInputRef.current) imageInputRef.current.value = '';
                   }}
                 >
-                  <div>
-                    <label className="flex items-start gap-[8px]">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
-                        disabled={
-                          busy || !productionLocation || BigInt(ingredient.availableQuantity) === 0n
-                        }
-                        checked={!!selected[ingredient.batchId]}
-                        onChange={(event) =>
-                          setSelected((current) => ({
-                            ...current,
-                            [ingredient.batchId]: event.target.checked,
-                          }))
-                        }
-                      />
-                      <b>{names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}</b>
-                    </label>
-                    <div style={{ fontSize: 12, color: T.text2 }}>
-                      {ingredient.supplierName ?? 'Verified Supplier'} ·{' '}
-                      {ingredient.availableQuantity} {ingredient.unit} received and available
+                  Remove image
+                </Btn>
+              )}
+            </div>
+          </div>
+          {imageError && <Alert type="error" message={imageError} />}
+        </Card>
+      </div>
+      <div hidden={step !== 2} data-product-step="2">
+        <Card>
+          <h3 tabIndex={-1}>3. Select received ingredients</h3>
+          <p style={{ color: T.text2, fontSize: 12, marginTop: 0 }}>
+            Choose received ingredients and the amount to use. Remaining stock updates
+            automatically; ingredient evidence is optional.
+          </p>
+          {stockLoading && <LoadingIndicator page label="Reading ingredient stock…" />}
+          {stockError && <Alert type="error" message={stockError} />}
+          {!stockLoading && ingredients.length === 0 ? (
+            <Alert
+              type="warning"
+              message="No received ingredient stock is available here. Confirm receipt of a Supplier-approved request at this location first. Ingredient evidence is optional."
+            />
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {ingredients.map((ingredient) => {
+                const selection = selections.find(
+                  (entry) => entry.ingredient.batchId === ingredient.batchId,
+                );
+                return (
+                  <div
+                    key={ingredient.batchId}
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)',
+                      alignItems: 'center',
+                      gap: 12,
+                      border: `1px solid ${T.border}`,
+                      borderRadius: 9,
+                      padding: 12,
+                    }}
+                  >
+                    <div>
+                      <label className="flex items-start gap-[8px]">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
+                          disabled={
+                            busy ||
+                            !productionLocation ||
+                            BigInt(ingredient.availableQuantity) === 0n
+                          }
+                          checked={!!selected[ingredient.batchId]}
+                          onChange={(event) =>
+                            setSelected((current) => ({
+                              ...current,
+                              [ingredient.batchId]: event.target.checked,
+                            }))
+                          }
+                        />
+                        <b>{names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}</b>
+                      </label>
+                      <div style={{ fontSize: 12, color: T.text2 }}>
+                        {ingredient.supplierName ?? 'Verified Supplier'} ·{' '}
+                        {ingredient.availableQuantity} {ingredient.unit} received and available
+                      </div>
+                      {selected[ingredient.batchId] && (
+                        <p aria-live="polite">
+                          Remaining after production:{' '}
+                          {selection?.quantity && !selection.error
+                            ? `${BigInt(ingredient.availableQuantity) - BigInt(selection.quantity)} ${ingredient.unit}`
+                            : 'Enter a valid amount'}
+                        </p>
+                      )}
                     </div>
                     {selected[ingredient.batchId] && (
-                      <p aria-live="polite">
-                        Remaining after production:{' '}
-                        {selection?.quantity && !selection.error
-                          ? `${BigInt(ingredient.availableQuantity) - BigInt(selection.quantity)} ${ingredient.unit}`
-                          : 'Enter a valid amount'}
-                      </p>
+                      <div className="grid gap-[8px]">
+                        <SelectField
+                          label={`Ingredient unit for ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
+                          value={ingredientUnits[ingredient.batchId] ?? ingredient.unit}
+                          onChange={(value) =>
+                            setIngredientUnits((current) => ({
+                              ...current,
+                              [ingredient.batchId]: value,
+                            }))
+                          }
+                          options={ingredientUnitOptions(ingredient.unit)}
+                        />
+                        <Input
+                          label={`Quantity to use for ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
+                          value={amounts[ingredient.batchId] ?? ''}
+                          inputMode="decimal"
+                          maxLength={46}
+                          error={amounts[ingredient.batchId] ? selection?.error : undefined}
+                          onChange={(value) =>
+                            setAmounts((current) => ({ ...current, [ingredient.batchId]: value }))
+                          }
+                        />
+                      </div>
                     )}
                   </div>
-                  {selected[ingredient.batchId] && (
-                    <div className="grid gap-[8px]">
-                      <SelectField
-                        label={`Ingredient unit for ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
-                        value={ingredientUnits[ingredient.batchId] ?? ingredient.unit}
-                        onChange={(value) =>
-                          setIngredientUnits((current) => ({
-                            ...current,
-                            [ingredient.batchId]: value,
-                          }))
-                        }
-                        options={ingredientUnitOptions(ingredient.unit)}
-                      />
-                      <Input
-                        label={`Quantity to use for ${names[ingredient.batchId] ?? shortChainId(ingredient.batchId)}`}
-                        value={amounts[ingredient.batchId] ?? ''}
-                        inputMode="decimal"
-                        maxLength={46}
-                        error={amounts[ingredient.batchId] ? selection?.error : undefined}
-                        onChange={(value) =>
-                          setAmounts((current) => ({ ...current, [ingredient.batchId]: value }))
-                        }
-                      />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
+          <div style={{ marginTop: 14 }}>
+            <Alert
+              type="info"
+              message="Private product metadata is encrypted off chain. The contract receives only the metadata hash, encrypted content reference, quantities, dates, and accepted ingredient links."
+            />
           </div>
+        </Card>
+      </div>
+      <div hidden={step !== 3} data-product-step="3">
+        <Card>
+          <h3 tabIndex={-1}>4. Review and create</h3>
+          <div className="ingredient-photo-review">
+            <div>
+              <span className="ingredient-photo-review__label">Product image</span>
+              {imagePreview && imageFile ? (
+                <>
+                  <img src={imagePreview} alt="Product image review preview" />
+                  <span className="ingredient-photo-review__filename" title={imageFile.name}>
+                    {imageFile.name}
+                  </span>
+                </>
+              ) : (
+                <span className="ingredient-photo-review__empty">No image selected</span>
+              )}
+            </div>
+            <Btn variant="outline" size="sm" disabled={busy} onClick={() => navigateStep(1)}>
+              {imageFile ? 'Change image' : 'Add image'}
+            </Btn>
+          </div>
+          <dl className="workspace-record-facts">
+            <div>
+              <dt>Product</dt>
+              <dd>{productName || 'Not entered'}</dd>
+            </div>
+            <div>
+              <dt>Batch reference</dt>
+              <dd>{batchReference || 'Not entered'}</dd>
+            </div>
+            <div>
+              <dt>Category</dt>
+              <dd>{category || 'Not provided'}</dd>
+            </div>
+            <div>
+              <dt>Description</dt>
+              <dd>{description || 'Not provided'}</dd>
+            </div>
+            <div>
+              <dt>Country of manufacture</dt>
+              <dd>{origin || 'Not provided'}</dd>
+            </div>
+            <div>
+              <dt>Output</dt>
+              <dd>
+                {quantity && unit
+                  ? `${quantity} ${unit === 'each' ? 'units' : unit}`
+                  : 'Not entered'}
+              </dd>
+            </div>
+            <div>
+              <dt>Indicative price</dt>
+              <dd>
+                {price ? `${currency} ${Number(price).toFixed(2)} / ${unit}` : 'Not provided'}
+              </dd>
+            </div>
+            <div>
+              <dt>Ingredient batches</dt>
+              <dd>
+                {links.length
+                  ? links
+                      .map(
+                        (link) =>
+                          `${names[link.batchId] ?? shortChainId(link.batchId)} — ${link.quantity} ${ingredients.find((item) => item.batchId === link.batchId)?.unit ?? ''}`,
+                      )
+                      .join(', ')
+                  : 'None selected'}
+              </dd>
+            </div>
+            <div>
+              <dt>Production location</dt>
+              <dd>
+                {locations.find((entry) => entry.location === productionLocation)?.label ??
+                  'Not selected'}
+              </dd>
+            </div>
+            <div>
+              <dt>Production date</dt>
+              <dd>{producedAt || 'Not entered'}</dd>
+            </div>
+            <div>
+              <dt>Expiry</dt>
+              <dd>{expiresAt || 'Not entered'}</dd>
+            </div>
+          </dl>
+          <div className="action-row">
+            <Btn variant="ghost" onClick={() => navigateStep(0)}>
+              Edit product details
+            </Btn>
+            <Btn variant="ghost" onClick={() => navigateStep(1)}>
+              Edit presentation
+            </Btn>
+            <Btn variant="ghost" onClick={() => navigateStep(2)}>
+              Edit ingredients
+            </Btn>
+          </div>
+          <div className="action-row">
+            <Btn disabled={busy} style={{ marginLeft: 'auto' }} onClick={() => void submit()}>
+              {busy ? 'Confirming product…' : 'Create product batch'}
+            </Btn>
+          </div>
+        </Card>
+      </div>
+      <div className="action-row">
+        {step > 0 && (
+          <Btn variant="outline" disabled={busy} onClick={() => navigateStep(step - 1)}>
+            Back
+          </Btn>
         )}
-        <div style={{ marginTop: 14 }}>
-          <Alert
-            type="info"
-            message="Private product metadata is encrypted off chain. The contract receives only the metadata hash, encrypted content reference, quantities, dates, and accepted ingredient links."
-          />
-        </div>
-      </Card>
-      <Card>
-        <h3>4. Review and create</h3>
-        <div className="ingredient-photo-review">
-          <div>
-            <span className="ingredient-photo-review__label">Product image</span>
-            {imagePreview && imageFile ? (
-              <>
-                <img src={imagePreview} alt="Product image review preview" />
-                <span className="ingredient-photo-review__filename" title={imageFile.name}>
-                  {imageFile.name}
-                </span>
-              </>
-            ) : (
-              <span className="ingredient-photo-review__empty">No image selected</span>
-            )}
-          </div>
+        {step < 3 && (
           <Btn
-            variant="outline"
-            size="sm"
             disabled={busy}
-            onClick={() => imageInputRef.current?.click()}
+            style={{ marginLeft: 'auto' }}
+            onClick={() => navigateStep(step + 1)}
           >
-            {imageFile ? 'Change image' : 'Add image'}
+            Next
           </Btn>
-        </div>
-        <dl className="workspace-record-facts">
-          <div>
-            <dt>Product</dt>
-            <dd>{productName || 'Not entered'}</dd>
-          </div>
-          <div>
-            <dt>Batch reference</dt>
-            <dd>{batchReference || 'Not entered'}</dd>
-          </div>
-          <div>
-            <dt>Category</dt>
-            <dd>{category || 'Not provided'}</dd>
-          </div>
-          <div>
-            <dt>Description</dt>
-            <dd>{description || 'Not provided'}</dd>
-          </div>
-          <div>
-            <dt>Country of manufacture</dt>
-            <dd>{origin || 'Not provided'}</dd>
-          </div>
-          <div>
-            <dt>Output</dt>
-            <dd>
-              {quantity && unit ? `${quantity} ${unit === 'each' ? 'units' : unit}` : 'Not entered'}
-            </dd>
-          </div>
-          <div>
-            <dt>Indicative price</dt>
-            <dd>{price ? `${currency} ${Number(price).toFixed(2)} / ${unit}` : 'Not provided'}</dd>
-          </div>
-          <div>
-            <dt>Ingredient batches</dt>
-            <dd>
-              {links.length
-                ? links
-                    .map(
-                      (link) =>
-                        `${names[link.batchId] ?? shortChainId(link.batchId)} — ${link.quantity} ${ingredients.find((item) => item.batchId === link.batchId)?.unit ?? ''}`,
-                    )
-                    .join(', ')
-                : 'None selected'}
-            </dd>
-          </div>
-          <div>
-            <dt>Production location</dt>
-            <dd>
-              {locations.find((entry) => entry.location === productionLocation)?.label ??
-                'Not selected'}
-            </dd>
-          </div>
-          <div>
-            <dt>Production date</dt>
-            <dd>{producedAt || 'Not entered'}</dd>
-          </div>
-          <div>
-            <dt>Expiry</dt>
-            <dd>{expiresAt || 'Not entered'}</dd>
-          </div>
-        </dl>
-        <div className="action-row">
-          <Btn
-            disabled={
-              busy ||
-              !detailsComplete ||
-              !!productNameError ||
-              !!batchReferenceError ||
-              !!outputQuantityError ||
-              !!priceError ||
-              !!datesError ||
-              !!imageError ||
-              !productionLocation ||
-              stockLoading ||
-              !!stockError ||
-              selections.some((entry) => !!entry.error) ||
-              links.length === 0
-            }
-            onClick={() => void submit()}
-          >
-            {busy ? 'Confirming product…' : 'Create product with MetaMask'}
-          </Btn>
-        </div>
-      </Card>
+        )}
+      </div>
     </div>
   );
 }

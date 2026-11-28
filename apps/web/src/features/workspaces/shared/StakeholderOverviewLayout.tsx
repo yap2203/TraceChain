@@ -60,6 +60,7 @@ export function StakeholderOverviewLayout({
   onRefresh?: () => void;
 }) {
   const ordered = [...tasks].sort((a, b) => (a.due ?? Infinity) - (b.due ?? Infinity));
+  const unavailable = errors.some(Boolean);
   return (
     <div className="stakeholder-overview">
       <SectionTitle
@@ -68,7 +69,7 @@ export function StakeholderOverviewLayout({
         action={
           onRefresh && (
             <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={onRefresh}>
-              Refresh
+              {unavailable ? 'Retry' : 'Refresh'}
             </Btn>
           )
         }
@@ -82,6 +83,7 @@ export function StakeholderOverviewLayout({
           <InventorySummaryCard
             key={metric.label}
             {...metric}
+            value={unavailable ? 'Unavailable' : tasksLoading ? '…' : metric.value}
             variant={metric.onClick ? 'navigation' : 'default'}
           />
         ))}
@@ -90,9 +92,15 @@ export function StakeholderOverviewLayout({
       <section className="overview-panel" aria-label="Needs your action">
         <header>
           <h3>Needs your action</h3>
-          {!tasksLoading && <span className="overview-panel__count">{ordered.length}</span>}
+          {!tasksLoading && !unavailable && (
+            <span className="overview-panel__count">{ordered.length}</span>
+          )}
         </header>
-        {tasksLoading && !ordered.length ? (
+        {unavailable ? (
+          <p className="overview-panel__empty">
+            Activity could not be checked. Retry loading the dashboard.
+          </p>
+        ) : tasksLoading && !ordered.length ? (
           <p className="overview-panel__empty" role="status">
             Checking orders, offers and evidence requests…
           </p>
@@ -162,7 +170,15 @@ export function StakeholderOverviewLayout({
             {snapshot.viewAllLabel}
           </Btn>
         </header>
-        {!snapshot.rows.length ? (
+        {unavailable ? (
+          <p className="overview-panel__empty">
+            Records are temporarily unavailable. Retry loading the dashboard.
+          </p>
+        ) : tasksLoading && !snapshot.rows.length ? (
+          <p className="overview-panel__empty" role="status">
+            Loading records…
+          </p>
+        ) : !snapshot.rows.length ? (
           <p className="overview-panel__empty">{snapshot.empty}</p>
         ) : (
           <div className="overview-table__scroll">

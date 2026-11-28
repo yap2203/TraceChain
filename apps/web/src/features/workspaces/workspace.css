@@ -3625,6 +3625,15 @@
 .product-success > h2 {
   margin: 0;
 }
+
+.product-wizard__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 14px;
+}
+.product-wizard [hidden] {
+  display: none !important;
+}
 .product-success__layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);

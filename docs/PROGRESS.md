@@ -1,5 +1,16 @@
 # Project Progress
 
+## 2026-11-28 - Log query capacity errors and dashboard availability
+
+- Fixed log capacity errors being classified as provider throttling: nested range/result-limit errors now reach the incremental scanner, which splits sequentially without opening healthy-provider circuits. The existing bounded rate-limit retry/backoff, scan deduplication, bulk concurrency limits and deployment/reorg-validated index remain in use.
+- Failed RPC attempts emit only safe endpoint-role/method/category/code and numeric query-range information. Exhausted providers and failed event ranges become controlled service-unavailable errors; no failed range is checkpointed or returned as partial success. Shared stakeholder dashboards hide false zero counts and successful empty states on errors and provide Retry.
+- Regression tests reproduce the exact inclusive 5,000-block range, concurrent scans, nested capacity responses, no circuit opening for range limits, provider fallback, genuine outage and failed-child recovery. Live Render provider diagnostics and deployment of this code remain operator checks; no credentials, contract addresses, records or environment files were changed.
+
+## 2026-11-28 - Manufacturer product creation wizard
+
+- The existing four-step header now navigates Product details, Product presentation, Ingredients and quantities, and Review and create. Only the selected panel is visible; Back, Next and header jumps preserve component-memory fields and uploads.
+- Forward navigation and final creation share the existing validation rules. Errors open the relevant panel and focus its field; only the final Create product batch action starts the unchanged wallet/API workflow. Review provides Edit actions. Existing stock/location rules and confirmed-transaction refresh protection remain intact.
+
 ## 2026-11-28 - Product success layout and custody offer discovery diagnosis
 
 - Product creation success now groups the real product facts and remaining ingredient balances beside the permanent traceability QR. Technical identifiers stay collapsed; the existing PNG, link and printable label actions and QR quiet zone are unchanged. Mobile stacks the panels.

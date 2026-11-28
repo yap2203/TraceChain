@@ -75,13 +75,39 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 describe('multi-ingredient production', () => {
+  it('shows only the current step and validates a forward header jump with focus', async () => {
+    render(<CreateProductBatch onBack={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: '1. Product details' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '2. Product presentation' })).toBeNull();
+    const review = screen.getByRole('button', { name: /Review and create/ });
+    expect(review.getAttribute('type')).toBe('button');
+    fireEvent.click(review);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByLabelText(/^Product name/)),
+    );
+    expect(screen.queryByRole('button', { name: 'Create product batch' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.getByRole('heading', { name: '1. Product details' })).toBeTruthy();
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
   const setup = async () => {
     render(<CreateProductBatch onBack={vi.fn()} />);
+    for (const [label, value] of [
+      ['Product name', 'Chocolate'],
+      ['Product batch reference', 'CHOC-1'],
+      ['Quantity produced', '50'],
+      ['Production date', '2026-01-01'],
+      ['Expiry date', '2099-01-01'],
+    ])
+      fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     await screen.findByRole('option', { name: 'Factory' });
     fireEvent.change(screen.getByLabelText('Production stock location'), {
       target: { value: 'factory' },
     });
     await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
     fireEvent.click(screen.getByLabelText('Select Cocoa'));
     fireEvent.change(screen.getByLabelText('Ingredient unit for Cocoa'), {
       target: { value: 'kg' },
@@ -111,7 +137,8 @@ describe('multi-ingredient production', () => {
     ])
       fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
     expect(mocks.ingredients).toHaveBeenCalledWith('factory', 'production');
-    fireEvent.click(screen.getByRole('button', { name: 'Create product with MetaMask' }));
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create product batch' }));
     await waitFor(() =>
       expect(mocks.prepare).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -135,15 +162,27 @@ describe('multi-ingredient production', () => {
     expect(screen.getByRole('button', { name: 'View product' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Back to products' })).toBeTruthy();
   });
+  it('reopens and focuses an invalid earlier field on final validation without signing', async () => {
+    await setup();
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
+    fireEvent.change(screen.getByLabelText(/^Product name/), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create product batch' }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByLabelText(/^Product name/)),
+    );
+    expect(screen.getByRole('heading', { name: '1. Product details' })).toBeTruthy();
+    expect(mocks.complete).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
   it('blocks overspending and clears selections when the production location changes', async () => {
     await setup();
     fireEvent.change(screen.getByLabelText('Quantity to use for Cocoa'), {
       target: { value: '6' },
     });
     expect(screen.getByText('Amount exceeds received stock at this location.')).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: 'Create product with MetaMask' }).hasAttribute('disabled'),
-    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(screen.queryByRole('button', { name: 'Create product batch' })).toBeNull();
+    expect(mocks.prepare).not.toHaveBeenCalled();
     expect(mocks.prepare).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Production stock location'), { target: { value: '' } });
     await waitFor(() => expect(screen.queryByLabelText('Quantity to use for Cocoa')).toBeNull());
@@ -164,7 +203,8 @@ describe('multi-ingredient production', () => {
     ])
       fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
 
-    const create = screen.getByRole('button', { name: 'Create product with MetaMask' });
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
+    const create = screen.getByRole('button', { name: 'Create product batch' });
     expect(create.hasAttribute('disabled')).toBe(false);
     mocks.ingredients.mockResolvedValueOnce({ batches: [] });
     fireEvent.click(create);
@@ -196,12 +236,13 @@ describe('multi-ingredient production', () => {
       new WorkflowRefreshPendingError({ batchId: 'confirmed-product' }),
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create product with MetaMask' }));
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create product batch' }));
     expect(
       await screen.findByText(/product transaction was confirmed.*do not submit/i),
     ).toBeTruthy();
     expect(screen.queryByText(/does not have enough/i)).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Create product with MetaMask' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create product batch' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Refresh records' })).toBeTruthy();
 
     mocks.ingredients.mockResolvedValueOnce({ batches: [] });
@@ -213,6 +254,7 @@ describe('multi-ingredient production', () => {
 
   it('reviews and saves optional presentation metadata and the selected product image', async () => {
     await setup();
+    fireEvent.click(screen.getByRole('button', { name: /Product presentation/ }));
     for (const [label, value] of [
       ['Product name', 'Presented Chocolate'],
       ['Product batch reference', 'CHOC-PRESENTED'],
@@ -239,10 +281,30 @@ describe('multi-ingredient production', () => {
     });
     expect(screen.getAllByText('replacement.webp')).toHaveLength(2);
     expect(screen.queryByText('first.png')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(screen.queryByRole('heading', { name: '2. Product presentation' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit ingredients' }));
+    expect(screen.getByLabelText('Step 2 complete')).toBeTruthy();
+    expect((screen.getByLabelText('Quantity to use for Cocoa') as HTMLInputElement).value).toBe(
+      '1.25',
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit presentation' }));
+    expect(screen.getByRole('button', { name: 'Next' }).getAttribute('type')).toBe('button');
+    expect(
+      screen.getByText('replacement.webp', {
+        selector: '[data-product-step="1"] .ingredient-photo-review__filename',
+      }),
+    ).toBeTruthy();
+    expect((screen.getByLabelText('Production stock location') as HTMLSelectElement).value).toBe(
+      'factory',
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
     expect(screen.getByText('MYR 12.00 / each')).toBeTruthy();
     expect(screen.getAllByText('Factory').length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Create product with MetaMask' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create product batch' }));
     await waitFor(() =>
       expect(mocks.prepare).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -262,6 +324,7 @@ describe('multi-ingredient production', () => {
 
   it('allows no optional presentation and supports removing or rejecting an image', async () => {
     await setup();
+    fireEvent.click(screen.getByRole('button', { name: /Product presentation/ }));
     const unsupported = new File(['svg'], 'product.svg', { type: 'image/svg+xml' });
     fireEvent.change(screen.getByLabelText('Product image'), {
       target: { files: [unsupported] },
@@ -281,7 +344,8 @@ describe('multi-ingredient production', () => {
       ['Expiry date', '2099-01-01'],
     ])
       fireEvent.change(screen.getByLabelText(new RegExp('^' + label)), { target: { value } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create product with MetaMask' }));
+    fireEvent.click(screen.getByRole('button', { name: /Review and create/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create product batch' }));
     await waitFor(() => expect(mocks.prepare).toHaveBeenCalled());
     expect(mocks.uploadImage).not.toHaveBeenCalled();
   });

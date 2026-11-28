@@ -11,6 +11,7 @@ import { CustodyOfferError } from './custody-offers.js';
 import { timeOrderRead } from '../blockchain/read-timing.js';
 import { COMPANY_EVIDENCE_CLAIM_IDS } from '@tracechain/shared';
 import { IssuanceJournalError } from '../ssi/issuance.repository.js';
+import { RpcServiceUnavailableError } from '../blockchain/rpc-provider.js';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
   const router = Router();
@@ -41,6 +42,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
             .status(400)
             .json({ error: { code: 'INVALID_REQUEST', message: error.issues[0]?.message } });
         if (
+          error instanceof RpcServiceUnavailableError ||
           error instanceof OrdersError ||
           error instanceof AuthError ||
           error instanceof ProductionFlowApiError ||

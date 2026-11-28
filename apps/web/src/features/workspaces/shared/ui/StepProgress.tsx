@@ -9,11 +9,13 @@ export function StepProgress({
   current,
   onSelect,
   disabled = false,
+  completed,
 }: {
   steps: string[];
   current: number;
   onSelect?: (index: number) => void;
   disabled?: boolean;
+  completed?: readonly number[];
 }) {
   return (
     <ol
@@ -21,13 +23,16 @@ export function StepProgress({
       aria-label="Form progress"
     >
       {steps.map((label, index) => {
+        const complete = completed
+          ? index !== current && completed.includes(index)
+          : index < current;
         const content = (
           <>
             <span
               className="workspace-step-number"
-              aria-label={`Step ${index + 1}${index < current ? ' complete' : ''}`}
+              aria-label={`Step ${index + 1}${complete ? ' complete' : ''}`}
             >
-              {index < current ? <Check size={16} aria-hidden="true" /> : index + 1}
+              {complete ? <Check size={16} aria-hidden="true" /> : index + 1}
             </span>
             <span>{label}</span>
           </>
@@ -36,7 +41,7 @@ export function StepProgress({
           <li
             key={label}
             aria-current={index === current ? 'step' : undefined}
-            className={index < current ? 'is-complete' : undefined}
+            className={complete ? 'is-complete' : undefined}
           >
             {onSelect ? (
               <button

@@ -7,10 +7,23 @@ import {
   getRpcPerformanceMetrics,
   resetRpcPerformanceMetrics,
   isRpcRateLimitError,
+  isLogRangeLimit,
   type RpcTransportConfiguration,
 } from './rpc-provider.js';
 
 describe('Shared API RPC transport', () => {
+  it('distinguishes nested log capacity limits from rate limits', () => {
+    const range = {
+      info: {
+        error: { code: -32005, message: 'eth_getLogs requests support up to a 10 block range' },
+      },
+    };
+    expect(isLogRangeLimit(range)).toBe(true);
+    expect(isRpcRateLimitError(range)).toBe(false);
+    expect(isRpcRateLimitError({ error: { code: -32005, message: 'rate limit exceeded' } })).toBe(
+      true,
+    );
+  });
   it('recognizes nested provider rate limits without confusing ordinary reverts', () => {
     expect(
       isRpcRateLimitError({
@@ -446,6 +459,51 @@ describe('Multi-RPC routing', () => {
     method,
     params: ['0x0000000000000000000000000000000000000001', 'latest'],
   });
+  it('preserves an oversized log error without opening a healthy provider circuit', async () => {
+    const warnings = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const labels: string[] = [];
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
+      labels.push((this as ApiRpcProvider).endpointLabel);
+      const entry = input as JsonRpcPayload;
+      return [
+        {
+          jsonrpc: '2.0',
+          id: entry.id,
+          error: {
+            code: -32005,
+            message:
+              'block range exceeds maximum 1000 blocks https://rpc.test/SECRET_TOKEN?api_key=SECRET_KEY',
+          },
+        },
+      ] as any;
+    });
+    const pending = pool(true)._send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'eth_getLogs',
+      params: [{ fromBlock: '0xb9fab4', toBlock: '0xba0e3b' }],
+    });
+    await vi.runAllTimersAsync();
+    expect((await pending)[0]).toHaveProperty('error.code', -32005);
+    expect(labels).toEqual(['logs-primary']);
+    expect(getRpcPerformanceMetrics().circuitOpens).toBe(0);
+    expect(getRpcPerformanceMetrics().retries).toBe(0);
+    expect(JSON.stringify(warnings.mock.calls)).not.toMatch(/SECRET_TOKEN|SECRET_KEY|rpc\.test/);
+    expect(warnings).toHaveBeenCalledWith(
+      'RPC attempt failed',
+      expect.objectContaining({ category: 'range_or_result_limit', rpcCode: -32005 }),
+    );
+  });
+  it('returns a controlled service-unavailable error on a genuine total outage', async () => {
+    vi.spyOn(JsonRpcProvider.prototype, '_send').mockRejectedValue(
+      Object.assign(new Error('connection failed'), { code: 'ECONNRESET' }),
+    );
+    const checked = pool()
+      ._send(call())
+      .catch((error) => error);
+    await vi.runAllTimersAsync();
+    expect(await checked).toMatchObject({ code: 'BLOCKCHAIN_SERVICE_UNAVAILABLE', status: 503 });
+  });
   it('uses the primary only when it succeeds', async () => {
     const labels: string[] = [];
     vi.spyOn(JsonRpcProvider.prototype, '_send').mockImplementation(async function (input) {
@@ -540,7 +598,11 @@ describe('Multi-RPC routing', () => {
       labels.push((this as ApiRpcProvider).endpointLabel);
       const entry = input as JsonRpcPayload;
       return [
-        { jsonrpc: '2.0', id: entry.id, error: { code: 3, message: 'execution reverted' } },
+        {
+          jsonrpc: '2.0',
+          id: entry.id,
+          error: { code: 3, message: 'execution reverted: forbidden' },
+        },
       ] as any;
     });
     const result = pool()._send(call());

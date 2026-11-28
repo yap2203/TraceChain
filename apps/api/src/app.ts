@@ -8,7 +8,10 @@ import {
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import express from 'express';
-import { getRpcPerformanceMetrics } from './modules/blockchain/rpc-provider.js';
+import {
+  getRpcPerformanceMetrics,
+  RpcServiceUnavailableError,
+} from './modules/blockchain/rpc-provider.js';
 
 import { env } from './config/env.js';
 import { loadBlockchainEnvironment } from './config/blockchain-env.js';
@@ -736,6 +739,11 @@ export function createApp({
       }
 
       if (error instanceof IssuanceJournalError) {
+        response.status(503).json({ error: { code: error.code, message: error.message } });
+        return;
+      }
+
+      if (error instanceof RpcServiceUnavailableError) {
         response.status(503).json({ error: { code: error.code, message: error.message } });
         return;
       }

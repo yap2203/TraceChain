@@ -10,6 +10,18 @@ malformed batch response can open that endpoint's process-local circuit; Solidit
 input, valid empty results and business-rule failures do not fail over. No request is raced or sent
 to every provider.
 
+Log range/result-limit errors (including nested `-32005` capacity responses) are returned to the
+incremental event scanner for sequential range splitting down to single blocks. They do not open a
+healthy endpoint's circuit. Rate limits retain bounded retry/backoff and provider failover. Failed
+attempts log only endpoint role, method, classification, error code/status and numeric range/address
+count; raw RPC messages, URLs and parameters are excluded. Unrecoverable scans return a controlled
+`BLOCKCHAIN_SERVICE_UNAVAILABLE` 503 and never advance the index over a failed range. Dashboard
+failures show unavailable/retry states instead of zero counts or a successful empty task list.
+The existing shared, deployment-isolated event index still validates confirmation checkpoints and
+reorgs; warm reads do not rescan deployment-to-head. No new RPC variables are required. An explicit
+`CHAIN_LOG_FALLBACK_URL` is needed if a dedicated log endpoint should have provider failover;
+ordinary-read secondary endpoints are not automatically used as dedicated-log fallbacks.
+
 Recommended Sepolia FYP backend values:
 
 ```dotenv
@@ -1131,7 +1143,10 @@ The Supplier ingredient screen issues a typed `IngredientCredential` whose subje
 
 The Manufacturer production flow now uses real contract records. A Manufacturer selects an active Supplier batch, prepares an encrypted evidence request, and signs `EvidenceRegistry.requestEvidence`. The request challenge is a digest of the request ID, batch, requester, verifier, Supplier, purpose, issue time, and deadline. The intended Supplier retrieves its server-authorized issued Ingredient Credential and presents the complete JWT VC in a Veramo-signed VP whose signed context also binds those fields, the challenge, presentation dates, and exact credential ID/hash. JWT selective disclosure is not supported or claimed. Before returning unsigned `accept` calldata, the API verifies the VP and nested credential signatures plus every request binding and rechecks the exact registered batch credential, lifecycle, hash, expiry, and Supplier authorization. Accepted batches can then be consumed by a real `createProduct` transaction and transferred to an active Distributor through `createTransfer`. Only a verified `AwaitingReceipt` transfer ID is passed to the existing QR renderer.
 
-New product registrations bind the same stable Manufacturer location ID to ingredient consumption
+New product registrations use a four-step in-memory wizard with validated forward navigation, editable review sections and
+wallet confirmation only from the final Create product batch action. Returning to earlier steps keeps
+the selected photo, location and ingredient quantities; drafts are not saved in localStorage.
+The same stable Manufacturer location ID is bound to ingredient consumption
 and the on-chain product record. The form can also capture optional product presentation data:
 PNG/JPEG/WebP image, category, country of manufacture, description and an indicative currency/unit
 price. The textual

@@ -18,6 +18,28 @@ const snapshot = (rows = [] as Array<{ key: string; cells: string[] }>) => ({
 
 describe('shared stakeholder overview', () => {
   afterEach(cleanup);
+  it('shows unavailable and retry rather than false zeros or a successful empty dashboard', () => {
+    const retry = vi.fn();
+    render(
+      <MemoryRouter>
+        <StakeholderOverviewLayout
+          title="Overview"
+          description="Activity"
+          metrics={[{ label: 'Orders', icon: <Package />, value: 0 }]}
+          tasks={[]}
+          snapshot={snapshot()}
+          errors={['Blockchain temporarily unavailable']}
+          onRefresh={retry}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Unavailable')).toBeTruthy();
+    expect(screen.queryByText(/You.re all caught up/)).toBeNull();
+    expect(screen.queryByText('No custody offers yet.')).toBeNull();
+    expect(screen.queryByText('0')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
 
   it('lists work across workflows by deadline with one action each, and links metrics', () => {
     const review = vi.fn();

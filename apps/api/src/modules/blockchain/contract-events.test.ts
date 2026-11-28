@@ -76,6 +76,53 @@ function fixture(deployedAt = 12_000, chainId = 11155111n) {
 }
 
 describe('Public chain event pagination', () => {
+  it('splits the reported inclusive 5000-block range and shares simultaneous scans', async () => {
+    vi.stubEnv('CHAIN_EVENT_START_BLOCK', String(0xb9fab4));
+    vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '0');
+    const f = fixture();
+    f.setTip(0xba0e3b);
+    const successful: Array<[number, number]> = [];
+    f.provider.getLogs.mockImplementation(async (filter: any) => {
+      if (filter.toBlock - filter.fromBlock + 1 > 1000)
+        throw {
+          info: { error: { code: -32005, message: 'block range exceeds maximum 1000 blocks' } },
+        };
+      successful.push([filter.fromBlock, filter.toBlock]);
+      return f.queryFilter('*', filter.fromBlock, filter.toBlock);
+    });
+    const rows = await Promise.all(
+      Array.from({ length: 7 }, () => queryContractEvents(f.contract, notedFilter)),
+    );
+    expect(rows.every((row) => row.length === 8)).toBe(true);
+    expect(successful[0][0]).toBe(0xb9fab4);
+    expect(successful.at(-1)![1]).toBe(0xba0e3b);
+    expect(successful.reduce((count, [from, to]) => count + to - from + 1, 0)).toBe(5000);
+    for (let i = 1; i < successful.length; i++)
+      expect(successful[i][0]).toBe(successful[i - 1][1] + 1);
+    const calls = f.provider.getLogs.mock.calls.length;
+    await queryContractEvents(f.contract, notedFilter);
+    expect(f.provider.getLogs).toHaveBeenCalledTimes(calls);
+  });
+  it('never checkpoints or returns partial success when a split child range fails', async () => {
+    vi.stubEnv('CHAIN_EVENT_START_BLOCK', '24000');
+    vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '0');
+    const f = fixture();
+    f.provider.getLogs.mockImplementation(async (filter: any) => {
+      if (filter.toBlock - filter.fromBlock + 1 > 3)
+        throw { error: { code: -32005, message: 'too many results' } };
+      if (filter.fromBlock === 24003) throw new Error('network offline');
+      return f.queryFilter('*', filter.fromBlock, filter.toBlock);
+    });
+    await expect(queryContractEvents(f.contract, notedFilter)).rejects.toMatchObject({
+      code: 'BLOCKCHAIN_SERVICE_UNAVAILABLE',
+      cause: { message: 'network offline' },
+    });
+    f.provider.getLogs.mockImplementation(async (filter: any) =>
+      f.queryFilter('*', filter.fromBlock, filter.toBlock),
+    );
+    await expect(queryContractEvents(f.contract, notedFilter)).resolves.toHaveLength(1);
+    expect(f.queryFilter.mock.calls.at(-1)).toEqual(['*', 24000, 24005]);
+  });
   beforeEach(() => {
     vi.stubEnv('CHAIN_EVENT_START_BLOCK', '');
     vi.stubEnv('CHAIN_EVENT_CONFIRMATIONS', '0');
@@ -145,9 +192,10 @@ describe('Public chain event pagination', () => {
   it('propagates failed log reads instead of returning an empty inventory', async () => {
     const f = fixture();
     f.queryFilter.mockRejectedValueOnce(new Error('RPC unavailable'));
-    await expect(queryContractEvents(f.contract, supplierAFilter)).rejects.toThrow(
-      'RPC unavailable',
-    );
+    await expect(queryContractEvents(f.contract, supplierAFilter)).rejects.toMatchObject({
+      code: 'BLOCKCHAIN_SERVICE_UNAVAILABLE',
+      cause: { message: 'RPC unavailable' },
+    });
   });
   it('retries a failed deployment lookup', async () => {
     const f = fixture();
