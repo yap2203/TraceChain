@@ -7,6 +7,7 @@ import {
 } from 'ethers';
 import {
   countRead,
+  recordReadDuration,
   currentConfirmedReadBlock,
   pinsConfirmedReads,
   recordRpcEndpoint,
@@ -402,6 +403,8 @@ export class ApiRpcProvider extends JsonRpcProvider {
         continue;
       }
       metrics.queueWaitMs += measured.queueWaitMs;
+      recordReadDuration('queue', measured.queueWaitMs);
+      recordReadDuration('rpc', measured.durationMs);
       metrics.maxQueueWaitMs = Math.max(metrics.maxQueueWaitMs, measured.queueWaitMs);
       metrics.requestDurationMs += measured.durationMs;
       const endpoint = endpointMetrics(this.endpointLabel);

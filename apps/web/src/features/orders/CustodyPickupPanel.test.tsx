@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 vi.mock('./orders.api', () => ({ prepareCustodyOffer: vi.fn() }));
 vi.mock('../production-flow/production-flow.transaction', () => ({
@@ -9,6 +9,8 @@ vi.mock('../product-traceability/ProductQrDisplay', () => ({
   ProductQrDisplay: () => <p>Shipment QR label</p>,
 }));
 import { CustodyPickupPanel } from './CustodyPickupPanel';
+import { prepareCustodyOffer } from './orders.api';
+import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 
 const sender = '0x1000000000000000000000000000000000000001',
   distributor = '0x2000000000000000000000000000000000000002';
@@ -41,6 +43,33 @@ const state = (actor: string): any => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
+  vi.clearAllMocks();
+});
+
+it('keeps a confirmed handoff locked when refreshing its shipment fails', async () => {
+  vi.mocked(prepareCustodyOffer).mockResolvedValue({ transaction: {} } as any);
+  vi.mocked(submitProductionTransaction).mockResolvedValue(undefined);
+  const refresh = vi.fn().mockRejectedValue(new Error('RPC unavailable'));
+  render(
+    <CustodyPickupPanel
+      offer={{ ...offer, vehicle: 'VAB 1234', expectedAt: offer.pickupAt + 7200 }}
+      data={state(sender)}
+      onChanged={refresh}
+    />,
+  );
+  fireEvent.click(screen.getByRole('checkbox'));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm handoff with MetaMask' }));
+  });
+  expect(
+    screen.getByText(/handoff transaction was confirmed, but the shipment refresh is pending/),
+  ).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Confirm handoff with MetaMask' })).toBeNull();
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh records' }));
+  });
+  expect(submitProductionTransaction).toHaveBeenCalledTimes(1);
+  expect(prepareCustodyOffer).toHaveBeenCalledTimes(1);
 });
 
 it('shows the sender the label before the handoff confirmation', () => {

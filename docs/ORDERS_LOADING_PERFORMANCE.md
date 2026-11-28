@@ -1,5 +1,65 @@
 # Orders loading performance — 23 November 2026
 
+## 28 November: retained throttling, shared ciphertext cache and earlier filtering
+
+The lazy application content-store wrapper constructed a new store for every operation, discarding
+its instance cache. It now passes one bounded in-memory encrypted-envelope cache per API instance.
+Entries are namespaced by a non-exported digest of encryption/storage configuration and CID,
+expire after 30 seconds, and are capped at 64 small envelopes (about 32 MB of encoded ciphertext).
+Large media coalesces only while in flight. Failed downloads are evicted. Temporary encryption keys
+are still cleared after each operation; plaintext, permissions and authorization grants are never
+cached. Each caller still decrypts and validates the authoritative hash and binding. No new business
+files or database were introduced.
+
+Manufacturer catalogue builds previously enriched other Manufacturers' products and discarded them
+at the final role filter. Indexed Manufacturer parameters now skip that work early, with actual
+batch-owner checks when needed. Order/shipment detail paths retain their context. The Supplier
+ingredients screen retains its existing stock and location loading: switching it blindly to the
+lighter catalogue-only scope would lose custody availability and receiving-location information.
+
+| Controlled local workload                                                   | Before | After |
+| --------------------------------------------------------------------------- | -----: | ----: |
+| Cold Manufacturer catalogue, 20 unrelated product events: mock getter reads |    110 |     9 |
+| Same workload: unrelated product getter reads                               |     80 |     0 |
+| Same workload: repeat mock getter reads                                     |      0 |     0 |
+| Three concurrent operations using fresh IPFS stores: downloads              |      3 |     1 |
+| Same IPFS operations repeated within TTL: downloads                         |      3 |     0 |
+
+The cold catalogue service timing was 17.7 ms before / 11.1 ms after; Express roundtrip was
+88 / 90 ms, so these timings establish no reliable HTTP speedup. The primary evidence is avoided
+work with unchanged returned visibility. The mocked 10 ms IPFS fixture measured 52 / 53 ms cold
+and 14 / 2 ms repeat; startup/JIT noise dominates the first request. These are not live RPC counts,
+Sepolia/IPFS latency, authenticated Render page timings or a provider throughput benchmark.
+
+Public `/api/health` checks returned 200 from both supplied Render origins: `tracechain-cunk`
+(504 ms) and `tracechain-web` (335 ms). Both identified as `tracechain-api` and reported healthy
+ordinary providers with zero rate-limit counts, but eight historical log-provider rate limits.
+These cumulative metrics are not a measurement of errors during a page request. No authenticated
+Render session was available; complete first/repeat page latency, RPC count, queue wait, scan duration
+and IPFS retrieval duration on Render remain unmeasured. No hosted deployment was performed.
+
+Orders and operational-data responses now report per-request `Server-Timing`: total handler
+duration (`orders`), RPC transport count/duration, scheduler queue wait, event-page count/duration,
+IPFS download count/duration, endpoint roles and failover. Operational instrumentation preserves its
+existing latest-read semantics. Concurrent durations overlap; they must not be summed into API
+latency. Shared work is attributed to the initiating request. RPC duration/queue measurements cover
+completed scheduled attempts; failed attempts still appear in the existing safe RPC diagnostics and
+aggregate retry/rate-limit metrics. No business payloads or RPC URLs are included.
+
+After rollout, compare the signed-in browser Network timings and `Server-Timing` for
+`/api/blockchain/operations` and each `/api/orders?...` request on the Manufacturer overview and
+Supplier ingredients screen: cold after restart, repeat navigation, then explicit Refresh separately.
+The existing event index already deduplicates simultaneous scans and reuses validated historical
+pages; its regression tests cover catch-up, reorg/reset and outage recovery. No second index was added.
+
+Keep the supplied throttle settings until provider/account capacity is measured. The implemented
+scheduler shares one next-start clock per endpoint: 500 ms ordinary spacing permits at most about
+two starts/second per endpoint, while a bulk start adds at least the configured 1,000 ms gap;
+concurrency two does not remove those gaps. A ten-request JSON batch and Multicall still consume
+provider-specific capacity. Actual plan limits and other account traffic were unavailable, so there
+is no evidence for a numeric increase. Remaining costs are cold history catch-up, fresh authorization,
+full detail/stock reads, large media and remote throttling/IPFS latency. No contract redeployment.
+
 ## Multicall follow-up
 
 ### Focused screens and background display refresh

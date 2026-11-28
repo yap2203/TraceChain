@@ -61,6 +61,8 @@ describe('operational resource ownership', () => {
     'filters mixed gateway records before returning company management data: %s',
     async (role) => {
       const response = await request(fixture(role).app).get('/operational').expect(200);
+      expect(response.headers['server-timing']).toContain('queue;dur=');
+      expect(response.headers['server-timing']).toContain('ipfs;desc=');
       expect(response.body.actorWallet).toBe(actor);
       expect(response.body.productBatches.map((r: any) => r.batchId)).toEqual(['own-product']);
       expect(response.body.ingredientBatches.map((r: any) => r.batchId)).toEqual([

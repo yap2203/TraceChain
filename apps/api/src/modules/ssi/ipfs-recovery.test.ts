@@ -1,6 +1,76 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { IpfsEncryptedCredentialStore } from './encrypted-credential.store.js';
 const cid = 'b' + 'a'.repeat(58);
+it('profiles repeated per-operation stores (synthetic IPFS latency, no live RPC)', async () => {
+  const payload = {
+    algorithm: 'aes-256-gcm',
+    version: 1,
+    iv: Buffer.alloc(12).toString('base64'),
+    authTag: Buffer.alloc(16).toString('base64'),
+    ciphertext: 'AA==',
+  };
+  const fetch = vi.fn(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    return new Response(JSON.stringify(payload));
+  });
+  vi.stubGlobal('fetch', fetch);
+  const cache = new Map();
+  for (const phase of ['first', 'repeat']) {
+    const start = performance.now(),
+      before = fetch.mock.calls.length;
+    await Promise.all(
+      Array.from({ length: 3 }, () =>
+        new IpfsEncryptedCredentialStore(
+          Buffer.alloc(32, 8),
+          'https://pin.test',
+          'synthetic',
+          'https://gateway.test',
+          cache,
+        ).retrieveEnvelope(cid),
+      ),
+    );
+    console.info('Per-operation IPFS shared cache', {
+      phase,
+      ms: Math.round(performance.now() - start),
+      downloads: fetch.mock.calls.length - before,
+    });
+  }
+  expect(fetch).toHaveBeenCalledTimes(1);
+});
+it('isolates shared ciphertext caches by key and gateway and expires them without caching failures', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  const cache = new Map();
+  const payload = {
+    algorithm: 'aes-256-gcm',
+    version: 1,
+    iv: Buffer.alloc(12).toString('base64'),
+    authTag: Buffer.alloc(16).toString('base64'),
+    ciphertext: 'AA==',
+  };
+  const fetch = vi.fn(async () => new Response(JSON.stringify(payload)));
+  vi.stubGlobal('fetch', fetch);
+  const store = (key = 1, gateway = 'https://gateway.test') =>
+    new IpfsEncryptedCredentialStore(
+      Buffer.alloc(32, key),
+      'https://pin.test',
+      'synthetic',
+      gateway,
+      cache,
+    );
+  await store().retrieveEnvelope(cid);
+  await store().retrieveEnvelope(cid);
+  expect(fetch).toHaveBeenCalledTimes(1);
+  await store(2).retrieveEnvelope(cid);
+  await store(1, 'https://other-gateway.test').retrieveEnvelope(cid);
+  expect(fetch).toHaveBeenCalledTimes(3);
+  // Cache contains only encrypted bytes. Authentication/decryption is still performed every time.
+  await expect(store().retrieveAndDecrypt(cid)).rejects.toThrow();
+  vi.setSystemTime(Date.now() + 31_000);
+  fetch.mockResolvedValueOnce(new Response('', { status: 503 }));
+  await expect(store().retrieveEnvelope(cid)).rejects.toThrow();
+  await store().retrieveEnvelope(cid);
+  expect(fetch).toHaveBeenCalledTimes(5);
+});
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();

@@ -51,18 +51,23 @@ export function CustodyPickupPanel({
   const missingArrangement = !offer.vehicle || !offer.expectedAt;
   const [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState('');
+    [error, setError] = useState(''),
+    [confirmedOffer, setConfirmedOffer] = useState<string>();
+  const receiptConfirmed = confirmedOffer === offer.offerId;
   const qr = custodyShipmentQr(offer, data);
   // The server records the handoff at confirmation, so a passed arrival can no longer be used.
   const arrivalPassed = !!offer.expectedAt && offer.expectedAt <= Date.now() / 1000;
   const ready = confirmed && !missingArrangement && !arrivalPassed;
   const handoff = async () => {
-    if (busy) return;
+    if (busy || receiptConfirmed) return;
+    let confirmedOnChain = false;
     setBusy(true);
     setError('');
     try {
       const prepared = await prepareCustodyOffer(offer.offerId);
       await submitProductionTransaction(prepared.transaction, data.actor);
+      confirmedOnChain = true;
+      setConfirmedOffer(offer.offerId);
       setConfirmed(false);
       notify(
         'Handoff recorded. The Distributor scans the label at its warehouse to confirm receipt.',
@@ -72,7 +77,11 @@ export function CustodyPickupPanel({
       setTimeout(() => void onChanged().catch(() => undefined), 30_000);
       await onChanged();
     } catch (cause) {
-      setError(reportError(cause, 'The handoff could not be recorded.'));
+      setError(
+        confirmedOnChain
+          ? 'The handoff transaction was confirmed, but the shipment refresh is pending. Refresh records; do not submit the handoff again.'
+          : reportError(cause, 'The handoff could not be recorded.'),
+      );
     } finally {
       setBusy(false);
     }
@@ -121,12 +130,33 @@ export function CustodyPickupPanel({
           </div>
         </dl>
         {error && <Alert type="error" message={error} />}
-        {offer.shipmentId ? (
+        {offer.shipmentId || receiptConfirmed ? (
           // Prepared and signed; the offer moves to the shipment once the chain confirms it.
-          <Alert
-            type="info"
-            message="Handoff submitted. The shipment opens here once the chain confirms it. Do not submit the handoff again."
-          />
+          <div>
+            <Alert
+              type="info"
+              message={
+                receiptConfirmed
+                  ? 'Handoff confirmed. The shipment opens here once the indexed record refreshes. Do not submit the handoff again.'
+                  : 'Handoff submitted. The shipment opens here once the chain confirms it. Do not submit the handoff again.'
+              }
+            />
+            {receiptConfirmed && (
+              <Btn
+                onClick={() =>
+                  void onChanged()
+                    .then(() => setError(''))
+                    .catch(() =>
+                      setError(
+                        'The handoff is confirmed. Shipment refresh is still unavailable; do not submit again.',
+                      ),
+                    )
+                }
+              >
+                Refresh records
+              </Btn>
+            )}
+          </div>
         ) : !sender ? (
           <div className="workspace-custody-detail__next-copy">
             <span aria-hidden="true">

@@ -358,15 +358,41 @@ export class OrdersService {
     try {
       return await this.gateway.prepare(actor, contract, method, args);
     } catch (cause) {
-      if (cause && typeof cause === 'object' && 'code' in cause && cause.code === 'CALL_EXCEPTION')
+      if (
+        cause &&
+        typeof cause === 'object' &&
+        'code' in cause &&
+        cause.code === 'CALL_EXCEPTION'
+      ) {
+        // Ethers staticCall decodes custom errors using this contract's loaded deployment ABI.
+        const name = (cause as { revert?: { name?: string } }).revert?.name;
+        if (contract === 'custody' && method === 'createRoadTransfer') {
+          const explanations: Record<string, string> = {
+            InvalidInput:
+              'Check product and linked ingredient validity, actual dispatch time, expected arrival and location owners.',
+            InsufficientInventory:
+              'Refresh available product stock at the selected pickup location. Another transfer may have used or reserved it.',
+            InvalidState:
+              'Refresh the product inventory and its recorded production or pickup location.',
+            Unauthorized:
+              'Check the sender and recipient roles, active credentials and transfer permissions.',
+          };
+          if (name && explanations[name])
+            throw new OrdersError(
+              'PRODUCT_HANDOFF_REJECTED',
+              `Product handoff simulation rejected (${name}). ${explanations[name]} No transaction was submitted.`,
+              409,
+            );
+        }
         throw new OrdersError(
           contract === 'productDelivery'
             ? 'PRODUCT_DELIVERY_REJECTED'
             : 'CUSTODY_TRANSITION_REJECTED',
           contract === 'productDelivery'
             ? 'The product delivery state rejected this action. Refresh and check Manufacturer approval, assigned Distributor acceptance, route ownership, available stock, actual dispatch time and any requested company proof.'
-            : 'The current warehouse/shipment state rejected this action. Refresh and check current authorization, location ownership, available or reserved quantity, Supplier approval and requested company proof. If this started after a warehouse contract update, deploy the current full contract suite before retrying.',
+            : 'The warehouse/shipment simulation rejected this action before wallet submission. Refresh and check authorization, location ownership, available or reserved quantity, Supplier approval and requested company proof.',
         );
+      }
       throw cause;
     }
   }
@@ -1431,15 +1457,43 @@ export class OrdersService {
       }
     } else {
       const record = await this.repository.findPrivate('products', batchId);
-      if (
+      const localMatches =
         record &&
         same(record.owner, batch.manufacturer) &&
         same(record.contentHash, batch.metadataHash) &&
-        record.cid === batch.publicCid
-      ) {
-        const serialized = await this.store.decrypt(record.payload);
-        if (same(`0x${createHash('sha256').update(serialized).digest('hex')}`, batch.metadataHash))
+        record.cid === batch.publicCid;
+      if (localMatches || batch.publicCid) {
+        let serialized: string;
+        try {
+          const recovered = localMatches
+            ? await this.store.decrypt(record.payload)
+            : await this.store.retrieveAndDecrypt?.(batch.publicCid);
+          if (!recovered) throw new Error('Encrypted content unavailable');
+          serialized = recovered;
           metadata = JSON.parse(serialized);
+        } catch {
+          throw new OrdersError(
+            'PRODUCT_METADATA_UNAVAILABLE',
+            'The encrypted product metadata could not be downloaded or decrypted.',
+            503,
+          );
+        }
+        if (!same(`0x${createHash('sha256').update(serialized).digest('hex')}`, batch.metadataHash))
+          throw new OrdersError(
+            'PRODUCT_METADATA_INTEGRITY_MISMATCH',
+            'The product metadata does not match its blockchain hash.',
+            409,
+          );
+        if (
+          !metadata ||
+          typeof metadata.batchReference !== 'string' ||
+          !same(id(metadata.batchReference), batchId)
+        )
+          throw new OrdersError(
+            'PRODUCT_METADATA_BINDING_MISMATCH',
+            'The product metadata belongs to another batch.',
+            409,
+          );
       }
     }
     // Explicit public business summary only. Never spread the private metadata or credential.
@@ -2521,6 +2575,14 @@ export class OrdersService {
         ),
       ].map(async (itemId) => {
         const item = await this.gateway.read('orders', 'getItem', [itemId]);
+        if (
+          !detailOrderId &&
+          !shipmentOnly &&
+          session.role === CompanyRole.MANUFACTURER &&
+          Number(item.kind) === 2 &&
+          !same(item.seller, session.address)
+        )
+          return null;
         if (inventoryOnly && (Number(item.kind) !== 1 || !same(item.seller, session.address)))
           return null;
         const batches = [
@@ -2588,11 +2650,29 @@ export class OrdersService {
       const reads = await Promise.all(
         events.map(async (event) => {
           if (inventoryOnly && !same(event.supplier, session.address)) return undefined;
+          // These products are excluded from the Manufacturer catalogue below; avoid enriching them.
+          if (
+            !detailOrderId &&
+            !shipmentOnly &&
+            session.role === CompanyRole.MANUFACTURER &&
+            kind === 2 &&
+            event.manufacturer &&
+            !same(event.manufacturer, session.address)
+          )
+            return undefined;
           const batchId = event.batchId ?? event.productBatchId;
           if (!batchId) return undefined;
           if (shipmentOnly && !focusedBatches.has(batchId)) return undefined;
           if (detailOrderId && !detailBatches.has(batchId)) return undefined;
           const batch = await this.catalogueBatch(kind, batchId);
+          if (
+            !detailOrderId &&
+            !shipmentOnly &&
+            session.role === CompanyRole.MANUFACTURER &&
+            kind === 2 &&
+            !same(batch.manufacturer, session.address)
+          )
+            return undefined;
           if (inventoryOnly && !same(batch.supplier, session.address)) return undefined;
           const listed = catalogue.some((entry) => entry.batches.includes(batchId));
           const productReads = kind === 2 && !listed;

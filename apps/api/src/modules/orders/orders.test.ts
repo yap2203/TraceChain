@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createHash, createCipheriv } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { IpfsEncryptedCredentialStore } from '../ssi/encrypted-credential.store.js';
 import { ingredientBatchRequestSchema } from '../ingredient-batches/ingredient-batch.schema.js';
 import { productRequestSchema } from '../production-flow/production-flow.schema.js';
 import express from 'express';
 import request from 'supertest';
 import { CompanyRole, encodeIngredientDeliveryQr, encodeShipmentQr } from '@tracechain/shared';
-import { encodeBytes32String, id, ZeroHash } from 'ethers';
+import { encodeBytes32String, id, Interface, ZeroHash } from 'ethers';
 import { OrdersService } from './orders.service.js';
 import { RpcServiceUnavailableError } from '../blockchain/rpc-provider.js';
 import { createOrdersRouter } from './orders.routes.js';
@@ -744,6 +745,43 @@ describe('warehouse-first transport preparation', () => {
       }),
     ]);
   });
+  it.each(['InvalidInput', 'InsufficientInventory', 'InvalidState', 'Unauthorized'])(
+    'reports ABI-decoded product handoff simulation errors before signing: %s',
+    async (name) => {
+      const f = warehouse(buyer);
+      const read = f.gateway.read.getMockImplementation()!;
+      f.gateway.read.mockImplementation(async (contract, method, args) =>
+        method === 'getProduct' ? { manufacturer: buyer } : read(contract, method, args),
+      );
+      const artifact = JSON.parse(
+        readFileSync(
+          new URL(
+            '../../../../../packages/contracts/artifacts/contracts/traceability/CustodyTransfer.sol/CustodyTransfer.json',
+            import.meta.url,
+          ),
+          'utf8',
+        ),
+      );
+      const abi = new Interface(artifact.abi);
+      const decoded = abi.parseError(
+        abi.encodeErrorResult(name, name === 'Unauthorized' ? [buyer] : []),
+      );
+      f.gateway.prepare.mockRejectedValueOnce(
+        Object.assign(new Error('private RPC internals'), {
+          code: 'CALL_EXCEPTION',
+          revert: decoded,
+        }),
+      );
+      const response = await request(f.app)
+        .post('/api/orders/logistics/prepare')
+        .send({ ...road, action: 'product-dispatch', recipient: outsider })
+        .expect(409);
+      expect(response.body.error.code).toBe('PRODUCT_HANDOFF_REJECTED');
+      expect(response.body.error.message).toContain(name);
+      expect(response.body.error.message).toContain('No transaction was submitted');
+      expect(response.body.error.message).not.toContain('private RPC');
+    },
+  );
   it('rejects malformed input, future times, invalid arrival and unauthenticated access', async () => {
     const f = warehouse();
     for (const changes of [
@@ -1071,6 +1109,68 @@ describe('Supplier inventory read scope', () => {
 });
 
 describe('order API and private metadata', () => {
+  function remoteProduct(failure?: 'missing' | 'tampered' | 'wrong-batch') {
+    const f = fixture(buyer, true, CompanyRole.RETAILER);
+    const events = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, event) =>
+      event === 'ProductCreated' ? [{ batchId, manufacturer: seller }] : events(contract, event),
+    );
+    const serialized = JSON.stringify({
+      batchReference: failure === 'wrong-batch' ? 'another-batch' : 'batch',
+      productName: 'Recovered product name',
+      privateMetadata: 'CONFIDENTIAL-NOTES',
+    });
+    const hash = `0x${createHash('sha256').update(serialized).digest('hex')}`;
+    const read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (method === 'getItem')
+        return { seller, kind: 2, unit: encodeBytes32String('each'), active: true };
+      if (method === 'productionRecordedAt') return 1;
+      if (method === 'productionLocation') return id('factory');
+      if (method === 'getIngredientLinks') return [];
+      if (method === 'locationTracked') return false;
+      if (method === 'getInventory')
+        return { available: '0', reserved: '0', damaged: '0', rejected: '0' };
+      if (method === 'getProduct')
+        return {
+          manufacturer: seller,
+          metadataHash: hash,
+          publicCid: 'shared-product-cid',
+          totalQuantity: '123',
+          unit: encodeBytes32String('each'),
+          status: 1,
+          producedAt: 1,
+          expiresAt: 2000000000,
+        };
+      if (method === 'isTransferable') return true;
+      return read(contract, method, args);
+    });
+    const retrieveAndDecrypt = vi.fn(async () => {
+      if (failure === 'missing') throw new Error('Unavailable encrypted content');
+      return failure === 'tampered' ? serialized.replace('Recovered', 'Altered') : serialized;
+    });
+    Object.assign(f.store, { retrieveAndDecrypt });
+    return { ...f, retrieveAndDecrypt };
+  }
+  it('recovers product names from the authoritative CID without a local product journal', async () => {
+    const f = remoteProduct();
+    const state = await f.service.state('session');
+    expect(state.catalogue[0].name).toBe('Recovered product name');
+    expect(f.retrieveAndDecrypt).toHaveBeenCalledWith('shared-product-cid');
+    expect(JSON.stringify(state)).not.toContain('CONFIDENTIAL-NOTES');
+    expect(f.repository.savePrivate).not.toHaveBeenCalled();
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
+  it.each([
+    ['missing', 'PRODUCT_METADATA_UNAVAILABLE'],
+    ['tampered', 'PRODUCT_METADATA_INTEGRITY_MISMATCH'],
+    ['wrong-batch', 'PRODUCT_METADATA_BINDING_MISMATCH'],
+  ] as const)(
+    'does not hide failed product metadata as an unavailable name: %s',
+    async (failure, code) => {
+      await expect(remoteProduct(failure).service.state('session')).rejects.toMatchObject({ code });
+    },
+  );
   it('returns a controlled 503 when event providers are unavailable', async () => {
     const f = fixture();
     f.gateway.events.mockRejectedValue(new RpcServiceUnavailableError(new Error('RPC failure')));
@@ -1217,7 +1317,7 @@ describe('order API and private metadata', () => {
   it('publishes real product availability, recorded origin and traceability status to Retailers', async () => {
     const f = fixture(buyer, true, CompanyRole.RETAILER);
     const metadata = JSON.stringify({
-      batchReference: 'CHOC-2026-01',
+      batchReference: 'batch',
       origin: 'Malaysia',
       productName: 'Dark chocolate bar',
     });
@@ -1559,7 +1659,7 @@ describe('order API and private metadata', () => {
     const f = fixture(buyer, true, CompanyRole.MANUFACTURER);
     const read = f.gateway.read.getMockImplementation()!;
     const events = f.gateway.events.getMockImplementation()!;
-    const productBatchId = id('presentation-product');
+    const productBatchId = id('PRODUCT-001');
     const location = id('manufacturer-factory');
     const metadata = JSON.stringify({
       batchReference: 'PRODUCT-001',
@@ -2542,6 +2642,55 @@ describe('order API and private metadata', () => {
 
 // Synthetic transport latency is deliberate; no private values are logged.
 describe('Orders list performance workload', () => {
+  it('profiles Manufacturer catalogue enrichment with unrelated product registrations', async () => {
+    const f = fixture();
+    const originalRead = f.gateway.read.getMockImplementation()!;
+    const originalEvents = f.gateway.events.getMockImplementation()!;
+    const foreign = Array.from({ length: 20 }, (_, i) => ({
+      batchId: id(`unrelated-${i}`),
+      manufacturer: outsider,
+    }));
+    f.gateway.events.mockImplementation(async (c, event) =>
+      event === 'ProductCreated' ? foreign : originalEvents(c, event),
+    );
+    f.gateway.read.mockImplementation(async (c, m, args) =>
+      m === 'productionRecordedAt'
+        ? 1
+        : m === 'getProduct'
+          ? {
+              manufacturer: outsider,
+              metadataHash: ZeroHash,
+              publicCid: '',
+              unit: encodeBytes32String('each'),
+              status: 1,
+              totalQuantity: '100',
+              expiresAt: 2000000000,
+            }
+          : originalRead(c, m, args),
+    );
+    for (const phase of ['first', 'repeat']) {
+      f.gateway.read.mockClear();
+      f.gateway.events.mockClear();
+      const start = performance.now();
+      const response = await request(f.app).get('/api/orders?scope=catalogue').expect(200);
+      const foreignReads = f.gateway.read.mock.calls.filter(
+        ([, method, args]) =>
+          ['getProduct', 'isTransferable', 'productionRecordedAt', 'productionLocation'].includes(
+            method,
+          ) && foreign.some((event) => event.batchId === args?.[0]),
+      ).length;
+      console.info('Manufacturer catalogue workload (mock gateway)', {
+        phase,
+        apiMs: Math.round(performance.now() - start),
+        contractReads: f.gateway.read.mock.calls.length,
+        eventQueries: f.gateway.events.mock.calls.length,
+        foreignProductReads: foreignReads,
+        timing: response.headers['server-timing'],
+      });
+      expect(response.body.catalogue.every((item) => Number(item.kind) !== 2)).toBe(true);
+      expect(foreignReads).toBe(0);
+    }
+  });
   it(
     'measures cold and repeat API loads for the same account and deployment',
     async () => {

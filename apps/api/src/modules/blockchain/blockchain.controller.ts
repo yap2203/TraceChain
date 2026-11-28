@@ -15,6 +15,7 @@ import type { CompanyRoleIssuanceRepository } from '../ssi/issuance.repository.j
 import type { StakeholderDirectory } from '../stakeholder-directory/stakeholder-directory.service.js';
 import { OrdersError } from '../orders/orders.service.js';
 import { isRpcRateLimitError } from './rpc-provider.js';
+import { timeOrderRead } from './read-timing.js';
 import type { CatalogueImageInput, StoredCatalogueImage } from '../orders/catalogue-media.js';
 import {
   ApplicationManifestError,
@@ -466,57 +467,61 @@ export class BlockchainController {
 
   listOperationalData = async (request: Request, response: Response, next: NextFunction) => {
     try {
-      const session = await this.requireAuthorizedStakeholder(request);
-      if (!this.gateway.listOperationalData)
-        throw new BlockchainApiError(
-          'OPERATIONAL_READS_UNAVAILABLE',
-          'Operational blockchain reads are unavailable.',
-          503,
-        );
-      const data = await this.gateway
-        .listOperationalData(session.address, {
-          administrator: session.role === CompanyRole.SYSTEM_ADMIN,
-          role: session.role,
-        })
-        .catch((error: unknown) => {
-          const rateLimited = isRpcRateLimitError(error);
+      const timed = await timeOrderRead(async () => {
+        const session = await this.requireAuthorizedStakeholder(request);
+        if (!this.gateway.listOperationalData)
           throw new BlockchainApiError(
-            rateLimited ? 'BLOCKCHAIN_RATE_LIMITED' : 'OPERATIONAL_READS_UNAVAILABLE',
-            rateLimited
-              ? 'The blockchain provider is busy. Wait a moment, then refresh your data.'
-              : 'Blockchain data is temporarily unavailable. Please retry shortly.',
+            'OPERATIONAL_READS_UNAVAILABLE',
+            'Operational blockchain reads are unavailable.',
             503,
           );
-        });
-      const same = (value: unknown) =>
-        typeof value === 'string' && value.toLowerCase() === session.address.toLowerCase();
-      const transfers = data.transfers.filter(
-        (record) => same(record.sender) || same(record.recipient),
-      );
-      const receivedProducts = new Set(transfers.map((record) => record.productBatchId));
-      const scoped =
-        session.role === CompanyRole.SYSTEM_ADMIN
-          ? data
-          : {
-              ingredientBatches: data.ingredientBatches.filter((record) => same(record.supplier)),
-              productBatches: data.productBatches.filter(
-                (record) =>
-                  same(record.manufacturer) ||
-                  ((session.role === CompanyRole.DISTRIBUTOR ||
-                    session.role === CompanyRole.RETAILER) &&
-                    receivedProducts.has(record.batchId)),
-              ),
-              transfers,
-              evidenceRequests: data.evidenceRequests.filter(
-                (record) => same(record.requester) || same(record.supplier),
-              ),
-            };
-      response.json({
-        ...(this.stakeholderDirectory
-          ? await enrichOperationalData(scoped, this.stakeholderDirectory)
-          : scoped),
-        actorWallet: session.address,
-      });
+        const data = await this.gateway
+          .listOperationalData(session.address, {
+            administrator: session.role === CompanyRole.SYSTEM_ADMIN,
+            role: session.role,
+          })
+          .catch((error: unknown) => {
+            const rateLimited = isRpcRateLimitError(error);
+            throw new BlockchainApiError(
+              rateLimited ? 'BLOCKCHAIN_RATE_LIMITED' : 'OPERATIONAL_READS_UNAVAILABLE',
+              rateLimited
+                ? 'The blockchain provider is busy. Wait a moment, then refresh your data.'
+                : 'Blockchain data is temporarily unavailable. Please retry shortly.',
+              503,
+            );
+          });
+        const same = (value: unknown) =>
+          typeof value === 'string' && value.toLowerCase() === session.address.toLowerCase();
+        const transfers = data.transfers.filter(
+          (record) => same(record.sender) || same(record.recipient),
+        );
+        const receivedProducts = new Set(transfers.map((record) => record.productBatchId));
+        const scoped =
+          session.role === CompanyRole.SYSTEM_ADMIN
+            ? data
+            : {
+                ingredientBatches: data.ingredientBatches.filter((record) => same(record.supplier)),
+                productBatches: data.productBatches.filter(
+                  (record) =>
+                    same(record.manufacturer) ||
+                    ((session.role === CompanyRole.DISTRIBUTOR ||
+                      session.role === CompanyRole.RETAILER) &&
+                      receivedProducts.has(record.batchId)),
+                ),
+                transfers,
+                evidenceRequests: data.evidenceRequests.filter(
+                  (record) => same(record.requester) || same(record.supplier),
+                ),
+              };
+        return {
+          ...(this.stakeholderDirectory
+            ? await enrichOperationalData(scoped, this.stakeholderDirectory)
+            : scoped),
+          actorWallet: session.address,
+        };
+      }, false);
+      response.setHeader('Server-Timing', timed.header);
+      response.json(timed.result);
     } catch (error) {
       this.handleError(error, response, next);
     }

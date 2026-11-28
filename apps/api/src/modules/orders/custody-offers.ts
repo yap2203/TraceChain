@@ -140,7 +140,17 @@ export class CustodyOffers {
     )
       return undefined;
     if (!same(fromOwner, offer.sender) || !same(toOwner, offer.distributor)) return undefined;
-    if (offer.shipmentId) {
+    // Preparation reserves an ID locally, not stock on-chain. getTransfer reverts for unknown IDs.
+    // Only a confirmed creation event makes a product transfer readable; log failures still fail.
+    const productShipmentRecorded =
+      offer.kind !== 2 ||
+      !offer.shipmentId ||
+      (await gateway.events('custody', 'TransferCreated')).some((event) =>
+        same(event.transferId, offer.shipmentId),
+      );
+    // Keep the saved attempt intact, but do not present its prepared ID as a recorded shipment.
+    if (!productShipmentRecorded) delete offer.shipmentId;
+    if (offer.shipmentId && productShipmentRecorded) {
       const shipment = await gateway.read(
         offer.kind === 1 ? 'delivery' : 'custody',
         offer.kind === 1 ? 'getRoadShipment' : 'getTransfer',
@@ -169,6 +179,7 @@ export class CustodyOffers {
           'The recorded shipment does not match this custody request.',
           503,
         );
+      else delete offer.shipmentId;
     }
     if (
       !['DISPATCHED', 'RECEIVED', 'REJECTED'].includes(offer.status) &&

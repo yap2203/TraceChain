@@ -14,6 +14,7 @@ export class ProductionTransactionError extends Error {
       | 'WRONG_NETWORK'
       | 'WRONG_WALLET',
     message: string,
+    readonly phase?: 'simulation' | 'mined' | 'submission',
   ) {
     super(message);
   }
@@ -59,10 +60,17 @@ export async function submitProductionTransaction(
       );
     const pending = await sendPreparedTransaction(signer, transaction);
     const receipt = await pending.wait();
-    if (!receipt || receipt.status !== 1)
+    if (!receipt)
+      throw new ProductionTransactionError(
+        'RPC_ERROR',
+        'The transaction was sent, but its confirmation is unavailable. Check MetaMask activity and refresh records before submitting again.',
+        'submission',
+      );
+    if (receipt.status !== 1)
       throw new ProductionTransactionError(
         'REVERTED',
-        'The blockchain transaction reverted. You can safely retry this workflow.',
+        'The mined blockchain transaction failed. Refresh the record before deciding whether to retry.',
+        'mined',
       );
     notify('Blockchain transaction confirmed.', 'success');
     for (const next of transaction.nextTransactions ?? []) {
@@ -76,6 +84,8 @@ export async function submitProductionTransaction(
       info?: { error?: { code?: number } };
       message?: string;
       shortMessage?: string;
+      action?: string;
+      receipt?: { status?: number };
     };
     if (
       candidate.code === 4001 ||
@@ -86,15 +96,23 @@ export async function submitProductionTransaction(
         'REJECTED',
         'The MetaMask request was cancelled. No later workflow step was submitted.',
       );
-    if (
-      candidate.code === 'CALL_EXCEPTION' ||
-      /revert/i.test(candidate.message ?? '') ||
-      /revert/i.test(candidate.shortMessage ?? '')
-    )
+    if (candidate.code === 'CALL_EXCEPTION') {
+      const phase =
+        candidate.receipt?.status === 0
+          ? 'mined'
+          : candidate.action === 'estimateGas' || candidate.action === 'call'
+            ? 'simulation'
+            : 'submission';
       throw new ProductionTransactionError(
         'REVERTED',
-        'The transaction reverted. Refresh the on-chain records and retry.',
+        phase === 'mined'
+          ? 'The mined blockchain transaction failed. Refresh the record before deciding whether to retry.'
+          : phase === 'simulation'
+            ? 'Transaction simulation failed before submission. Refresh the record and check its stock, times, locations and permissions. No transaction was submitted.'
+            : 'The blockchain rejected the transaction request. Check MetaMask activity and refresh the record before retrying.',
+        phase,
       );
+    }
     throw new ProductionTransactionError(
       'RPC_ERROR',
       'MetaMask or the blockchain RPC could not complete the transaction.',

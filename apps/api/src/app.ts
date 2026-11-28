@@ -105,6 +105,7 @@ import { SsiController } from './modules/ssi/ssi.controller.js';
 import {
   IpfsEncryptedCredentialStore,
   type CredentialContentStore,
+  type EncryptedEnvelopeCache,
 } from './modules/ssi/encrypted-credential.store.js';
 import {
   IssuanceJournalError,
@@ -347,17 +348,21 @@ export function createApp({
   const companyApplicationMetadata =
     applicationMetadataRepository ??
     new JsonApplicationMetadataRepository(dataFile('applications/company-metadata.json'));
+  const envelopeCache: EncryptedEnvelopeCache = new Map();
   const lazyCredentialContentStore: CredentialContentStore = {
     retrieveEnvelope: async (cid) =>
-      withCredentialContentStore((store) => store.retrieveEnvelope!(cid)),
+      withCredentialContentStore((store) => store.retrieveEnvelope!(cid), envelopeCache),
     retrieveAndDecrypt: async (cid) => {
-      return withCredentialContentStore((store) => store.retrieveAndDecrypt!(cid));
+      return withCredentialContentStore((store) => store.retrieveAndDecrypt!(cid), envelopeCache);
     },
     decrypt: async (payload) => {
-      return withCredentialContentStore((store) => store.decrypt(payload));
+      return withCredentialContentStore((store) => store.decrypt(payload), envelopeCache);
     },
     encryptAndStore: async (serialized, credentialId) => {
-      return withCredentialContentStore((store) => store.encryptAndStore(serialized, credentialId));
+      return withCredentialContentStore(
+        (store) => store.encryptAndStore(serialized, credentialId),
+        envelopeCache,
+      );
     },
   };
   const registryReferences = lazyGateway.getRegistryReferences?.() ?? {
@@ -1174,6 +1179,7 @@ function createIssuanceDependencies() {
 
 async function withCredentialContentStore<T>(
   operation: (store: CredentialContentStore) => Promise<T>,
+  envelopeCache: EncryptedEnvelopeCache,
 ) {
   const key = loadBackendSecrets().ipfsEncryptionKey;
   try {
@@ -1184,6 +1190,7 @@ async function withCredentialContentStore<T>(
         storage.pinningApiUrl,
         storage.pinningToken,
         storage.gatewayUrl,
+        envelopeCache,
       ),
     );
   } finally {

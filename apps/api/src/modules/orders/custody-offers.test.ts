@@ -61,11 +61,18 @@ function fixture(
     chainId: 31337,
     address: source,
     events: vi.fn(async (_contract: string, event: string) =>
-      event === 'InventoryInitialized'
-        ? options.inventoryInitialized
-          ? [{ batchId, manufacturer: source, quantity: options.totalQuantity ?? '123' }]
+      event === 'TransferCreated'
+        ? Number(shipment.status) > 0
+          ? [...records.values()]
+              .map((r) => JSON.parse(r.payload.ciphertext))
+              .filter((o) => o.shipmentId)
+              .map((o) => ({ transferId: o.shipmentId }))
           : []
-        : [{ batchId, blockHash: id('registration-block') }],
+        : event === 'InventoryInitialized'
+          ? options.inventoryInitialized
+            ? [{ batchId, manufacturer: source, quantity: options.totalQuantity ?? '123' }]
+            : []
+          : [{ batchId, blockHash: id('registration-block') }],
     ),
     prepare: vi.fn(),
     read: vi.fn(async (_contract: string, method: string, args?: any[]) => {
@@ -151,6 +158,48 @@ function fixture(
   };
 }
 describe('custody offer, acceptance, pickup and handoff', () => {
+  it('lists a prepared product handoff without reading a transfer that has not been created', async () => {
+    const f = fixture();
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const { offer } = await f.offers.create('s', { ...input, kind: 2 });
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+    const now = Math.floor(Date.now() / 1000);
+    await f.offers.act('s', offer.offerId, {
+      action: 'accept',
+      pickupAt: now + 600,
+      vehicle: 'VAB 1234',
+      expectedAt: now + 3600,
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) => {
+      if (method === 'getTransfer')
+        throw Object.assign(new Error('InvalidInput()'), { code: 'CALL_EXCEPTION' });
+      return read(contract, method, args);
+    });
+    const events = f.gateway.events.getMockImplementation()!;
+    f.gateway.events.mockImplementation(async (contract, event) =>
+      event === 'TransferCreated' ? [] : events(contract, event),
+    );
+    await f.offers.prepare('s', offer.offerId);
+    const savedRecord = structuredClone(f.records.get(offer.offerId));
+    f.gateway.read.mockClear();
+    const response = await request(f.app).get('/api/orders/custody-offers').expect(200);
+    expect(response.body.offers).toHaveLength(1);
+    expect(response.body.offers[0].status).toBe('SCHEDULED');
+    expect(response.body.offers[0].shipmentId).toBeUndefined();
+    expect(response.body.offers[0].plannedShipmentId).toBe(
+      JSON.parse(savedRecord.payload.ciphertext).shipmentId,
+    );
+    expect(f.records.get(offer.offerId)).toEqual(savedRecord);
+    expect(f.gateway.read.mock.calls.some(([, method]) => method === 'getTransfer')).toBe(false);
+    expect(f.repo.savePrivate).toHaveBeenCalled();
+    f.gateway.events.mockImplementation(async (contract, event) => {
+      if (event === 'TransferCreated') throw new Error('Event RPC unavailable');
+      return events(contract, event);
+    });
+    await request(f.app).get('/api/orders/custody-offers').expect(503);
+  });
   it.each([1, 2] as const)(
     'discovers kind %s once for its intended Distributor and denies unrelated companies',
     async (kind) => {
@@ -663,8 +712,8 @@ describe('custody offer, acceptance, pickup and handoff', () => {
       );
       const prepared = await f.offers.get('s', offer.offerId);
       expect(prepared.status).toBe('SCHEDULED');
-      expect(prepared.shipmentId).toBe(planned);
-      expect(prepared.plannedShipmentId).toBeUndefined();
+      expect(prepared.shipmentId).toBeUndefined();
+      expect(prepared.plannedShipmentId).toBe(planned);
       f.shipment({
         sender: source,
         recipient: carrier,

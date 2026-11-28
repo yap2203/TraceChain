@@ -67,7 +67,10 @@ vi.mock('./production-flow.api', async (importOriginal) => {
 
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
 import { TransferToDistributor } from '../workspaces/manufacturer/transfers/TransferToDistributorPage';
-import { completePreparedWorkflow } from './production-flow.transaction';
+import {
+  completePreparedWorkflow,
+  submitProductionTransaction,
+} from './production-flow.transaction';
 
 const MANUFACTURER = '0x3000000000000000000000000000000000000003';
 const DISTRIBUTOR = '0x4000000000000000000000000000000000000004';
@@ -106,6 +109,31 @@ afterEach(() => {
 });
 
 describe('production transaction workflow', () => {
+  it('does not describe a missing receipt as a mined revert', async () => {
+    mocks.sendPreparedTransaction.mockResolvedValueOnce({ wait: vi.fn().mockResolvedValue(null) });
+    await expect(submitProductionTransaction(TRANSACTION, MANUFACTURER)).rejects.toMatchObject({
+      code: 'RPC_ERROR',
+      phase: 'submission',
+    });
+  });
+  it.each([
+    [{ code: 'CALL_EXCEPTION', action: 'estimateGas' }, 'REVERTED', 'simulation'],
+    [{ code: 'CALL_EXCEPTION', receipt: { status: 0 } }, 'REVERTED', 'mined'],
+    [
+      { code: 'NETWORK_ERROR', message: 'RPC failed while inspecting a revert' },
+      'RPC_ERROR',
+      undefined,
+    ],
+  ])(
+    'distinguishes simulation reverts, mined failures and RPC outages: %j',
+    async (error, code, phase) => {
+      mocks.sendPreparedTransaction.mockRejectedValueOnce(error);
+      await expect(submitProductionTransaction(TRANSACTION, MANUFACTURER)).rejects.toMatchObject({
+        code,
+        ...(phase ? { phase } : {}),
+      });
+    },
+  );
   it('submits one prepared transaction and verifies the authoritative record afterwards', async () => {
     const prepare = vi
       .fn()

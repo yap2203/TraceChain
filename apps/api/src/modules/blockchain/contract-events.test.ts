@@ -4,7 +4,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Interface, zeroPadValue, type BaseContract, type EventLog } from 'ethers';
-import { configureEventIndexStore, queryContractEvents } from './contract-events.js';
+import {
+  configureEventIndexStore,
+  queryContractEvents,
+  syncContractEvents,
+} from './contract-events.js';
 
 const abi = new Interface([
   'event Supplied(address indexed supplier, uint256 amount)',
@@ -353,7 +357,11 @@ describe('Persisted contract event index', () => {
     );
 
   it('restores a saved index after a restart without rescanning history', async () => {
-    await queryContractEvents(fixture().contract, supplierAFilter);
+    const initial = fixture();
+    await queryContractEvents(initial.contract, supplierAFilter);
+    await (
+      await syncContractEvents(initial.contract)
+    ).saving;
     await vi.waitFor(() => expect(existsSync(savedFile())).toBe(true));
     const restarted = fixture();
     const logs = (await queryContractEvents(restarted.contract, supplierAFilter)) as EventLog[];
@@ -361,11 +369,18 @@ describe('Persisted contract event index', () => {
     expect(logs.map((log) => log.args.supplier)).toEqual([supplierA, supplierA, supplierA]);
   });
   it('rebuilds a saved index whose checkpoint no longer matches the chain', async () => {
-    await queryContractEvents(fixture().contract, supplierAFilter);
+    const initial = fixture();
+    await queryContractEvents(initial.contract, supplierAFilter);
+    await (
+      await syncContractEvents(initial.contract)
+    ).saving;
     await vi.waitFor(() => expect(existsSync(savedFile())).toBe(true));
     const restarted = fixture();
     restarted.reorg();
     await queryContractEvents(restarted.contract, supplierAFilter);
+    await (
+      await syncContractEvents(restarted.contract)
+    ).saving;
     expect(restarted.queryFilter.mock.calls[0]).toEqual(['*', 12_000, 16_999]);
   });
   it('never persists local development chains', async () => {

@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventLog, Log, type BaseContract, type Provider } from 'ethers';
-import { countRead } from './read-timing.js';
+import { countRead, measureRead } from './read-timing.js';
 import { isLogRangeLimit, RpcServiceUnavailableError } from './rpc-provider.js';
 
 const DEFAULT_PAGE_SIZE = 5_000;
@@ -232,11 +232,13 @@ async function readLogRange(
 ): Promise<StoredLog[]> {
   countRead('scans');
   try {
-    const page = await provider.getLogs({
-      address: addresses.length === 1 ? addresses[0] : addresses,
-      fromBlock: from,
-      toBlock: to,
-    });
+    const page = await measureRead('scans', () =>
+      provider.getLogs({
+        address: addresses.length === 1 ? addresses[0] : addresses,
+        fromBlock: from,
+        toBlock: to,
+      }),
+    );
     return page.map(storedLog);
   } catch (cause) {
     if (to <= from || !isLogRangeLimit(cause))

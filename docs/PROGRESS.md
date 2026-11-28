@@ -1,5 +1,20 @@
 # Project Progress
 
+## 2026-11-28 - Prepared product handoff reads and missing product names
+
+- Reproduced a product handoff preparation saving a future shipment ID, followed by custody-list HTTP 503 because `getTransfer` rejects an uncreated transfer. Confirmed the deployed Sepolia ABI error through a read-only probe: `InvalidInput()`, selector `0xb4fa3fb3`. Local custody/Orders/Product/Stakeholder wiring matched. The overview consumes the same custody endpoint.
+- Product offer lookup now checks the confirmed `TransferCreated` event before reading a transfer; unrecorded attempts remain planned in the response and their saved records stay intact. Log/RPC failures and mismatching chain records remain errors. Existing participant, registration, deployment and location checks remain enforced.
+- Known product handoff simulation errors now identify the ABI custom error with actionable checks. Frontend error handling distinguishes estimate/call simulation, mined failure and RPC failure. A successfully confirmed handoff remains locked if refresh fails and provides Refresh records.
+- Orders product summaries recover encrypted metadata from the authoritative product CID when a local journal is missing, checking its exact hash and batch reference and returning only the existing business summary.
+- Planned pickup is not an argument to `createRoadTransfer` and has no contract early-pickup restriction; no new timing policy was added. The supplied Render offer requires an authenticated session unavailable to this investigation. Its exact batch stock, lifecycle/expiry, caller and transaction failure stage remain unverified without the public batch ID or transaction/revert details. No live transaction, deployment, key or environment change.
+
+## 2026-11-28 - Focused loading performance follow-up
+
+- Fixed the IPFS envelope cache being discarded whenever the lazy content wrapper created a new store. One bounded per-API ciphertext cache now coalesces downloads across operations, with encryption/storage configuration isolation; temporary keys are still cleared and callers still decrypt, check integrity/binding and authorize access.
+- Manufacturer catalogue builds skip other Manufacturers' product enrichment before the existing final visibility filter. Ingredient stock/location reads and full action context remain intact. Existing shared incremental event scans, completed-page checkpoints, deployment isolation and reorg checks are retained.
+- Added safe per-request queue/RPC/event/IPFS duration measurements to Orders and operational responses. Synthetic cold catalogue reads fell from 110 to 9; overlapping per-operation IPFS downloads fell from 3 to 1, with repeat downloads from 3 to 0. These are local test workloads, not authenticated Render page timings; see `ORDERS_LOADING_PERFORMANCE.md`.
+- Stabilized event-index restart tests by waiting for the final queued checkpoint and isolated the startup test's RPC endpoints from local environment overrides. No RPC throttles, secrets, contracts or environment files were changed. Live authenticated first/repeat page timing and hosted rollout remain operator checks.
+
 ## 2026-11-28 - Log query capacity errors and dashboard availability
 
 - Fixed log capacity errors being classified as provider throttling: nested range/result-limit errors now reach the incremental scanner, which splits sequentially without opening healthy-provider circuits. The existing bounded rate-limit retry/backoff, scan deduplication, bulk concurrency limits and deployment/reorg-validated index remain in use.

@@ -118,6 +118,11 @@ new snapshot file or contract redeployment is required.
 Protected Orders, operations and ingredient authorization checks now skip company-name/IPFS
 enrichment; on-chain authorization remains fresh. Directory lookups are scoped to the requested
 wallets, and small encrypted IPFS envelopes are reused for 30 seconds (never plaintext or permissions).
+The encrypted-envelope cache is shared across the API's temporary content-store instances, bounded
+to 64 entries, and isolated by encryption/storage configuration. Manufacturer catalogue builds skip
+unrelated Manufacturers' products before enrichment, preserving the existing final visibility rules.
+Orders and operational-data responses expose aggregate queue, RPC, event-scan and IPFS durations
+and counts through `Server-Timing`; overlapping durations are not additive to HTTP latency.
 The earlier pacing-only Infura configuration used one transport, 500 ms ordinary spacing and 1,200 ms
 after log queries (`RPC_BULK_MIN_REQUEST_INTERVAL_MS`) following reproduced throughput rejections.
 Supplier operations skips product/custody history. Read-only live operations checks succeeded in
@@ -1114,6 +1119,15 @@ New authenticated Orders endpoints: `GET /api/orders/traceability?kind=ingredien
 `POST /api/orders/custody-offers/:offerId/action|prepare`. Each checks current session authorization;
 private coordination data is participant-scoped and encrypted through existing storage. Pickup plans,
 offer decisions and editable location labels are off-chain; the API can decrypt them.
+Handoff preparation returns unsigned `CustodyTransfer.createRoadTransfer` calldata for products;
+a prepared shipment ID is not a recorded transfer. Product offer reads require a confirmed
+`TransferCreated` event before calling `getTransfer`, so an unsigned or rejected attempt cannot
+break the custody list or overview. Stored attempts remain intact. Simulation errors identify known
+ABI custom errors before wallet submission; a confirmed handoff with a failed refresh stays locked
+against resubmission and offers Refresh records. Planned pickup is coordination information;
+the contract validates actual dispatch time, production time, arrival, stock and authorization.
+Product names recover from their chain-referenced encrypted metadata with hash and batch checks
+when the API has no local product journal. Missing or corrupt referenced content remains an error.
 Custody offers currently require sender and recipient to use the same API workflow store: although
 their encrypted content is pinned to IPFS, no shared discoverable offer reference is published. An
 isolated API cannot discover or open those offers from their IDs alone. Existing records are retained;
