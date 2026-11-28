@@ -1093,8 +1093,12 @@ New authenticated Orders endpoints: `GET /api/orders/traceability?kind=ingredien
 `GET /api/orders/custody-offers/:offerId`, and
 `POST /api/orders/custody-offers/:offerId/action|prepare`. Each checks current session authorization;
 private coordination data is participant-scoped and encrypted through existing storage. Pickup plans,
-offer decisions and editable location labels are off-chain; the API can decrypt them. Existing
-MetaMask-signed contracts remain authoritative for dispatch, receipt and stock. No contract change
+offer decisions and editable location labels are off-chain; the API can decrypt them.
+Custody offers currently require sender and recipient to use the same API workflow store: although
+their encrypted content is pinned to IPFS, no shared discoverable offer reference is published. An
+isolated API cannot discover or open those offers from their IDs alone. Existing records are retained;
+cross-device offer publication/discovery remains pending design approval.
+Existing MetaMask-signed contracts remain authoritative for dispatch, receipt and stock. No contract change
 or redeployment is required solely for this workspace/pickup stage; previously pending ProductDelivery
 deployment requirements still apply. No new environment variables or npm dependencies were added.
 

@@ -25,6 +25,7 @@ import {
   StepProgress,
   T,
   Textarea,
+  TechnicalDetails,
 } from '../../shared/ui';
 import { registeredIngredientQuantity, ingredientUnitOptions } from './ingredient-quantities';
 import { shortChainId } from '../../shared/operational-format';
@@ -332,73 +333,93 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
   if (createdProduct) {
     return (
       <div className="workspace-editor product-success">
+        <h2>Product batch created</h2>
         <Alert
           type="success"
-          message="Product creation was verified on chain. Its permanent traceability QR is ready."
+          message="Confirmed on-chain. The permanent product traceability QR is ready."
         />
         {presentationWarning && <Alert type="warning" message={presentationWarning} />}
-        <Card className="product-success__summary">
-          <div>
-            <span>Product created</span>
-            <h2>{createdProduct.productName}</h2>
-            <p>{createdProduct.batchReference}</p>
-          </div>
-          <dl className="workspace-record-facts">
-            <div>
-              <dt>Output quantity</dt>
-              <dd>{createdProduct.output}</dd>
-            </div>
-            <div>
-              <dt>Production location</dt>
-              <dd>{createdProduct.locationName}</dd>
-            </div>
-            <div>
-              <dt>Production date</dt>
-              <dd>{createdProduct.producedAt ?? 'Unavailable'}</dd>
-            </div>
-            <div>
-              <dt>Linked ingredients</dt>
-              <dd>{createdProduct.ingredientBalances.length}</dd>
-            </div>
-          </dl>
-        </Card>
-        <p>
-          Production occurred: {createdProduct.producedAt ?? 'Unavailable'} · Recorded on-chain:{' '}
-          {createdProduct.production?.recordedAt
-            ? new Date(createdProduct.production.recordedAt * 1000).toLocaleString()
-            : 'Unavailable'}{' '}
-          · Location:{' '}
-          {createdProduct.production?.location
-            ? shortChainId(createdProduct.production.location)
-            : 'Unavailable'}
-        </p>
-        <Card>
-          <h3>Remaining ingredient stock</h3>
-          {stockError && <Alert type="warning" message={stockError} />}
-          {links.map((link) => {
-            const stock = confirmedStock.find((item) => item.batchId === link.batchId);
-            const submittedBalance = createdProduct.ingredientBalances.find(
-              (item) => item.batchId === link.batchId,
-            );
-            return (
-              <p key={link.batchId}>
-                {names[link.batchId] ?? shortChainId(link.batchId)}:{' '}
-                {stock
-                  ? `${stock.availableQuantity} ${stock.unit}`
-                  : submittedBalance
-                    ? `${submittedBalance.remaining} ${submittedBalance.unit}`
-                    : 'Refreshing / unavailable'}
-              </p>
-            );
-          })}
-        </Card>
-        <Card>
-          <ProductQrDisplay
-            batchId={createdProduct.batchId}
-            batchReference={createdProduct.batchReference}
-            productName={createdProduct.productName}
-          />
-        </Card>
+        <div className="product-success__layout">
+          <Card className="product-success__details">
+            <h3>Product summary</h3>
+            <dl className="workspace-record-facts">
+              <div>
+                <dt>Product name</dt>
+                <dd>{createdProduct.productName}</dd>
+              </div>
+              <div>
+                <dt>Batch reference</dt>
+                <dd>{createdProduct.batchReference}</dd>
+              </div>
+              <div>
+                <dt>Output quantity</dt>
+                <dd>{createdProduct.output}</dd>
+              </div>
+              <div>
+                <dt>Production location</dt>
+                <dd>{createdProduct.locationName}</dd>
+              </div>
+              <div>
+                <dt>Production date</dt>
+                <dd>{createdProduct.producedAt ?? 'Unavailable'}</dd>
+              </div>
+              <div>
+                <dt>Linked ingredients</dt>
+                <dd>{createdProduct.ingredientBalances.length}</dd>
+              </div>
+              <div>
+                <dt>Recorded on-chain</dt>
+                <dd>
+                  {createdProduct.production?.recordedAt
+                    ? new Date(createdProduct.production.recordedAt * 1000).toLocaleString()
+                    : 'Unavailable'}
+                </dd>
+              </div>
+            </dl>
+            <h3>Remaining ingredient stock</h3>
+            {stockError && <Alert type="warning" message={stockError} />}
+            <dl className="product-success__stock">
+              {links.map((link) => {
+                const stock = confirmedStock.find((item) => item.batchId === link.batchId);
+                const submittedBalance = createdProduct.ingredientBalances.find(
+                  (item) => item.batchId === link.batchId,
+                );
+                return (
+                  <div key={link.batchId}>
+                    <dt>{names[link.batchId] ?? 'Ingredient'}</dt>
+                    <dd>
+                      {stock
+                        ? `${stock.availableQuantity} ${stock.unit}`
+                        : submittedBalance
+                          ? `${submittedBalance.remaining} ${submittedBalance.unit}`
+                          : 'Refreshing / unavailable'}
+                    </dd>
+                  </div>
+                );
+              })}
+            </dl>
+            <TechnicalDetails
+              fields={[
+                { label: 'Product batch ID', value: createdProduct.batchId },
+                {
+                  label: 'Production location ID',
+                  value: createdProduct.production?.location ?? productionLocation,
+                },
+                ...createdProduct.ingredientBalances.map((item) => ({
+                  label: `Ingredient ID (${names[item.batchId] ?? 'Ingredient'})`,
+                  value: item.batchId,
+                })),
+              ]}
+            />
+          </Card>
+          <aside className="product-success__qr">
+            <ProductQrDisplay
+              batchId={createdProduct.batchId}
+              batchReference={createdProduct.batchReference}
+              productName={createdProduct.productName}
+            />
+          </aside>
+        </div>
         <div className="product-success__actions action-row">
           <Btn
             variant="outline"
@@ -428,6 +449,9 @@ export function CreateProductBatch({ onBack }: { onBack: () => void }) {
             Transfer product
           </Btn>
           <Btn onClick={onBack}>View product</Btn>
+          <Btn variant="outline" onClick={onBack}>
+            Back to products
+          </Btn>
         </div>
       </div>
     );

@@ -3152,7 +3152,9 @@
   border-radius: 12px;
   background: var(--c-surface);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 .shipment-card:hover {
   border-color: color-mix(in srgb, var(--c-teal) 45%, var(--c-border));
@@ -3614,29 +3616,62 @@
   margin: 0;
 }
 
-.product-success__summary {
-  display: grid;
-  grid-template-columns: minmax(190px, 0.7fr) minmax(0, 1.3fr);
-  align-items: center;
-  gap: 18px;
-}
-
-.product-success__summary h2,
-.product-success__summary p {
-  margin: 2px 0 0;
-}
-
-.product-success__summary > div > span {
-  color: var(--c-green);
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .product-success__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.product-success > h2 {
+  margin: 0;
+}
+.product-success__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  align-items: start;
+  gap: 20px;
+}
+.product-success__details,
+.product-success__qr {
+  min-width: 0;
+}
+.product-success__details h3 {
+  margin: 0 0 16px;
+}
+.product-success__details .workspace-record-facts {
+  margin-bottom: 20px;
+}
+.product-success__stock {
+  margin: 0;
+}
+.product-success__stock > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--c-border);
+}
+.product-success__stock dt {
+  color: var(--c-text2);
+}
+.product-success__stock dd {
+  margin: 0;
+  font-weight: 600;
+}
+.product-success__details dd,
+.product-success__stock dt {
+  overflow-wrap: anywhere;
+}
+@media screen {
+  .product-success__qr .product-qr-identity,
+  .product-success__qr .product-trace-eyebrow {
+    display: none;
+  }
+}
+@media (max-width: 800px) {
+  .product-success__layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dispatch-workflow-form {
@@ -4061,8 +4096,7 @@
   }
 
   .evidence-request-summary,
-  .evidence-request-card,
-  .product-success__summary {
+  .evidence-request-card {
     grid-template-columns: minmax(0, 1fr);
   }
 

@@ -1,5 +1,11 @@
 # Project Progress
 
+## 2026-11-28 - Product success layout and custody offer discovery diagnosis
+
+- Product creation success now groups the real product facts and remaining ingredient balances beside the permanent traceability QR. Technical identifiers stay collapsed; the existing PNG, link and printable label actions and QR quiet zone are unchanged. Mobile stacks the panels.
+- Same-store tests verify Manufacturer product and Supplier ingredient offers reach only the intended Distributor, with direct access and action restrictions. Refresh discovers a new product offer without another login.
+- Two isolated temporary JSON repositories reproduce the discovery gap: encrypted offer content is pinned, but list/detail lookup requires the sender API's journal. No shared on-chain or wallet inbox reference is published by custody-offer creation. Cross-device recovery is not implemented; a shared authoritative API store or a separately approved publication/index mechanism is required. No records were copied, resent, relabelled or deleted, and no live transaction was submitted.
+
 ## 2026-11-28 - Cross-device Manufacturer ingredient catalogue recovery
 
 - Orders catalogue discovery now retrieves missing ingredient metadata from the confirmed batch CID using the existing encrypted content store. Both local and remote metadata must match the chain hash, batch reference and Supplier wallet before the allowlisted business summary is returned.

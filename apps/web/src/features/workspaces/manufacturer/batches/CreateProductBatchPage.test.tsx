@@ -125,6 +125,15 @@ describe('multi-ingredient production', () => {
       ),
     );
     await screen.findByText('Remaining ingredient stock');
+    expect(screen.getAllByRole('heading', { name: 'Product batch created' })).toHaveLength(1);
+    expect(screen.getByText('Product summary')).toBeTruthy();
+    expect(screen.getByText('CHOC-1')).toBeTruthy();
+    expect(screen.getByText('Factory')).toBeTruthy();
+    expect(screen.getByText('50 each')).toBeTruthy();
+    expect(screen.queryByText(/Production occurred:/)).toBeNull();
+    expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+    expect(screen.getByRole('button', { name: 'View product' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Back to products' })).toBeTruthy();
   });
   it('blocks overspending and clears selections when the production location changes', async () => {
     await setup();
@@ -166,7 +175,8 @@ describe('multi-ingredient production', () => {
         }),
       ),
     );
-    expect(await screen.findByText('Cocoa: 0 g')).toBeTruthy();
+    expect(await screen.findByText('0 g')).toBeTruthy();
+    expect(screen.getByText('Cocoa', { selector: '.product-success__stock dt' })).toBeTruthy();
   });
   it('keeps a confirmed product pending refresh and never offers duplicate creation', async () => {
     await setup();
@@ -196,7 +206,7 @@ describe('multi-ingredient production', () => {
 
     mocks.ingredients.mockResolvedValueOnce({ batches: [] });
     fireEvent.click(screen.getByRole('button', { name: 'Refresh records' }));
-    expect(await screen.findByText('Cocoa: 0 g')).toBeTruthy();
+    expect(await screen.findByText('0 g')).toBeTruthy();
     expect(mocks.complete).toHaveBeenCalledOnce();
     expect(mocks.prepare).toHaveBeenCalledOnce();
   });

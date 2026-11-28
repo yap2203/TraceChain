@@ -84,6 +84,29 @@ const pickupValue = (hours = 1) => {
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 16);
 };
+it('refreshes a new Manufacturer product offer into the Distributor inbox without signing in again', async () => {
+  api.list.mockResolvedValueOnce({ offers: [] });
+  offer.kind = 2;
+  offer.itemName = 'Manufacturer product';
+  offer.senderName = 'Actual Manufacturer';
+  render(
+    <MemoryRouter>
+      <CustodyOffersWorkspace role="distributor" receiver />
+    </MemoryRouter>,
+  );
+  await screen.findByText('Offers from Suppliers and Manufacturers will appear here.');
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+  await screen.findByText('Manufacturer product');
+  expect(screen.getByText('Actual Manufacturer')).toBeTruthy();
+  expect(screen.getAllByText('Manufacturer product')).toHaveLength(1);
+  fireEvent.click(screen.getByRole('button', { name: 'Take action' }));
+  expect(
+    await screen.findByRole('button', { name: 'Accept with pickup arrangement' }),
+  ).toBeTruthy();
+  expect(api.create).not.toHaveBeenCalled();
+  expect(api.sign).not.toHaveBeenCalled();
+});
+
 const fillArrangement = () => {
   fireEvent.change(screen.getByLabelText(/Planned custody pickup/), {
     target: { value: pickupValue(1) },

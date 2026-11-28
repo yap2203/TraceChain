@@ -6,6 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { CustodyOffers } from './custody-offers.js';
 import { createOrdersRouter } from './orders.routes.js';
 import { OrdersService } from './orders.service.js';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { JsonProductionFlowRepository } from '../production-flow/production-flow.repository.js';
 
 const source = '0x1000000000000000000000000000000000000001',
   carrier = '0x2000000000000000000000000000000000000002',
@@ -147,6 +151,79 @@ function fixture(
   };
 }
 describe('custody offer, acceptance, pickup and handoff', () => {
+  it.each([1, 2] as const)(
+    'discovers kind %s once for its intended Distributor and denies unrelated companies',
+    async (kind) => {
+      const f = fixture();
+      f.actor(source, kind === 1 ? CompanyRole.SUPPLIER : CompanyRole.MANUFACTURER);
+      const created = await f.offers.create('s', { ...input, kind });
+      expect(f.gateway.prepare).not.toHaveBeenCalled();
+      f.actor(carrier.toUpperCase().replace('0X', '0x'), CompanyRole.DISTRIBUTOR);
+      expect((await f.offers.list('s')).offers.map((x) => x.offerId)).toEqual([
+        created.offer.offerId,
+      ]);
+      expect((await f.offers.get('s', created.offer.offerId)).kind).toBe(kind);
+      const now = Math.floor(Date.now() / 1000);
+      const accepted = await f.offers.act('s', created.offer.offerId, {
+        action: 'accept',
+        pickupAt: now + 300,
+        vehicle: 'VAB 1234',
+        expectedAt: now + 600,
+      });
+      expect(accepted.offer.status).toBe('SCHEDULED');
+      expect(f.gateway.prepare).not.toHaveBeenCalled();
+      await expect(
+        f.offers.prepare('s', created.offer.offerId, {
+          vehicle: 'VAB 1234',
+          occurredAt: 1,
+          expectedAt: 2,
+        }),
+      ).rejects.toMatchObject({ code: 'SENDER_REQUIRED' });
+      f.actor(foreign, CompanyRole.DISTRIBUTOR);
+      expect((await f.offers.list('s')).offers).toEqual([]);
+      await expect(f.offers.get('s', created.offer.offerId)).rejects.toMatchObject({
+        code: 'OFFER_NOT_FOUND',
+      });
+      await expect(
+        f.offers.act('s', created.offer.offerId, { action: 'reject' }),
+      ).rejects.toMatchObject({ code: 'OFFER_NOT_FOUND' });
+    },
+  );
+  it('proves a pinned product offer is not discoverable by a second API without a shared index', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'tracechain-offer-isolation-'));
+    try {
+      const f = fixture();
+      const repositoryA = new JsonProductionFlowRepository(join(directory, 'a', 'workflows.json'));
+      const repositoryB = new JsonProductionFlowRepository(join(directory, 'b', 'workflows.json'));
+      const build = (
+        repository: JsonProductionFlowRepository,
+        address: string,
+        role: CompanyRole,
+      ) =>
+        new CustodyOffers({
+          gateway: f.gateway,
+          store: f.store as any,
+          repository,
+          session: async () => ({ address, role }),
+          prepare: f.prepare,
+          proofCheck: f.proofCheck,
+        });
+      const apiA = build(repositoryA, source, CompanyRole.MANUFACTURER);
+      const apiB = build(repositoryB, carrier, CompanyRole.DISTRIBUTOR);
+      const { offer } = await apiA.create('s', { ...input, kind: 2 });
+      expect(f.store.encryptAndStore).toHaveBeenCalled();
+      const sameApiDistributor = build(repositoryA, carrier, CompanyRole.DISTRIBUTOR);
+      expect((await sameApiDistributor.list('s')).offers.map((x) => x.offerId)).toEqual([
+        offer.offerId,
+      ]);
+      expect((await apiB.list('s')).offers).toEqual([]);
+      await expect(apiB.get('s', offer.offerId)).rejects.toMatchObject({ code: 'OFFER_NOT_FOUND' });
+      expect(await repositoryB.listPrivate('transfers')).toEqual([]);
+      expect(await repositoryA.listPrivate('transfers')).toHaveLength(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   it('lists a valid offer while omitting stale ingredient and product offers', async () => {
     const f = fixture();
     const validBatch = id('current-ingredient-batch');
