@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -26,9 +26,10 @@ import type {
   CredentialContentStore,
   EncryptedCredentialPayload,
 } from './encrypted-credential.store.js';
-import type {
-  CompanyRoleIssuanceRecord,
-  CompanyRoleIssuanceRepository,
+import {
+  JsonCompanyRoleIssuanceRepository,
+  type CompanyRoleIssuanceRecord,
+  type CompanyRoleIssuanceRepository,
 } from './issuance.repository.js';
 import { CompanyRoleSsiService, resolveLifecycleStatus } from './ssi.service.js';
 
@@ -214,13 +215,8 @@ describe('Company Role Credential presentation API', () => {
     let credentialStatus = 0;
     let encryptedSerialized = '';
     let pinCount = 0;
-    const records = new Map<string, CompanyRoleIssuanceRecord>();
-    const repository: CompanyRoleIssuanceRepository = {
-      find: async (id) => records.get(id.toLowerCase()),
-      save: async (record) => {
-        records.set(record.applicationId.toLowerCase(), record);
-      },
-    };
+    const journalPath = join(directory, 'company-role.json');
+    const repository = new JsonCompanyRoleIssuanceRepository(journalPath);
     const payload: EncryptedCredentialPayload = {
       algorithm: 'aes-256-gcm',
       authTag: 'tag',
@@ -293,14 +289,35 @@ describe('Company Role Credential presentation API', () => {
       expirationDate: new Date('2030-01-01T00:00:00.000Z'),
     };
 
-    const first = await new CompanyRoleSsiService(dependencies).issueCredentialForApplication(
-      'admin-session',
-      input,
+    const service = new CompanyRoleSsiService(dependencies);
+    for (const corruptJournal of ['', JSON.stringify({ [applicationId]: null })]) {
+      await writeFile(journalPath, corruptJournal);
+      await expect(
+        service.issueCredentialForApplication('admin-session', input),
+      ).rejects.toMatchObject({
+        code: 'ISSUANCE_JOURNAL_UNAVAILABLE',
+      });
+      expect(await readFile(journalPath, 'utf8')).toBe(corruptJournal);
+    }
+    expect(pinCount).toBe(0);
+    await rm(journalPath);
+
+    vi.spyOn(gateway, 'getCredentialState').mockRejectedValueOnce(
+      new Error('Credential Registry lookup unavailable'),
     );
-    const duplicate = await new CompanyRoleSsiService(dependencies).issueCredentialForApplication(
-      'admin-session',
-      input,
+    await expect(
+      service.issueCredentialForApplication('admin-session', input),
+    ).rejects.toMatchObject({ code: 'ISSUANCE_REGISTRY_UNAVAILABLE', status: 503 });
+    const first = await service.issueCredentialForApplication('admin-session', input);
+    const record = (await repository.find(applicationId))!;
+    await expect(repository.save({ ...record, credentialId: 'different' })).rejects.toThrow(
+      'An issuance workflow already exists for this application.',
     );
+    await expect(repository.save(record)).resolves.toBeUndefined();
+    const duplicate = await new CompanyRoleSsiService({
+      ...dependencies,
+      issuanceRepository: new JsonCompanyRoleIssuanceRepository(journalPath),
+    }).issueCredentialForApplication('admin-session', input);
     expect(duplicate.credentialId).toBe(first.credentialId);
     expect(duplicate.encryptedCredentialCid).toBe(first.encryptedCredentialCid);
     expect(pinCount).toBe(1);

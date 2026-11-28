@@ -6,6 +6,27 @@
 - Confirmed listing overrides use the existing hash/deployment/owner-bound recovery reader; authenticated ingredient images continue resolving from on-chain media references without copying workflow journals. Missing or undecryptable recorded content remains an error. A failed recorded image displays a loading failure rather than “No image provided”.
 - Regression tests cover an empty second API repository, real AES-GCM wrong-key rejection, missing/tampered content, wrong batch/Supplier and foreign listing deployment bindings, plus Manufacturer image retrieval and frontend image failure states. No contract, secret, record migration or deployment changes.
 
+## 2026-11-28 - Block screen interaction during transactions
+
+- Added a shared full-screen loading dialog from wallet submission through the caller's receipt
+  confirmation. Native modal behavior blocks background clicks and keyboard interaction, and Escape
+  keeps the loading dialog open. Completion, wallet rejection and receipt failures release it.
+- The loading text distinguishes MetaMask confirmation from blockchain confirmation. Existing
+  transaction callers and receipt handling use the shared submission helper.
+
+## 2026-11-28 - Company issuance journal recovery and Sepolia Orders diagnosis
+
+- Preserved the active zero-byte issuance journal under a backup name. Unreadable journals now
+  return a specific 503 without issuing a credential or overwriting the journal. Writes flush
+  before the atomic rename, and a rejected write no longer blocks later valid writes.
+- Matched the configured Sepolia addresses to the `tracechain-v2` deployment journal and verified
+  the order registry links and StakeholderRegistry's credential reference through read-only calls.
+  Correct the misassigned public addresses together and restart the API. This requires no contract
+  deployment or on-chain migration.
+- A failed Credential Registry read after issuance now returns a retryable 503. Retrying with the
+  original expiry resumes the saved credential. Confirmed the saved application was pending and
+  its credential unregistered with the corrected Sepolia configuration.
+
 ## 2026-11-27 - Custody offer: accept with pickup time, evidence gate, handoff in Shipments
 
 - **Accept includes the pickup time.** The `accept` action now requires `pickupAt` and moves

@@ -606,7 +606,16 @@ export class CompanyRoleSsiService {
     applicationStatus: number,
     gateway: BlockchainGateway,
   ) {
-    const credentialState = await gateway.getCredentialState(record.credentialHash);
+    let credentialState;
+    try {
+      credentialState = await gateway.getCredentialState(record.credentialHash);
+    } catch {
+      throw new SsiApiError(
+        'ISSUANCE_REGISTRY_UNAVAILABLE',
+        'The credential is saved. Check the Credential Registry address and RPC, then retry with the same expiry date. Restart the API if its configuration changed.',
+        503,
+      );
+    }
     const approvalPending = applicationStatus === 1;
     const registrationPending = credentialState.status === 0;
     return {

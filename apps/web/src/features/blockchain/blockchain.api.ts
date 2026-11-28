@@ -286,6 +286,7 @@ export function prepareApplicationRejection(input: { applicationId: string; reas
 import { JsonRpcProvider, type JsonRpcSigner, type TransactionResponse } from 'ethers';
 
 import { chainConfig } from '../../config/network';
+import { beginTransaction } from './transaction-progress';
 
 const pendingWalletActions = new Map<string, Promise<TransactionResponse>>();
 
@@ -305,7 +306,25 @@ export async function sendPreparedTransaction(
   ]);
   const existing = pendingWalletActions.get(key);
   if (existing) return existing;
-  const pending = sendWalletAction(signer, prepared);
+  const progress = beginTransaction();
+  const pending = sendWalletAction(signer, prepared).then(
+    (transaction) => {
+      progress.confirming();
+      const wait = transaction.wait.bind(transaction);
+      transaction.wait = async (...args) => {
+        try {
+          return await wait(...args);
+        } finally {
+          progress.finish();
+        }
+      };
+      return transaction;
+    },
+    (error) => {
+      progress.finish();
+      throw error;
+    },
+  );
   pendingWalletActions.set(key, pending);
   try {
     return await pending;
