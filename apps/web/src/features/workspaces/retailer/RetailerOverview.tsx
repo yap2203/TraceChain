@@ -69,25 +69,29 @@ export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
       metrics={[
         {
           label: 'Products arriving',
-          value: operational.loading ? '…' : arriving.length,
+          loading: operational.loading,
+          value: arriving.length,
           icon: <Package size={21} />,
           onClick: () => onNav('shipments'),
         },
         {
           label: 'Open orders',
-          value: myOrders.loading ? '…' : openOrders.length,
+          loading: myOrders.loading,
+          value: openOrders.length,
           icon: <ShoppingCart size={21} />,
           onClick: () => onNav('orders'),
         },
         {
           label: 'Evidence to review',
-          value: operational.loading ? '…' : evidence.length,
+          loading: operational.loading,
+          value: evidence.length,
           icon: <FileSearch size={21} />,
           onClick: () => onNav('requests'),
         },
         {
           label: 'Products received',
-          value: operational.loading ? '…' : received.length,
+          loading: operational.loading,
+          value: received.length,
           icon: <CheckCircle size={21} />,
           onClick: () => onNav('history'),
         },

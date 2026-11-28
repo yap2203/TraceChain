@@ -1,6 +1,7 @@
 /* Stakeholder overviews: action table + one role snapshot. Workspace theme tokens only. */
 @layer components {
   .overview-panel {
+    --overview-panel-padding: 16px;
     overflow: hidden;
     border: 1px solid var(--c-border);
     border-radius: 12px;
@@ -10,7 +11,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 14px 16px;
+    padding: 14px var(--overview-panel-padding);
     border-bottom: 1px solid var(--c-border);
   }
   .overview-panel > header h3 {
@@ -33,22 +34,27 @@
     align-items: center;
     gap: 8px;
     margin: 0;
-    padding: 18px 16px;
+    padding: 0;
     color: var(--c-text2);
     font-size: 14px;
   }
   .overview-panel__empty.is-done svg {
+    flex-shrink: 0;
     color: var(--c-green);
   }
   .overview-table__scroll {
     overflow-x: auto;
+  }
+  .overview-panel__body {
+    padding: var(--overview-panel-padding);
+    min-width: 0;
   }
   .overview-table {
     width: 100%;
     border-collapse: collapse;
   }
   .overview-table th {
-    padding: 10px 16px;
+    padding: 10px 8px;
     border-bottom: 1px solid var(--c-border);
     background: var(--c-surface2);
     color: var(--c-text2);
@@ -60,13 +66,23 @@
     white-space: nowrap;
   }
   .overview-table td {
-    padding: 11px 16px;
+    padding: 11px 8px;
     border-bottom: 1px solid var(--c-border);
     font-size: 13px;
     vertical-align: middle;
   }
   .overview-table tbody tr:last-child td {
     border-bottom: 0;
+  }
+  .overview-table :is(th, td):first-child {
+    padding-left: 0;
+  }
+  .overview-table :is(th, td):last-child {
+    padding-right: 0;
+  }
+  .overview-panel__body .table-pagination {
+    padding-inline: 0;
+    padding-bottom: 0;
   }
   .overview-table tbody tr:hover {
     background: var(--c-surface2);

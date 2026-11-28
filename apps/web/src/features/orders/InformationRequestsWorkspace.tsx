@@ -124,6 +124,7 @@ export function InformationRequestsWorkspace({
   }, [load]);
   const [ingredientRows, setIngredientRows] =
     useState<Array<{ status: number; dueAt: number; supplier: string; requester: string }>>();
+  const [ingredientLoading, setIngredientLoading] = useState(true);
   // Clicking the category tab remounts the ingredient list, closing any open review.
   const [ingredientMount, setIngredientMount] = useState(0);
   const hasIngredientTab = Boolean(children);
@@ -132,7 +133,8 @@ export function InformationRequestsWorkspace({
     if (!hasIngredientTab) return;
     void listEvidenceRequests()
       .then((result) => setIngredientRows(result.requests))
-      .catch(() => setIngredientRows(undefined));
+      .catch(() => setIngredientRows(undefined))
+      .finally(() => setIngredientLoading(false));
   }, [hasIngredientTab]);
   const selected = rows.find((row) => same(row.referenceId, reference) && row.context === context);
   const shipment = data?.logistics?.shipments.find(
@@ -308,14 +310,15 @@ export function InformationRequestsWorkspace({
               value: 'company',
               label: 'Company evidence',
               icon: <BadgeCheck size={16} />,
-              actionCount: error ? null : actionCount,
+              actionCount: error ? null : loading && !data ? 'loading' : actionCount,
             },
             {
               value: 'ingredient',
               label: 'Ingredient evidence',
               icon: <Layers size={16} />,
-              actionCount:
-                !ingredientRows || !data
+              actionCount: ingredientLoading
+                ? 'loading'
+                : !ingredientRows || !data
                   ? null
                   : ingredientRows.filter((row) =>
                       same(row.supplier, data.actor)

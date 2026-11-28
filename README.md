@@ -1112,6 +1112,10 @@ replacement path. Request read/unread state and cross-device disclosure preferen
 in browser storage. The deployed contracts do not currently expose a private, discoverable mutable
 reference for those two records, so they are intentionally not simulated with local state.
 Company-proof details do not embed general order navigation. Loading pages use shared responsive card, table, detail or form skeletons; dismissible notifications show success or readable errors instead of raw RPC/JSON payloads.
+Stakeholder overview sections use compact embedded table skeletons inside the same padded body
+as loaded, empty and error content. Summary values have inline skeletons; existing loaded values
+and rows remain visible during background refresh. Loading announcements are screen-reader-only,
+and skeleton animation respects reduced-motion preferences.
 Shipment image errors use one inline announcement. The shared image reader keeps normal ZXing
 recognition and adds PURE_BARCODE for clean dense exported labels; image attempts do not share camera
 state. QR payload/version/network/registry/shipment checks and explicit recipient receipt remain required.
@@ -1131,8 +1135,13 @@ compact and relative beside Refresh, with explicit stale/failed states; its loca
 Evidence keeps disclosed content and the verification outcome visible, with detailed checks collapsed.
 Navigation and page tabs use a shared red needs-action badge (hidden at zero, 99+ above 99). Counts
 observe existing wallet/session-bound query results only: no new polling or RPC requests. Normal
-refreshes update them; confirmed actions invalidate old counts. Failed/stale or not-yet-loaded sources
-show a neutral unavailable indicator rather than a red number or false zero; destinations not yet loaded remain quiet. These are action counts, not unread notifications.
+refreshes update them; confirmed actions invalidate old counts. Tabs reserve badge space and use a
+cyan active underline/background, with hover/focus states and horizontal mobile scrolling. Existing
+requests show a small loading indicator; unknown/failed/stale counts use a neutral dash with accessible
+unavailable text, never a question mark or false zero. Unsupported destinations remain quiet. Complete
+received-order aggregates survive unrelated sent/detail/partial queries; incomplete responses cannot
+establish a total. No extra badge queries or polling are added. These are action counts, not unread
+notifications.
 
 Success notifications disappear after 4 seconds; error notifications after 7 seconds. Only the exact
 current sidebar page is highlighted, including the single Evidence Exchange destination.

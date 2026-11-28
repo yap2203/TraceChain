@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { requestStatus, RequestsLoading, RequestsOverview } from './RequestsOverview';
+import { requestStatus, RequestsLoading, RequestsOverview, nextAction } from './RequestsOverview';
 
 afterEach(cleanup);
 
@@ -250,4 +250,48 @@ it('keeps received-request filter wording when search returns no rows', () => {
   expect(screen.getByRole('button', { name: /Needs action/ })).toBeTruthy();
   expect(screen.queryByRole('button', { name: /Awaiting response/ })).toBeNull();
   expect(screen.getByText('No requests match these filters')).toBeTruthy();
+});
+
+it.each([
+  ['sent', buyer, 'Ingredient or Supplier'],
+  ['received', actor, 'Product or Retailer'],
+] as const)(
+  'uses contextual search and singular results for %s requests without a disabled server pager',
+  (direction, wallet, placeholder) => {
+    render(
+      <RequestsOverview
+        actor={wallet}
+        role="manufacturer"
+        direction={direction}
+        catalogue={catalogue}
+        orders={[request]}
+        pagination={{ page: 1, pageSize: 10, total: 1, counts: { all: 1, attention: 1 } }}
+        onView={vi.fn()}
+      />,
+    );
+    expect(screen.getByPlaceholderText(placeholder)).toBeTruthy();
+    expect(screen.getByText('1 result')).toBeTruthy();
+    expect(screen.queryByText('1 results')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: 'Order pages' })).toBeNull();
+  },
+);
+
+it('keeps plural results and a concise, role-aware next action', () => {
+  render(
+    <RequestsOverview
+      actor={buyer}
+      role="manufacturer"
+      direction="sent"
+      catalogue={catalogue}
+      orders={[request, { ...request, orderId: 'second' }]}
+      onView={vi.fn()}
+    />,
+  );
+  expect(screen.getByText('2 results')).toBeTruthy();
+  const product = { ...request, productDelivery: { stage: 5 } };
+  expect(nextAction(product, actor)).toBe('No action required');
+  expect(nextAction({ ...product, productDelivery: { stage: 4 } }, buyer)).toBe('Confirm receipt');
+  expect(nextAction({ ...product, productDelivery: { stage: 4 } }, actor)).toBe(
+    'Waiting for Retailer to confirm receipt',
+  );
 });

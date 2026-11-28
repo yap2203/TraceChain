@@ -1,5 +1,5 @@
 import { navigationActionCount, useNavigationActions } from './action-counts';
-import { ActionCountBadge } from './shared/ui/ActionCountBadge';
+import { ActionCountBadge, actionCountLabel } from './shared/ui/ActionCountBadge';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notify } from '../../components/ui/feedback';
@@ -138,13 +138,7 @@ export function WorkspaceLayout({
                     key={id}
                     to={pathForPage(id)}
                     className={activeId === id ? 'active' : ''}
-                    aria-label={
-                      countFor(id) === null
-                        ? `${label}, action count unavailable`
-                        : countFor(id)
-                          ? `${label}, ${countFor(id)! > 99 ? 'more than 99' : countFor(id)} ${countFor(id) === 1 ? 'action' : 'actions'} required`
-                          : undefined
-                    }
+                    aria-label={actionCountLabel(countFor(id), label)}
                     title={
                       countFor(id) === null
                         ? 'Action count unavailable until records refresh successfully'
@@ -160,7 +154,7 @@ export function WorkspaceLayout({
                       style={{ flexShrink: 0 }}
                     />
                     <span>{label}</span>
-                    <ActionCountBadge count={countFor(id)} label={label} />
+                    <ActionCountBadge count={countFor(id)} label={label} reserveSpace />
                   </Link>
                 ))}
               </section>

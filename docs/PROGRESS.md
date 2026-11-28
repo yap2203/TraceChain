@@ -1,5 +1,20 @@
 # Project Progress
 
+## 2026-11-29 - Shared navigation tabs and reliable count states
+
+- Shared navigation tabs now have a cyan underline, selected background, consistent sizing, hover/focus states and reserved badge slots; status-filter chips remain distinct. Existing route/ARIA/arrow-key behavior and horizontally scrolling mobile tabs are preserved across Orders, Deliveries, Custody, Warehouse stock and Evidence Exchange.
+- Replaced help/question-mark icons with a neutral unavailable dash and a distinct loading spinner during existing requests. Confirmed zero stays unbadged; known positive values remain red and capped at 99+. Sidebar and tabs reuse the same accessible labels and indicator component, including reduced-motion support.
+- Fixed the order count collector treating detail/scoped pages as complete inboxes. Received-order server aggregates are reused regardless of search/status filters, while sent/detail/partial responses preserve an existing complete count or leave it explicitly unknown. Counts retain wallet/role/session isolation, reject mismatched chain/deployment responses and never initiate queries or polling. Unsupported non-action destinations do not invalidate a sibling tab's known count.
+- Fixed contextual Product or Retailer search, singular/plural result labels, compact filter/count alignment and unnecessary single-page server navigation. Completed product deliveries show No action required; next-action wording names the company that must act. Existing stock/permissions/transaction behavior is unchanged. Prior overview loading work is preserved.
+- Validation: all 565 frontend tests across 85 files passed with two workers, including 74 focused navigation/count, request, evidence and shipment UI tests. Frontend/API/shared/SSI typechecks, frontend production build, changed-file Prettier and Git whitespace checks passed. Root typecheck retains four existing CompanyProofRegistry.reject contract-test typing errors. Interactive desktop/mobile dark/light rendering remains unverified because browser tooling is unavailable.
+
+## 2026-11-29 - Aligned overview loading states
+
+- Supplier, Manufacturer, Distributor and Retailer overviews share a consistently padded section body for loading, loaded tables, empty and unavailable content. Heading, body and action edges align without per-page margin overrides.
+- Added opt-in embedded skeleton rows to the existing LoadingIndicator: no repeated heading, outer card border, image placeholder or page spacing. Column counts match the action and role snapshot tables; summary values use compact inline skeletons instead of ellipses. Existing page and inline/session variants remain unchanged.
+- Each overview passes its existing source loading flag for summary values, retaining loaded counts while independent sources load. Accessible loading announcements stay visually hidden, responsive cells remain bounded and existing reduced-motion styles apply. No API calls, polling, business logic or permissions changed.
+- Validation: 55 focused UI/regression tests, frontend/API/shared/SSI typechecks, frontend production build, changed-file Prettier and Git whitespace checks passed. The full frontend run reached 556 passes with one registration-phone timeout (the initial run also timed out in ingredient registration); both affected test files passed with two workers. Root typecheck retains four existing CompanyProofRegistry.reject contract-test typing errors, and repository-wide formatting reports 341 existing files. Interactive desktop/mobile and reduced-motion rendering were not available for visual verification.
+
 ## 2026-11-29 - Concise ingredient and stock presentation
 
 - Removed permanent listing/credential explanations from Supplier ingredient details and moved stock estimation and privacy explanations into existing collapsed help/Technical details. Shortened the listing edit notice and update confirmation; editing permissions and immutable fields remain unchanged.

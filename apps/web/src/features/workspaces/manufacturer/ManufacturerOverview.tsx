@@ -75,25 +75,29 @@ export function ManufacturerOverview({ onNav }: { onNav: (tab: string) => void }
       metrics={[
         {
           label: 'Product orders to approve',
-          value: productOrders.loading ? '…' : (productOrders.data?.length ?? 0),
+          loading: productOrders.loading,
+          value: productOrders.data?.length ?? 0,
           icon: <ClipboardCheck size={21} />,
           onClick: () => onNav('product-orders'),
         },
         {
           label: 'Evidence to review',
-          value: operational.loading ? '…' : evidence.length,
+          loading: operational.loading,
+          value: evidence.length,
           icon: <FileSearch size={21} />,
           onClick: () => onNav('requests'),
         },
         {
           label: 'Ingredient orders open',
-          value: myOrders.loading ? '…' : ingredientOrdersOpen.length,
+          loading: myOrders.loading,
+          value: ingredientOrdersOpen.length,
           icon: <ShoppingCart size={21} />,
           onClick: () => onNav('orders'),
         },
         {
           label: 'Active product batches',
-          value: operational.loading ? '…' : activeProducts.length,
+          loading: operational.loading,
+          value: activeProducts.length,
           icon: <Package size={21} />,
           onClick: () => onNav('products'),
         },

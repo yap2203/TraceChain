@@ -2,10 +2,19 @@ import { useSyncExternalStore } from 'react';
 import { authRequestScope } from '../auth/auth-request-scope';
 import { requestDisplayStatus, sameWallet, shipmentNeedsAction } from '../orders/delivery-state';
 import type { OrderRecord } from '../orders/orders.api';
+import { chainConfig } from '../../config/network';
 
-type Pages = Record<string, string[] | null>;
-type Source = { pages: Pages; failed?: boolean };
-type Entry = { wallet: string; role: string; sources: Map<string, Source>; snapshot: Pages };
+export type ActionCount = number | null | 'loading' | undefined;
+type Pages = Record<string, string[] | null | 'loading'>;
+type Source = { pages: Pages; failed?: boolean; complete?: boolean };
+type Entry = {
+  wallet: string;
+  role: string;
+  sources: Map<string, Source>;
+  pending: Map<string, string[]>;
+  snapshot: Pages;
+  ordersAddress?: string;
+};
 const entries = new Map<string, Entry>();
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
@@ -16,18 +25,47 @@ const subscribe = (listener: () => void) => {
 };
 const empty: Pages = Object.freeze({});
 
+function initialPages(role: string): Pages {
+  if (role === 'admin') return { applications: null };
+  return {
+    orders: role === 'supplier' ? null : [],
+    ...(role === 'manufacturer' ? { 'product-orders': null } : {}),
+    ...(role === 'distributor' ? { intake: null, arrivals: null } : {}),
+    ...(role !== 'retailer' ? { transfers: null, 'product-shipments': null } : {}),
+    shipments: null,
+    requests: null,
+    'sent-requests': null,
+  };
+}
+
 function publish(entry: Entry) {
   const pages: Pages = {};
   for (const source of entry.sources.values())
     for (const [page, ids] of Object.entries(source.pages)) {
       if (pages[page] === null || source.failed || ids === null) pages[page] = null;
-      else pages[page] = [...new Set([...(pages[page] ?? []), ...ids])];
+      else
+        pages[page] = [
+          ...new Set([
+            ...(Array.isArray(pages[page]) ? pages[page] : []),
+            ...(Array.isArray(ids) ? ids : []),
+          ]),
+        ];
     }
   // A company-only count is not the complete Evidence Exchange count.
   if (!entry.sources.has('company') || !entry.sources.has('ingredients')) {
     if ('requests' in pages) pages.requests = null;
     if ('sent-requests' in pages) pages['sent-requests'] = null;
   }
+  for (const targets of entry.pending.values())
+    for (const page of targets)
+      if (
+        !(page in pages) ||
+        (pages[page] === null &&
+          ![...entry.sources.values()].some((source) => source.failed && page in source.pages))
+      )
+        pages[page] = 'loading';
+  for (const [page, value] of Object.entries(initialPages(entry.role)))
+    if (!(page in pages)) pages[page] = value;
   entry.snapshot = pages;
   for (const listener of listeners) listener();
 }
@@ -35,7 +73,13 @@ function publish(entry: Entry) {
 export function registerActionCountScope(wallet: string, role: string, scope = authRequestScope()) {
   const existing = entries.get(scope);
   if (existing && sameWallet(existing.wallet, wallet) && existing.role === role) return existing;
-  const entry: Entry = { wallet, role, sources: new Map(), snapshot: empty };
+  const entry: Entry = {
+    wallet,
+    role,
+    sources: new Map(),
+    pending: new Map(),
+    snapshot: initialPages(role),
+  };
   entries.set(scope, entry);
   // Auth epochs isolate wallets and networks. Retain only a bounded number of prior epochs.
   if (entries.size > 8) entries.delete(entries.keys().next().value!);
@@ -52,11 +96,38 @@ export function useNavigationActions(wallet?: string, role = '') {
   );
 }
 
-export function navigationActionCount(pages: Pages, destinations: string[]) {
+export function navigationActionCount(pages: Pages, destinations: string[]): ActionCount {
   const values = destinations.map((id) => pages[id]);
   if (values.some((value) => value === null)) return null;
+  if (values.some((value) => value === 'loading')) return 'loading';
   if (values.every((value) => value === undefined)) return undefined;
+  // Undefined destinations have no action-count source (e.g. the stock tab beside custody offers).
+  // Supported destinations start explicitly unknown, so they cannot be mistaken for zero.
   return new Set(values.flatMap((value) => value ?? [])).size;
+}
+
+/** Observe request lifecycle only; never start a query for a badge. */
+export function beginNavigationData(path: string, scope = authRequestScope()) {
+  if (scope !== authRequestScope()) return;
+  const entry = entries.get(scope);
+  if (!entry) return;
+  let targets: string[] = [];
+  if (path === '/information-requests' || path === '/operations' || path === '/evidence-requests')
+    targets = ['requests', 'sent-requests'];
+  else if (path === '/custody-offers')
+    targets = [entry.role === 'distributor' ? 'intake' : 'transfers'];
+  else if (path === '/applications') targets = ['applications'];
+  else if (!path || path.startsWith('?')) {
+    const query = new URLSearchParams(path.replace(/^\?/, ''));
+    const kind = query.get('scope');
+    if (!kind || kind === 'shipment-workspace')
+      targets = ['arrivals', 'shipments', 'product-shipments'];
+    if (!kind || (kind === 'order-list' && query.get('direction') !== 'sent'))
+      targets.push(entry.role === 'manufacturer' ? 'product-orders' : 'orders');
+  }
+  if (!targets.length) return;
+  entry.pending.set(path, targets);
+  publish(entry);
 }
 
 export function ingredientEvidenceActionGroup(
@@ -95,16 +166,29 @@ function collectNavigationData(
   if (scope !== authRequestScope()) return;
   const entry = entries.get(scope);
   if (!entry) return;
+  entry.pending.delete(path);
   const actor = data?.actor ?? data?.actorWallet;
   if (actor && !sameWallet(actor, entry.wallet)) {
     invalidateNavigationActions(scope);
     return;
   }
+  if (
+    (data?.chainId !== undefined && Number(data.chainId) !== chainConfig.chainId) ||
+    (data?.ordersAddress &&
+      entry.ordersAddress &&
+      !sameWallet(data.ordersAddress, entry.ordersAddress))
+  ) {
+    invalidateNavigationActions(scope);
+    return;
+  }
+  if (data?.ordersAddress) entry.ordersAddress = data.ordersAddress.toLowerCase();
   let source: string;
   let pages: Pages;
   const wallet = entry.wallet;
   const add = (page: string, key: string) => {
-    (pages[page] ??= [])!.push(key);
+    const ids = pages[page];
+    if (!Array.isArray(ids)) pages[page] = [key];
+    else ids.push(key);
   };
   if (path === '/information-requests') {
     source = 'company';
@@ -162,25 +246,41 @@ function collectNavigationData(
         ? { arrivals: [], shipments: [], 'product-shipments': [] }
         : { orders: [], 'product-orders': [] };
     if (source === 'orders') {
-      // Detail reads update known records without dropping the rest of an already loaded list.
-      if (kind === 'order-detail')
-        pages = structuredClone(entry.sources.get(source)?.pages ?? pages);
+      const page = entry.role === 'manufacturer' ? 'product-orders' : 'orders';
+      const previous = entry.sources.get(source);
+      const attention = data?.pagination?.counts?.attention;
+      const aggregate =
+        query.get('direction') === 'received' && Number.isSafeInteger(attention) && attention >= 0;
+      const complete =
+        aggregate ||
+        (kind !== 'order-detail' &&
+          !data?.pagination &&
+          !query.get('search') &&
+          (!query.get('status') || query.get('status') === 'all'));
+      // A detail, search result or page without an aggregate is not a complete inbox.
+      if (!complete && !failed && !data?.readModel?.stale && !data?.readModel?.refreshFailed) {
+        if (!previous?.complete) entry.sources.set(source, { pages: { [page]: null } });
+        publish(entry);
+        return;
+      }
+      pages = { [page]: [] };
       for (const row of data?.orders ?? []) {
-        const page = entry.role === 'manufacturer' ? 'product-orders' : 'orders';
         const key = `order:${row.orderId.toLowerCase()}`;
-        pages[page] = (pages[page] ?? []).filter((id) => id !== key);
         if (requestDisplayStatus(row, wallet).needsAction) add(page, key);
       }
-      const attention = data?.pagination?.counts?.attention;
-      if (typeof attention === 'number' && query.get('direction') === 'received') {
-        const page = entry.role === 'manufacturer' ? 'product-orders' : 'orders';
+      if (aggregate) {
         // The server's all-results aggregate prevents a paginated list undercount.
-        if (attention > (pages[page]?.length ?? 0)) {
-          const ids = pages[page] ?? [];
-          while (ids.length < Math.min(attention, 100)) ids.push(`aggregate:${page}:${ids.length}`);
-          pages[page] = ids;
-        }
+        const ids = [...new Set(pages[page] as string[])].slice(0, Math.min(attention, 100));
+        while (ids.length < Math.min(attention, 100)) ids.push(`aggregate:${page}:${ids.length}`);
+        pages[page] = ids;
       }
+      entry.sources.set(source, {
+        pages,
+        complete,
+        failed: failed || !!data?.readModel?.stale || !!data?.readModel?.refreshFailed,
+      });
+      publish(entry);
+      return;
     }
     if (source === 'shipments') {
       pages.arrivals ??= [];

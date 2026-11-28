@@ -14,6 +14,7 @@ export interface OverviewMetric {
   label: string;
   note?: string;
   value: string | number;
+  loading?: boolean;
   /** Opens the page that lists these records. */
   onClick?: () => void;
 }
@@ -91,7 +92,8 @@ export function StakeholderOverviewLayout({
           <InventorySummaryCard
             key={metric.label}
             {...metric}
-            value={unavailable ? 'Unavailable' : tasksLoading ? '…' : metric.value}
+            value={unavailable ? 'Unavailable' : metric.value}
+            loading={!unavailable && (metric.loading ?? tasksLoading)}
             variant={metric.onClick ? 'navigation' : 'default'}
           />
         ))}
@@ -104,73 +106,76 @@ export function StakeholderOverviewLayout({
             <span className="overview-panel__count">{ordered.length}</span>
           )}
         </header>
-        {unavailable ? (
-          <p className="overview-panel__empty">
-            Activity could not be checked. Retry loading the dashboard.
-          </p>
-        ) : tasksLoading && !ordered.length ? (
-          <LoadingIndicator
-            page
-            layout="table"
-            label="Checking orders, offers and evidence requests…"
-          />
-        ) : !ordered.length ? (
-          <p className="overview-panel__empty is-done">
-            <CheckCircle2 size={18} aria-hidden="true" /> You&apos;re all caught up. New requests
-            and orders that need you will appear here.
-          </p>
-        ) : (
-          <PaginatedTable>
-            <table className="overview-table">
-              <thead>
-                <tr>
-                  <th scope="col">Task</th>
-                  <th scope="col">Item</th>
-                  <th scope="col">With</th>
-                  <th scope="col">Due</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">
-                    <span className="sr-only">Action</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {ordered.map((task) => (
-                  <tr key={task.key}>
-                    <td>
-                      <strong>{task.task}</strong>
-                    </td>
-                    <td>
-                      <span className="overview-table__stack">
-                        <span>{task.item}</span>
-                        {task.detail && <small>{task.detail}</small>}
-                      </span>
-                    </td>
-                    <td>
-                      {task.counterparty ? (
-                        <span className="overview-table__company">
-                          <CompanyAvatar name={task.counterparty} size="sm" />
-                          {task.counterparty}
-                        </span>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td className={dueClass(task.due)}>{formatDue(task.due)}</td>
-                    <td>
-                      <Badge {...task.badge} />
-                    </td>
-                    <td className="overview-table__action">
-                      <Btn size="xs" onClick={task.onAction}>
-                        {task.actionLabel}
-                      </Btn>
-                    </td>
+        <div className="overview-panel__body">
+          {unavailable ? (
+            <p className="overview-panel__empty">
+              Activity could not be checked. Retry loading the dashboard.
+            </p>
+          ) : tasksLoading && !ordered.length ? (
+            <LoadingIndicator
+              embedded
+              layout="table"
+              columns={6}
+              label="Checking orders, offers and evidence requests…"
+            />
+          ) : !ordered.length ? (
+            <p className="overview-panel__empty is-done">
+              <CheckCircle2 size={18} aria-hidden="true" /> You&apos;re all caught up. New requests
+              and orders that need you will appear here.
+            </p>
+          ) : (
+            <PaginatedTable>
+              <table className="overview-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Task</th>
+                    <th scope="col">Item</th>
+                    <th scope="col">With</th>
+                    <th scope="col">Due</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">
+                      <span className="sr-only">Action</span>
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </PaginatedTable>
-        )}
+                </thead>
+                <tbody>
+                  {ordered.map((task) => (
+                    <tr key={task.key}>
+                      <td>
+                        <strong>{task.task}</strong>
+                      </td>
+                      <td>
+                        <span className="overview-table__stack">
+                          <span>{task.item}</span>
+                          {task.detail && <small>{task.detail}</small>}
+                        </span>
+                      </td>
+                      <td>
+                        {task.counterparty ? (
+                          <span className="overview-table__company">
+                            <CompanyAvatar name={task.counterparty} size="sm" />
+                            {task.counterparty}
+                          </span>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td className={dueClass(task.due)}>{formatDue(task.due)}</td>
+                      <td>
+                        <Badge {...task.badge} />
+                      </td>
+                      <td className="overview-table__action">
+                        <Btn size="xs" onClick={task.onAction}>
+                          {task.actionLabel}
+                        </Btn>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </PaginatedTable>
+          )}
+        </div>
       </section>
 
       <section className="overview-panel" aria-label={snapshot.title}>
@@ -180,38 +185,45 @@ export function StakeholderOverviewLayout({
             {snapshot.viewAllLabel}
           </Btn>
         </header>
-        {unavailable ? (
-          <p className="overview-panel__empty">
-            Records are temporarily unavailable. Retry loading the dashboard.
-          </p>
-        ) : tasksLoading && !snapshot.rows.length ? (
-          <LoadingIndicator page layout="table" label="Loading records…" />
-        ) : !snapshot.rows.length ? (
-          <p className="overview-panel__empty">{snapshot.empty}</p>
-        ) : (
-          <div className="overview-table__scroll">
-            <table className="overview-table">
-              <thead>
-                <tr>
-                  {snapshot.columns.map((column) => (
-                    <th key={column} scope="col">
-                      {column}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.rows.slice(0, 5).map((row) => (
-                  <tr key={row.key}>
-                    {row.cells.map((cell, index) => (
-                      <td key={index}>{cell}</td>
+        <div className="overview-panel__body">
+          {unavailable ? (
+            <p className="overview-panel__empty">
+              Records are temporarily unavailable. Retry loading the dashboard.
+            </p>
+          ) : tasksLoading && !snapshot.rows.length ? (
+            <LoadingIndicator
+              embedded
+              layout="table"
+              columns={snapshot.columns.length}
+              label="Loading records…"
+            />
+          ) : !snapshot.rows.length ? (
+            <p className="overview-panel__empty">{snapshot.empty}</p>
+          ) : (
+            <div className="overview-table__scroll">
+              <table className="overview-table">
+                <thead>
+                  <tr>
+                    {snapshot.columns.map((column) => (
+                      <th key={column} scope="col">
+                        {column}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+                </thead>
+                <tbody>
+                  {snapshot.rows.slice(0, 5).map((row) => (
+                    <tr key={row.key}>
+                      {row.cells.map((cell, index) => (
+                        <td key={index}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </section>
     </div>
   );

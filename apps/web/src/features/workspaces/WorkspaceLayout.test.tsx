@@ -1,5 +1,5 @@
 import { authRequestScope, resetAuthRequestScope } from '../auth/auth-request-scope';
-import { observeNavigationData } from './action-counts';
+import { beginNavigationData, observeNavigationData } from './action-counts';
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
@@ -62,7 +62,9 @@ describe('workspace navigation and guidance', () => {
   it('shows merged pages as one sidebar entry with tabs for each page', () => {
     show('product-orders', 'manufacturer');
     const navigation = screen.getByRole('navigation', { name: 'Manufacturer navigation' });
-    const orders = within(navigation).getByRole('link', { name: 'Orders' });
+    const orders = within(navigation).getByRole('link', {
+      name: 'Orders, action count unavailable',
+    });
     expect(orders.getAttribute('href')).toBe(workspacePath('manufacturer', 'orders'));
     expect(orders.getAttribute('aria-current')).toBe('page');
     expect(
@@ -71,14 +73,16 @@ describe('workspace navigation and guidance', () => {
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Orders');
     expect(
       screen
-        .getByRole('tab', { name: 'Product requests from Retailers' })
+        .getByRole('tab', { name: 'Product requests from Retailers, action count unavailable' })
         .getAttribute('aria-selected'),
     ).toBe('true');
     expect(screen.getByRole('tab', { name: 'Ingredient requests to Suppliers' })).toBeTruthy();
   });
   it('moves focus between section tabs with arrow keys without opening them', () => {
     show('product-orders', 'manufacturer');
-    const selling = screen.getByRole('tab', { name: 'Product requests from Retailers' });
+    const selling = screen.getByRole('tab', {
+      name: 'Product requests from Retailers, action count unavailable',
+    });
     const buying = screen.getByRole('tab', { name: 'Ingredient requests to Suppliers' });
     expect(selling.tabIndex).toBe(0);
     expect(buying.tabIndex).toBe(-1);
@@ -119,7 +123,9 @@ describe('workspace navigation and guidance', () => {
   it('uses role-specific sidebar destinations instead of a page guidance panel', () => {
     show('orders');
     expect(screen.queryByText('How to use this page')).toBeNull();
-    expect(screen.getByRole('link', { name: 'Evidence Exchange' })).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: 'Evidence Exchange, action count unavailable' }),
+    ).toBeTruthy();
     expect(screen.queryByRole('link', { name: 'Sent requests' })).toBeNull();
   });
   it('closes mobile navigation with Escape and restores focus and scroll', () => {
@@ -142,7 +148,11 @@ describe('workspace navigation and guidance', () => {
     screen.getByRole('button', { name: 'Sign out' }).focus();
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(document.activeElement).toBe(screen.getByRole('link', { name: /TraceChain/ }));
-    fireEvent.click(screen.getByRole('link', { name: 'Ingredient requests from Manufacturers' }));
+    fireEvent.click(
+      screen.getByRole('link', {
+        name: 'Ingredient requests from Manufacturers, action count unavailable',
+      }),
+    );
     expect(
       screen.getByRole('button', { name: 'Open navigation' }).getAttribute('aria-expanded'),
     ).toBe('false');
@@ -201,3 +211,37 @@ it('shares an accessible red needs-action count between sidebar and destination 
   expect(screen.getByRole('link', { name: 'Orders' })).toBeTruthy();
   expect(document.querySelector('.workspace-action-count')).toBeNull();
 });
+
+it.each(['orders', 'product-orders'])(
+  'keeps loading and known counts consistent on a direct %s load',
+  (page) => {
+    const view = show(page, 'manufacturer');
+    const tabs = screen.getByRole('tablist', { name: 'Orders' });
+    expect(tabs.classList.contains('workspace-status-tabs--tabs')).toBe(true);
+    const selected = within(tabs)
+      .getAllByRole('tab')
+      .find((tab) => tab.getAttribute('aria-selected') === 'true');
+    expect(selected?.tabIndex).toBe(0);
+    expect(tabs.querySelectorAll('.workspace-action-slot')).toHaveLength(2);
+    act(() => beginNavigationData('?scope=order-list&direction=received'));
+    expect(screen.getByRole('link', { name: 'Orders, loading action count' })).toBeTruthy();
+    expect(
+      screen.getByRole('tab', { name: 'Product requests from Retailers, loading action count' }),
+    ).toBeTruthy();
+    act(() =>
+      observeNavigationData(
+        '?scope=order-list&direction=received',
+        { actor: wallet, orders: [], pagination: { counts: { attention: 2 } } },
+        authRequestScope(),
+      ),
+    );
+    expect(screen.getByRole('link', { name: 'Orders, 2 actions required' })).toBeTruthy();
+    view.unmount();
+    show(page === 'orders' ? 'product-orders' : 'orders', 'manufacturer');
+    expect(
+      screen.getByRole('tab', { name: 'Product requests from Retailers, 2 actions required' }),
+    ).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Orders, 2 actions required' })).toBeTruthy();
+    expect(screen.queryByText('?')).toBeNull();
+  },
+);

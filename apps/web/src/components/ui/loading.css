@@ -1,5 +1,39 @@
 @reference '../../styles/tailwind.css';
 @layer components {
+  .embedded-skeleton,
+  .embedded-skeleton__rows {
+    display: block;
+    min-width: 0;
+    width: 100%;
+  }
+  .embedded-skeleton__row {
+    display: grid;
+    grid-template-columns: repeat(var(--skeleton-columns), minmax(0, 1fr));
+    align-items: center;
+    gap: 16px;
+    padding-block: 14px;
+    border-bottom: 1px solid var(--c-border, var(--color-border));
+  }
+  .embedded-skeleton__row:last-child {
+    border-bottom: 0;
+  }
+  .embedded-skeleton__row .page-skeleton__line {
+    width: 80%;
+  }
+  .embedded-skeleton--value {
+    display: inline-block;
+    width: 2.5ch;
+    max-width: 100%;
+    vertical-align: middle;
+  }
+  .embedded-skeleton--value .page-skeleton__line {
+    height: 1em;
+  }
+  @media (max-width: 700px) {
+    .embedded-skeleton__row {
+      gap: 8px;
+    }
+  }
   .page-skeleton {
     width: 100%;
     min-width: 0;

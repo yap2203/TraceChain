@@ -71,25 +71,29 @@ export function DistributorOverview({ onNav }: { onNav: (tab: string) => void })
       metrics={[
         {
           label: 'Offers waiting on you',
-          value: offers.loading ? '…' : offerWork.length,
+          loading: offers.loading,
+          value: offerWork.length,
           icon: <Inbox size={21} />,
           onClick: () => onNav('intake'),
         },
         {
           label: 'Arrivals to receive',
-          value: operational.loading ? '…' : arrivals.length,
+          loading: operational.loading,
+          value: arrivals.length,
           icon: <PackageCheck size={21} />,
           onClick: () => onNav('arrivals'),
         },
         {
           label: 'Batches in custody',
-          value: operational.loading ? '…' : inCustody.length,
+          loading: operational.loading,
+          value: inCustody.length,
           icon: <Layers size={21} />,
           onClick: () => onNav('inventory'),
         },
         {
           label: 'Outbound in transit',
-          value: operational.loading ? '…' : outbound.length,
+          loading: operational.loading,
+          value: outbound.length,
           icon: <ArrowUpRight size={21} />,
           onClick: () => onNav('product-shipments'),
         },

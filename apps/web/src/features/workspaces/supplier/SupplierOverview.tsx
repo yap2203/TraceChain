@@ -74,25 +74,29 @@ export function SupplierOverview({ onNav }: { onNav: (tab: string) => void }) {
       metrics={[
         {
           label: 'Orders to approve',
-          value: orders.loading ? '…' : (orders.data?.length ?? 0),
+          loading: orders.loading,
+          value: orders.data?.length ?? 0,
           icon: <ClipboardCheck size={21} />,
           onClick: () => onNav('orders'),
         },
         {
           label: 'Evidence to answer',
-          value: identity.loading ? '…' : evidence.length + identityWork.length,
+          loading: identity.loading,
+          value: evidence.length + identityWork.length,
           icon: <MessageSquareReply size={21} />,
           onClick: () => onNav('requests'),
         },
         {
           label: 'Batches in stock',
-          value: batches.loading ? '…' : inStock.length,
+          loading: batches.loading,
+          value: inStock.length,
           icon: <Layers size={21} />,
           onClick: () => onNav('batches'),
         },
         {
           label: 'Expiring in 30 days',
-          value: batches.loading ? '…' : expiringSoon.length,
+          loading: batches.loading,
+          value: expiringSoon.length,
           icon: <CalendarClock size={21} />,
           onClick: () => onNav('batches'),
         },

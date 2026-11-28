@@ -4,6 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { authRequestScope, resetAuthRequestScope } from '../auth/auth-request-scope';
 import {
   invalidateNavigationActions,
+  beginNavigationData,
   navigationActionCount,
   observeNavigationData,
   registerActionCountScope,
@@ -50,7 +51,7 @@ it('isolates roles/wallets, deduplicates actions, and performs no extra requests
   resetAuthRequestScope();
   const next = registerActionCountScope(other, 'supplier');
   observeNavigationData('?scope=order-list&direction=received', { actor, orders: [order] }, scope);
-  expect(navigationActionCount(next.snapshot, ['orders'])).toBeUndefined();
+  expect(navigationActionCount(next.snapshot, ['orders'])).toBeNull();
   expect(fetch).not.toHaveBeenCalled();
 });
 
@@ -153,7 +154,109 @@ it('distinguishes a failed count from confirmed zero without showing a red numbe
   const { container, rerender } = render(<ActionCountBadge count={null} label="Orders" />);
   expect(screen.getByRole('img', { name: 'Orders action count unavailable' })).toBeTruthy();
   expect(container.querySelector('.workspace-action-count')).toBeNull();
+  expect(container.querySelector('svg')).toBeNull();
+  expect(container.textContent).not.toContain('?');
   rerender(<ActionCountBadge count={0} label="Orders" />);
   expect(screen.queryByRole('img')).toBeNull();
   expect(screen.queryByText('0')).toBeNull();
+});
+
+it('shows loading only for an existing request and keeps a stable badge slot through all states', () => {
+  const fetch = vi.fn();
+  vi.stubGlobal('fetch', fetch);
+  const entry = registerActionCountScope(actor, 'manufacturer');
+  const path = '?scope=order-list&direction=received';
+  expect(navigationActionCount(entry.snapshot, ['product-orders'])).toBeNull();
+  expect(navigationActionCount(entry.snapshot, ['orders'])).toBe(0);
+  beginNavigationData(path);
+  expect(navigationActionCount(entry.snapshot, ['orders', 'product-orders'])).toBe('loading');
+  const { container, rerender } = render(
+    <ActionCountBadge count="loading" label="Orders" reserveSpace />,
+  );
+  const slot = container.querySelector('.workspace-action-slot');
+  expect(screen.getByRole('status', { name: 'Loading action count for Orders' })).toBeTruthy();
+  observeNavigationData(
+    path,
+    { actor, orders: [], pagination: { counts: { attention: 0 } } },
+    authRequestScope(),
+  );
+  expect(navigationActionCount(entry.snapshot, ['orders', 'product-orders'])).toBe(0);
+  rerender(<ActionCountBadge count={0} label="Orders" reserveSpace />);
+  expect(container.querySelector('.workspace-action-slot')).toBe(slot);
+  expect(slot?.textContent).toBe('');
+  rerender(<ActionCountBadge count={null} label="Orders" reserveSpace />);
+  expect(screen.getByRole('img', { name: 'Orders action count unavailable' })).toBeTruthy();
+  expect(container.querySelector('.workspace-action-slot')).toBe(slot);
+  expect(fetch).not.toHaveBeenCalled();
+});
+
+it('preserves complete other-tab counts across detail, sent, filtered and partial page responses', () => {
+  const scope = authRequestScope();
+  const entry = registerActionCountScope(actor, 'manufacturer');
+  observeNavigationData(
+    '?scope=order-list&direction=received',
+    { actor, orders: [], pagination: { counts: { attention: 7 } } },
+    scope,
+  );
+  for (const path of [
+    '?scope=order-list&direction=sent',
+    '?scope=order-detail&orderId=one',
+    '?scope=order-list&direction=received&search=unmatched',
+  ]) {
+    observeNavigationData(path, { actor, orders: [], pagination: { page: 2, total: 20 } }, scope);
+    expect(navigationActionCount(entry.snapshot, ['product-orders'])).toBe(7);
+    expect(navigationActionCount(entry.snapshot, ['inventory', 'product-orders'])).toBe(7);
+  }
+  observeNavigationData(
+    '?scope=shipment-workspace',
+    { actor, orders: [], logistics: { shipments: [] } },
+    scope,
+  );
+  expect(navigationActionCount(entry.snapshot, ['orders', 'product-orders'])).toBe(7);
+  // This aggregate is computed over all received requests, before search/status filtering.
+  observeNavigationData(
+    '?scope=order-list&direction=received&search=unmatched',
+    { actor, orders: [], pagination: { counts: { attention: 4 } } },
+    scope,
+  );
+  expect(navigationActionCount(entry.snapshot, ['product-orders'])).toBe(4);
+});
+
+it('does not infer complete zero from a partial page, stale data or a different deployment', () => {
+  const scope = authRequestScope();
+  const entry = registerActionCountScope(actor, 'supplier');
+  observeNavigationData(
+    '?scope=order-list&direction=received',
+    { actor, orders: [], pagination: { page: 1, total: 20 } },
+    scope,
+  );
+  expect(navigationActionCount(entry.snapshot, ['orders'])).toBeNull();
+  const complete = {
+    actor,
+    orders: [],
+    chainId: 31337,
+    ordersAddress: actor,
+    pagination: { counts: { attention: 2 } },
+  };
+  observeNavigationData('?scope=order-list&direction=received', complete, scope);
+  expect(navigationActionCount(entry.snapshot, ['orders'])).toBe(2);
+  observeNavigationData(
+    '?scope=order-list&direction=received',
+    { ...complete, readModel: { stale: true } },
+    scope,
+  );
+  expect(navigationActionCount(entry.snapshot, ['orders'])).toBeNull();
+  observeNavigationData('?scope=order-list&direction=received', complete, scope);
+  observeNavigationData(
+    '?scope=order-list&direction=received',
+    { ...complete, ordersAddress: other },
+    scope,
+  );
+  expect(navigationActionCount(entry.snapshot, ['orders'])).toBeNull();
+  observeNavigationData(
+    '?scope=order-list&direction=received',
+    { ...complete, chainId: 11155111 },
+    scope,
+  );
+  expect(navigationActionCount(entry.snapshot, ['orders'])).toBeNull();
 });

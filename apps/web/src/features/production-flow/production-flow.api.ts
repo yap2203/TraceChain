@@ -1,4 +1,4 @@
-import { observeNavigationData } from '../workspaces/action-counts';
+import { beginNavigationData, observeNavigationData } from '../workspaces/action-counts';
 import { authRequestScope } from '../auth/auth-request-scope';
 import type { IngredientRequestPolicy, WalletProofContext } from '@tracechain/shared';
 import { apiErrorMessage } from '../../components/ui/feedback';
@@ -17,6 +17,7 @@ interface ApiErrorBody {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const countScope = authRequestScope();
+  if (!init?.method || init.method === 'GET') beginNavigationData(path, countScope);
   const response = await fetch(`${API_BASE_URL}/api/production-flow${path}`, {
     ...init,
     credentials: 'include',
@@ -33,7 +34,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       { status: response.status, code: body.error?.code },
     );
   }
-  const result = await response.json();
+  const result = await response.json().catch((cause) => {
+    observeNavigationData(path, undefined, countScope, true);
+    throw cause;
+  });
   if (!init?.method || init.method === 'GET') observeNavigationData(path, result, countScope);
   return result as T;
 }

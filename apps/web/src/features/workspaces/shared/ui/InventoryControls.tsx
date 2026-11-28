@@ -1,4 +1,6 @@
-import { ActionCountBadge } from './ActionCountBadge';
+import { ActionCountBadge, actionCountLabel } from './ActionCountBadge';
+import type { ActionCount } from '../../action-counts';
+import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { ChevronRight, LayoutGrid, List as ListIcon } from 'lucide-react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
@@ -12,6 +14,7 @@ export function InventorySummaryCard({
   selected = false,
   onClick,
   variant = 'default',
+  loading = false,
 }: {
   label: string;
   value: string | number;
@@ -20,12 +23,19 @@ export function InventorySummaryCard({
   selected?: boolean;
   onClick?: () => void;
   variant?: 'default' | 'navigation';
+  loading?: boolean;
 }) {
   const content = (
     <>
       <div>
         <span>{label}</span>
-        <strong>{value}</strong>
+        <strong>
+          {loading ? (
+            <LoadingIndicator embedded layout="value" label={`Loading ${label}`} />
+          ) : (
+            value
+          )}
+        </strong>
         {note && <small>{note}</small>}
       </div>
       <span aria-hidden="true">{icon}</span>
@@ -50,7 +60,7 @@ export function InventorySummaryCard({
 
 export interface StatusTab<T extends string> {
   count?: number;
-  actionCount?: number | null;
+  actionCount?: ActionCount;
   icon?: ReactNode;
   label: string;
   value: T;
@@ -105,18 +115,18 @@ export function StatusTabs<T extends string>({
               ? { role: 'tab', 'aria-selected': selected, tabIndex: selected ? 0 : -1 }
               : { 'aria-pressed': selected })}
             aria-label={
-              tab.actionCount === null
-                ? `${tab.label}, action count unavailable`
-                : tab.actionCount
-                  ? `${tab.label}, ${tab.actionCount > 99 ? 'more than 99' : tab.actionCount} ${tab.actionCount === 1 ? 'action' : 'actions'} required`
-                  : undefined
+              tab.actionCount === null ||
+              tab.actionCount === 'loading' ||
+              (typeof tab.actionCount === 'number' && tab.actionCount > 0)
+                ? actionCountLabel(tab.actionCount, tab.label)
+                : undefined
             }
             onClick={() => onChange(tab.value)}
           >
             {tab.icon && <span aria-hidden="true">{tab.icon}</span>}
             <span>{tab.label}</span>
             {tab.count !== undefined && <strong>{tab.count}</strong>}
-            <ActionCountBadge count={tab.actionCount} label={tab.label} />
+            <ActionCountBadge count={tab.actionCount} label={tab.label} reserveSpace={navigation} />
           </button>
         );
       })}

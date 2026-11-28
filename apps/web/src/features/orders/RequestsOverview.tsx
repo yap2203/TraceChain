@@ -97,11 +97,12 @@ export function RequestsOverview({
   }, [catalogue, orders, search, sort, status, supplierView, pagination, actor]);
   const total = pagination?.total ?? records.length;
   const summaryCount = (group: string, fallback: number) => pagination?.counts[group] ?? fallback;
-  const pager = pagination && (
+  const resultLabel = `${total} ${total === 1 ? 'result' : 'results'}`;
+  const pager = pagination && total > pagination.pageSize && (
     <nav aria-label="Order pages" className="flex flex-wrap items-center justify-end gap-3 mt-4">
       <span>
         Page {pagination.page} of {Math.max(1, Math.ceil(total / pagination.pageSize))} · {total}{' '}
-        results
+        {total === 1 ? 'result' : 'results'}
       </span>
       <Btn
         variant="outline"
@@ -194,7 +195,7 @@ export function RequestsOverview({
               { value: 'updated', label: 'Recently updated' },
             ]}
           />
-          <strong aria-live="polite">{total} results</strong>
+          <strong aria-live="polite">{resultLabel}</strong>
         </div>
 
         {!records.length ? (
@@ -232,33 +233,33 @@ export function RequestsOverview({
 
   return (
     <section className="requests-overview" aria-label="Requests">
-      <div className="flex justify-end">
-        <strong>{total} results</strong>
+      <div className="requests-overview__filters">
+        <StatusTabs
+          label="Filter requests by status"
+          value={status as RequestFilter}
+          onChange={setStatus}
+          tabs={[
+            { value: 'all', label: 'All', count: summaryCount('all', orders.length) },
+            {
+              value: 'attention',
+              label: responding ? 'Needs action' : 'Awaiting response',
+              count: summaryCount('attention', summaries.attention),
+            },
+            {
+              value: 'evidence',
+              label: 'Evidence',
+              count: summaryCount('evidence', summaries.evidence),
+            },
+            {
+              value: 'approved',
+              label: 'Approved',
+              count: summaryCount('approved', summaries.approved),
+            },
+            { value: 'closed', label: 'Closed', count: summaryCount('closed', summaries.closed) },
+          ]}
+        />
+        <strong aria-live="polite">{resultLabel}</strong>
       </div>
-      <StatusTabs
-        label="Filter requests by status"
-        value={status as RequestFilter}
-        onChange={setStatus}
-        tabs={[
-          { value: 'all', label: 'All', count: summaryCount('all', orders.length) },
-          {
-            value: 'attention',
-            label: responding ? 'Needs action' : 'Awaiting response',
-            count: summaryCount('attention', summaries.attention),
-          },
-          {
-            value: 'evidence',
-            label: 'Evidence',
-            count: summaryCount('evidence', summaries.evidence),
-          },
-          {
-            value: 'approved',
-            label: 'Approved',
-            count: summaryCount('approved', summaries.approved),
-          },
-          { value: 'closed', label: 'Closed', count: summaryCount('closed', summaries.closed) },
-        ]}
-      />
       <div className="requests-toolbar">
         <Input
           label="Search requests"
@@ -266,7 +267,13 @@ export function RequestsOverview({
           icon={<Search size={17} />}
           value={search}
           onChange={setSearch}
-          placeholder="Ingredient or Supplier"
+          placeholder={
+            responding
+              ? 'Product or Retailer'
+              : role === 'retailer'
+                ? 'Product or Manufacturer'
+                : 'Ingredient or Supplier'
+          }
         />
         <SelectField
           label="Sort"
@@ -503,14 +510,21 @@ export function companyEvidenceStatus(order: OrderRecord) {
 export function nextAction(order: OrderRecord, actor: string) {
   if (order.productDelivery) {
     const stage = Number(order.productDelivery.stage);
-    if (stage === 2) return 'The requested Distributor must accept or decline product delivery.';
+    if (stage === 2)
+      return same(actor, order.productDelivery.distributor)
+        ? 'Review delivery request'
+        : 'Waiting for Distributor';
     if (stage === 3)
-      return Number(order.productDelivery.mode) === 1
-        ? 'The assigned Distributor scans the product-order label and confirms pickup.'
-        : 'The custodian records dispatch of the reserved products.';
-    if (stage === 4) return 'The Retailer scans the shipment label and confirms physical receipt.';
-    if (stage === 5)
-      return 'Product delivery completed. Retailer stock reflects confirmed receipt.';
+      return same(actor, order.productDelivery.distributor)
+        ? Number(order.productDelivery.mode) === 1
+          ? 'Confirm pickup'
+          : 'Record dispatch'
+        : 'Waiting for Distributor';
+    if (stage === 4)
+      return same(actor, order.buyer)
+        ? 'Confirm receipt'
+        : 'Waiting for Retailer to confirm receipt';
+    if (stage === 5) return 'No action required';
     if (stage === 6)
       return 'Delivery closed. Release any expired reservation before reusing that stock.';
   }
@@ -519,34 +533,35 @@ export function nextAction(order: OrderRecord, actor: string) {
     const stage = Number(order.delivery.stage);
     if (stage === 1)
       return same(actor, order.seller)
-        ? 'Choose direct Distributor delivery or sufficient received custody stock.'
-        : 'The Supplier is choosing direct delivery or custody fulfilment.';
-    if (stage === 2) return 'The requested Distributor must accept or reject direct delivery.';
+        ? 'Arrange delivery'
+        : 'Waiting for Supplier to arrange delivery';
+    if (stage === 2)
+      return same(actor, order.delivery.distributor)
+        ? 'Review delivery request'
+        : 'Waiting for Distributor';
     if (stage === 3)
-      return 'The Distributor must scan the Supplier label and confirm physical pickup.';
+      return same(actor, order.delivery.distributor) ? 'Confirm pickup' : 'Waiting for Distributor';
     if (stage === 4)
-      return 'The Manufacturer must scan the delivered label and confirm physical receipt.';
+      return same(actor, order.buyer)
+        ? 'Confirm receipt'
+        : 'Waiting for Manufacturer to confirm receipt';
   }
   if (order.custodyOrder && state.group === 'approved') {
-    if (same(actor, order.buyer))
-      return 'Open Shipments, scan the package label and confirm physical receipt after delivery.';
-    if (same(actor, order.custodyOrder.distributor))
-      return 'Open Shipments to dispatch the approved reserved quantity from your warehouse.';
-    return 'The Distributor dispatches the reserved warehouse stock; track it in Shipments.';
+    if (same(actor, order.buyer)) return 'Track delivery in Shipments';
+    if (same(actor, order.custodyOrder.distributor)) return 'Record dispatch in Shipments';
+    return 'Waiting for Distributor to dispatch';
   }
   if (state.group === 'evidence')
-    return same(actor, order.buyer)
-      ? 'Review the request and share your company evidence.'
-      : 'Wait for the requesting company to share its evidence.';
+    return same(actor, order.buyer) ? 'Share company evidence' : 'Waiting for company evidence';
   if (state.group === 'approved' && (order.productDelivery || Number(order.kind) === 2))
     return same(actor, order.seller)
-      ? 'Arrange product delivery.'
-      : 'Await the Manufacturer delivery arrangement.';
+      ? 'Arrange delivery'
+      : 'Waiting for Manufacturer to arrange delivery';
   if (state.group === 'approved') return 'Decision recorded. Coordinate any next steps separately.';
   if (state.group === 'closed') return 'No action required.';
   if (same(actor, order.seller) && hasValue(order.identityCredentialHash))
-    return 'Review the verified company evidence and record your decision.';
-  return same(order.seller, actor) ? 'Review the request and record your decision.' : state.label;
+    return 'Review evidence and decide';
+  return same(order.seller, actor) ? 'Review request' : state.label;
 }
 
 function compareRequests(left: OrderRecord, right: OrderRecord, sort: RequestSort) {

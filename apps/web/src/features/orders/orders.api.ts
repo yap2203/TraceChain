@@ -1,4 +1,4 @@
-import { observeNavigationData } from '../workspaces/action-counts';
+import { beginNavigationData, observeNavigationData } from '../workspaces/action-counts';
 import { apiErrorMessage } from '../../components/ui/feedback';
 import { authRequestScope } from '../auth/auth-request-scope';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
@@ -57,6 +57,7 @@ async function request<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const countScope = authRequestScope();
+  if (method === 'GET') beginNavigationData(path, countScope);
   const response = await fetch(`${base}/api/orders${path}`, {
     credentials: 'include',
     signal,
@@ -75,7 +76,10 @@ async function request<T>(
       { status: response.status, code: error.error?.code },
     );
   }
-  const result = await response.json();
+  const result = await response.json().catch((cause) => {
+    observeNavigationData(path, undefined, countScope, true);
+    throw cause;
+  });
   if (method === 'GET') observeNavigationData(path, result, countScope);
   return result;
 }
