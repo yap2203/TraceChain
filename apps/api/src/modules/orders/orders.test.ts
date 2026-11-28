@@ -9,7 +9,6 @@ import request from 'supertest';
 import { CompanyRole, encodeIngredientDeliveryQr, encodeShipmentQr } from '@tracechain/shared';
 import { encodeBytes32String, id, Interface, ZeroHash } from 'ethers';
 import { OrdersService } from './orders.service.js';
-import { RpcServiceUnavailableError } from '../blockchain/rpc-provider.js';
 import { createOrdersRouter } from './orders.routes.js';
 import type { OrdersGateway } from './orders.gateway.js';
 import { ReadModelGateway } from './read-model.js';
@@ -1173,11 +1172,12 @@ describe('order API and private metadata', () => {
   );
   it('returns a controlled 503 when event providers are unavailable', async () => {
     const f = fixture();
-    f.gateway.events.mockRejectedValue(new RpcServiceUnavailableError(new Error('RPC failure')));
+    f.gateway.events.mockRejectedValue(new Error('RPC failure'));
     const response = await request(f.app).get('/api/orders').expect(503);
     expect(response.body.error).toEqual({
-      code: 'BLOCKCHAIN_SERVICE_UNAVAILABLE',
-      message: 'Blockchain data is temporarily unavailable. Please retry shortly.',
+      code: 'ORDER_SERVICE_UNAVAILABLE',
+      message:
+        'Orders could not be loaded. Retry or ask the API operator to check the order service.',
     });
     expect(JSON.stringify(response.body)).not.toContain('RPC failure');
   });

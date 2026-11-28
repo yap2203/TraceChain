@@ -10,7 +10,6 @@ import cookieParser from 'cookie-parser';
 import express from 'express';
 import {
   getRpcPerformanceMetrics,
-  RpcServiceUnavailableError,
   isRpcUnavailableError,
 } from './modules/blockchain/rpc-provider.js';
 
@@ -753,12 +752,8 @@ export function createApp({
         response.setHeader('Retry-After', '30');
         response.status(503).json({
           error: {
-            code:
-              error instanceof RpcServiceUnavailableError ? error.code : 'BLOCKCHAIN_UNAVAILABLE',
-            message:
-              error instanceof RpcServiceUnavailableError
-                ? error.message
-                : 'Blockchain providers are temporarily busy. Please retry shortly.',
+            code: 'BLOCKCHAIN_UNAVAILABLE',
+            message: 'Blockchain providers are temporarily busy. Please retry shortly.',
           },
         });
         return;

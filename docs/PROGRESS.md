@@ -1,5 +1,9 @@
 # Project Progress
 
+## 2026-11-28 - Merge RPC error-handling follow-up
+
+- Combined the incoming RPC error-handling changes with the local custody handoff fix, product metadata recovery and request timing measurements. RPC failures retain their underlying error rather than using the removed service-unavailable wrapper; Orders still returns a safe 503 without exposing internal details. Historical implementation notes below describe their respective earlier changes.
+
 ## 2026-11-28 - Prepared product handoff reads and missing product names
 
 - Reproduced a product handoff preparation saving a future shipment ID, followed by custody-list HTTP 503 because `getTransfer` rejects an uncreated transfer. Confirmed the deployed Sepolia ABI error through a read-only probe: `InvalidInput()`, selector `0xb4fa3fb3`. Local custody/Orders/Product/Stakeholder wiring matched. The overview consumes the same custody endpoint.

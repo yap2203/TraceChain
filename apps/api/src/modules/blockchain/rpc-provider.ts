@@ -390,7 +390,6 @@ export class ApiRpcProvider extends JsonRpcProvider {
         const current = pending.length === 1 ? pending[0] : pending;
         measured = await this.scheduler.run(() => super._send(current), bulk);
       } catch (error) {
-        reportRpcFailure(this.endpointLabel, pending, error);
         if (!read || !isThrottled(error)) throw error;
         metrics.rateLimitErrors += 1;
         endpointMetrics(this.endpointLabel).rateLimitErrors += 1;
@@ -419,27 +418,9 @@ export class ApiRpcProvider extends JsonRpcProvider {
       endpoint.health = 'healthy';
       if (!read) return measured.value;
       let replies = measured.value;
-      for (const reply of replies)
-        if (rpcError(reply))
-          reportRpcFailure(
-            this.endpointLabel,
-            pending.filter((request) => request.id === reply.id || reply.id == null),
-            reply,
-          );
       // Some endpoints return bare {code,message} errors or id:null errors for an
       // entire batch. Such entries cannot be assigned to a request by position.
       if (pending.length > 1 && replies.some((entry) => entry.id == null && rpcError(entry))) {
-        const rangeFailure = replies.find(isLogRangeLimit);
-        if (rangeFailure && pending.every((entry) => entry.method === 'eth_getLogs'))
-          return original.map(
-            (entry) =>
-              completed.get(entry.id) ??
-              ({
-                jsonrpc: '2.0',
-                id: entry.id,
-                error: rpcError(rangeFailure),
-              } as unknown as JsonRpcResult),
-          );
         if (replies.some(isThrottled)) {
           metrics.rateLimitErrors += 1;
           this.scheduler.cooldown(this.configuration.retryBaseDelayMs);
@@ -727,7 +708,16 @@ export class MultiRpcProvider extends JsonRpcProvider {
       }
     }
     if (pending.length) {
-      throw new RpcServiceUnavailableError(lastFailure);
+      if (lastFailure instanceof Error) throw lastFailure;
+      for (const request of pending)
+        completed.set(request.id, {
+          jsonrpc: '2.0',
+          id: request.id,
+          error: rpcError(lastFailure) ?? {
+            code: -32000,
+            message: 'All configured RPC providers are temporarily unavailable.',
+          },
+        } as unknown as JsonRpcResult);
     }
     return entries.map((entry) => completed.get(entry.id)!).filter(Boolean);
   }
@@ -1039,8 +1029,8 @@ function endpointMetrics(label: string): RpcEndpointMetrics {
 }
 
 function isThrottled(value: unknown): boolean {
-  if (isLogRangeLimit(value)) return false;
   if (!value || typeof value !== 'object') return false;
+  if (isRpcLogRangeError(value)) return false;
   const error = value as {
     code?: number | string;
     message?: string;
@@ -1071,86 +1061,20 @@ function isThrottled(value: unknown): boolean {
   );
 }
 
-/** Query capacity is not provider health. Inspect nested errors without serializing RPC payloads. */
-export function isLogRangeLimit(value: unknown, depth = 0): boolean {
-  if (!value || typeof value !== 'object' || depth > 5) return false;
-  const error = value as any;
+export function isRpcLogRangeError(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const error = value as { message?: string; error?: unknown; info?: { error?: unknown } };
   return (
-    /query returned more than|too many (?:results|logs)|more than \d+ results|(?:block|query) range[^.]*?(?:exceed|limit|too (?:large|wide))|(?:exceed|maximum|max|limited to|up to|at most)[^.]*?\d[\d,k]*[ -]*blocks?|response size[^.]*?(?:large|exceed)|log response size exceeded/i.test(
-      String(error.message ?? ''),
+    /more than \d+ results|query returned more than|too many results|response size (?:is )?(?:too large|exceed)|block range[^.]* (?:limit|exceed|too (?:large|wide))|limited to[^.]*block|maximum[^.]*block range/i.test(
+      error.message ?? '',
     ) ||
-    [error.error, error.cause, error.info?.error].some((nested) =>
-      isLogRangeLimit(nested, depth + 1),
-    )
+    isRpcLogRangeError(error.error) ||
+    isRpcLogRangeError(error.info?.error)
   );
 }
 
-export class RpcServiceUnavailableError extends Error {
-  readonly code = 'BLOCKCHAIN_SERVICE_UNAVAILABLE';
-  readonly status = 503;
-  constructor(cause?: unknown) {
-    super('Blockchain data is temporarily unavailable. Please retry shortly.', { cause });
-  }
-}
-
-function reportRpcFailure(endpoint: string, requests: JsonRpcPayload[], cause: unknown) {
-  const error: any = rpcError(cause) ?? (cause as any)?.info?.error ?? cause;
-  const category = isLogRangeLimit(cause)
-    ? 'range_or_result_limit'
-    : isTimeout(cause)
-      ? 'timeout'
-      : /401|403|unauthori[sz]ed|forbidden|api.?key/i.test(
-            String(error?.message ?? '') + String(error?.status ?? ''),
-          )
-        ? 'authentication'
-        : isRpcRateLimitError(cause)
-          ? 'rate_limit'
-          : 'network_or_rpc_error';
-  // Never log raw messages, URLs, params, headers or nested server responses.
-  console.warn('RPC attempt failed', {
-    endpoint,
-    methods: [...new Set(requests.map((request) => request.method))],
-    category,
-    rpcCode:
-      typeof error?.code === 'number' ||
-      [
-        'SERVER_ERROR',
-        'NETWORK_ERROR',
-        'TIMEOUT',
-        'ETIMEDOUT',
-        'ECONNRESET',
-        'ECONNREFUSED',
-        'ENOTFOUND',
-        'EAI_AGAIN',
-        'UNKNOWN_ERROR',
-        'CALL_EXCEPTION',
-        'UND_ERR_CONNECT_TIMEOUT',
-        'UND_ERR_SOCKET',
-      ].includes(String(error?.code ?? ''))
-        ? error.code
-        : undefined,
-    httpStatus: Number.isInteger(error?.status) ? error.status : undefined,
-    ranges: requests
-      .filter((request) => request.method === 'eth_getLogs')
-      .map((request) => {
-        const filter = (Array.isArray(request.params) ? request.params[0] : {}) as any;
-        return {
-          fromBlock: parseBlockNumber(filter?.fromBlock),
-          toBlock: parseBlockNumber(filter?.toBlock),
-          addressCount: Array.isArray(filter?.address)
-            ? filter.address.length
-            : filter?.address
-              ? 1
-              : 0,
-        };
-      }),
-  });
-}
-
-export const isRpcLogRangeError = isLogRangeLimit;
-
 export function isRpcUnavailableError(value: unknown) {
-  return value instanceof RpcServiceUnavailableError || isTransientFailure(value);
+  return isTransientFailure(value);
 }
 
 function isTimeout(value: unknown): boolean {
@@ -1167,34 +1091,12 @@ function isTimeout(value: unknown): boolean {
 function isTransientFailure(value: unknown): boolean {
   return (
     isThrottled(value) ||
-    isAuthenticationFailure(value) ||
-    (!!value &&
-      typeof value === 'object' &&
-      ['ENOTFOUND', 'EAI_AGAIN', 'NETWORK_ERROR'].includes(String((value as any).code))) ||
     value instanceof UncorrelatedBatchError ||
     (!!value &&
       typeof value === 'object' &&
       /malformed|omitted.*response|invalid json|unexpected end of json/i.test(
         String((value as { message?: unknown }).message ?? ''),
       ))
-  );
-}
-
-function isAuthenticationFailure(value: unknown, depth = 0): boolean {
-  if (!value || typeof value !== 'object' || depth > 5) return false;
-  const error = value as any;
-  if (
-    error.code === 3 ||
-    error.code === 'CALL_EXCEPTION' ||
-    /execution reverted/i.test(String(error.message ?? ''))
-  )
-    return false;
-  return (
-    [401, 403].includes(Number(error.status ?? error.code)) ||
-    /unauthori[sz]ed|forbidden|invalid api.?key/i.test(String(error.message ?? '')) ||
-    [error.error, error.cause, error.info?.error].some((nested) =>
-      isAuthenticationFailure(nested, depth + 1),
-    )
   );
 }
 
@@ -1250,7 +1152,6 @@ function deduplicateRawLogs(values: unknown[]) {
 }
 
 export function isRpcRateLimitError(value: unknown): boolean {
-  if (isLogRangeLimit(value)) return false;
   if (!value || typeof value !== 'object') return false;
   const error = value as {
     code?: number;

@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { EventLog, Log, type BaseContract, type Provider } from 'ethers';
 import { countRead, measureRead } from './read-timing.js';
-import { isLogRangeLimit, RpcServiceUnavailableError } from './rpc-provider.js';
+import { isRpcLogRangeError } from './rpc-provider.js';
 
 const DEFAULT_PAGE_SIZE = 5_000;
 const deploymentBlocks = new WeakMap<Provider, Map<string, Promise<number>>>();
@@ -241,10 +241,7 @@ async function readLogRange(
     );
     return page.map(storedLog);
   } catch (cause) {
-    if (to <= from || !isLogRangeLimit(cause))
-      throw cause instanceof RpcServiceUnavailableError
-        ? cause
-        : new RpcServiceUnavailableError(cause);
+    if (to <= from || !isRpcLogRangeError(cause)) throw cause;
     const middle = Math.floor((from + to) / 2);
     return [
       ...(await readLogRange(provider, addresses, from, middle)),
