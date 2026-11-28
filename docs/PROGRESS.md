@@ -1,5 +1,13 @@
 # Project Progress
 
+## 2026-11-29 - Concise ingredient and stock presentation
+
+- Removed permanent listing/credential explanations from Supplier ingredient details and moved stock estimation and privacy explanations into existing collapsed help/Technical details. Shortened the listing edit notice and update confirmation; editing permissions and immutable fields remain unchanged.
+- Verified the stock calculation and renamed its labels to Current stock, Estimated remaining, Pending requests and Approved, not dispatched. Estimation help explicitly preserves the distinction from reserved/guaranteed stock; incomplete data and shortfall warnings remain visible.
+- Read-only ingredient listings, Manufacturer product details and shared catalogue prices hide only genuinely absent optional values. Empty listing sections are omitted, while zero prices, explicit disclosure labels and owner editing controls remain. Product listing fetch failures now show a warning instead of silently looking like missing optional data.
+- No backend calculations, stock rules, permissions, records, contracts, environment values or deployment changes.
+- Validation: 62 focused frontend tests and 7 stock-calculation API tests passed, along with frontend typecheck and production build. Changed-file Prettier and Git whitespace checks passed. Interactive browser rendering and live wallet flows were not exercised.
+
 ## 2026-11-28 - Focused workflow usability follow-up
 
 - Verified and replaced inline order decision confirmation with the shared accessible modal, reason/consequences, Cancel/Confirm and disabled background decision controls. Opening/cancelling does not prepare a transaction; confirmed approval and refresh-recovery protection remain intact.

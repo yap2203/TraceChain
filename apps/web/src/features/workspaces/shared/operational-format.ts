@@ -69,3 +69,8 @@ export function formatOperationalPrice(currency: unknown, price: unknown, unit: 
   const value = Number.isFinite(amount) ? amount.toFixed(2) : String(price);
   return `${String(currency || 'MYR')} ${value} / ${formatted.priceLabel ?? 'units'}`;
 }
+
+/** Only genuine absence is hidden; zero and explicit unavailable/undisclosed values stay visible. */
+export function hasPresentationValue(value: unknown) {
+  return value !== undefined && value !== null && String(value).trim() !== '';
+}

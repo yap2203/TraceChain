@@ -43,6 +43,7 @@ describe('Retailer product catalogue data', () => {
     expect(within(card).getByText('42 each')).toBeTruthy();
     expect(within(card).getByText('Linked credentials active')).toBeTruthy();
     expect(card.textContent).not.toContain('Not published');
+    expect(within(card).queryByText('Indicative price')).toBeNull();
   });
 });
 const manufacturerPresentation = {

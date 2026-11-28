@@ -9,6 +9,7 @@ import { Alert, Badge, Btn, Card, EmptyState, Modal, TechnicalDetails } from '..
 import { getIngredientBatches, type RegisteredIngredientBatch } from './ingredient-batch.api';
 import { getOrders, type OrderRecord } from '../../../orders/orders.api';
 import './batch-detail.css';
+import { hasPresentationValue } from '../../shared/operational-format';
 
 const ALLERGEN_LABEL = {
   contains: 'Contains',
@@ -77,7 +78,7 @@ export function IngredientBatchDetail({
         {back}
         <EmptyState
           icon={<span />}
-          title="Batch not found on chain"
+          title="Batch not found"
           sub="This authenticated Supplier does not own the requested ingredient batch."
         />
       </div>
@@ -179,31 +180,35 @@ export function IngredientBatchDetail({
         </div>
 
         <aside className="batch-detail__aside">
-          <Section
-            title="Your listing"
-            note="Listing information you can edit from My ingredients. It is not part of the signed credential."
-          >
-            <Facts
-              rows={[
-                ['Name', listing?.name],
-                ['Category', listing?.category],
-                [
-                  'Indicative price',
-                  listing?.price !== undefined
-                    ? `${listing.currency} ${listing.price} per ${listing.priceBasis || batch.unit}`
-                    : 'Not provided',
-                ],
-                ['Description', listing?.description || 'No description provided'],
-              ]}
-            />
-          </Section>
+          {[listing?.name, listing?.category, listing?.price, listing?.description].some(
+            hasPresentationValue,
+          ) && (
+            <Section title="Your listing">
+              <Facts
+                rows={[
+                  ['Name', listing?.name],
+                  ['Category', listing?.category],
+                  [
+                    'Indicative price',
+                    hasPresentationValue(listing?.price)
+                      ? `${listing?.currency} ${listing?.price} per ${listing?.priceBasis || batch.unit}`
+                      : undefined,
+                  ],
+                  [
+                    'Description',
+                    hasPresentationValue(listing?.description) ? listing?.description : undefined,
+                  ],
+                ]}
+              />
+            </Section>
+          )}
           <Section title="Privacy">
-            <p className="batch-detail__muted">
-              The full Ingredient Credential and private details stay encrypted off-chain and are
-              returned only to you, the authorized Supplier.
-            </p>
             <TechnicalDetails
               fields={[
+                {
+                  label: 'Privacy',
+                  value: 'Private batch details are available only to the authorized Supplier.',
+                },
                 { label: 'Batch ID', value: batch.batchId },
                 { label: 'Supplier wallet', value: batch.supplier },
                 { label: 'Credential ID', value: batch.credentialId },

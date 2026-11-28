@@ -86,3 +86,36 @@ it('shows signed facts with readable labels and the editable listing separately'
     within(screen.getByRole('region', { name: 'Your listing' })).getByText('Cocoa listing'),
   ).toBeTruthy();
 });
+
+it.each([false, true])(
+  'hides empty listing fields but preserves retrieval errors (failure: %s)',
+  async (failure) => {
+    mocks.batches.mockResolvedValue({
+      batches: [
+        {
+          batchId,
+          batchReference: 'COCOA-EMPTY',
+          ingredientName: 'Cocoa',
+          quantity: '100',
+          availableQuantity: '80',
+          unit: 'g',
+          status: 1,
+          supplier: wallet,
+          producedAt: 1790000000,
+          expiresAt: 2000000000,
+          certifications: [],
+          certificationEntries: [],
+        },
+      ],
+    });
+    if (failure) mocks.orders.mockRejectedValue(new Error('RPC unavailable'));
+    else mocks.orders.mockResolvedValue({ actor: wallet, catalogue: [] });
+    render(<IngredientBatchDetail batchId={batchId} onBack={vi.fn()} />);
+    await screen.findByRole('region', { name: 'Batch details' });
+    expect(screen.queryByRole('region', { name: 'Your listing' })).toBeNull();
+    expect(screen.queryByText('No description provided')).toBeNull();
+    if (failure)
+      expect(await screen.findByText(/current listing summary is unavailable/)).toBeTruthy();
+    else expect(screen.queryByText(/current listing summary is unavailable/)).toBeNull();
+  },
+);

@@ -26,6 +26,7 @@ import {
   chainDate,
   formatOperationalPrice,
   formatOperationalQuantity,
+  hasPresentationValue,
   operationalUnit,
   recordStatuses,
   shortChainId,
@@ -53,8 +54,12 @@ export function ProductBatchDetail({
   const [ingredients, setIngredients] = useState<OrderRecord[]>([]);
   const [storage, setStorage] = useState<OrderRecord[]>([]);
   const [locations, setLocations] = useState<OrderRecord[]>([]);
+  const [listingError, setListingError] = useState('');
+  const [listingLoading, setListingLoading] = useState(true);
   useEffect(() => {
     let active = true;
+    setListingLoading(true);
+    setListingError('');
     void getOrders()
       .then((result) => {
         if (active) {
@@ -66,7 +71,12 @@ export function ProductBatchDetail({
           );
         }
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (active) setListingError('Product listing unavailable. Refresh to retry.');
+      })
+      .finally(() => {
+        if (active) setListingLoading(false);
+      });
     return () => {
       active = false;
     };
@@ -95,7 +105,7 @@ export function ProductBatchDetail({
     return (
       <EmptyState
         icon={<span />}
-        title="Product not found on chain"
+        title="Product not found"
         sub="This product is not available to the authenticated wallet."
       />
     );
@@ -120,6 +130,7 @@ export function ProductBatchDetail({
   return (
     <div className="workspace-flow-page">
       <BackNavigation onClick={onBack}>Back</BackNavigation>
+      {listingError && <Alert type="warning" message={listingError} />}
       <div className="workspace-record-heading">
         <div className="workspace-record-heading__identity">
           <span className="workspace-record-heading__eyebrow">Finished product</span>
@@ -145,7 +156,9 @@ export function ProductBatchDetail({
             <div>
               <span className="workspace-record-heading__eyebrow">Product presentation</span>
               <h3>{productName}</h3>
-              <p>{catalogueItem?.description || 'No product description provided.'}</p>
+              {hasPresentationValue(catalogueItem?.description) && (
+                <p>{catalogueItem?.description}</p>
+              )}
             </div>
           </div>
         </div>
@@ -168,14 +181,24 @@ export function ProductBatchDetail({
             ['Expires', chainDate(p.expiresAt)],
             [
               'Indicative unit price',
-              formatOperationalPrice(catalogueItem?.currency, catalogueItem?.price, p.unit),
+              listingLoading && !hasPresentationValue(catalogueItem?.price)
+                ? 'Loading...'
+                : formatOperationalPrice(catalogueItem?.currency, catalogueItem?.price, p.unit),
             ],
-          ].map(([l, v]) => (
-            <div key={l}>
-              <dt>{l}</dt>
-              <dd>{v}</dd>
-            </div>
-          ))}
+          ]
+            .filter(
+              ([label]) =>
+                label !== 'Indicative unit price' ||
+                listingLoading ||
+                listingError ||
+                hasPresentationValue(catalogueItem?.price),
+            )
+            .map(([l, v]) => (
+              <div key={l}>
+                <dt>{l}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
         </div>
         {authoritativeStorage.length > 0 && (
           <section className="workspace-authoritative-stock" aria-label="Authoritative stock">
@@ -210,10 +233,6 @@ export function ProductBatchDetail({
       </Card>
       <Card>
         <b>Linked ingredients</b>
-        <p>
-          Open a linked ingredient to see Supplier details, request ingredient evidence or send a
-          quantity request. Evidence approval and quantity requests remain separate.
-        </p>
         <Table headers={['Ingredient', 'Supplier', 'Quantity', '']}>
           {p.ingredients.map((i) => (
             <TR key={i.batchId}>

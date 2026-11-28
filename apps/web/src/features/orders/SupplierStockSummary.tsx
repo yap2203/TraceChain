@@ -1,4 +1,5 @@
 import type { SupplierStock } from './orders.api';
+import { WorkflowHelp } from '../workspaces/shared/ui';
 import './supplier-stock.css';
 
 /** Whole-number on-chain amounts with thousands separators; anything else is shown as recorded. */
@@ -15,23 +16,23 @@ export function SupplierStockSummary({ stock }: { stock: SupplierStock }) {
     <section aria-label="Supplier stock summary" className="supplier-stock">
       <dl>
         <div>
-          <dt>Current on-chain stock</dt>
+          <dt>Current stock</dt>
           <dd>{amount(stock.availableQuantity, stock.unit)}</dd>
         </div>
         <div>
-          <dt>Remaining after open requests</dt>
+          <dt>Estimated remaining</dt>
           <dd>
             {stock.remainingAfterRequests === null
-              ? 'Unavailable: older requests lack batch or decision data'
+              ? 'Unavailable: incomplete request data'
               : amount(stock.remainingAfterRequests, stock.unit)}
           </dd>
         </div>
         <div>
-          <dt>Awaiting your approval</dt>
+          <dt>Pending requests</dt>
           <dd>{amount(stock.pendingQuantity, stock.unit)}</dd>
         </div>
         <div>
-          <dt>Approved requests still in stock</dt>
+          <dt>Approved, not dispatched</dt>
           <dd>{amount(stock.approvedQuantity, stock.unit)}</dd>
         </div>
       </dl>
@@ -41,10 +42,16 @@ export function SupplierStockSummary({ stock }: { stock: SupplierStock }) {
           requests before approving.
         </p>
       )}
-      <p className="supplier-stock__note">
-        Requests do not reserve stock. Collected deliveries are already deducted from current stock;
-        legacy direct receipts deduct stock at receipt.
-      </p>
+      <WorkflowHelp title="How stock is estimated">
+        <p>
+          Estimated remaining is current stock minus pending and approved, undispatched requests.
+          Requests do not reserve stock; the estimate is not guaranteed.
+        </p>
+        <p>
+          Collected deliveries are already deducted from current stock. Older direct receipts deduct
+          stock when receipt is confirmed.
+        </p>
+      </WorkflowHelp>
     </section>
   );
 }

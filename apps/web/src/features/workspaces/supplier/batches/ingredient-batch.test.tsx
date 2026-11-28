@@ -509,7 +509,7 @@ describe('Supplier ingredient batch workflow', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     expect(screen.getByRole('button', { name: 'My ingredients' }).closest('section')!).toBeTruthy();
-    expect(screen.getByText('not signed credential claims', { exact: false })).toBeTruthy();
+    expect(screen.queryByText('not signed credential claims', { exact: false })).toBeNull();
   });
 
   it.each([1, 2, 3, 4])(
@@ -908,3 +908,37 @@ const EXTRACTION: IngredientDocumentExtraction = {
   },
   warnings: [],
 };
+
+it('hides an empty optional Listing section but keeps owner editing and image controls', async () => {
+  const item = {
+    ...catalogueItem({ itemId: 'empty-listing' }),
+    price: undefined,
+    description: '   ',
+  };
+  mockOrders({ actor: BASE_WORKFLOW.supplierWallet, catalogue: [item] });
+  render(<IngredientBatches onNew={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
+  const detail = screen.getByRole('button', { name: 'My ingredients' }).closest('section')!;
+  expect(within(detail).queryByRole('heading', { name: 'Listing' })).toBeNull();
+  expect(within(detail).queryByText('No description provided')).toBeNull();
+  expect(within(detail).getByRole('button', { name: 'Edit listing' })).toBeTruthy();
+  expect(within(detail).getByLabelText('Choose ingredient image')).toBeTruthy();
+  expect(
+    within(detail).queryByText(/Image, description and price are your listing information/),
+  ).toBeNull();
+});
+
+it('keeps a zero indicative price and explicit undisclosed text in listing details', async () => {
+  const item = {
+    ...catalogueItem({ itemId: 'zero-price' }),
+    price: '0',
+    description: 'Not shared',
+  };
+  mockOrders({ actor: BASE_WORKFLOW.supplierWallet, catalogue: [item] });
+  render(<IngredientBatches onNew={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
+  const detail = screen.getByRole('button', { name: 'My ingredients' }).closest('section')!;
+  expect(within(detail).getByRole('heading', { name: 'Listing' })).toBeTruthy();
+  expect(within(detail).getByText('MYR 0 / kg')).toBeTruthy();
+  expect(within(detail).getByText('Not shared')).toBeTruthy();
+});

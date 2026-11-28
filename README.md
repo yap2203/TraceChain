@@ -446,6 +446,12 @@ intact. Suppliers can also attach an optional validated presentation image to an
 Supplier decisions are recorded on-chain and never reserve stock, process payment or dispatch goods.
 See [the Supplier management flow](docs/BROWSE_REQUESTS_README.md#supplier-management).
 
+Supplier stock summaries use Current stock, Estimated remaining, Pending requests and
+Approved, not dispatched. Estimation guidance is collapsed under How stock is estimated;
+requests do not reserve or guarantee stock. Read-only ingredient/product details and catalogue
+prices omit genuinely absent optional listing values while retaining zero prices, disclosure
+labels and retrieval errors. Owner listing controls remain available.
+
 Supplier ingredient registration also supports document-assisted data entry. An authorized Supplier
 may upload one PDF, DOCX, PNG or JPG/JPEG document up to 10 MB; the API extracts embedded text or
 runs local English OCR, then prefills the existing registration form with per-field confidence

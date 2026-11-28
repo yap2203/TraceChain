@@ -2,6 +2,7 @@ import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { BackNavigation } from '../../../../components/ui/BackNavigation';
 import { PaginationBar, usePagination } from '../../../../components/ui/PaginatedTable';
 import './ingredients.css';
+import { hasPresentationValue } from '../../shared/operational-format';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -233,7 +234,7 @@ export function IngredientBatches({
       setArchiving(undefined);
       setNotice(
         action === 'ingredient-update'
-          ? 'Listing updated successfully. Signed credential claims are unchanged.'
+          ? 'Listing updated.'
           : values.archived
             ? 'Ingredient archived successfully. Traceability history is preserved.'
             : 'Ingredient restored successfully.',
@@ -479,7 +480,7 @@ export function IngredientBatches({
           <div className="ingredient-edit-form">
             <Alert
               type="info"
-              message="Only Supplier-provided listing information can be edited. Signed ingredient claims, quantity, unit, origin, dates and credential data remain immutable."
+              message="Edit listing information only. Batch identity, quantities, origin, dates and credentials cannot change."
             />
             <div className="workspace-form-grid">
               <Input
@@ -792,17 +793,19 @@ function IngredientDetailPage({
               <Fact label="Country of origin" value={item.countryOfOrigin || 'Not recorded'} />
             </dl>
           </section>
-          <section>
-            <h4>Listing</h4>
-            <dl>
-              <Fact label="Indicative price" value={price(item)} />
-              <Fact label="Description" value={item.description || 'No description provided'} />
-            </dl>
-            <p className="ingredient-detail__note">
-              Image, description and price are your listing information, not signed credential
-              claims.
-            </p>
-          </section>
+          {(hasPresentationValue(item.price) || hasPresentationValue(item.description)) && (
+            <section>
+              <h4>Listing</h4>
+              <dl>
+                {hasPresentationValue(item.price) && (
+                  <Fact label="Indicative price" value={price(item)} />
+                )}
+                {hasPresentationValue(item.description) && (
+                  <Fact label="Description" value={item.description} />
+                )}
+              </dl>
+            </section>
+          )}
         </div>
 
         {stock && <SupplierStockSummary stock={stock} />}

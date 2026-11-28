@@ -65,6 +65,7 @@ vi.mock('../../../product-traceability/product-qr', async (original) => ({
   createProductQrModel: mocks.model,
 }));
 import { ProductBatchDetail } from './ProductBatchDetail';
+import { getOrders } from '../../../orders/orders.api';
 
 const mount = () =>
   render(
@@ -138,4 +139,27 @@ describe('Manufacturer product detail QR resilience', () => {
     expect(screen.getByText('Raw on-chain unit')).toBeTruthy();
     expect(screen.getByRole('region', { name: 'Product Traceability QR' })).toBeTruthy();
   });
+});
+
+it('omits genuinely absent optional product fields after loading', async () => {
+  vi.mocked(getOrders).mockResolvedValueOnce({
+    actor: 'maker',
+    role: 'MANUFACTURER',
+    orders: [],
+    shipments: [],
+    locations: [],
+    catalogue: [],
+  });
+  mount();
+  await waitFor(() => expect(screen.queryByText('Indicative unit price')).toBeNull());
+  expect(screen.queryByText('No product description provided.')).toBeNull();
+  expect(screen.getByText('123 each')).toBeTruthy();
+});
+
+it('shows a failed listing retrieval instead of silently treating optional fields as absent', async () => {
+  vi.mocked(getOrders).mockRejectedValueOnce(new Error('IPFS retrieval unavailable'));
+  mount();
+  expect(await screen.findByText('Product listing unavailable. Refresh to retry.')).toBeTruthy();
+  expect(screen.getByText('Indicative unit price')).toBeTruthy();
+  expect(screen.getByText('123 each')).toBeTruthy();
 });

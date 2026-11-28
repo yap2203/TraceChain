@@ -23,6 +23,7 @@ import {
   TechnicalDetails,
 } from '../workspaces/shared/ui';
 import { CatalogueImage, CompanyAvatar } from './CatalogueMedia';
+import { hasPresentationValue } from '../workspaces/shared/operational-format';
 import type { OrderRecord } from './orders.api';
 
 export interface QuantityRequestInput {
@@ -408,10 +409,12 @@ function CatalogueCard({
               <dd>{availability(item, batch)}</dd>
             </div>
           )}
-          <div>
-            <dt>Indicative price</dt>
-            <dd>{price(item)}</dd>
-          </div>
+          {hasPresentationValue(item.price) && (
+            <div>
+              <dt>Indicative price</dt>
+              <dd>{price(item)}</dd>
+            </div>
+          )}
           <div>
             <dt>Credential</dt>
             <dd>
@@ -536,17 +539,18 @@ function CatalogueDetail({
                 </span>
               </div>
             </div>
-            <div className="catalogue-dialog-price">
-              <span>Indicative price</span>
-              <strong>{price(item)}</strong>
-              <small>Supplier-provided indication; no payment is taken when requesting.</small>
-            </div>
+            {hasPresentationValue(item.price) && (
+              <div className="catalogue-dialog-price">
+                <span>Indicative price</span>
+                <strong>{price(item)}</strong>
+                <small>Indicative only. Requests do not take payment.</small>
+              </div>
+            )}
           </div>
         </section>
         <section className="catalogue-dialog-section catalogue-stock-section">
           <div className="catalogue-dialog-section__heading">
             <h3>Stock availability</h3>
-            <p>Balances are shown separately and are never combined.</p>
           </div>
           <dl className="catalogue-stock-grid">
             {Number(item.kind) === 1 && presentation?.custodyOnly ? (

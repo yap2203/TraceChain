@@ -146,7 +146,7 @@ describe('Supplier ingredient and request management', () => {
     const grid = mount(<IngredientBatches onNew={vi.fn()} />);
     fireEvent.click(await screen.findByRole('button', { name: 'View details' }));
     await screen.findByText('88 g');
-    expect(screen.getByText('Remaining after open requests')).toBeTruthy();
+    expect(screen.getByText('Estimated remaining')).toBeTruthy();
     expect(
       within(screen.getByRole('region', { name: 'Supplier stock summary' })).getByText('100 g'),
     ).toBeTruthy();
@@ -183,7 +183,7 @@ describe('Supplier ingredient and request management', () => {
         }),
       ),
     );
-    await screen.findByText(/Listing updated successfully/);
+    await screen.findByText(/Listing updated\./);
     api.prepareOrder.mockClear();
     // The details page stays open after saving the listing.
     fireEvent.click(screen.getByRole('button', { name: 'Archive listing' }));
