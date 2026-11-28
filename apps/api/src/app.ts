@@ -11,6 +11,7 @@ import express from 'express';
 import {
   getRpcPerformanceMetrics,
   RpcServiceUnavailableError,
+  isRpcUnavailableError,
 } from './modules/blockchain/rpc-provider.js';
 
 import { env } from './config/env.js';
@@ -743,8 +744,18 @@ export function createApp({
         return;
       }
 
-      if (error instanceof RpcServiceUnavailableError) {
-        response.status(503).json({ error: { code: error.code, message: error.message } });
+      if (isRpcUnavailableError(error)) {
+        response.setHeader('Retry-After', '30');
+        response.status(503).json({
+          error: {
+            code:
+              error instanceof RpcServiceUnavailableError ? error.code : 'BLOCKCHAIN_UNAVAILABLE',
+            message:
+              error instanceof RpcServiceUnavailableError
+                ? error.message
+                : 'Blockchain providers are temporarily busy. Please retry shortly.',
+          },
+        });
         return;
       }
 

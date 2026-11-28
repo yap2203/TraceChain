@@ -82,6 +82,14 @@ labels, chain ID, head freshness, deployed bytecode and log compatibility withou
 aggregate request timing through `Server-Timing`. Multi-RPC reduces throttling impact but does not
 guarantee sub-second Sepolia cold loads.
 
+Event catch-up checkpoints each completed page, so retries resume after the last successful
+page. Log range/result limits trigger smaller range reads without marking the provider unhealthy.
+Provider outages that reach the global API error handler return a readable 503 and Retry-After.
+For hosted outages, check the per-label health counters. A healthy ordinary-read provider does
+not substitute for a dedicated log provider. Configure a compatible `CHAIN_LOG_FALLBACK_URL`
+and choose log page sizes within each provider's plan limits. Persist `TRACECHAIN_DATA_DIR` on
+the hosting platform to retain the rebuildable event index across service restarts.
+
 **Sepolia read aggregation:** `RPC_MULTICALL_ENABLED=true` groups selected TraceChain getters through
 the existing, runtime-code-pinned Multicall3 deployment. No new contract deployment is required.
 The active configuration uses two transports, 200 ms ordinary pacing and 1,200 ms log pacing.

@@ -1144,6 +1144,12 @@ function reportRpcFailure(endpoint: string, requests: JsonRpcPayload[], cause: u
   });
 }
 
+export const isRpcLogRangeError = isLogRangeLimit;
+
+export function isRpcUnavailableError(value: unknown) {
+  return value instanceof RpcServiceUnavailableError || isTransientFailure(value);
+}
+
 function isTimeout(value: unknown): boolean {
   if (!value || typeof value !== 'object') return false;
   const error = value as { code?: unknown; message?: string; error?: unknown; cause?: unknown };

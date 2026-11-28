@@ -11,6 +11,17 @@
 - The existing four-step header now navigates Product details, Product presentation, Ingredients and quantities, and Review and create. Only the selected panel is visible; Back, Next and header jumps preserve component-memory fields and uploads.
 - Forward navigation and final creation share the existing validation rules. Errors open the relevant panel and focus its field; only the final Create product batch action starts the unchanged wallet/API workflow. Review provides Edit actions. Existing stock/location rules and confirmed-transaction refresh protection remain intact.
 
+## 2026-11-28 - Resume RPC event catch-up after provider outages
+
+- Reproduced failed-page retries repeating two completed 5,000-block pages. Per-page checkpoints
+  reduced the same regression scenario from six log calls to four across failure and retry.
+- Log range/result limits now reach adaptive range splitting without consuming rate-limit retries
+  or opening provider circuits. True provider outages remain failures.
+- Added a safe global 503 with Retry-After for uncaught transient RPC failures.
+- Hosted read-only health check returned HTTP 200 with healthy ordinary providers, an open
+  logs-primary circuit, 25 log rate-limit errors and no log fallback. Hosting configuration and
+  rollout still require operator action. No hosted settings or contracts were changed.
+
 ## 2026-11-28 - Product success layout and custody offer discovery diagnosis
 
 - Product creation success now groups the real product facts and remaining ingredient balances beside the permanent traceability QR. Technical identifiers stay collapsed; the existing PNG, link and printable label actions and QR quiet zone are unchanged. Mobile stacks the panels.
