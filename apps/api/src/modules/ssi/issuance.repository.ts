@@ -27,6 +27,17 @@ export interface CompanyRoleIssuanceRepository {
   save(record: CompanyRoleIssuanceRecord): Promise<void>;
 }
 
+export class IssuanceJournalError extends Error {
+  readonly code = 'ISSUANCE_JOURNAL_UNAVAILABLE';
+
+  constructor(cause?: unknown) {
+    super(
+      'The company credential issuance journal is unreadable. Ask the API operator to restore it before retrying.',
+      { cause },
+    );
+  }
+}
+
 export class JsonCompanyRoleIssuanceRepository implements CompanyRoleIssuanceRepository {
   private writeQueue = Promise.resolve();
 
@@ -41,7 +52,7 @@ export class JsonCompanyRoleIssuanceRepository implements CompanyRoleIssuanceRep
   }
 
   async save(record: CompanyRoleIssuanceRecord) {
-    this.writeQueue = this.writeQueue.then(async () => {
+    const write = this.writeQueue.then(async () => {
       const state = await this.read();
       const key = record.applicationId.toLowerCase();
       if (state[key] && state[key].credentialId !== record.credentialId) {
@@ -52,22 +63,37 @@ export class JsonCompanyRoleIssuanceRepository implements CompanyRoleIssuanceRep
       const temporaryPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
       await writeFile(temporaryPath, `${JSON.stringify(state, null, 2)}\n`, {
         encoding: 'utf8',
+        flush: true,
         mode: 0o600,
       });
       await rename(temporaryPath, this.filePath);
     });
-    await this.writeQueue;
+    this.writeQueue = write.catch(() => {});
+    await write;
   }
 
   private async read(): Promise<Record<string, CompanyRoleIssuanceRecord>> {
     try {
-      return JSON.parse(await readFile(this.filePath, 'utf8')) as Record<
-        string,
-        CompanyRoleIssuanceRecord
-      >;
+      const state: unknown = JSON.parse(await readFile(this.filePath, 'utf8'));
+      if (state === null || typeof state !== 'object' || Array.isArray(state)) {
+        throw new IssuanceJournalError();
+      }
+      for (const [key, record] of Object.entries(state)) {
+        if (
+          !record ||
+          typeof record !== 'object' ||
+          typeof record.applicationId !== 'string' ||
+          record.applicationId.toLowerCase() !== key ||
+          typeof record.credentialId !== 'string' ||
+          !record.credentialId
+        ) {
+          throw new IssuanceJournalError();
+        }
+      }
+      return state as Record<string, CompanyRoleIssuanceRecord>;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
-      throw error;
+      throw error instanceof IssuanceJournalError ? error : new IssuanceJournalError(error);
     }
   }
 }

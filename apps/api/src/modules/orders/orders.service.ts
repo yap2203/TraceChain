@@ -1700,7 +1700,7 @@ export class OrdersService {
     } catch {
       throw new OrdersError(
         'ORDER_DEPLOYMENT_UNAVAILABLE',
-        'The order ledger is unavailable or belongs to a different deployment. Deploy and configure the complete seven-contract suite.',
+        'The order ledger could not be verified. Check the RPC and match the contract addresses to the same deployment journal.',
         503,
       );
     }

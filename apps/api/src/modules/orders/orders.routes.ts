@@ -10,6 +10,7 @@ import { logisticsActionSchema } from './logistics.schema.js';
 import { CustodyOfferError } from './custody-offers.js';
 import { timeOrderRead } from '../blockchain/read-timing.js';
 import { COMPANY_EVIDENCE_CLAIM_IDS } from '@tracechain/shared';
+import { IssuanceJournalError } from '../ssi/issuance.repository.js';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
   const router = Router();
@@ -34,6 +35,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
         response.setHeader('Server-Timing', timed.header);
         response.json(timed.result);
       } catch (error) {
+        if (error instanceof IssuanceJournalError) return next(error);
         if (error instanceof ZodError)
           return response
             .status(400)
@@ -53,7 +55,7 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
           error: {
             code: 'ORDER_SERVICE_UNAVAILABLE',
             message:
-              'The order ledger is unavailable. Check the RPC, compile the contracts, deploy the updated suite, and configure SUPPLY_ORDERS_ADDRESS.',
+              'Orders could not be loaded. Retry or ask the API operator to check the order service.',
           },
         });
       }

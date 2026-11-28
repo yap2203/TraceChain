@@ -1101,6 +1101,17 @@ The Admin overview, company-application, Company Credential, Access Control, and
 
 Supplier, Manufacturer, Distributor, and Retailer **My Credential** pages use the authenticated wallet-scoped `GET /api/blockchain/credentials/me` read. Credential identifiers, hashes, subjects, issuers, lifecycle status, expiry, encrypted CID, and update time come from the configured registries. Company name and registration number are merged from the private issuance journal when available; fake transaction hashes, block numbers, DIDs, and company identities are not displayed.
 
+For `ISSUANCE_JOURNAL_UNAVAILABLE`, check `issuance/company-role.json` under
+`TRACECHAIN_DATA_DIR`. Preserve the unreadable file and restore a known-good journal from the
+same deployment and storage profile. If the file is zero bytes and no matching backup exists,
+move it aside before starting a new issuance for a still-pending application. First check for
+any in-flight registration or approval to avoid issuing a second credential. A new journal
+does not recover interrupted workflows.
+
+For `ISSUANCE_REGISTRY_UNAVAILABLE`, the issued credential was saved. Verify
+`CREDENTIAL_REGISTRY_ADDRESS` and the RPC, restart the API after configuration changes, and
+retry the same application with its original expiry date to resume the saved issuance.
+
 The company workspace now presents this information as **My Company Identity**. `GET /api/ssi/company-role/me` retrieves selected claims from the current wallet's server-managed encrypted Company Role VC and merges them with current registry state. `POST /api/ssi/company-role/me/verify` explicitly runs Veramo signature, trusted-issuer, wallet/DID, date, role, deterministic-hash, lifecycle, replacement, and current-authorization checks. Verification is user-triggered and remains separate from SIWE login. The API can decrypt credentials issued through this server-managed prototype; it does not expose raw credentials, encryption keys, or claim holder-exclusive storage.
 
 The identity card supports accessible wallet/DID/identifier copying, a collapsed technical section, lifecycle and cryptographic states, and a generated PDF summary carrying the required limitation statement. The PDF is a readable summary, not the original signed credential.

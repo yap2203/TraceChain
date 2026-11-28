@@ -103,6 +103,7 @@ import {
   type CredentialContentStore,
 } from './modules/ssi/encrypted-credential.store.js';
 import {
+  IssuanceJournalError,
   JsonCompanyRoleIssuanceRepository,
   type CompanyRoleIssuanceRepository,
 } from './modules/ssi/issuance.repository.js';
@@ -731,6 +732,11 @@ export function createApp({
         response.status(400).json({
           error: { code: 'INVALID_JSON', message: 'The request body must contain valid JSON.' },
         });
+        return;
+      }
+
+      if (error instanceof IssuanceJournalError) {
+        response.status(503).json({ error: { code: error.code, message: error.message } });
         return;
       }
 

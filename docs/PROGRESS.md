@@ -1,5 +1,18 @@
 # Project Progress
 
+## 2026-11-28 - Company issuance journal recovery and Sepolia Orders diagnosis
+
+- Preserved the active zero-byte issuance journal under a backup name. Unreadable journals now
+  return a specific 503 without issuing a credential or overwriting the journal. Writes flush
+  before the atomic rename, and a rejected write no longer blocks later valid writes.
+- Matched the configured Sepolia addresses to the `tracechain-v2` deployment journal and verified
+  the order registry links and StakeholderRegistry's credential reference through read-only calls.
+  Correct the misassigned public addresses together and restart the API. This requires no contract
+  deployment or on-chain migration.
+- A failed Credential Registry read after issuance now returns a retryable 503. Retrying with the
+  original expiry resumes the saved credential. Confirmed the saved application was pending and
+  its credential unregistered with the corrected Sepolia configuration.
+
 ## 2026-11-27 - Custody offer: accept with pickup time, evidence gate, handoff in Shipments
 
 - **Accept includes the pickup time.** The `accept` action now requires `pickupAt` and moves
