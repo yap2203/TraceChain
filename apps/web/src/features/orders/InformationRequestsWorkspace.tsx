@@ -1,3 +1,7 @@
+import {
+  companyEvidenceNeedsAction,
+  ingredientEvidenceActionGroup,
+} from '../workspaces/action-counts';
 import { BackNavigation } from '../../components/ui/BackNavigation';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
@@ -50,6 +54,8 @@ import {
 import { CompanyAvatar } from './CatalogueMedia';
 import {
   EvidenceDecision,
+  EvidenceVerificationSummary,
+  evidenceVerificationFailure,
   EvidenceDetailLayout,
   EvidenceNextStep,
   SharedClaims,
@@ -116,7 +122,8 @@ export function InformationRequestsWorkspace({
   useEffect(() => {
     void load();
   }, [load]);
-  const [ingredientCount, setIngredientCount] = useState(0);
+  const [ingredientRows, setIngredientRows] =
+    useState<Array<{ status: number; dueAt: number; supplier: string; requester: string }>>();
   // Clicking the category tab remounts the ingredient list, closing any open review.
   const [ingredientMount, setIngredientMount] = useState(0);
   const hasIngredientTab = Boolean(children);
@@ -124,8 +131,8 @@ export function InformationRequestsWorkspace({
     // Only the category tab badge needs this; the ingredient list loads its own rows.
     if (!hasIngredientTab) return;
     void listEvidenceRequests()
-      .then((result) => setIngredientCount(result.requests.length))
-      .catch(() => undefined);
+      .then((result) => setIngredientRows(result.requests))
+      .catch(() => setIngredientRows(undefined));
   }, [hasIngredientTab]);
   const selected = rows.find((row) => same(row.referenceId, reference) && row.context === context);
   const shipment = data?.logistics?.shipments.find(
@@ -301,13 +308,21 @@ export function InformationRequestsWorkspace({
               value: 'company',
               label: 'Company evidence',
               icon: <BadgeCheck size={16} />,
-              count: directionRows.length,
+              actionCount: error ? null : actionCount,
             },
             {
               value: 'ingredient',
               label: 'Ingredient evidence',
               icon: <Layers size={16} />,
-              count: ingredientCount,
+              actionCount:
+                !ingredientRows || !data
+                  ? null
+                  : ingredientRows.filter((row) =>
+                      same(row.supplier, data.actor)
+                        ? ingredientEvidenceActionGroup(row, 'received') === 'action'
+                        : same(row.requester, data.actor) &&
+                          ingredientEvidenceActionGroup(row, 'sent') === 'action',
+                    ).length,
             },
           ]}
         />
@@ -532,10 +547,7 @@ function isClosed(status: string) {
 
 function requestGroup(row: CompanyProofRequestRow, direction: 'received' | 'sent') {
   if (isClosed(row.status) || row.expiresAt * 1000 <= Date.now()) return 'closed' as const;
-  if (direction === 'received' && ['REQUESTED', 'PENDING'].includes(row.status))
-    return 'action' as const;
-  if (direction === 'sent' && ['PRESENTED', 'SHARED'].includes(row.status))
-    return 'action' as const;
+  if (row.direction === direction && companyEvidenceNeedsAction(row)) return 'action' as const;
   return 'open' as const;
 }
 
@@ -550,7 +562,7 @@ function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: 
   const [status, setStatus] = useState<CompanyIdentityProofStatus>(),
     [error, setError] = useState(''),
     [busy, setBusy] = useState('');
-  // Same decision as ingredient evidence: verify and accept in one step, or reject with a reason.
+  // Preview and verification are read-only; acceptance and rejection are explicit decisions.
   const decide = (key: 'accept' | 'reject', reason = '') => {
     setBusy(key);
     setError('');
@@ -584,22 +596,39 @@ function SharedCompanyProof({ row, role }: { row: CompanyProofRequestRow; role: 
   return (
     <div className="evidence-panel">
       {error && <Alert type="error" message={error} />}
+      {status?.credential && (
+        <SharedClaims
+          values={status.credential as Record<string, unknown>}
+          missing={status.missingClaims}
+          undisclosed={status.undisclosedClaims}
+        />
+      )}
+      {status?.verification && <EvidenceVerificationSummary verification={status.verification} />}
       <EvidenceNextStep tone={outcome.tone} title={outcome.title} message={outcome.message}>
         {current === 'PRESENTED' && (
           <EvidenceDecision
             busy={busy}
+            verification={status?.verification}
+            onVerify={() => {
+              setBusy('verify');
+              void getCompanyIdentityProofStatus(row.requestId)
+                .then(setStatus)
+                .catch((cause) => {
+                  setError(cause.message);
+                  setStatus((current) =>
+                    current
+                      ? { ...current, verification: evidenceVerificationFailure(cause) }
+                      : current,
+                  );
+                })
+                .finally(() => setBusy(''));
+            }}
             recipient={row.company}
             onAccept={() => decide('accept')}
             onReject={(reason) => decide('reject', reason)}
           />
         )}
       </EvidenceNextStep>
-      {status?.credential && (
-        <SharedClaims
-          values={status.credential as Record<string, unknown>}
-          missing={status.missingClaims}
-        />
-      )}
     </div>
   );
 }
@@ -777,10 +806,33 @@ function IngredientCompanyProof({ role, requestId }: { role: WorkspaceRole; requ
   return (
     <div className="evidence-panel">
       {error && <Alert type="error" message={error} />}
+      {status.credential && (
+        <SharedClaims
+          values={status.credential}
+          missing={status.missingClaims}
+          undisclosed={status.undisclosedClaims}
+        />
+      )}
+      {status.verification && <EvidenceVerificationSummary verification={status.verification} />}
       <EvidenceNextStep tone={outcome.tone} title={outcome.title} message={outcome.message}>
         {status.status === 'PRESENTED' && (
           <EvidenceDecision
             busy={busy}
+            verification={status.verification}
+            onVerify={() => {
+              setBusy('verify');
+              void getCompanyIdentityProofStatus(requestId)
+                .then(setStatus)
+                .catch((cause) => {
+                  setError(cause.message);
+                  setStatus((current) =>
+                    current
+                      ? { ...current, verification: evidenceVerificationFailure(cause) }
+                      : current,
+                  );
+                })
+                .finally(() => setBusy(''));
+            }}
             recipient="the requesting company"
             onAccept={() => void run('accept')}
             onReject={(reason) => void run('reject', reason)}
@@ -822,7 +874,7 @@ function companyOutcome(status: string, company: string, verifiedAt?: string) {
   if (status === 'VERIFIED')
     return {
       tone: 'done' as const,
-      title: 'Evidence verified and accepted',
+      title: 'Evidence accepted',
       message: verifiedAt
         ? `Accepted on ${new Date(verifiedAt).toLocaleString()}. No further action is required.`
         : 'No further action is required.',
@@ -831,7 +883,8 @@ function companyOutcome(status: string, company: string, verifiedAt?: string) {
     return {
       tone: 'default' as const,
       title: 'Evidence shared',
-      message: 'Verify and accept the evidence, or reject it with a reason.',
+      message:
+        'Review the shared fields and verification results, then accept or reject the evidence.',
     };
   if (status === 'REJECTED')
     return {

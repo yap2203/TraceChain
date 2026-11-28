@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronRight, ChevronUp, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { ActionCountBadge } from './ActionCountBadge';
+import { ChevronRight, LayoutGrid, List as ListIcon } from 'lucide-react';
 import type { KeyboardEvent, ReactNode } from 'react';
 
 export type InventoryView = 'list' | 'grid';
@@ -49,6 +50,7 @@ export function InventorySummaryCard({
 
 export interface StatusTab<T extends string> {
   count?: number;
+  actionCount?: number | null;
   icon?: ReactNode;
   label: string;
   value: T;
@@ -102,11 +104,19 @@ export function StatusTabs<T extends string>({
             {...(navigation
               ? { role: 'tab', 'aria-selected': selected, tabIndex: selected ? 0 : -1 }
               : { 'aria-pressed': selected })}
+            aria-label={
+              tab.actionCount === null
+                ? `${tab.label}, action count unavailable`
+                : tab.actionCount
+                  ? `${tab.label}, ${tab.actionCount > 99 ? 'more than 99' : tab.actionCount} ${tab.actionCount === 1 ? 'action' : 'actions'} required`
+                  : undefined
+            }
             onClick={() => onChange(tab.value)}
           >
             {tab.icon && <span aria-hidden="true">{tab.icon}</span>}
             <span>{tab.label}</span>
             {tab.count !== undefined && <strong>{tab.count}</strong>}
+            <ActionCountBadge count={tab.actionCount} label={tab.label} />
           </button>
         );
       })}
@@ -145,33 +155,6 @@ export function InventoryViewToggle({
         <span>Grid</span>
       </button>
     </div>
-  );
-}
-
-export function InventoryExpandButton({
-  expanded,
-  controls,
-  onClick,
-}: {
-  expanded: boolean;
-  controls: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      className="ingredient-card__toggle"
-      aria-expanded={expanded}
-      aria-controls={controls}
-      onClick={onClick}
-    >
-      <span>{expanded ? 'Show less' : 'Show more'}</span>
-      {expanded ? (
-        <ChevronUp size={16} aria-hidden="true" />
-      ) : (
-        <ChevronDown size={16} aria-hidden="true" />
-      )}
-    </button>
   );
 }
 

@@ -630,3 +630,16 @@ Prepared transactions contain chain ID, target, value and encoded call data. The
 `walletAction` metadata and preview-message helpers were removed when the trial ended.
 The browser requests normal MetaMask transaction confirmation without an extra preview signature.
 Company-registration ownership signatures, SIWE, authorization and transaction simulation remain.
+
+### Evidence preview and decision separation
+
+Company identity status reads (GET /api/production-flow/evidence-requests/:requestId/company-identity
+and Orders delivery-identity action status) expose only the received presentation's disclosed fields to
+its authorized reviewer, plus missing/undisclosed field names and technical verification state.
+PASSED, FAILED and UNAVAILABLE are independent of the existing business status. These reads do not
+accept/reject, prepare transactions or change proof history. No source-credential claims are backfilled.
+The legacy company-identity /verify operation remains the explicit acceptance operation and rechecks
+all existing cryptographic, expiry, revocation, participant and request bindings before recording it.
+Ingredient /review allows preview before acceptance; /verify records technical checks only;
+/accept/prepare requires verification and rechecks it before preparing the separate wallet transaction.
+Permitted attachment retrieval retains its own authorization and fresh cryptographic/integrity checks.

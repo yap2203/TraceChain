@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react';
 import {
   createProductQrModel,
   createQrModel,
+  renderQrCanvas,
   productQrPngFilename,
   type ProductQrConfiguration,
   type ProductQrModel,
@@ -120,22 +121,7 @@ function QrSvg({ model, delivery }: { model: ProductQrModel; delivery?: boolean 
 }
 
 function downloadPng(model: ProductQrModel, batchReference: string, delivery = false) {
-  const quiet = 4;
-  const scale = 10;
-  const canvas = document.createElement('canvas');
-  canvas.width = (model.modules.length + quiet * 2) * scale;
-  canvas.height = canvas.width;
-  const context = canvas.getContext('2d');
-  if (!context) return;
-  context.fillStyle = '#fff';
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = '#07111f';
-  model.modules.forEach((row, rowIndex) =>
-    row.forEach((dark, columnIndex) => {
-      if (dark)
-        context.fillRect((columnIndex + quiet) * scale, (rowIndex + quiet) * scale, scale, scale);
-    }),
-  );
+  const canvas = renderQrCanvas(model, document.createElement('canvas'));
   const link = document.createElement('a');
   link.download = delivery
     ? productQrPngFilename(batchReference).replace(

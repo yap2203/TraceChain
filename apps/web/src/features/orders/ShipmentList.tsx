@@ -1,13 +1,6 @@
+import { shipmentNeedsAction } from './delivery-state';
 import { useMemo, useState } from 'react';
-import {
-  CalendarClock,
-  CheckCircle2,
-  Filter,
-  Hourglass,
-  Package,
-  Search,
-  Truck,
-} from 'lucide-react';
+import { CheckCircle2, Filter, Package, Search, Truck } from 'lucide-react';
 import { PaginationBar, usePagination } from '../../components/ui/PaginatedTable';
 
 import { shipmentStatusAccent, shipmentStatusVariant } from '../workspaces/shared/shipment-status';
@@ -16,7 +9,6 @@ import {
   Btn,
   EmptyState,
   Input,
-  InventorySummaryCard,
   SelectField,
   StatusTabs,
   openCardOnClick,
@@ -30,12 +22,14 @@ type ShipmentSort = 'newest' | 'arrival' | 'item';
 
 export function ShipmentList({
   shipments,
+  actor,
   catalogue,
   locationName,
   statusLabel,
   onOpen,
 }: {
   shipments: OrderRecord[];
+  actor?: string;
   catalogue: OrderRecord[];
   locationName: (id?: string) => string;
   statusLabel: (shipment: OrderRecord) => string;
@@ -47,8 +41,10 @@ export function ShipmentList({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const counts = useMemo(
     () => ({
-      attention: shipments.filter(
-        (entry) => shipmentGroup(entry, statusLabel(entry)) === 'attention',
+      attention: shipments.filter((entry) =>
+        actor
+          ? shipmentNeedsAction(entry, actor)
+          : shipmentGroup(entry, statusLabel(entry)) === 'attention',
       ).length,
       pickup: shipments.filter((entry) => shipmentGroup(entry, statusLabel(entry)) === 'pickup')
         .length,
@@ -60,12 +56,18 @@ export function ShipmentList({
         (entry) => shipmentGroup(entry, statusLabel(entry)) === 'completed',
       ).length,
     }),
-    [shipments, statusLabel],
+    [shipments, statusLabel, actor],
   );
   const visible = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
     return shipments
-      .filter((entry) => filter === 'all' || shipmentGroup(entry, statusLabel(entry)) === filter)
+      .filter(
+        (entry) =>
+          filter === 'all' ||
+          (filter === 'attention' && actor
+            ? shipmentNeedsAction(entry, actor)
+            : shipmentGroup(entry, statusLabel(entry)) === filter),
+      )
       .filter((entry) => {
         const item = catalogueItem(catalogue, entry.batchId);
         return (
@@ -86,7 +88,7 @@ export function ShipmentList({
         );
       })
       .sort((left, right) => compareShipments(left, right, sort, catalogue));
-  }, [catalogue, filter, locationName, search, shipments, sort, statusLabel]);
+  }, [catalogue, filter, locationName, search, shipments, sort, statusLabel, actor]);
   const pagination = usePagination(visible.map((entry) => entry.shipmentId));
   const page = visible.slice(pagination.start, pagination.end);
 
@@ -101,44 +103,6 @@ export function ShipmentList({
 
   return (
     <section className="shipment-list" aria-label="Shipment records">
-      <div className="shipment-summary-grid" aria-label="Shipment status summary">
-        <InventorySummaryCard
-          label="Needs action"
-          value={counts.attention}
-          icon={<Package size={20} />}
-          selected={filter === 'attention'}
-          onClick={() => setFilter(filter === 'attention' ? 'all' : 'attention')}
-        />
-        <InventorySummaryCard
-          label="Waiting for pickup"
-          value={counts.pickup}
-          icon={<Hourglass size={20} />}
-          selected={filter === 'pickup'}
-          onClick={() => setFilter(filter === 'pickup' ? 'all' : 'pickup')}
-        />
-        <InventorySummaryCard
-          label="In transit"
-          value={counts.transit}
-          icon={<Truck size={20} />}
-          selected={filter === 'transit'}
-          onClick={() => setFilter(filter === 'transit' ? 'all' : 'transit')}
-        />
-        <InventorySummaryCard
-          label="Awaiting receipt"
-          value={counts.receipt}
-          icon={<CalendarClock size={20} />}
-          selected={filter === 'receipt'}
-          onClick={() => setFilter(filter === 'receipt' ? 'all' : 'receipt')}
-        />
-        <InventorySummaryCard
-          label="Completed"
-          value={counts.completed}
-          icon={<CheckCircle2 size={20} />}
-          selected={filter === 'completed'}
-          onClick={() => setFilter(filter === 'completed' ? 'all' : 'completed')}
-        />
-      </div>
-
       <StatusTabs
         label="Filter shipments by status"
         value={filter}
@@ -311,7 +275,7 @@ export function ShipmentList({
                         {nextShipmentAction(group, recipient, sender)}
                       </p>
                       <Btn variant="outline" onClick={open}>
-                        {group === 'pickup' ? 'View pickup' : 'Review shipment'}
+                        View details
                       </Btn>
                     </div>
                   </div>
@@ -369,7 +333,8 @@ function shipmentGroup(entry: OrderRecord, label: string): Exclude<ShipmentFilte
   const value = label.toLocaleLowerCase();
   if (/waiting for pickup/.test(value)) return 'pickup';
   if (/received|completed|returned|cancelled/.test(value)) return 'completed';
-  if (/rejected|discrepancy|review|action/.test(value)) return 'attention';
+  if (/rejected|discrepancy|review|action|awaiting.*accept|awaiting.*dispatch/.test(value))
+    return 'attention';
   if (/awaiting.*receipt|arrived|partially/.test(value)) return 'receipt';
   if (Number(entry.status) === 1 || /transit|dispatched|sent/.test(value)) return 'transit';
   return 'attention';

@@ -57,6 +57,9 @@ export function DistributorOverview({ onNav }: { onNav: (tab: string) => void })
 
   return (
     <StakeholderOverviewLayout
+      refreshing={
+        operational.refreshing || offers.refreshing || identity.refreshing || catalogue.refreshing
+      }
       title="Distributor overview"
       description="Custody offers to handle, arrivals to receive and the stock in your warehouses."
       errors={[offers.error, identity.error, operational.error]}

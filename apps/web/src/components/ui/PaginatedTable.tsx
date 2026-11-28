@@ -102,7 +102,13 @@ export function PaginationBar({
 }
 
 /** Paginates the direct tbody rows while preserving each table's cells and handlers. */
-export function PaginatedTable({ children }: { children: ElementWithChildren }) {
+export function PaginatedTable({
+  children,
+  paginate = true,
+}: {
+  children: ElementWithChildren;
+  paginate?: boolean;
+}) {
   const sections = Children.toArray(children.props.children);
   const body = sections.find(
     (section): section is ElementWithChildren =>
@@ -115,7 +121,11 @@ export function PaginatedTable({ children }: { children: ElementWithChildren }) 
     undefined,
     sections.map((section) =>
       section === body
-        ? cloneElement(body, undefined, rows.slice(pagination.start, pagination.end))
+        ? cloneElement(
+            body,
+            undefined,
+            paginate ? rows.slice(pagination.start, pagination.end) : rows,
+          )
         : section,
     ),
   );
@@ -130,7 +140,7 @@ export function PaginatedTable({ children }: { children: ElementWithChildren }) 
       >
         {table}
       </div>
-      <PaginationBar pagination={pagination} />
+      {paginate && <PaginationBar pagination={pagination} />}
     </div>
   );
 }

@@ -90,6 +90,19 @@ describe('Manufacturer Distributor Retailer product delivery', () => {
       target: { value: 'factory' },
     });
     expect(m.prepare).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Product delivery mode'), { target: { value: '2' } });
+    expect(
+      (
+        screen.getByRole('button', {
+          name: 'Confirm product delivery from custody',
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(screen.getByText(/No selected Distributor warehouse has enough/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Product delivery mode'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Manufacturer pickup location'), {
+      target: { value: 'factory' },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Request Distributor delivery' }));
     await waitFor(() =>
       expect(m.prepare).toHaveBeenCalledWith(
@@ -102,15 +115,10 @@ describe('Manufacturer Distributor Retailer product delivery', () => {
         }),
       ),
     );
-    fireEvent.change(screen.getByLabelText('Product delivery mode'), { target: { value: '2' } });
-    expect(
-      (
-        screen.getByRole('button', {
-          name: 'Confirm product delivery from custody',
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
-    expect(screen.getByText(/No selected Distributor warehouse has enough/)).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByRole('status').textContent).toBe('Delivery arrangement confirmed'),
+    );
+    expect(screen.queryByLabelText('Product delivery mode')).toBeNull();
   });
   it('gives only the assigned carrier accept/decline actions and no Manufacturer controls', async () => {
     const r = { ...order, productDelivery: { stage: 2, mode: 1, distributor } };
@@ -173,4 +181,31 @@ describe('Manufacturer Distributor Retailer product delivery', () => {
       );
     },
   );
+});
+
+it('marks approval complete and arrangement current even when the delivery struct still has stage zero', async () => {
+  const { rerender } = render(
+    <ProductDeliveryPanel
+      data={base}
+      order={{ ...order, productDelivery: { stage: 0 } }}
+      onChanged={vi.fn()}
+    />,
+  );
+  const current = screen.getAllByText('Arrange delivery').find((node) => node.closest('li'))!;
+  expect(current.closest('li')?.getAttribute('aria-current')).toBe('step');
+  expect(
+    screen.getByText('Manufacturer approves').closest('li')?.classList.contains('is-complete'),
+  ).toBe(true);
+  expect(screen.getByRole('button', { name: 'Request Distributor delivery' })).toBeTruthy();
+  rerender(
+    <ProductDeliveryPanel
+      data={base}
+      order={{ ...order, productDelivery: { stage: 2, distributor, mode: 1 } }}
+      onChanged={vi.fn()}
+    />,
+  );
+  expect(screen.queryByRole('button', { name: 'Request Distributor delivery' })).toBeNull();
+  expect(screen.getByText('Distributor reviewing request')).toBeTruthy();
+  expect(m.prepare).not.toHaveBeenCalled();
+  expect(m.sign).not.toHaveBeenCalled();
 });

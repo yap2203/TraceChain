@@ -54,6 +54,13 @@ export function SupplierOverview({ onNav }: { onNav: (tab: string) => void }) {
 
   return (
     <StakeholderOverviewLayout
+      refreshing={
+        operational.refreshing ||
+        batches.refreshing ||
+        orders.refreshing ||
+        offers.refreshing ||
+        identity.refreshing
+      }
       title="Supplier overview"
       description="Orders to approve, evidence to answer and the ingredient stock you can sell."
       errors={[batches.error, orders.error, offers.error, identity.error, operational.error]}

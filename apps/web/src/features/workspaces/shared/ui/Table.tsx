@@ -1,9 +1,17 @@
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import { type ReactNode } from 'react';
 
-export function Table({ headers, children }: { headers: string[]; children: ReactNode }) {
+export function Table({
+  headers,
+  children,
+  paginate = true,
+}: {
+  headers: string[];
+  children: ReactNode;
+  paginate?: boolean;
+}) {
   return (
-    <PaginatedTable>
+    <PaginatedTable paginate={paginate}>
       <table className="w-full border-collapse">
         <thead>
           <tr className="bg-ws-surface2">

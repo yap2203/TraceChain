@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { requestStatus } from '@tracechain/shared';
 
-import { reportError } from '../../../components/ui/feedback';
 import {
   getCustodyOffers,
   getInformationRequests,
@@ -17,18 +16,35 @@ import type { OverviewTask } from './StakeholderOverviewLayout';
 
 /** Loads one overview source; a failure only affects its own section. */
 export function useOverviewSource<T>(load: () => Promise<T>, fallback: string) {
-  const [state, setState] = useState<{ data?: T; error: string; loading: boolean }>({
+  const [state, setState] = useState<{
+    data?: T;
+    error: string;
+    loading: boolean;
+    refreshing: boolean;
+  }>({
     error: '',
     loading: true,
+    refreshing: false,
   });
   const run = useCallback(() => {
     let active = true;
-    setState((current) => ({ ...current, loading: true, error: '' }));
+    setState((current) => ({
+      ...current,
+      loading: current.data === undefined,
+      refreshing: current.data !== undefined,
+      error: '',
+    }));
     load()
-      .then((data) => active && setState({ data, error: '', loading: false }))
+      .then((data) => active && setState({ data, error: '', loading: false, refreshing: false }))
       .catch(
         (cause: unknown) =>
-          active && setState({ error: reportError(cause, fallback), loading: false }),
+          active &&
+          setState((current) => ({
+            ...current,
+            error: cause instanceof Error ? cause.message : fallback,
+            loading: false,
+            refreshing: false,
+          })),
       );
     return () => {
       active = false;

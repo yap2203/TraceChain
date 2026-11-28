@@ -151,7 +151,7 @@ describe('shared custody inventory presentation', () => {
     );
   });
 
-  it('expands only the selected record and keeps expansion state after filtering', async () => {
+  it('offers one detail action per record and preserves filtering', async () => {
     const next = structuredClone(state);
     next.catalogue.push({
       batches: [id('3')],
@@ -181,9 +181,9 @@ describe('shared custody inventory presentation', () => {
 
     const first = await inventoryCard(id('a'));
     const second = await inventoryCard(id('c'));
-    fireEvent.click(within(first).getByRole('button', { name: 'Show more' }));
-    expect(within(first).getByRole('button', { name: 'Show less' })).toBeTruthy();
-    expect(within(second).getByRole('button', { name: 'Show more' })).toBeTruthy();
+    expect(within(first).queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(within(first).getAllByRole('button', { name: 'View details' })).toHaveLength(1);
+    expect(within(second).getAllByRole('button', { name: 'View details' })).toHaveLength(1);
 
     fireEvent.change(screen.getByLabelText('Search custody inventory'), {
       target: { value: 'Cocoa' },
@@ -191,7 +191,7 @@ describe('shared custody inventory presentation', () => {
     expect(screen.queryByText('Owned flour')).toBeNull();
     fireEvent.change(screen.getByLabelText('Search custody inventory'), { target: { value: '' } });
     expect(
-      within(await inventoryCard(id('a'))).getByRole('button', { name: 'Show less' }),
+      within(await inventoryCard(id('a'))).getByRole('button', { name: 'View details' }),
     ).toBeTruthy();
   });
 
@@ -290,6 +290,6 @@ describe('shared custody inventory presentation', () => {
 });
 
 async function inventoryCard(recordId: string) {
-  await screen.findAllByRole('button', { name: 'Show more' });
+  await screen.findAllByRole('button', { name: 'View details' });
   return document.querySelector(`[data-inventory-id="${recordId}"]`) as HTMLElement;
 }

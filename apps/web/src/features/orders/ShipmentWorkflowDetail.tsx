@@ -63,11 +63,11 @@ export function ShipmentWorkflowDetail({
   statusLabel?: string;
 }) {
   const status = Number(shipment.status);
-  const complete = status >= 3;
-  const partiallyReceived = status === 2;
+  const complete = shipment.kind === 'product' ? status === 2 : status === 3 || status === 5;
+  const partiallyReceived = shipment.kind === 'ingredient' && status === 2;
   const expectedPassed = Number(shipment.expectedAt) <= Date.now() / 1000;
   const arrived = complete || partiallyReceived || qrVerified;
-  const productName = shipment.itemName ?? catalogueItem?.name ?? 'Registered ingredient';
+  const productName = shipment.itemName ?? catalogueItem?.name ?? 'Registered shipment item';
   const shipmentReference = `SHP-${shipment.shipmentId.slice(2, 10).toUpperCase()}`;
   const progress =
     workflowVariant === 'ingredient-delivery'
@@ -247,7 +247,13 @@ export function ShipmentWorkflowDetail({
               <dd>{shipment.vehicle || 'Pending vehicle record'}</dd>
             </div>
             <div>
-              <dt>Supplier</dt>
+              <dt>
+                {workflowVariant === 'ingredient-delivery'
+                  ? 'Supplier'
+                  : shipment.kind === 'product'
+                    ? 'Sender'
+                    : 'Sender'}
+              </dt>
               <dd>{senderName}</dd>
             </div>
             <div>

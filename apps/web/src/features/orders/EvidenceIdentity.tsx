@@ -211,10 +211,18 @@ export function EvidenceParties({
 /* ---------- Verification ---------- */
 
 /** Verified only after a successful verification result; shared evidence is never shown as verified. */
-export function verificationBadge(state?: 'NOT_VERIFIED' | 'PASSED') {
+export function verificationBadge(state?: 'NOT_VERIFIED' | 'PASSED' | 'FAILED' | 'UNAVAILABLE') {
   return state === 'PASSED'
-    ? { label: 'Verified', variant: 'verified' as BadgeVariant }
-    : { label: 'Not verified yet', variant: 'pending' as BadgeVariant };
+    ? { label: 'Verification passed', variant: 'verified' as BadgeVariant }
+    : {
+        label:
+          state === 'FAILED'
+            ? 'Verification failed'
+            : state === 'UNAVAILABLE'
+              ? 'Verification unavailable'
+              : 'Not verified yet',
+        variant: state === 'FAILED' ? ('rejected' as BadgeVariant) : ('pending' as BadgeVariant),
+      };
 }
 
 /* ---------- Requested versus shared ---------- */

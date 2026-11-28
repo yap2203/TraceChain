@@ -1,7 +1,18 @@
 import { LoadingIndicator } from '../../../../components/ui/LoadingIndicator';
 import { ClipboardList } from 'lucide-react';
 import { useState } from 'react';
-import { Alert, Badge, Btn, Card, EmptyState, SectionTitle, Table, TD, TR } from '../../shared/ui';
+import {
+  Alert,
+  Badge,
+  Btn,
+  Card,
+  EmptyState,
+  SectionTitle,
+  StatusTabs,
+  Table,
+  TD,
+  TR,
+} from '../../shared/ui';
 import { AppDetail } from './ApplicationDetail';
 import type { ApplicationStatus, ChainApplication } from './types';
 import { useChainApplications } from './useChainApplications';
@@ -41,36 +52,40 @@ export function Applications() {
         sub="Review company details and record an approval or rejection."
         action={
           <Btn variant="outline" disabled={loading} onClick={() => void reload()}>
-            Refresh applications
+            {loading && applications.length
+              ? 'Refreshing…'
+              : error
+                ? 'Retry'
+                : 'Refresh applications'}
           </Btn>
         }
       />
-      <nav className="workspace-secondary-tabs" aria-label="Application status">
-        {filters.map((value) => (
-          <Btn
-            key={value}
-            size="sm"
-            aria-pressed={filter === value}
-            variant={filter === value ? 'primary' : 'outline'}
-            onClick={() => setFilter(value)}
-          >
-            {value === 'all'
+      <StatusTabs
+        label="Application status"
+        value={filter}
+        onChange={setFilter}
+        tabs={filters.map((value) => ({
+          value,
+          label:
+            value === 'all'
               ? 'All'
               : value === 'additional evidence required'
                 ? 'Needs evidence'
-                : value.charAt(0).toUpperCase() + value.slice(1)}{' '}
-            (
-            {value === 'all'
-              ? applications.length
-              : applications.filter((application) => application.status === value).length}
-            )
-          </Btn>
-        ))}
-      </nav>
-      {error && <Alert type="error" message={`Applications unavailable: ${error}`} />}
-      {loading ? (
-        <LoadingIndicator page label="Loading applications…" />
-      ) : (
+                : value.charAt(0).toUpperCase() + value.slice(1),
+          count:
+            loading || error
+              ? undefined
+              : value === 'all'
+                ? applications.length
+                : applications.filter((application) => application.status === value).length,
+        }))}
+      />
+      {error && (
+        <Alert type="error" announce={false} message={`Applications unavailable: ${error}`} />
+      )}
+      {loading && !applications.length ? (
+        <LoadingIndicator page layout="table" label="Loading applications…" />
+      ) : error ? null : (
         <Card padding="0">
           {filtered.length === 0 ? (
             <EmptyState

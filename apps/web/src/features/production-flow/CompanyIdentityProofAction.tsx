@@ -106,7 +106,7 @@ export function CompanyIdentityProofAction({
               : status.status === 'PRESENTED'
                 ? 'Shared. Waiting for the requesting company to verify.'
                 : status.status === 'VERIFIED'
-                  ? 'Verified. Nothing else to do.'
+                  ? 'Accepted. Nothing else to do.'
                   : 'This request has closed. No action is possible.'
           }
           action={

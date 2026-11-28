@@ -14,6 +14,7 @@ import { FileCheck2, Plus, RefreshCw } from 'lucide-react';
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import {
   EvidenceDecision,
+  evidenceVerificationFailure,
   EvidenceHowItWorks,
   ingredientEvidenceStatus,
   DeadlineCell,
@@ -167,10 +168,28 @@ export function RetailerEvidenceRequests({
       setBusy('');
     }
   };
-  // Same as company identity: verifying and accepting is one step; acceptance is recorded only
-  // when every check passes.
+  const verify = async () => {
+    if (!review || busy) return;
+    setBusy('verify');
+    setError('');
+    try {
+      const result = await verifyEvidence(review.requestId);
+      setReview({
+        ...review,
+        verification: {
+          state: 'PASSED',
+          verifiedAt: result.verifiedAt,
+          checks: result.checks.map((check) => check.code),
+        },
+      });
+    } catch (cause) {
+      setReview({ ...review, verification: evidenceVerificationFailure(cause) });
+    } finally {
+      setBusy('');
+    }
+  };
   const decide = async (accepted: boolean, rejectReason = '') => {
-    if (!review) return;
+    if (!review || busy || (accepted && review.verification.state !== 'PASSED')) return;
     if (!accepted) {
       const invalid = textError(rejectReason, 'Rejection reason', 500);
       if (invalid) {
@@ -181,11 +200,6 @@ export function RetailerEvidenceRequests({
     setBusy(accepted ? 'accept' : 'reject');
     try {
       if (accepted) {
-        await verifyEvidence(review.requestId);
-        const checked = await reviewEvidence(review.requestId);
-        setReview(checked);
-        if (checked.verification.state !== 'PASSED')
-          throw new Error('Verification did not pass, so the evidence was not accepted.');
         await completePreparedWorkflow(() => prepareEvidenceAcceptance(review.requestId));
       } else
         await completePreparedWorkflow(() =>
@@ -267,7 +281,8 @@ export function RetailerEvidenceRequests({
           : {
               tone: 'action' as const,
               title: 'Evidence shared',
-              message: 'Verify and accept the evidence, or reject it with a reason.',
+              message:
+                'Review the shared information and verification results before accepting or rejecting.',
             };
     return (
       <div className="information-requests-page is-detail">
@@ -290,6 +305,8 @@ export function RetailerEvidenceRequests({
               <EvidenceDecision
                 busy={busy}
                 recipient="the Supplier"
+                verification={review.verification}
+                onVerify={() => void verify()}
                 onAccept={() => void decide(true)}
                 onReject={(reason) => void decide(false, reason)}
               />

@@ -115,6 +115,7 @@ export function OrdersPage({
     quantity: '',
     unit: 'g',
   });
+  const [confirmedDecision, setConfirmedDecision] = useState<{ orderId: string; status: number }>();
   const [identityMaterial, setIdentityMaterial] = useState<any>();
   const [optionalIdentityClaims, setOptionalIdentityClaims] = useState<string[]>([]);
   const [identitySelectedClaims, setIdentitySelectedClaims] = useState<string[]>([]);
@@ -238,7 +239,17 @@ export function OrdersPage({
         setNotice('Request submitted. The recipient can review it and ask for company evidence.');
       }
     });
-  const order = data?.orders.find((entry) => entry.orderId === selected);
+  const recordedOrder = data?.orders.find((entry) => entry.orderId === selected);
+  const order =
+    recordedOrder &&
+    confirmedDecision &&
+    confirmedDecision.orderId === recordedOrder.orderId &&
+    Number(recordedOrder.decision?.status) === 0
+      ? {
+          ...recordedOrder,
+          decision: { ...recordedOrder.decision, status: confirmedDecision.status },
+        }
+      : recordedOrder;
   const item = data?.catalogue.find((entry) => entry.itemId === (order?.itemId ?? selected));
   const seller = !!order && !!data && same(order.seller, data.actor);
   const buyer = !!order && !!data && same(order.buyer, data.actor);
@@ -306,11 +317,11 @@ export function OrdersPage({
                     ? 'Ingredient deliveries'
                     : fixedDirection === 'received'
                       ? role === 'supplier'
-                        ? 'Incoming ingredient orders'
-                        : 'Selling products'
+                        ? 'Ingredient requests from Manufacturers'
+                        : 'Product requests from Retailers'
                       : role === 'retailer'
-                        ? 'My orders'
-                        : 'Buying ingredients'
+                        ? 'Product requests to Manufacturers'
+                        : 'Ingredient requests to Suppliers'
                   : mode === 'browse'
                     ? role === 'retailer'
                       ? 'Browse products'
@@ -325,10 +336,14 @@ export function OrdersPage({
               {mode === 'manage'
                 ? role === 'distributor'
                   ? 'Review delivery offers, optionally verify the Supplier company proof, then scan the package label to confirm physical pickup.'
-                  : 'Review requests, arrange delivery and track receipt.'
+                  : role === 'manufacturer' && fixedDirection !== 'received'
+                    ? 'From Suppliers, delivered by Distributors.'
+                    : role === 'retailer'
+                      ? 'Request products from Manufacturers and track delivery.'
+                      : 'Review requests, arrange delivery and track receipt.'
                 : mode === 'browse'
                   ? role === 'manufacturer'
-                    ? 'Ingredients held in Distributor custody and not expired. Each card shows which custody holds the stock.'
+                    ? 'Browse supplier ingredients, check stock, or request evidence.'
                     : 'Open an item to see its registered details or send a request.'
                   : role === 'supplier'
                     ? evidenceOnly
@@ -483,6 +498,7 @@ export function OrdersPage({
           {!order && !evidenceOnly && (
             <RequestsOverview
               actor={data.actor}
+              direction={direction}
               catalogue={data.catalogue}
               orders={mode === 'manage' || role === 'supplier' ? managedOrders : data.orders}
               role={role}
@@ -558,8 +574,8 @@ export function OrdersPage({
                     />
                     <div>
                       <Badge
-                        label={requestStatus(order).label}
-                        variant={requestStatus(order).variant}
+                        label={requestStatus(order, data.actor).label}
+                        variant={requestStatus(order, data.actor).variant}
                       />
                       <h3>{item?.name ?? 'Requested item'}</h3>
                       <p>Batch reference: {item?.batchReference || 'Not disclosed'}</p>
@@ -898,37 +914,41 @@ export function OrdersPage({
                       >
                         Request company evidence
                       </Btn>
-                      <Btn
-                        variant="danger"
-                        disabled={
-                          busy ||
-                          !activeOrder ||
-                          !order.isRequestOnly ||
-                          Number(order.decision?.status) !== 0
-                        }
-                        onClick={() => {
-                          setPendingDecision(2);
-                          setDecisionReason('');
-                        }}
-                      >
-                        Reject
-                      </Btn>
-                      <Btn
-                        disabled={
-                          busy ||
-                          !activeOrder ||
-                          !order.isRequestOnly ||
-                          Number(order.decision?.status) !== 0
-                        }
-                        onClick={() => {
-                          setPendingDecision(1);
-                          setDecisionReason('Request approved');
-                        }}
-                      >
-                        Approve
-                      </Btn>
+                      {Number(order.decision?.status) === 0 && (
+                        <>
+                          <Btn
+                            variant="danger"
+                            disabled={
+                              busy ||
+                              !activeOrder ||
+                              !order.isRequestOnly ||
+                              Number(order.decision?.status) !== 0
+                            }
+                            onClick={() => {
+                              setPendingDecision(2);
+                              setDecisionReason('');
+                            }}
+                          >
+                            Reject
+                          </Btn>
+                          <Btn
+                            disabled={
+                              busy ||
+                              !activeOrder ||
+                              !order.isRequestOnly ||
+                              Number(order.decision?.status) !== 0
+                            }
+                            onClick={() => {
+                              setPendingDecision(1);
+                              setDecisionReason('Request approved');
+                            }}
+                          >
+                            Approve
+                          </Btn>
+                        </>
+                      )}
                     </div>
-                    {pendingDecision && (
+                    {pendingDecision && Number(order.decision?.status) === 0 && (
                       <Card>
                         <h4>
                           {pendingDecision === 1 ? 'Approve this request?' : 'Reject this request?'}
@@ -936,7 +956,7 @@ export function OrdersPage({
                         <p>
                           {pendingDecision === 1 &&
                           (order.custodyOrder || order.details?.custodySource)
-                            ? 'Approval releases this warehouse request to the Distributor. Review two MetaMask confirmations: approval, then delivery arrangement. Physical dispatch is separate.'
+                            ? 'Approval records this order decision. Arrange delivery in a separate confirmation; physical dispatch is a later action.'
                             : 'This records your decision. No payment or physical dispatch takes place.'}
                         </p>
                         <Input
@@ -966,32 +986,19 @@ export function OrdersPage({
                                   decision: pendingDecision,
                                   reason: decisionReason.trim(),
                                 });
-                                await sign(prepared.transaction);
-                                if (
-                                  pendingDecision === 1 &&
-                                  order.custodyOrder &&
-                                  !order.custodyOrder.arranged
-                                ) {
-                                  const arranged = await prepareLogistics({
-                                    action: 'arrange-delivery',
-                                    operationId: crypto.randomUUID(),
-                                    orderId: order.orderId,
-                                  });
-                                  await sign(arranged.transaction);
-                                } else if (pendingDecision === 1 && order.details?.custodySource) {
-                                  const source = order.details.custodySource;
-                                  const arranged = await prepareLogistics({
-                                    action: 'product-order-select',
-                                    operationId: crypto.randomUUID(),
-                                    orderId: order.orderId,
-                                    mode: 2,
-                                    distributor: source.distributor,
-                                    fromLocation: source.location,
-                                    toLocation: order.details.receivingLocation,
-                                  });
-                                  await sign(arranged.transaction);
-                                }
+                                await submitProductionTransaction(prepared.transaction, data.actor);
+                                setConfirmedDecision({
+                                  orderId: order.orderId,
+                                  status: pendingDecision,
+                                });
                                 setPendingDecision(undefined);
+                                try {
+                                  await load();
+                                } catch {
+                                  throw new Error(
+                                    'Order decision confirmed. Refresh records; do not repeat approval. Arrange delivery separately after the record refreshes.',
+                                  );
+                                }
                                 setNotice(
                                   'Decision recorded successfully. Physical dispatch is a separate step.',
                                 );
@@ -1266,16 +1273,13 @@ export function OrdersPage({
             'Your company'
           }
           requesterRole={
-            data.companies?.find((company) => same(company.wallet, order.seller))?.role ??
-            data.role
+            data.companies?.find((company) => same(company.wallet, order.seller))?.role ?? data.role
           }
           recipient={
             data.companies?.find((company) => same(company.wallet, order.buyer))?.companyName ??
             'Requesting company'
           }
-          recipientRole={
-            data.companies?.find((company) => same(company.wallet, order.buyer))?.role
-          }
+          recipientRole={data.companies?.find((company) => same(company.wallet, order.buyer))?.role}
           reference={order.orderId}
           catalogue={COMPANY_EVIDENCE_CLAIMS}
           required={requiredClaims}
@@ -1299,10 +1303,7 @@ export function OrdersPage({
           }}
           onSubmit={() =>
             void run(async () => {
-              const claims = normalizeCompanyRequestFields(
-                requiredClaims,
-                optionalIdentityClaims,
-              );
+              const claims = normalizeCompanyRequestFields(requiredClaims, optionalIdentityClaims);
               const result = await orderIdentity(order.orderId, {
                 action: 'request',
                 purpose: form.purpose,

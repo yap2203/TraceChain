@@ -142,7 +142,11 @@ export function ReceiveShipmentPage() {
           </Btn>
         )}
         {allowed && validation.link && !record && !error && (
-          <LoadingIndicator page label="Checking the shipment and your company authorization…" />
+          <LoadingIndicator
+            page
+            layout="detail"
+            label="Checking the shipment and your company authorization…"
+          />
         )}
         {allowed &&
           validation.link &&

@@ -1,3 +1,5 @@
+import { observeNavigationData } from '../workspaces/action-counts';
+import { authRequestScope } from '../auth/auth-request-scope';
 import { apiErrorMessage } from '../../components/ui/feedback';
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000').replace(
   /\/$/,
@@ -19,16 +21,23 @@ interface ApiErrorBody {
 }
 
 async function blockchainRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const countScope = authRequestScope();
   const response = await fetch(`${API_BASE_URL}/api/blockchain${path}`, {
     ...init,
     credentials: 'include',
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+  }).catch((cause) => {
+    observeNavigationData(path, undefined, countScope, true);
+    throw cause;
   });
   if (!response.ok) {
+    observeNavigationData(path, undefined, countScope, true);
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
     throw new Error(apiErrorMessage(body.error?.message, 'The blockchain request failed.'));
   }
-  return response.json() as Promise<T>;
+  const result = await response.json();
+  if (!init?.method || init.method === 'GET') observeNavigationData(path, result, countScope);
+  return result as T;
 }
 
 export function getApplications<T>() {

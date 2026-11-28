@@ -1,3 +1,4 @@
+import { isRpcUnavailableError } from '../blockchain/rpc-provider.js';
 import { decodeCertificationFile } from '../ingredient-batches/certification-documents.js';
 import { missingLegacyIngredientClaims } from './legacy-ingredient-claims.js';
 import { createHash, randomBytes } from 'node:crypto';
@@ -1544,42 +1545,97 @@ export class ProductionFlowService {
     )
       throw new ProductionFlowApiError('IDENTITY_PROOF_ACCESS_DENIED', 'Access denied.', 403);
     const summary = this.identityProofSummary(workflow);
+    const proof = workflow.identityProof;
     if (
-      sameAddress(session.address, workflow.supplier) &&
-      workflow.identityProof?.status === 'VERIFIED' &&
-      (!workflow.deliveryOrderId || workflow.identityProof.expiresAt > this.nowSeconds()) &&
-      (workflow.identityProof.presentationPayload || workflow.identityProof.presentationCid)
-    ) {
-      // Already verified: re-check as of the recorded verification time (historical verification).
-      const verifiedAt = Date.parse(workflow.identityProof.verifiedAt ?? '');
+      !sameAddress(session.address, workflow.supplier) ||
+      !proof ||
+      (!proof.presentationPayload && !proof.presentationCid)
+    )
+      return summary;
+    const presentation = proof.presentationPayload
+      ? await this.dependencies.contentStore.decrypt(proof.presentationPayload)
+      : await this.retrieveEncrypted(proof.presentationCid!, 'COMPANY_IDENTITY_PRESENTATION');
+    if (workflow.sharedIdentity) {
+      const reference = await this.sharedCompanyReferences()!.get(requestId);
+      if (
+        reference?.responseCid &&
+        sha256(presentation).toLowerCase() !== reference.responseHash.toLowerCase()
+      )
+        throw this.recordMismatch(
+          'The company presentation differs from its registered integrity hash.',
+        );
+    }
+    // Decode only the received presentation, never fill withheld claims from the issuer's VC.
+    // This preview is untrusted until the separate checks below pass.
+    let credential: Record<string, unknown> = {};
+    try {
+      if (proof.selectiveDisclosure) {
+        const disclosed = await readIngredientSdJwtClaims(presentation);
+        const allowed = [
+          ...COMPANY_ALWAYS_CLAIMS,
+          ...companyDisclosureGroup(proof.requiredClaims ?? []),
+          ...companyDisclosureGroup(proof.optionalClaims ?? []),
+        ];
+        credential = Object.fromEntries(
+          Object.entries(disclosed).filter(([name]) => allowed.includes(name)),
+        );
+      } else {
+        const payload = JSON.parse(
+          Buffer.from(presentation.split('.')[1] ?? '', 'base64url').toString('utf8'),
+        );
+        const parsed = companyRoleCredentialSchema.safeParse(payload.credential);
+        if (!parsed.success) throw new Error('Unsupported company evidence.');
+        credential = this.identityCredentialSummary(
+          parsed.data,
+          String(payload.credentialHash ?? ''),
+        );
+      }
+    } catch {
+      return {
+        ...summary,
+        verification: {
+          state: 'FAILED' as const,
+          message: 'The shared company evidence could not be decoded.',
+        },
+      };
+    }
+    const values = proof.selectiveDisclosure
+      ? credential
+      : ((credential.subject as Record<string, unknown>) ?? {});
+    const missingClaims = (proof.requiredClaims ?? []).filter((key) => !(key in values));
+    const undisclosedClaims = [
+      ...(proof.requiredClaims ?? []),
+      ...(proof.optionalClaims ?? []),
+    ].filter((key) => !(key in values));
+    try {
       const checked = await this.verifyCompanyIdentityPresentation(
         workflow,
-        workflow.identityProof.presentationPayload
-          ? await this.dependencies.contentStore.decrypt(workflow.identityProof.presentationPayload)
-          : await this.retrieveEncrypted(
-              workflow.identityProof.presentationCid!,
-              'COMPANY_IDENTITY_PRESENTATION',
-            ),
-        Number.isFinite(verifiedAt) ? Math.floor(verifiedAt / 1000) : undefined,
+        presentation,
+        this.recordedVerificationTime(workflow),
       );
       return {
         ...summary,
-        missingClaims: checked.missingClaims,
-        credential:
-          checked.selectedClaims ??
-          this.identityCredentialSummary(checked.credential, checked.credentialHash),
-        checks: [
-          'AUTHORITY_SIGNATURE',
-          'HOLDER_SIGNATURE',
-          'WALLET_BINDING',
-          'ROLE_BINDING',
-          'CHALLENGE_AND_RECIPIENT',
-          'EXPIRY',
-          'CURRENT_ON_CHAIN_STATUS',
-        ],
+        credential,
+        missingClaims,
+        undisclosedClaims,
+        checks: checked.checks,
+        verification: { state: 'PASSED' as const, checks: checked.checks },
+      };
+    } catch (cause) {
+      const failed = cause instanceof ProductionFlowApiError && cause.status < 500;
+      return {
+        ...summary,
+        credential,
+        missingClaims,
+        undisclosedClaims,
+        verification: {
+          state: failed ? ('FAILED' as const) : ('UNAVAILABLE' as const),
+          message: failed
+            ? cause.message
+            : 'Verification is temporarily unavailable. Retry the checks; no evidence decision has been recorded.',
+        },
       };
     }
-    return summary;
   }
 
   async prepareEvidenceResponse(
@@ -3478,6 +3534,12 @@ export class ProductionFlowService {
       return result;
     } catch (error) {
       if (error instanceof ProductionFlowApiError) throw error;
+      if (isRpcUnavailableError(error))
+        throw new ProductionFlowApiError(
+          'BLOCKCHAIN_UNAVAILABLE',
+          'Blockchain verification is temporarily unavailable.',
+          503,
+        );
       const message = error instanceof Error ? error.message : '';
       const code = /expir|time|iat|max.?age/i.test(message)
         ? 'PRESENTATION_EXPIRED'
@@ -3693,6 +3755,12 @@ export class ProductionFlowService {
       }
     } catch (error) {
       if (error instanceof ProductionFlowApiError) throw error;
+      if (isRpcUnavailableError(error))
+        throw new ProductionFlowApiError(
+          'BLOCKCHAIN_UNAVAILABLE',
+          'Blockchain verification is temporarily unavailable.',
+          503,
+        );
       throw new ProductionFlowApiError(
         /expir|max.?age/i.test(error instanceof Error ? error.message : '')
           ? 'IDENTITY_PROOF_EXPIRED'

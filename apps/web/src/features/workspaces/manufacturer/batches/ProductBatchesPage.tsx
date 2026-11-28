@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { OperationalProductBatch } from '../../../blockchain/blockchain.api';
 import { useOperationalData } from '../../../blockchain/useOperationalData';
-import { CatalogueImage, CompanyAvatar } from '../../../orders/CatalogueMedia';
+import { CatalogueImage } from '../../../orders/CatalogueMedia';
 import { OrdersPage } from '../../../orders/OrdersPage';
 import { getOrders, type OrderRecord, type OrdersState } from '../../../orders/orders.api';
 import {
@@ -23,14 +23,12 @@ import {
   Btn,
   EmptyState,
   Input,
-  InventoryExpandButton,
   InventoryFact,
   InventorySummaryCard,
   InventoryViewToggle,
   openCardOnClick,
   SectionTitle,
   SelectField,
-  TechnicalDetails,
   type InventoryView,
 } from '../../shared/ui';
 import {
@@ -88,7 +86,6 @@ function OwnedProducts({
   const [sort, setSort] = useState<'newest' | 'name' | 'expiry' | 'quantity'>('newest');
   const [showArchived, setShowArchived] = useState(false);
   const [view, setView] = useState<InventoryView>(readProductView);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
 
   const loadMetadata = useCallback(async () => {
     setMetadataError('');
@@ -181,14 +178,6 @@ function OwnedProducts({
       // The selected view remains usable when browser storage is unavailable.
     }
   };
-  const toggleExpanded = (batchId: string) => {
-    setExpandedIds((current) => {
-      const next = new Set(current);
-      if (next.has(batchId)) next.delete(batchId);
-      else next.add(batchId);
-      return next;
-    });
-  };
 
   return (
     <section className="ingredient-inventory manufacturer-product-inventory" aria-label="Products">
@@ -233,7 +222,7 @@ function OwnedProducts({
               icon={<PackageCheck size={21} />}
             />
             <InventorySummaryCard
-              label="Total available units"
+              label="Total produced units"
               value={summary.quantity.value}
               note={summary.quantity.note}
               icon={<Boxes size={21} />}
@@ -344,12 +333,9 @@ function OwnedProducts({
                 <ProductCard
                   key={item.product.batchId}
                   item={item}
-                  locations={orders?.locations ?? []}
                   view={view}
-                  expanded={expandedIds.has(item.product.batchId)}
                   onDetail={() => onDetail(item.product.batchId)}
                   onTransfer={onTransfer}
-                  onToggle={() => toggleExpanded(item.product.batchId)}
                 />
               ))}
             </div>
@@ -362,43 +348,32 @@ function OwnedProducts({
 
 function ProductCard({
   item,
-  locations,
   view,
-  expanded,
   onDetail,
   onTransfer,
-  onToggle,
 }: {
   item: ProductItem;
-  locations: OrderRecord[];
   view: InventoryView;
-  expanded: boolean;
   onDetail: () => void;
   onTransfer: () => void;
-  onToggle: () => void;
 }) {
   const { product, metadata } = item;
   const name = productName(item);
   const reference = batchReference(item);
   const badge = productStatusBadge(item.status);
-  const detailsId = `product-card-details-${safeId(product.batchId)}`;
   const storage = Array.isArray(metadata.storageLocations) ? metadata.storageLocations : [];
-  const productionLocation =
-    metadata.productionLocationName ?? locationLabel(metadata.productionLocation, locations);
-  const manufacturer = product.manufacturerName ?? metadata.sellerName ?? 'Verified Manufacturer';
   const actions = (
     <div className="ingredient-card__primary-actions manufacturer-product-card__actions">
       <Btn onClick={onDetail}>View details</Btn>
       <Btn variant="outline" onClick={onTransfer}>
         Transfer product
       </Btn>
-      <InventoryExpandButton expanded={expanded} controls={detailsId} onClick={onToggle} />
     </div>
   );
 
   return (
     <article
-      className={`ingredient-card ingredient-card--${view} manufacturer-product-card is-clickable${expanded ? ' is-expanded' : ''}`}
+      className={`ingredient-card ingredient-card--${view} manufacturer-product-card is-clickable`}
       data-product-id={product.batchId}
       onClick={openCardOnClick(onDetail)}
     >
@@ -420,7 +395,7 @@ function ProductCard({
           <ProductIdentity name={name} reference={reference} />
           <dl className="ingredient-card__highlights">
             <InventoryFact
-              label="Available quantity"
+              label="Quantity produced"
               value={formatOperationalQuantity(product.totalQuantity, product.unit)}
             />
             <InventoryFact
@@ -455,7 +430,7 @@ function ProductCard({
             </div>
             <dl className="ingredient-card__list-metrics manufacturer-product-card__metrics">
               <InventoryFact
-                label="Available quantity"
+                label="Quantity produced"
                 value={formatOperationalQuantity(product.totalQuantity, product.unit)}
               />
               <InventoryFact
@@ -476,50 +451,6 @@ function ProductCard({
           {actions}
         </>
       )}
-
-      <div
-        id={detailsId}
-        className="ingredient-card__expandable"
-        aria-hidden={!expanded}
-        inert={!expanded || undefined}
-      >
-        <div className="ingredient-card__expandable-inner">
-          <dl className="ingredient-card__expanded-facts">
-            <InventoryFact
-              label="Manufacturer"
-              value={
-                <span className="workspace-company-cell">
-                  <CompanyAvatar name={manufacturer} logoPath={metadata.sellerLogoPath} size="sm" />
-                  {manufacturer}
-                </span>
-              }
-            />
-            <InventoryFact label="Production location" value={productionLocation} />
-            <InventoryFact
-              label="Linked ingredients"
-              value={`${product.ingredients.length} registered batches`}
-            />
-            <InventoryFact label="Custody location" value={custodySummary(storage, locations)} />
-          </dl>
-          <div className="ingredient-card__description">
-            <span>Description</span>
-            <p>{metadata.description || 'No product description provided.'}</p>
-          </div>
-          <TechnicalDetails
-            fields={[
-              { label: 'Product batch ID', value: product.batchId },
-              { label: 'Manufacturer wallet', value: product.manufacturer },
-              { label: 'Metadata hash', value: product.metadataHash },
-              { label: 'Public CID', value: product.publicCid },
-              { label: 'Raw on-chain unit', value: operationalUnit(product.unit).raw },
-              ...product.ingredients.map((ingredient, index) => ({
-                label: `Ingredient ${index + 1}`,
-                value: `${ingredient.batchId} · ${ingredient.quantity}`,
-              })),
-            ]}
-          />
-        </div>
-      </div>
     </article>
   );
 }
@@ -600,37 +531,10 @@ function compareProducts(left: ProductItem, right: ProductItem, sort: string) {
   return right.product.producedAt - left.product.producedAt;
 }
 
-function locationLabel(value: unknown, locations: OrderRecord[]) {
-  if (!value) return 'Not recorded';
-  return (
-    locations.find(
-      (location) => String(location.location).toLowerCase() === String(value).toLowerCase(),
-    )?.label ?? shortChainId(String(value))
-  );
-}
-
-function custodySummary(storage: OrderRecord[], locations: OrderRecord[]) {
-  if (!storage.length) return 'No custody location recorded';
-  const labels = storage.map(
-    (entry) =>
-      entry.warehouseName ??
-      locations.find(
-        (location) =>
-          String(location.location).toLowerCase() === String(entry.location).toLowerCase(),
-      )?.label ??
-      shortChainId(String(entry.location ?? '')),
-  );
-  return [...new Set(labels)].join(', ');
-}
-
 function readProductView(): InventoryView {
   try {
     return window.localStorage.getItem(PRODUCT_VIEW_STORAGE_KEY) === 'grid' ? 'grid' : 'list';
   } catch {
     return 'list';
   }
-}
-
-function safeId(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, '');
 }

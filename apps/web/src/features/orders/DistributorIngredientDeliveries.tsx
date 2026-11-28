@@ -497,13 +497,13 @@ function DeliveryCard({
           {job ? (
             <>
               <Btn variant="outline" onClick={onReview}>
-                Review delivery
+                View details
               </Btn>
               <Btn onClick={onSecondary}>Record dispatch</Btn>
             </>
           ) : (
             <Btn variant="outline" onClick={onReview}>
-              Review delivery
+              View details
             </Btn>
           )}
         </div>

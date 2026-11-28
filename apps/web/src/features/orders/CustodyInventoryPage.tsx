@@ -16,7 +16,6 @@ import {
   Card,
   EmptyState,
   Input,
-  InventoryExpandButton,
   InventoryFact,
   InventorySummaryCard,
   InventoryViewToggle,
@@ -58,7 +57,6 @@ export function CustodyInventoryPage({
   const [statusFilter, setStatusFilter] = useState<'all' | StockStatus>('all');
   const [sort, setSort] = useState('name');
   const [view, setView] = useState<InventoryView>(() => readInventoryView(role, kind));
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [params, setParams] = useSearchParams();
 
   const load = useCallback(async (refresh = false) => {
@@ -165,14 +163,6 @@ export function CustodyInventoryPage({
     setLocationFilter('');
     setStatusFilter('all');
     setSort('name');
-  };
-  const toggleExpanded = (id: string) => {
-    setExpandedIds((current) => {
-      const next = new Set(current);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
   };
 
   return (
@@ -313,11 +303,8 @@ export function CustodyInventoryPage({
                   key={entry.id}
                   data={data}
                   entry={entry}
-                  role={role}
                   view={view}
-                  expanded={expandedIds.has(entry.id)}
                   onDetails={() => setParams({ id: entry.id })}
-                  onToggle={() => toggleExpanded(entry.id)}
                 />
               ))}
             </div>
@@ -344,36 +331,27 @@ export function CustodyInventoryPage({
 function CustodyInventoryCard({
   data,
   entry,
-  role,
   view,
-  expanded,
   onDetails,
-  onToggle,
 }: {
   data: OrdersState;
   entry: InventoryRow;
-  role: InventoryRole;
   view: InventoryView;
-  expanded: boolean;
   onDetails: () => void;
-  onToggle: () => void;
 }) {
   const item = presentation(data, entry);
   const name = title(entry, item);
   const source = sourceCompany(data, entry, item);
-  const custodian = custodianCompany(data, entry, role);
   const status = stockBadge(stockStatus(entry, item));
-  const detailsId = `custody-inventory-details-${safeId(entry.id)}`;
   const primaryActions = (
     <div className="ingredient-card__primary-actions">
       <Btn onClick={onDetails}>View details</Btn>
-      <InventoryExpandButton expanded={expanded} controls={detailsId} onClick={onToggle} />
     </div>
   );
 
   return (
     <article
-      className={`ingredient-card ingredient-card--${view} custody-inventory-card is-clickable${expanded ? ' is-expanded' : ''}`}
+      className={`ingredient-card ingredient-card--${view} custody-inventory-card is-clickable`}
       data-inventory-id={entry.id}
       onClick={openCardOnClick(onDetails)}
     >
@@ -452,54 +430,6 @@ function CustodyInventoryCard({
           {primaryActions}
         </>
       )}
-
-      <div
-        id={detailsId}
-        className="ingredient-card__expandable"
-        aria-hidden={!expanded}
-        inert={!expanded || undefined}
-      >
-        <div className="ingredient-card__expandable-inner">
-          <dl className="ingredient-card__expanded-facts">
-            <InventoryFact label="Original company" value={source.name} />
-            <InventoryFact label="Current custodian" value={custodian.name} />
-            <InventoryFact label="Batch category" value={item.category || 'Not recorded'} />
-            <InventoryFact label="Custody location" value={locationName(data, entry)} />
-            <InventoryFact
-              label="Received / physical quantity"
-              value={formatOperationalQuantity(entry.quantity, entry.unit)}
-            />
-            <InventoryFact
-              label="Available quantity"
-              value={formatOperationalQuantity(entry.available, entry.unit)}
-            />
-            <InventoryFact
-              label="Reserved quantity"
-              value={
-                entry.reserved === undefined
-                  ? 'Unavailable'
-                  : formatOperationalQuantity(entry.reserved, entry.unit)
-              }
-            />
-            <InventoryFact label="Expiry" value={formatDate(item.expiresAt ?? item.expiryDate)} />
-          </dl>
-          {item.description && (
-            <div className="ingredient-card__description">
-              <span>Description</span>
-              <p>{item.description}</p>
-            </div>
-          )}
-          <TechnicalDetails
-            fields={[
-              { label: 'Batch ID', value: entry.batchId },
-              { label: 'Custody position', value: entry.positionId ?? 'Product location ledger' },
-              { label: 'Original company wallet', value: source.wallet },
-              { label: 'Custodian wallet', value: custodian.wallet },
-              { label: 'Location ID', value: entry.location ?? '' },
-            ]}
-          />
-        </div>
-      </div>
     </article>
   );
 }
@@ -546,6 +476,9 @@ function CustodyInventoryDetail({
         </div>
       </div>
       <dl className="custody-inventory-detail__facts">
+        <InventoryFact label="Category" value={item.category || 'Not recorded'} />
+        <InventoryFact label="Expiry" value={formatDate(item.expiresAt ?? item.expiryDate)} />
+        {item.description && <InventoryFact label="Description" value={item.description} />}
         <InventoryFact label="Original company" value={source.name} />
         <InventoryFact label="Current custodian" value={custodian.name} />
         <InventoryFact label="Warehouse" value={locationName(data, entry)} />
@@ -809,8 +742,4 @@ function readInventoryView(role: InventoryRole, kind: InventoryKind): InventoryV
   } catch {
     return 'list';
   }
-}
-
-function safeId(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, '');
 }

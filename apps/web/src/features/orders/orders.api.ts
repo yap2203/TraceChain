@@ -1,3 +1,4 @@
+import { observeNavigationData } from '../workspaces/action-counts';
 import { apiErrorMessage } from '../../components/ui/feedback';
 import { authRequestScope } from '../auth/auth-request-scope';
 import type { PreparedTransaction } from '../blockchain/blockchain.api';
@@ -55,18 +56,28 @@ async function request<T>(
   method = body ? 'POST' : 'GET',
   signal?: AbortSignal,
 ): Promise<T> {
+  const countScope = authRequestScope();
   const response = await fetch(`${base}/api/orders${path}`, {
     credentials: 'include',
     signal,
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
+  }).catch((cause) => {
+    observeNavigationData(path, undefined, countScope, true);
+    throw cause;
   });
   if (!response.ok) {
+    observeNavigationData(path, undefined, countScope, true);
     const error = await response.json().catch(() => ({}));
-    throw new Error(apiErrorMessage(error.error?.message, 'The order service is unavailable.'));
+    throw Object.assign(
+      new Error(apiErrorMessage(error.error?.message, 'The order service is unavailable.')),
+      { status: response.status, code: error.error?.code },
+    );
   }
-  return response.json();
+  const result = await response.json();
+  if (method === 'GET') observeNavigationData(path, result, countScope);
+  return result;
 }
 const ordersRequests = new Map<string, Promise<OrdersState>>();
 export interface OrderListOptions {

@@ -1,3 +1,5 @@
+import { observeNavigationData } from '../workspaces/action-counts';
+import { authRequestScope } from '../auth/auth-request-scope';
 import type { IngredientRequestPolicy, WalletProofContext } from '@tracechain/shared';
 import { apiErrorMessage } from '../../components/ui/feedback';
 import type { CompanyRole } from '@tracechain/shared';
@@ -14,18 +16,26 @@ interface ApiErrorBody {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const countScope = authRequestScope();
   const response = await fetch(`${API_BASE_URL}/api/production-flow${path}`, {
     ...init,
     credentials: 'include',
     headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+  }).catch((cause) => {
+    observeNavigationData(path, undefined, countScope, true);
+    throw cause;
   });
   if (!response.ok) {
+    observeNavigationData(path, undefined, countScope, true);
     const body = (await response.json().catch(() => ({}))) as ApiErrorBody;
-    throw new Error(
-      apiErrorMessage(body.error?.message, 'The production workflow request failed.'),
+    throw Object.assign(
+      new Error(apiErrorMessage(body.error?.message, 'The production workflow request failed.')),
+      { status: response.status, code: body.error?.code },
     );
   }
-  return response.json() as Promise<T>;
+  const result = await response.json();
+  if (!init?.method || init.method === 'GET') observeNavigationData(path, result, countScope);
+  return result as T;
 }
 
 export interface ProductionIngredient {
@@ -123,6 +133,13 @@ export interface EvidenceDetails {
 }
 export const getEvidenceDetails = (requestId: string) =>
   request<EvidenceDetails>(`/evidence-requests/${requestId}`);
+export interface EvidenceVerification {
+  state: 'NOT_VERIFIED' | 'PASSED' | 'FAILED' | 'UNAVAILABLE';
+  verifiedAt?: string;
+  message?: string;
+  checks?: string[];
+}
+
 export interface EvidenceReview {
   batchId: string;
   credentialExpiry: string;
@@ -141,7 +158,7 @@ export interface EvidenceReview {
   supplier: string;
   supplierName?: string;
   status: number;
-  verification: { state: 'NOT_VERIFIED' | 'PASSED'; verifiedAt?: string };
+  verification: EvidenceVerification;
 }
 export const reviewEvidence = (requestId: string) =>
   request<EvidenceReview>(`/evidence-requests/${requestId}/review`);
@@ -154,19 +171,6 @@ export interface StakeholderRecipient {
 
 export const listDistributors = () =>
   request<{ distributors: StakeholderRecipient[] }>('/distributors');
-
-export interface DistributorInventoryProduct {
-  availableQuantity: string;
-  productBatchId: string;
-  productName?: string;
-  productReference?: string;
-  reservedQuantity: string;
-  unit: string;
-}
-
-export const listDistributorInventory = () =>
-  request<{ products: DistributorInventoryProduct[] }>('/distributor/inventory');
-export const listRetailers = () => request<{ retailers: StakeholderRecipient[] }>('/retailers');
 
 export const prepareEvidenceRequest = (input: {
   policy?: IngredientRequestPolicy;
@@ -217,28 +221,15 @@ export interface CompanyIdentityProofStatus {
   presenterWallet?: string;
   purpose?: string;
   requestId: string;
-  status: 'NOT_REQUESTED' | 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED' | 'EXPIRED';
+  status:
+    'NOT_REQUESTED' | 'REQUESTED' | 'PRESENTED' | 'VERIFIED' | 'DECLINED' | 'REJECTED' | 'EXPIRED';
   verifiedAt?: string;
   checks?: string[];
-  /** Required fields the holder chose not to share; the proof is valid but incomplete. */
+  /** Required fields absent from the shared presentation; technical validity is reported separately. */
   missingClaims?: string[];
-  credential?: {
-    credentialHash: string;
-    credentialId: string;
-    credentialStatus: string;
-    expirationDate: string;
-    issuanceDate: string;
-    issuer: string;
-    issuerName?: string;
-    subject: {
-      companyId: string;
-      companyName: string;
-      companyRegistrationNumber: string;
-      id: string;
-      role: string;
-      walletAddress: string;
-    };
-  };
+  verification?: EvidenceVerification;
+  undisclosedClaims?: string[];
+  credential?: Record<string, unknown>;
 }
 export interface CompanyIdentityProofMaterial {
   walletContext?: WalletProofContext;
@@ -325,19 +316,6 @@ export const prepareTransfer = (input: {
 }) =>
   request<WorkflowResponse>('/transfers/prepare', { body: JSON.stringify(input), method: 'POST' });
 
-export const prepareDistributorTransfer = (input: {
-  expectedAt: string;
-  handlingNotes: string;
-  operationId: string;
-  productBatchId: string;
-  quantity: string;
-  recipient: string;
-  shipmentReference: string;
-}) =>
-  request<WorkflowResponse>('/distributor/transfers/prepare', {
-    body: JSON.stringify(input),
-    method: 'POST',
-  });
 export function getSharedCertificationDocument(requestId: string, documentId: string) {
   return request<{ fileName: string; mimeType: string; data: string }>(
     `/evidence-requests/${encodeURIComponent(requestId)}/documents/${encodeURIComponent(documentId)}`,

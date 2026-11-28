@@ -2,15 +2,14 @@
 
 ## Repository and implementation
 
-- Company identity and ingredient evidence share one requester decision (user-confirmed
-  2026-11-28): a single "Verify and accept" step (checks first; acceptance is recorded only if every
-  check passes) or "Reject" with a reason, with the same UI (`EvidenceDecision` inside the
-  `EvidenceNextStep` box) on every evidence page. This knowingly merges cryptographic verification and
-  business acceptance into one user action, an exception to the CLAUDE.md separation rule; the
-  checks still run before anything is recorded. Company identity Reject adds
-  `CompanyProofRegistry.reject(requestId, reasonHash)` (status 5, verifier only, after a response),
-  so the CompanyProofRegistry must be redeployed and configured before shared company Reject works
-  on-chain. Not deployed yet.
+- Evidence preview, technical verification and acceptance are separate (user-confirmed 2026-11-28,
+  superseding the earlier combined Verify and accept decision). Authorized reviewers inspect disclosed
+  fields and permitted attachments first. Company status reads perform checks without recording a review;
+  ingredient verification stores only a technical result. Accept evidence explicitly rechecks before
+  recording the existing acceptance outcome; Reject evidence records a separate rejection. Shared,
+  verification passed/failed/unavailable, Accepted and Rejected have distinct UI states. Existing records
+  and selective-disclosure/participant checks are preserved; no contract change is needed for separation.
+  The existing CompanyProofRegistry.reject capability remains necessary for on-chain company rejection.
 
 - Keep the current custody-offer and workflow storage architecture (user-confirmed 2026-11-26):
   custody offers stay as encrypted API records with encrypted IPFS copies; no new custody-offer

@@ -1,5 +1,85 @@
 @reference '../../styles/tailwind.css';
 @layer components {
+  .page-skeleton {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    gap: 16px;
+    padding-block: 12px;
+    color: var(--c-text2, var(--color-text));
+  }
+  .page-skeleton__label {
+    font-size: 14px;
+  }
+  .page-skeleton__heading,
+  .page-skeleton__image,
+  .page-skeleton__line {
+    display: block;
+    border-radius: 8px;
+    background: var(--c-surface2, var(--color-surface));
+    animation: page-skeleton-pulse 1.5s ease-in-out infinite alternate;
+  }
+  .page-skeleton__heading {
+    width: min(55%, 300px);
+    height: 24px;
+  }
+  .page-skeleton__content {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+  }
+  .page-skeleton__item {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--c-border, var(--color-border));
+    border-radius: 12px;
+    min-width: 0;
+  }
+  .page-skeleton__image {
+    height: 120px;
+  }
+  .page-skeleton__line {
+    width: 100%;
+    height: 14px;
+  }
+  .page-skeleton__line--short {
+    width: 65%;
+  }
+  .page-skeleton--table .page-skeleton__content {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .page-skeleton--table .page-skeleton__item {
+    grid-template-columns: 48px 1fr minmax(64px, 20%);
+    align-items: center;
+  }
+  .page-skeleton--table .page-skeleton__image {
+    height: 42px;
+  }
+  .page-skeleton--detail .page-skeleton__content,
+  .page-skeleton--form .page-skeleton__content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .page-skeleton--form .page-skeleton__image {
+    display: none;
+  }
+  @keyframes page-skeleton-pulse {
+    from {
+      opacity: 0.45;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @media (max-width: 700px) {
+    .page-skeleton__content,
+    .page-skeleton--detail .page-skeleton__content,
+    .page-skeleton--form .page-skeleton__content {
+      grid-template-columns: 1fr;
+    }
+  }
   .loading-indicator.loading-indicator--page {
     @apply flex flex-col items-center justify-center gap-[16px] p-[24px] text-center w-full;
     min-height: clamp(220px, 45vh, 480px);
@@ -23,6 +103,11 @@
     border-top-color: var(--c-teal, var(--color-primary));
   }
   @media (prefers-reduced-motion: reduce) {
+    .page-skeleton__heading,
+    .page-skeleton__image,
+    .page-skeleton__line {
+      animation: none;
+    }
     .loading-indicator__spinner {
       animation: none;
     }

@@ -6,14 +6,16 @@ import { notify, readableError } from '../../../../components/ui/feedback';
 export function Alert({
   type = 'warning',
   message,
+  announce = true,
 }: {
+  announce?: boolean;
   type?: 'warning' | 'error' | 'success' | 'info';
   message: string;
 }) {
   const text = type === 'error' ? readableError(message) : message;
   useEffect(() => {
-    if (type === 'error' || type === 'success') notify(text, type);
-  }, [text, type]);
+    if (announce && (type === 'error' || type === 'success')) notify(text, type);
+  }, [text, type, announce]);
   const styles = {
     warning: {
       bg: T.amberBg,

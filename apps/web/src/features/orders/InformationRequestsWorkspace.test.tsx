@@ -288,7 +288,12 @@ it('keeps company and ingredient evidence as compact tabs on the sent-request ro
   expect(screen.queryByText('Manufacturer Company')).toBeNull();
 });
 it('verifies an ingredient-linked company proof only after explicit action and shows check results', async () => {
-  api.proofStatus.mockResolvedValue({ status: 'PRESENTED', requestId: 'ingredient-proof' });
+  api.proofStatus.mockResolvedValue({
+    status: 'PRESENTED',
+    requestId: 'ingredient-proof',
+    credential: { companyName: 'Disclosed company' },
+    verification: { state: 'PASSED' },
+  });
   api.verify.mockResolvedValue({
     status: 'VERIFIED',
     checks: ['Signature and holder checks passed'],
@@ -303,7 +308,9 @@ it('verifies an ingredient-linked company proof only after explicit action and s
       <InformationRequestsWorkspace role="supplier" />
     </MemoryRouter>,
   );
-  const button = await screen.findByRole('button', { name: 'Verify and accept' });
+  const button = await screen.findByRole('button', { name: 'Accept evidence' });
+  expect(await screen.findByText('Disclosed company')).toBeTruthy();
+  expect(screen.getByText('Verification passed')).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Reject…' })).toBeTruthy();
   expect(api.verify).not.toHaveBeenCalled();
   fireEvent.click(button);
@@ -324,9 +331,9 @@ it('shows a compact custody-offer context strip and collapsed technical details'
     </MemoryRouter>,
   );
   expect(await screen.findByRole('heading', { name: 'Request company evidence' })).toBeTruthy();
-  expect(
-    screen.getByRole('link', { name: 'Evidence Exchange' }).getAttribute('href'),
-  ).toContain('direction=sent');
+  expect(screen.getByRole('link', { name: 'Evidence Exchange' }).getAttribute('href')).toContain(
+    'direction=sent',
+  );
   expect(await screen.findByText('Unsweetened Cocoa Powder')).toBeTruthy();
   expect(screen.getByText(/Delivery proof manager: .* Bayu Food Logistics/)).toBeTruthy();
   expect(screen.getByText('8 kg')).toBeTruthy();

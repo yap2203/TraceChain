@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { requestStatus, RequestsLoading, RequestsOverview } from './RequestsOverview';
 
+afterEach(cleanup);
+
 const actor = '0x2000000000000000000000000000000000000002';
 const buyer = '0x3000000000000000000000000000000000000003';
 const batchId = `0x${'11'.repeat(32)}`;
@@ -92,7 +94,7 @@ describe('Supplier quantity request inbox', () => {
     expect(screen.queryByRole('tablist', { name: 'Request status' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Waiting for company evidence/ }));
     expect(screen.getByText('Waiting for Manufacturer proof')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Review request' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'View details' })).toBeTruthy();
   });
 
   it('searches and sorts readable request cards while keeping identifiers technical', () => {
@@ -147,7 +149,7 @@ describe('Supplier quantity request inbox', () => {
     expect(row.children[3].classList.contains('supplier-request-state')).toBe(true);
     expect(row.children).toHaveLength(4);
     expect(container.querySelector('.supplier-request-action button')?.textContent).toBe(
-      'Review request',
+      'View details',
     );
   });
 
@@ -185,4 +187,67 @@ describe('Supplier quantity request inbox', () => {
     });
     expect(screen.getByText('No requests match these filters')).toBeTruthy();
   });
+});
+
+it('shows the actual Supplier and a waiting status for Manufacturer requests, with one server pager', () => {
+  const onView = vi.fn();
+  render(
+    <RequestsOverview
+      actor={buyer}
+      role="manufacturer"
+      catalogue={catalogue}
+      orders={[{ ...request, sellerName: 'Rimba Ingredients', kind: 1 }]}
+      pagination={{ page: 1, pageSize: 10, total: 25, counts: { all: 25, attention: 25 } }}
+      onView={onView}
+      onQueryChange={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole('columnheader', { name: 'Supplier' })).toBeTruthy();
+  expect(screen.queryByRole('columnheader', { name: /Retailer/ })).toBeNull();
+  expect(screen.getAllByText('Awaiting Supplier response').length).toBeGreaterThan(0);
+  expect(screen.queryByText('Needs your review')).toBeNull();
+  expect(screen.getByRole('button', { name: /Awaiting response/ })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Needs action/ })).toBeNull();
+  expect(screen.getAllByRole('navigation', { name: 'Order pages' })).toHaveLength(1);
+  expect(screen.queryByLabelText('Table pagination')).toBeNull();
+  fireEvent.click(screen.getAllByRole('button', { name: 'View details' })[0]);
+  expect(onView).toHaveBeenCalledWith(request.orderId);
+  expect(requestStatus(request, buyer).needsAction).toBe(false);
+  expect(requestStatus(request, actor).needsAction).toBe(true);
+});
+
+it('does not slice an already paginated server page a second time', () => {
+  const rows = Array.from({ length: 12 }, (_, i) => ({ ...request, orderId: 'order-' + i }));
+  render(
+    <RequestsOverview
+      actor={actor}
+      role="manufacturer"
+      catalogue={catalogue}
+      orders={rows}
+      pagination={{ page: 2, pageSize: 25, total: 37, counts: { all: 37, attention: 37 } }}
+      onView={vi.fn()}
+      onQueryChange={vi.fn()}
+    />,
+  );
+  expect(screen.getAllByRole('row')).toHaveLength(13);
+  expect(screen.getByRole('columnheader', { name: 'Retailer' })).toBeTruthy();
+  expect(screen.getAllByRole('navigation', { name: 'Order pages' })).toHaveLength(1);
+});
+
+it('keeps received-request filter wording when search returns no rows', () => {
+  render(
+    <RequestsOverview
+      actor={actor}
+      role="manufacturer"
+      direction="received"
+      catalogue={catalogue}
+      orders={[]}
+      pagination={{ page: 1, pageSize: 10, total: 0, counts: { all: 4, attention: 4 } }}
+      onView={vi.fn()}
+      onQueryChange={vi.fn()}
+    />,
+  );
+  expect(screen.getByRole('button', { name: /Needs action/ })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: /Awaiting response/ })).toBeNull();
+  expect(screen.getByText('No requests match these filters')).toBeTruthy();
 });

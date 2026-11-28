@@ -1,7 +1,9 @@
+import { useLocation, useSearchParams } from 'react-router-dom';
+import { confirmedOrderShipment } from './delivery-state';
 import { shipmentStatusVariant } from '../workspaces/shared/shipment-status';
 import { BackNavigation } from '../../components/ui/BackNavigation';
 import { formatLocationLabel } from './location-format';
-import { reportError } from '../../components/ui/feedback';
+import { reportError, readableError } from '../../components/ui/feedback';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle2, Package, Plus, RefreshCw, Truck, Upload } from 'lucide-react';
@@ -103,6 +105,44 @@ export function ShipmentsWorkspace({
   initialBatchId?: string;
   initialQr?: string;
 }) {
+  const routeLocation = useLocation();
+  const [routeParams, setRouteParams] = useSearchParams();
+  const firstRoute = useRef(true);
+  const navigateShipment = (shipmentId: string, replace = false) => {
+    setSelected(shipmentId);
+    setSelectedDeliveryOrder('');
+    setReviewDeliveryOrderId('');
+    const next = new URLSearchParams(routeParams);
+    next.delete('orderId');
+    next.delete('offerId');
+    if (shipmentId) next.set('shipmentId', shipmentId);
+    else next.delete('shipmentId');
+    setRouteParams(next, { replace });
+  };
+  const navigateOrder = (orderId: string) => {
+    const entry = data?.orders.find((order) => same(order.orderId, orderId));
+    const recorded = confirmedOrderShipment(entry, data?.logistics?.shipments ?? []);
+    if (recorded) {
+      navigateShipment(recorded.shipmentId);
+      return;
+    }
+    setSelected('');
+    setSelectedDeliveryOrder(orderId);
+    const next = new URLSearchParams(routeParams);
+    next.delete('shipmentId');
+    if (orderId) next.set('orderId', orderId);
+    else next.delete('orderId');
+    setRouteParams(next);
+  };
+  useEffect(() => {
+    if (firstRoute.current) {
+      firstRoute.current = false;
+      return;
+    }
+    setSelected(routeParams.get('shipmentId') ?? '');
+    setSelectedDeliveryOrder(routeParams.get('orderId') ?? '');
+    setPickupOfferId(routeParams.get('offerId') ?? '');
+  }, [routeLocation.search]);
   const [data, setData] = useState<OrdersState>(),
     [error, setError] = useState(''),
     [notice, setNotice] = useState(''),
@@ -119,16 +159,16 @@ export function ShipmentsWorkspace({
       if (section === 'intake' || section === 'tracking' || initialOfferId) setError(cause.message);
     });
   }, [loadOffers]);
-  const [view, setView] = useState<string>(initialView),
+  // Legacy standalone transfer links open the retained shipment detail/list instead.
+  const [view, setView] = useState<string>(
+      role === 'distributor' && initialView === 'transfer' ? 'shipments' : initialView,
+    ),
     [kind, setKind] = useState<'ingredient' | 'product'>(
       role === 'retailer'
         ? 'product'
         : role === 'supplier'
           ? 'ingredient'
-          : (initialKind ??
-            (role === 'manufacturer' || (role === 'distributor' && initialView === 'transfer')
-              ? 'product'
-              : 'ingredient')),
+          : (initialKind ?? (role === 'manufacturer' ? 'product' : 'ingredient')),
     );
   const [selected, setSelected] = useState(initialShipmentId),
     [selectedDeliveryOrder, setSelectedDeliveryOrder] = useState(initialOrderId),
@@ -152,6 +192,7 @@ export function ShipmentsWorkspace({
     [cameraActive, setCameraActive] = useState(false),
     [receiveVehicle, setReceiveVehicle] = useState(''),
     [recordVehicle, setRecordVehicle] = useState('');
+  const uploadAttempt = useRef(0);
   const lock = useRef(false),
     video = useRef<HTMLVideoElement>(null),
     stop = useRef<() => void>(undefined),
@@ -168,6 +209,7 @@ export function ShipmentsWorkspace({
     void load().catch((cause) => setError(cause.message));
     return () => {
       cameraAttempt.current++;
+      uploadAttempt.current++;
       stop.current?.();
     };
   }, [load]);
@@ -233,8 +275,13 @@ export function ShipmentsWorkspace({
       createdAt: Date.parse(offer.createdAt ?? '') / 1000 || offer.pickupAt,
     }));
   const productDeliveryOrder = data?.orders.find(
-    (entry) => same(entry.orderId, selectedDeliveryOrder) && entry.productDelivery,
+    (entry) =>
+      same(entry.orderId, selectedDeliveryOrder) && (entry.productDelivery || entry.delivery),
   );
+  useEffect(() => {
+    const recorded = confirmedOrderShipment(productDeliveryOrder, shipments);
+    if (recorded && !selected) navigateShipment(recorded.shipmentId, true);
+  }, [productDeliveryOrder?.orderId, productDeliveryOrder?.productDelivery?.transferId, shipments]);
   const linkedCustodyOffer = custodyOffers.find(
     (offer) =>
       same(offer.shipmentId, shipment?.shipmentId) &&
@@ -321,13 +368,14 @@ export function ShipmentsWorkspace({
       return true;
     } catch (cause) {
       setChecked('');
-      setError(reportError(cause, 'Invalid shipment label.'));
+      setError(readableError(cause, 'Invalid shipment label.'));
       return false;
     }
   };
   useEffect(() => {
     setConfirmed(false);
     setChecked('');
+    uploadAttempt.current++;
     setQrFileName('');
     setCameraActive(false);
     setActual(localTime());
@@ -355,6 +403,7 @@ export function ShipmentsWorkspace({
   const directIngredientDeliveries = (data?.orders ?? []).filter(
     (entry) =>
       !entry.custodyOrder &&
+      !confirmedOrderShipment(entry, shipments) &&
       entry.delivery &&
       same(entry.delivery.distributor, data?.actor) &&
       Number(entry.delivery.stage) >= 2 &&
@@ -364,7 +413,9 @@ export function ShipmentsWorkspace({
   const trackedOrder = data?.orders.find(
     (entry) => same(entry.orderId, initialOrderId) && entry.custodyOrder,
   );
-  const visibleShipments = shipments.filter(
+  const visibleShipments = [
+    ...new Map(shipments.map((entry) => [entry.shipmentId.toLowerCase(), entry])).values(),
+  ].filter(
     (entry) =>
       (entry.kind === kind || section === 'intake') &&
       (section !== 'intake' ||
@@ -381,8 +432,40 @@ export function ShipmentsWorkspace({
         (Number(entry.leg) === 1 && same(entry.batchId, trackedOrder.custodyOrder.batchId))),
   );
   const productDeliveryRows = (data?.orders ?? []).filter(
-    (entry) => entry.productDelivery && same(entry.productDelivery.distributor, data?.actor),
+    (entry) =>
+      entry.productDelivery &&
+      same(entry.productDelivery.distributor, data?.actor) &&
+      !confirmedOrderShipment(entry, shipments),
   );
+  const pendingProductRows =
+    section === 'intake' || kind !== 'product'
+      ? []
+      : productDeliveryRows.map((entry) => ({
+          ...entry,
+          shipmentId: entry.orderId,
+          workflowOrderId: entry.orderId,
+          kind: 'product',
+          batchId:
+            entry.requestedBatch ??
+            data?.catalogue.find((item) => same(item.itemId, entry.itemId))?.batches?.[0],
+          itemName: data?.catalogue.find((item) => same(item.itemId, entry.itemId))?.name,
+          sender: entry.seller,
+          senderName: entry.sellerName,
+          recipient: entry.buyer,
+          recipientName: entry.buyerName,
+          quantity: entry.requested,
+          unit: data?.catalogue.find((item) => same(item.itemId, entry.itemId))?.unit,
+          fromLocation: entry.productDelivery.fromLocation,
+          toLocation: entry.productDelivery.toLocation ?? entry.deliveryReceivingLocation,
+          workflowLabel:
+            Number(entry.productDelivery.stage) === 2
+              ? 'Awaiting carrier acceptance'
+              : Number(entry.productDelivery.stage) === 3
+                ? 'Awaiting dispatch'
+                : Number(entry.productDelivery.stage) === 5
+                  ? 'Received by Retailer'
+                  : 'Delivery arrangement',
+        }));
   const distributorIngredientShipments = shipments.filter(
     (entry) =>
       entry.kind === 'ingredient' &&
@@ -476,13 +559,13 @@ export function ShipmentsWorkspace({
       setView('shipments');
       setSelected(result.resultId);
     });
-  const compose = (type: 'ingredient' | 'product', record?: OrderRecord) => {
+  const compose = (type: 'ingredient' | 'product') => {
     setKind(type);
     setView('transfer');
     setSelected('');
-    setBatchId(record?.batchId ?? '');
-    setOrderId(record?.orderId && !/^0x0+$/.test(record.orderId) ? record.orderId : '');
-    setFrom(record?.toLocation ?? '');
+    setBatchId('');
+    setOrderId('');
+    setFrom('');
     setDistributor('');
     setRecipient('');
     setVehicle('');
@@ -668,7 +751,15 @@ export function ShipmentsWorkspace({
             accept="image/png,image/jpeg,image/webp"
             onChange={(event) => {
               const file = event.target.files?.[0];
+              event.target.value = '';
+              const currentUpload = ++uploadAttempt.current;
+              setChecked('');
+              setConfirmed(false);
+              setError('');
               setQrFileName('');
+              cameraAttempt.current++;
+              stop.current?.();
+              setCameraActive(false);
               if (!file) return;
               if (
                 file.size > 5 * 1024 * 1024 ||
@@ -680,9 +771,11 @@ export function ShipmentsWorkspace({
               void scanner.current
                 .decodeImage(file)
                 .then((payload) => {
-                  if (verifyLabel(payload)) setQrFileName(file.name);
+                  if (currentUpload === uploadAttempt.current && verifyLabel(payload))
+                    setQrFileName(file.name);
                 })
                 .catch((cause) => {
+                  if (currentUpload !== uploadAttempt.current) return;
                   setChecked('');
                   setError(qrImageErrorMessage(cause));
                 });
@@ -803,8 +896,8 @@ export function ShipmentsWorkspace({
     <Alert
       type="info"
       message={
-        Number(shipment.status) >= 3
-          ? 'Warehouse receipt has already been recorded.'
+        (shipment.kind === 'product' ? Number(shipment.status) === 2 : Number(shipment.status) >= 3)
+          ? 'Physical receipt has already been recorded.'
           : 'Receipt confirmation is not currently available for this shipment.'
       }
     />
@@ -819,14 +912,20 @@ export function ShipmentsWorkspace({
               : section === 'intake'
                 ? 'Custody intake'
                 : role === 'distributor' && section === 'deliveries' && kind === 'ingredient'
-                  ? 'Ingredient deliveries'
+                  ? 'Ingredients to Manufacturers'
                   : view === 'transfer'
                     ? 'Create road transfer'
                     : role === 'supplier'
-                      ? 'Stock sent & delivery tracking'
+                      ? 'Ingredient shipments'
                       : role === 'distributor'
-                        ? 'Custody intake & deliveries'
-                        : 'My shipments'
+                        ? kind === 'ingredient'
+                          ? 'Ingredients to Manufacturers'
+                          : 'Products to Retailers'
+                        : role === 'manufacturer'
+                          ? kind === 'product'
+                            ? 'Products leaving'
+                            : 'Ingredients arriving'
+                          : 'Products arriving'
           }
           sub={
             role === 'supplier'
@@ -835,7 +934,11 @@ export function ShipmentsWorkspace({
                 ? 'Manage ingredient shipments to Manufacturers.'
                 : role === 'distributor'
                   ? 'Review custody offers, scan incoming stock and dispatch assigned deliveries.'
-                  : 'Track incoming goods. Scan the shipment QR when they arrive.'
+                  : role === 'manufacturer' && kind === 'product'
+                    ? 'To Distributor warehouses or Retailers. Track dispatch and receipt.'
+                    : role === 'manufacturer'
+                      ? 'From Suppliers, delivered by Distributors.'
+                      : 'Track product deliveries from Manufacturers via Distributors.'
           }
           action={
             <Btn
@@ -844,7 +947,7 @@ export function ShipmentsWorkspace({
               disabled={busy}
               onClick={() => void run(() => load(true))}
             >
-              Refresh
+              {busy ? 'Refreshing…' : 'Refresh'}
             </Btn>
           }
         />
@@ -880,7 +983,7 @@ export function ShipmentsWorkspace({
           </Btn>
         </nav>
       )}
-      {error && <Alert type="error" message={error} />}{' '}
+      {error && <Alert type="error" announce={false} message={error} />}{' '}
       {notice && <Alert type="success" message={notice} />}
       <ReadModelStatus state={data} />
       {!data.shipmentReviewSupported && (
@@ -1030,16 +1133,23 @@ export function ShipmentsWorkspace({
       )}
       {view === 'shipments' && !selected && !pickupOffer && productDeliveryOrder && (
         <div className="grid min-w-0 gap-[12px]">
-          <BackNavigation onClick={() => setSelectedDeliveryOrder('')}>
-            Back to shipments
-          </BackNavigation>
-          <ProductDeliveryPanel
-            data={data}
-            order={productDeliveryOrder}
-            item={data.catalogue.find((item) => same(item.itemId, productDeliveryOrder.itemId))}
-            onChanged={load}
-            initialQr={same(productDeliveryOrder.orderId, initialOrderId) ? initialQr : ''}
-          />
+          <BackNavigation onClick={() => navigateShipment('')}>Back to shipments</BackNavigation>
+          {productDeliveryOrder.productDelivery ? (
+            <ProductDeliveryPanel
+              data={data}
+              order={productDeliveryOrder}
+              item={data.catalogue.find((item) => same(item.itemId, productDeliveryOrder.itemId))}
+              onChanged={load}
+              initialQr={same(productDeliveryOrder.orderId, initialOrderId) ? initialQr : ''}
+            />
+          ) : (
+            <IngredientDeliveryPanel
+              data={data}
+              order={productDeliveryOrder}
+              item={data.catalogue.find((item) => same(item.itemId, productDeliveryOrder.itemId))}
+              onChanged={load}
+            />
+          )}
         </div>
       )}
       {view === 'shipments' &&
@@ -1078,124 +1188,17 @@ export function ShipmentsWorkspace({
         !reviewDeliveryOrder && (
           <>
             {section !== 'intake' &&
-              kind === 'product' &&
-              productDeliveryRows.map((entry) => {
-                const product = data.catalogue.find((item) => same(item.itemId, entry.itemId));
-                const stage = Number(entry.productDelivery.stage);
-                return (
-                  <article className="shipment-card" key={entry.orderId}>
-                    <div className="shipment-card__media">
-                      <CatalogueImage
-                        path={product?.imagePath}
-                        category={product?.category ?? 'Product'}
-                        alt={`${product?.name ?? 'Product'} image`}
-                      />
-                    </div>
-                    <div className="shipment-card__content">
-                      <div className="workspace-record-heading">
-                        <div className="workspace-record-heading__identity">
-                          <span className="workspace-record-heading__eyebrow">
-                            Product shipment
-                          </span>
-                          <h3>{product?.name ?? 'Registered product'}</h3>
-                          <p>{product?.batchReference ?? short(entry.requestedBatch)}</p>
-                        </div>
-                        <Badge
-                          label={
-                            [
-                              'Awaiting approval',
-                              'Delivery selection',
-                              'Awaiting Distributor review',
-                              'Ready for dispatch',
-                              'In transit',
-                              'Received',
-                              'Closed',
-                            ][stage] ?? 'In progress'
-                          }
-                          variant={shipmentStatusVariant(
-                            [
-                              'Awaiting approval',
-                              'Delivery selection',
-                              'Awaiting Distributor review',
-                              'Ready for dispatch',
-                              'In transit',
-                              'Received',
-                              'Closed',
-                            ][stage] ?? 'In progress',
-                          )}
-                        />
-                      </div>
-                      <dl className="workspace-record-facts">
-                        <div>
-                          <dt>Quantity</dt>
-                          <dd>
-                            {entry.requested} {product?.unit ?? ''}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Sender</dt>
-                          <dd className="workspace-company-cell">
-                            <CompanyAvatar
-                              name={entry.sellerName ?? short(entry.seller)}
-                              logoPath={entry.sellerLogoPath}
-                              size="sm"
-                            />
-                            {entry.sellerName ?? short(entry.seller)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Recipient</dt>
-                          <dd className="workspace-company-cell">
-                            <CompanyAvatar
-                              name={entry.buyerName ?? short(entry.buyer)}
-                              logoPath={entry.buyerLogoPath}
-                              size="sm"
-                            />
-                            {entry.buyerName ?? short(entry.buyer)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Destination</dt>
-                          <dd>
-                            {label(
-                              entry.deliveryReceivingLocation ?? entry.details?.receivingLocation,
-                            )}
-                          </dd>
-                        </div>
-                      </dl>
-                      <div className="shipment-card__next">
-                        <div>
-                          <span>Next action</span>
-                          <strong>
-                            {stage >= 5
-                              ? 'No action required'
-                              : stage === 3
-                                ? 'Review and record physical dispatch'
-                                : 'Open the shipment to review its current requirement'}
-                          </strong>
-                        </div>
-                        <Btn
-                          variant="outline"
-                          onClick={() => setSelectedDeliveryOrder(entry.orderId)}
-                        >
-                          View shipment
-                        </Btn>
-                      </div>
-                    </div>
-                  </article>
-                );
-              })}
-            {section !== 'intake' &&
               kind === 'ingredient' &&
               directIngredientDeliveries.map((entry) => (
                 <Card key={entry.orderId}>
                   <h3>Direct delivery — collect from Supplier</h3>
-                  <IngredientDeliveryPanel
-                    data={data}
-                    order={entry}
-                    item={data.catalogue.find((item) => same(item.itemId, entry.itemId))}
-                    onChanged={load}
-                  />
+                  <p>
+                    {entry.itemName ??
+                      data.catalogue.find((item) => same(item.itemId, entry.itemId))?.name ??
+                      'Ingredient'}{' '}
+                    - {entry.requested} {entry.unit}
+                  </p>
+                  <Btn onClick={() => navigateOrder(entry.orderId)}>View details</Btn>
                 </Card>
               ))}
             {!section && (
@@ -1233,7 +1236,7 @@ export function ShipmentsWorkspace({
                   setOrderId(deliveryOrderId);
                 }}
                 onReviewShipment={(shipmentId) => {
-                  setSelected(shipmentId);
+                  navigateShipment(shipmentId);
                   setView('shipments');
                 }}
               />
@@ -1274,17 +1277,23 @@ export function ShipmentsWorkspace({
                   )}
                 {(visibleShipments.length > 0 ||
                   pickupRows.length > 0 ||
+                  pendingProductRows.length > 0 ||
                   productDeliveryRows.length === 0) && (
                   <ShipmentList
-                    shipments={[...pickupRows, ...visibleShipments]}
+                    shipments={[...pickupRows, ...pendingProductRows, ...visibleShipments]}
                     catalogue={data.catalogue}
+                    actor={data.actor}
                     locationName={label}
                     statusLabel={listStatus}
                     onOpen={(shipmentId) => {
+                      if (pendingProductRows.some((row) => same(row.workflowOrderId, shipmentId))) {
+                        navigateOrder(shipmentId);
+                        return;
+                      }
                       const pickup = pickupRows.find((entry) => entry.shipmentId === shipmentId);
                       if (pickup) setPickupOfferId(pickup.pickupOfferId);
                       else {
-                        setSelected(shipmentId);
+                        navigateShipment(shipmentId);
                         setView('shipments');
                       }
                     }}
@@ -1330,48 +1339,29 @@ export function ShipmentsWorkspace({
           onSubmit={recordDispatch}
         />
       )}
-      {view === 'transfer' && !distributorIngredientDispatch && (
+      {view === 'transfer' && role !== 'distributor' && (
         <Card className="dispatch-workflow-form">
           <h3>1. Select stock or an approved order</h3>
-          {role === 'distributor' && kind === 'product' && (
-            <SelectField
-              label="Transfer type"
-              value={kind}
-              onChange={(value) => {
-                setKind(value as 'ingredient' | 'product');
-                setBatchId('');
-              }}
-              options={[{ value: 'product', label: 'Finished products → Retailer' }]}
-            />
-          )}
-          {role === 'distributor' && kind === 'ingredient' ? (
-            <p>
-              {order
-                ? `Supplier-arranged order ${short(order.orderId)} for ${order.buyerName ?? short(order.buyer)}`
-                : 'Open a Supplier-arranged delivery from your Shipments queue. You cannot create an ingredient delivery independently.'}
-            </p>
-          ) : (
-            <SelectField
-              label={kind === 'ingredient' ? 'Ingredient batch' : 'Product batch'}
-              value={batchId}
-              onChange={setBatchId}
-              required
-              options={[
-                { value: '', label: 'Select available stock' },
-                ...(kind === 'ingredient' ? stockItems : (warehouse?.productStock ?? [])).map(
-                  (entry) => ({
-                    value: entry.batchId,
-                    label:
-                      (entry.name ?? item(entry.batchId)?.name ?? short(entry.batchId)) +
-                      ' · ' +
-                      (kind === 'ingredient' ? entry.batch?.supplierAvailable : entry.available) +
-                      ' ' +
-                      entry.unit,
-                  }),
-                ),
-              ]}
-            />
-          )}
+          <SelectField
+            label={kind === 'ingredient' ? 'Ingredient batch' : 'Product batch'}
+            value={batchId}
+            onChange={setBatchId}
+            required
+            options={[
+              { value: '', label: 'Select available stock' },
+              ...(kind === 'ingredient' ? stockItems : (warehouse?.productStock ?? [])).map(
+                (entry) => ({
+                  value: entry.batchId,
+                  label:
+                    (entry.name ?? item(entry.batchId)?.name ?? short(entry.batchId)) +
+                    ' · ' +
+                    (kind === 'ingredient' ? entry.batch?.supplierAvailable : entry.available) +
+                    ' ' +
+                    entry.unit,
+                }),
+              ),
+            ]}
+          />
           <p>
             Available allocation: {available.toString()} {unit ?? ''}
           </p>
@@ -1392,116 +1382,109 @@ export function ShipmentsWorkspace({
             </div>
           )}
           <h3>2. Confirm the route</h3>
-          {role === 'distributor' && kind === 'ingredient' ? (
-            <p>
-              {label(source)} → {label(destination)} · Recipient:{' '}
-              {order?.buyerName ?? 'Select an order'}
-            </p>
-          ) : (
-            <>
+          <>
+            <SelectField
+              label="Dispatch location"
+              value={from}
+              onChange={setFrom}
+              options={[
+                { value: '', label: 'Select your registered dispatch location' },
+                ...ownLocations
+                  .filter(
+                    (entry) =>
+                      kind === 'ingredient' ||
+                      (!stock?.tracked && same(entry.location, stock?.productionLocation)) ||
+                      stock?.locations?.some(
+                        (location: OrderRecord) =>
+                          same(location.location, entry.location) &&
+                          BigInt(location.available) > 0n,
+                      ),
+                  )
+                  .map((entry) => ({
+                    value: entry.location,
+                    label: formatLocationLabel(entry, short(entry.location)),
+                  })),
+              ]}
+            />
+            {role === 'supplier' && kind === 'ingredient' && (
               <SelectField
-                label="Dispatch location"
-                value={from}
-                onChange={setFrom}
+                label="On-chain Distributor"
+                value={distributor}
+                onChange={(value) => {
+                  setDistributor(value);
+                }}
+                required
                 options={[
-                  { value: '', label: 'Select your registered dispatch location' },
-                  ...ownLocations
-                    .filter(
-                      (entry) =>
-                        kind === 'ingredient' ||
-                        (!stock?.tracked && same(entry.location, stock?.productionLocation)) ||
-                        stock?.locations?.some(
-                          (location: OrderRecord) =>
-                            same(location.location, entry.location) &&
-                            BigInt(location.available) > 0n,
-                        ),
-                    )
-                    .map((entry) => ({
-                      value: entry.location,
-                      label: formatLocationLabel(entry, short(entry.location)),
-                    })),
+                  { value: '', label: 'Select an authorized Distributor' },
+                  ...(data.distributors ?? []).map((company) => ({
+                    value: company.wallet,
+                    label: company.companyName,
+                  })),
                 ]}
               />
-              {role === 'supplier' && kind === 'ingredient' && (
-                <SelectField
-                  label="On-chain Distributor"
-                  value={distributor}
-                  onChange={(value) => {
-                    setDistributor(value);
-                  }}
-                  required
-                  options={[
-                    { value: '', label: 'Select an authorized Distributor' },
-                    ...(data.distributors ?? []).map((company) => ({
-                      value: company.wallet,
-                      label: company.companyName,
-                    })),
-                  ]}
-                />
-              )}
-              {kind === 'product' && (
-                <SelectField
-                  label="Receiving company"
-                  value={recipient}
-                  onChange={(value) => {
-                    setRecipient(value);
-                    setTo('');
-                  }}
-                  options={[
-                    { value: '', label: 'Select an authorized company' },
-                    ...(data.companies ?? [])
-                      .filter(
-                        (company) =>
-                          company.role === (role === 'manufacturer' ? 'DISTRIBUTOR' : 'RETAILER'),
-                      )
-                      .map((company) => ({ value: company.wallet, label: company.companyName })),
-                  ]}
-                />
-              )}
-              {!(role === 'supplier' && kind === 'ingredient') && (
-                <SelectField
-                  label="Receiving location"
-                  value={to}
-                  onChange={setTo}
-                  options={[
-                    { value: '', label: 'Select the registered receiving location' },
-                    ...(kind === 'ingredient'
-                      ? (warehouse?.warehouses ?? [])
-                      : data.locations.filter((entry) => same(entry.company, recipient))
-                    ).map((entry) => ({
-                      value: entry.location,
-                      label: entry.name ?? entry.label ?? label(entry.location),
-                    })),
-                  ]}
-                />
-              )}
-              <p>
-                {label(source)} →{' '}
-                {role === 'supplier' && kind === 'ingredient'
-                  ? distributorWarehouse
-                    ? `${data.companies?.find((c) => same(c.wallet, distributor))?.companyName ?? short(distributor)} (${distributorWarehouse.name})`
-                    : distributor
-                      ? 'No registered warehouse found for this Distributor'
-                      : 'Select an authorized Distributor'
-                  : label(destination)}
-              </p>
-              {role === 'supplier' && kind === 'ingredient' && !distributor && (
+            )}
+            {kind === 'product' && (
+              <SelectField
+                label="Receiving company"
+                value={recipient}
+                onChange={(value) => {
+                  setRecipient(value);
+                  setTo('');
+                }}
+                options={[
+                  { value: '', label: 'Select an authorized company' },
+                  ...(data.companies ?? [])
+                    .filter(
+                      (company) =>
+                        company.role === (role === 'manufacturer' ? 'DISTRIBUTOR' : 'RETAILER'),
+                    )
+                    .map((company) => ({ value: company.wallet, label: company.companyName })),
+                ]}
+              />
+            )}
+            {!(role === 'supplier' && kind === 'ingredient') && (
+              <SelectField
+                label="Receiving location"
+                value={to}
+                onChange={setTo}
+                options={[
+                  { value: '', label: 'Select the registered receiving location' },
+                  ...(kind === 'ingredient'
+                    ? (warehouse?.warehouses ?? [])
+                    : data.locations.filter((entry) => same(entry.company, recipient))
+                  ).map((entry) => ({
+                    value: entry.location,
+                    label: entry.name ?? entry.label ?? label(entry.location),
+                  })),
+                ]}
+              />
+            )}
+            <p>
+              {label(source)} →{' '}
+              {role === 'supplier' && kind === 'ingredient'
+                ? distributorWarehouse
+                  ? `${data.companies?.find((c) => same(c.wallet, distributor))?.companyName ?? short(distributor)} (${distributorWarehouse.name})`
+                  : distributor
+                    ? 'No registered warehouse found for this Distributor'
+                    : 'Select an authorized Distributor'
+                : label(destination)}
+            </p>
+            {role === 'supplier' && kind === 'ingredient' && !distributor && (
+              <Alert
+                type="info"
+                message="Select the authorized Distributor who will receive custody of this ingredient at their warehouse."
+              />
+            )}
+            {role === 'supplier' &&
+              kind === 'ingredient' &&
+              distributor &&
+              !distributorWarehouse && (
                 <Alert
-                  type="info"
-                  message="Select the authorized Distributor who will receive custody of this ingredient at their warehouse."
+                  type="error"
+                  message="The selected Distributor has not registered a warehouse yet. Please choose a Distributor with a registered warehouse."
                 />
               )}
-              {role === 'supplier' &&
-                kind === 'ingredient' &&
-                distributor &&
-                !distributorWarehouse && (
-                  <Alert
-                    type="error"
-                    message="The selected Distributor has not registered a warehouse yet. Please choose a Distributor with a registered warehouse."
-                  />
-                )}
-            </>
-          )}
+          </>
           {(!source || !destination) && (
             <Btn variant="outline" onClick={() => setView('locations')}>
               Set up missing location
@@ -1563,7 +1546,7 @@ export function ShipmentsWorkspace({
           {order && (
             <a
               href={
-                workspacePath(role, role === 'distributor' ? 'sent-requests' : 'requests') +
+                workspacePath(role, 'requests') +
                 '?context=delivery&referenceId=' +
                 encodeURIComponent(order.orderId)
               }
@@ -1634,7 +1617,7 @@ export function ShipmentsWorkspace({
             embedded
               ? undefined
               : () => {
-                  setSelected('');
+                  navigateShipment('');
                   setChecked('');
                 }
           }
@@ -1644,67 +1627,66 @@ export function ShipmentsWorkspace({
           }
           workflowVariant={distributorIngredientDelivery ? 'ingredient-delivery' : 'shipment'}
           additionalContent={
-            <div className="workspace-arrival-detail__extras">
-              {shipment.qrPayload && same(shipment.sender, data.actor) && (
-                <ProductQrDisplay
-                  batchId={shipment.shipmentId}
-                  batchReference={'SHP-' + shipment.shipmentId.slice(2, 10).toUpperCase()}
-                  productName={shipment.itemName ?? 'Registered shipment'}
-                  encodedPayload={shipment.qrPayload}
-                  labelTitle="Shipment receipt QR"
-                  instruction="Attach to this shipment. The intended recipient scans this label before confirming physical receipt."
-                />
-              )}
-              {role === 'distributor' &&
-                shipment.kind === 'ingredient' &&
-                Number(shipment.status) < 3 &&
-                same(shipment.recipient, data.actor) &&
-                Number(shipment.custodyDecision) === 1 && (
-                  <section className="workspace-arrival-panel" aria-label="Vehicle record">
-                    <h3>
-                      <Truck size={20} aria-hidden="true" /> Vehicle record
-                    </h3>
-                    <p className="m-0 text-[12px] text-ws-text2">
-                      Record or update the vehicle registration after accepting this shipment.
-                    </p>
-                    <div className="workspace-arrival-detail__vehicle-form">
-                      <Input
-                        label="Vehicle registration number"
-                        value={recordVehicle}
-                        onChange={(value) => setRecordVehicle(value.toUpperCase())}
-                        placeholder={shipment.vehicle || 'e.g. VAB 1234'}
-                        maxLength={32}
-                      />
-                      <div className="action-row">
-                        <Btn
-                          disabled={busy || !/^[A-Z0-9 -]{2,32}$/.test(recordVehicle.trim())}
-                          onClick={() =>
-                            void run(async () => {
-                              await submit({
-                                action: 'shipment-vehicle',
-                                shipmentId: shipment.shipmentId,
-                                vehicle: recordVehicle.trim(),
-                              });
-                              setRecordVehicle('');
-                              setNotice('Vehicle registration updated successfully.');
-                            })
-                          }
-                        >
-                          Save vehicle
-                        </Btn>
+            (shipment.qrPayload && same(shipment.sender, data.actor)) ||
+            (role === 'distributor' &&
+              shipment.kind === 'ingredient' &&
+              Number(shipment.status) < 3 &&
+              same(shipment.recipient, data.actor) &&
+              Number(shipment.custodyDecision) === 1) ? (
+              <div className="workspace-arrival-detail__extras">
+                {shipment.qrPayload && same(shipment.sender, data.actor) && (
+                  <ProductQrDisplay
+                    batchId={shipment.shipmentId}
+                    batchReference={'SHP-' + shipment.shipmentId.slice(2, 10).toUpperCase()}
+                    productName={shipment.itemName ?? 'Registered shipment'}
+                    encodedPayload={shipment.qrPayload}
+                    labelTitle="Shipment receipt QR"
+                    instruction="Attach to this shipment. The intended recipient scans this label before confirming physical receipt."
+                  />
+                )}
+                {role === 'distributor' &&
+                  shipment.kind === 'ingredient' &&
+                  Number(shipment.status) < 3 &&
+                  same(shipment.recipient, data.actor) &&
+                  Number(shipment.custodyDecision) === 1 && (
+                    <section className="workspace-arrival-panel" aria-label="Vehicle record">
+                      <h3>
+                        <Truck size={20} aria-hidden="true" /> Vehicle record
+                      </h3>
+                      <p className="m-0 text-[12px] text-ws-text2">
+                        Record or update the vehicle registration after accepting this shipment.
+                      </p>
+                      <div className="workspace-arrival-detail__vehicle-form">
+                        <Input
+                          label="Vehicle registration number"
+                          value={recordVehicle}
+                          onChange={(value) => setRecordVehicle(value.toUpperCase())}
+                          placeholder={shipment.vehicle || 'e.g. VAB 1234'}
+                          maxLength={32}
+                        />
+                        <div className="action-row">
+                          <Btn
+                            disabled={busy || !/^[A-Z0-9 -]{2,32}$/.test(recordVehicle.trim())}
+                            onClick={() =>
+                              void run(async () => {
+                                await submit({
+                                  action: 'shipment-vehicle',
+                                  shipmentId: shipment.shipmentId,
+                                  vehicle: recordVehicle.trim(),
+                                });
+                                setRecordVehicle('');
+                                setNotice('Vehicle registration updated successfully.');
+                              })
+                            }
+                          >
+                            Save vehicle
+                          </Btn>
+                        </div>
                       </div>
-                    </div>
-                  </section>
-                )}
-              {role === 'distributor' &&
-                same(shipment.recipient, data.actor) &&
-                shipment.kind === 'product' &&
-                Number(shipment.status) === 2 && (
-                  <Btn icon={<Truck size={16} />} onClick={() => compose(shipment.kind, shipment)}>
-                    Arrange onward transfer
-                  </Btn>
-                )}
-            </div>
+                    </section>
+                  )}
+              </div>
+            ) : undefined
           }
           technicalFields={[
             { label: 'Shipment ID', value: shipment.shipmentId },

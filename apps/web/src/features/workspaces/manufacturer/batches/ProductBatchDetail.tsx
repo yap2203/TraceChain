@@ -90,7 +90,7 @@ export function ProductBatchDetail({
   }, [productBatchId]);
 
   if (error) return <Alert type="error" message={error} />;
-  if (loading) return <LoadingIndicator page label="Reading ProductRegistry…" />;
+  if (loading) return <LoadingIndicator page layout="detail" label="Reading ProductRegistry…" />;
   if (!p)
     return (
       <EmptyState

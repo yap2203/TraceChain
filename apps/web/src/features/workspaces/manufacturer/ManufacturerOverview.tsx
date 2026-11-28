@@ -48,6 +48,14 @@ export function ManufacturerOverview({ onNav }: { onNav: (tab: string) => void }
 
   return (
     <StakeholderOverviewLayout
+      refreshing={
+        operational.refreshing ||
+        productOrders.refreshing ||
+        myOrders.refreshing ||
+        offers.refreshing ||
+        identity.refreshing ||
+        catalogue.refreshing
+      }
       title="Manufacturer overview"
       description="Product orders to approve, supplier evidence to review and your product batches."
       errors={[

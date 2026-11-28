@@ -1,5 +1,36 @@
 # Project Progress
 
+## 2026-11-28 - Minimal shared stakeholder presentation
+
+- Replaced buying/selling and vague shipment tabs with goods/counterparty labels across Supplier, Manufacturer, Distributor and Retailer navigation. Existing routes, links, carrier/owner/recipient responsibilities and stock workflows are unchanged.
+- Shared requests use viewer-aware waiting/review labels, correct Supplier/Manufacturer/Retailer columns and the same review eligibility as action badges. Server-paginated tables no longer paginate a second time. Lists keep identity, quantity, status, next action and View details; dates and secondary facts remain in details.
+- Removed redundant product/custody card expansion state, controls and CSS; one View details opens the existing full record. Preserved Supplier editing/archive, production/custody actions, Technical details and workflow help.
+- Shared page loading now renders responsive card/table/detail/form skeletons with accessible busy text and reduced-motion support; inline signing/session spinners remain. Operational/overview refreshes retain validated content with explicit refreshing/error states and no extra polling or RPC requests. Applicable Admin loading uses the same component.
+- No backend, contract, credential, authorization, QR protocol, key, environment, stored-record or deployment changes. Prior evidence-review, receipt and standalone-onward-removal changes remain intact.
+- Admin applications reuse the shared status filters, hide unknown counts and distinguish retrieval errors from successful empty lists, with Retry and retained rows during refresh.
+- Validation: 535 frontend tests across 83 files passed, along with frontend/API/shared/SSI typechecks, production build, changed-file Prettier and git diff checks. Root typecheck retains four existing CompanyProofRegistry.reject contract-test typing errors; repository-wide formatting still reports unrelated existing issues. Interactive desktop/mobile browser checks and live wallet workflows were not performed.
+
+## 2026-11-28 - Confirmed order stages, direct tracking, QR image recovery and action badges
+
+- Confirmed approvals hide obsolete decision buttons and mark arrangement as the next step. Approval no longer automatically chains a delivery arrangement; confirmed approval is retained in component memory if readback lags, and arrangement/confirmed-refresh failures cannot replay approval or dispatch.
+- Existing order and shipment links open the recorded shipment tracking view directly. Lists omit the duplicate order representation after a real shipment exists, use compact shared cards/status filters and keep detail mode separate. Product receipt status 2 is treated as completed; delivery parties use Sender wording instead of mislabelling the carrier as Supplier.
+- Reproduced the exact Downloads SHP-13B3B204 PNG: normal ZXing fails with FormatException at BitMatrixParser.readVersion at all existing resize scales. PURE_BARCODE decodes it successfully; regenerated production-renderer pixels match the original, and extracted text equals its canonical HTTPS product-shipment link. Added that fallback, normal scan-miss classification, separate image decoder state, native fallback during SDK failure, resource cleanup and latest-upload guards. QR validation/recipient authorization and explicit receipt remain intact; no original image is stored in the repository.
+- Added one shared red navigation/tab action badge and wallet/session-scoped observation of existing Orders, custody, evidence and application queries. Eligibility is reused with shipment/evidence action filters, records are deduplicated, server order aggregates cover pagination, zero is hidden and counts above 99 are capped visually. Failed/stale/unknown sources do not claim current zero counts. No extra fetches, polling, blockchain scans, business-data files or unread tracking were added.
+- Previous evidence separation and standalone onward-transfer removal are preserved. No contracts, keys, environment values, records, deployment or live transactions were changed.
+- Validation: 523 frontend tests and 230 Orders API tests passed; frontend/API/shared/SSI typechecks and the production build passed. Root typecheck remains blocked by four existing CompanyProofRegistry.reject contract-test typing errors. Changed-file Prettier and git diff checks passed. Live Render/MetaMask transactions and interactive desktop/mobile browser checks were not performed.
+
+## 2026-11-28 - Preview and verify evidence before a separate decision
+
+- Company proof status reads now return only disclosed company fields to the authorized reviewer before acceptance, with missing disclosures and read-only technical checks. Reads do not mutate proof status, save a review decision, prepare a transaction or fill claims from the source VC. Legacy full presentations remain summaries; issuer credentials and private registration files are not returned.
+- Shared company/delivery/custody and Manufacturer/Retailer ingredient evidence views show preview, verification results and explicit Accept evidence / Reject evidence controls. Ingredient Verify evidence records only its technical check; acceptance still rechecks on the backend. Failed/unavailable checks disable acceptance and provide retry without treating an outage as invalid evidence.
+- Existing accepted/rejected history, selective disclosures, attachment authorization/integrity checks and separate order/custody/receipt actions remain intact. No contracts, keys or records were migrated, removed or redeployed. The earlier Distributor standalone-transfer removal remains preserved.
+
+## 2026-11-28 - Remove standalone Distributor onward-transfer UI
+
+- Removed the post-receipt Arrange onward transfer action and its generic Distributor product-dispatch form, plus the unused standalone Retailer-transfer form/review/created wizard, barrel export and exclusive frontend API wrappers/types. Replaced obsolete wizard tests with removal and legacy-entry regressions.
+- Legacy standalone transfer entries fall back to the retained shipment detail/list. Existing Distributor transfers URL alias continues to open Product deliveries; no new route is introduced. Empty extra-action containers are omitted from received shipment details.
+- Kept order-assigned ingredient dispatch to Manufacturers and product delivery to Retailers, shared QR/receipt components, custody offers, pickup/handoff, warehouse receipt, stock/history and traceability. Shared backend preparation/confirmation APIs, records and contracts remain unchanged.
+
 ## 2026-11-28 - Shipment receipt landing URL and login return
 
 - Confirmed the deployed receipt bundle passed `publicAppUrl: undefined` to `decodeShipmentQr`; its `new URL(expected.publicAppUrl)` caused the raw Invalid URL exception. A valid generated QR reproduced the stack and the branding-only error state locally. API request construction was not the throwing call.

@@ -16,17 +16,17 @@ const startingPoints: Record<WorkspaceRole, readonly (readonly [string, string, 
   supplier: [
     ['batches', 'Manage ingredients', 'Register batches and check your remaining stock.'],
     ['orders', 'Review orders', 'Approve requests and arrange delivery.'],
-    ['shipments', 'Track shipments', 'Follow custody intake and onward delivery.'],
+    ['shipments', 'Track shipments', 'Follow custody intake and order-assigned delivery.'],
   ],
   manufacturer: [
     ['products', 'Manage products', 'Create products from received ingredients.'],
-    ['orders', 'Manage ingredient orders', 'Track requests sent to Suppliers.'],
+    ['orders', 'Manage ingredient orders', 'Track ingredient requests sent to Suppliers.'],
     ['shipments', 'Receive ingredients', 'Scan the shipment QR when goods arrive.'],
   ],
   distributor: [
     ['intake', 'Review custody offers', 'Accept stock and arrange the pickup time.'],
     ['inventory', 'Check custody stock', 'See stock held by your company.'],
-    ['shipments', 'Manage deliveries', 'Dispatch assigned deliveries to buyers.'],
+    ['shipments', 'Manage deliveries', 'Deliver assigned ingredients to Manufacturers.'],
   ],
   retailer: [
     ['browse', 'Find products', 'View product details and request quantities.'],

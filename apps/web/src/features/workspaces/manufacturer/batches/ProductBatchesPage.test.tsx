@@ -177,7 +177,7 @@ describe('Manufacturer Products inventory', () => {
     expect(screen.getByText('Active batches').parentElement?.textContent).toContain('2');
   });
 
-  it('persists List/Grid selection without fetching again and expands only one product', async () => {
+  it('persists List/Grid selection without fetching again and uses one detail action per product', async () => {
     const first = mount();
     await screen.findByText('Boxed chocolate');
     expect(mocks.getOrders).toHaveBeenCalledOnce();
@@ -187,13 +187,9 @@ describe('Manufacturer Products inventory', () => {
     expect(mocks.getOrders).toHaveBeenCalledOnce();
 
     const cards = first.container.querySelectorAll<HTMLElement>('.manufacturer-product-card');
-    fireEvent.click(within(cards[0]).getByRole('button', { name: 'Show more' }));
-    expect(cards[0].classList.contains('is-expanded')).toBe(true);
-    expect(cards[1].classList.contains('is-expanded')).toBe(false);
-    expect(within(cards[0]).getByText('Shah Alam Chocolate Plant')).toBeTruthy();
-    expect(cards[0].querySelector('details')?.open).toBe(false);
-    fireEvent.click(within(cards[0]).getByRole('button', { name: 'Show less' }));
-    expect(cards[0].classList.contains('is-expanded')).toBe(false);
+    expect(within(cards[0]).queryByRole('button', { name: 'Show more' })).toBeNull();
+    expect(within(cards[0]).getAllByRole('button', { name: 'View details' })).toHaveLength(1);
+    expect(within(cards[1]).getAllByRole('button', { name: 'View details' })).toHaveLength(1);
 
     first.unmount();
     const restored = mount();

@@ -2,7 +2,11 @@ import type { ReactNode } from 'react';
 import { ClipboardList, FileCheck, Leaf } from 'lucide-react';
 import { Alert, Badge, TechnicalDetails } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
-import { EvidenceDetailLayout, EvidenceNextStep } from '../orders/EvidenceParts';
+import {
+  EvidenceDetailLayout,
+  EvidenceNextStep,
+  EvidenceVerificationSummary,
+} from '../orders/EvidenceParts';
 import {
   EvidenceCard,
   EvidenceSummaryCard,
@@ -11,7 +15,6 @@ import {
   RequestSummary,
   evidenceDateFields,
   ingredientRequestedRows,
-  verificationBadge,
   type OutcomeTone,
 } from '../orders/EvidenceIdentity';
 import { IngredientClaimValue } from './IngredientClaimValue';
@@ -46,7 +49,6 @@ export function IngredientEvidenceReview({
   howItWorks?: ReactNode;
 }) {
   const supplier = review.supplierName ?? 'Supplier';
-  const verification = verificationBadge(review.verification.state);
   const shared = Object.entries(review.sharedClaims).filter(([key]) => key !== 'policyVersion');
   const business = shared.filter(([key]) => !(key in INGREDIENT_IDENTIFIER_CLAIMS));
   const open = review.status === 1 || review.status === 2;
@@ -81,18 +83,9 @@ export function IngredientEvidenceReview({
         badges={
           <>
             <Badge label={status.label} variant={status.variant} />
-            <Badge label={verification.label} variant={verification.variant} />
           </>
         }
       />
-      <EvidenceNextStep
-        tone={outcome.tone === 'done' ? 'done' : outcome.tone === 'closed' ? 'closed' : 'default'}
-        title={outcome.title}
-        message={outcome.message}
-      >
-        {actions}
-      </EvidenceNextStep>
-      {children}
       <EvidenceCard
         icon={FileCheck}
         title="Shared ingredient information"
@@ -101,7 +94,7 @@ export function IngredientEvidenceReview({
         {review.unmetRequirements?.length ? (
           <Alert
             type="warning"
-            message={`Incomplete: the Supplier did not share everything you marked required. ${review.unmetRequirements.join(' ')} Decide whether to accept or reject this evidence.`}
+            message={`Incomplete: the Supplier did not share everything you marked required. ${review.unmetRequirements.join(' ')} Review missing disclosures before making a decision.`}
           />
         ) : null}
         {business.length > 0 && (
@@ -127,6 +120,15 @@ export function IngredientEvidenceReview({
           }))}
         />
       </EvidenceCard>
+      <EvidenceVerificationSummary verification={review.verification} />
+      <EvidenceNextStep
+        tone={outcome.tone === 'done' ? 'done' : outcome.tone === 'closed' ? 'closed' : 'default'}
+        title={outcome.title}
+        message={outcome.message}
+      >
+        {actions}
+      </EvidenceNextStep>
+      {children}
       {howItWorks}
       <TechnicalDetails
         fields={[

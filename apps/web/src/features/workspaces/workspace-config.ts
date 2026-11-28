@@ -129,7 +129,7 @@ export const workspacePages: Record<string, PageDefinition> = {
   },
   'distributor:incoming-shipments': {
     title: 'Shipments',
-    description: 'Review ingredient and product shipments, receipts and onward transfers.',
+    description: 'Review ingredient and product shipments, receipts and order-assigned deliveries.',
     actionLabel: 'Review shipment',
     icon: 'transfers',
   },
@@ -140,9 +140,9 @@ export const workspacePages: Record<string, PageDefinition> = {
     icon: 'inventory',
   },
   'distributor:transfers': {
-    title: 'Retail transfers',
-    description: 'Prepare available products for transfer to retailer organisations.',
-    actionLabel: 'New transfer',
+    title: 'Product deliveries',
+    description: 'Review order-assigned product deliveries to Retailers.',
+    actionLabel: 'Review delivery',
     icon: 'transfers',
   },
   'retailer:incoming-products': {

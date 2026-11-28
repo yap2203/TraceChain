@@ -88,7 +88,7 @@ export function ManufacturerIngredientOrderDetail({
     (decision === 2 || Number(order.status) === 3 || Number(order.delivery?.stage) === 6);
   const expired = !receivedComplete && !closed && Number(order.expiresAt) <= Date.now() / 1_000;
   const currentStep = receivedComplete ? 3 : decision === 1 ? 2 : 1;
-  const status = requestStatus(order);
+  const status = requestStatus(order, data.actor);
   const stage = currentStageLabel({ closed, expired, receivedComplete, currentStep });
   const evidence = evidenceState(order);
   const next = order.custodyOrder
@@ -182,7 +182,7 @@ export function ManufacturerIngredientOrderDetail({
 
   return (
     <section className="manufacturer-order-detail" aria-label="Ingredient order detail">
-      <BackNavigation onClick={onBack}>Buying ingredients</BackNavigation>
+      <BackNavigation onClick={onBack}>Ingredient requests to Suppliers</BackNavigation>
 
       <header className="manufacturer-order-detail__header">
         <div className="manufacturer-order-detail__title">

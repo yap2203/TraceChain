@@ -51,7 +51,7 @@ export function ProductDeliveryPanel({
       ? Math.min(Number(order.expiresAt), Number(order.decision.recordedAt) + 48 * 3600)
       : Number(order.expiresAt);
   const stage = Number(
-    r?.stage ??
+    (Number(r?.stage) > 0 ? r.stage : undefined) ??
       (Number(order.status) >= 3 || approvalDeadline <= Date.now() / 1000
         ? 6
         : Number(order.decision?.status) === 1
@@ -69,8 +69,11 @@ export function ProductDeliveryPanel({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [notice, setNotice] = useState('');
+  const [selectionConfirmed, setSelectionConfirmed] = useState(false);
+  const [refreshRequired, setRefreshRequired] = useState(false);
   const [pickupReady, setPickupReady] = useState(false);
   const [requestEvidence, setRequestEvidence] = useState(false);
+  const uploadAttempt = useRef(0);
   const lock = useRef(false),
     video = useRef<HTMLVideoElement>(null),
     reader = useRef(new ZxingTransferQrReader()),
@@ -79,6 +82,7 @@ export function ProductDeliveryPanel({
   useEffect(
     () => () => {
       attempt.current++;
+      uploadAttempt.current++;
       stop.current?.();
     },
     [],
@@ -89,8 +93,13 @@ export function ProductDeliveryPanel({
     setActual(localTime());
     setEta(localTime(4 * 3600000));
     attempt.current++;
+    uploadAttempt.current++;
     stop.current?.();
   }, [order.orderId, stage, data.actor]);
+  useEffect(() => {
+    setSelectionConfirmed(false);
+    setRefreshRequired(false);
+  }, [order.orderId, data.actor]);
   const check = (value: string) => {
     try {
       decodeShipmentQr(value, {
@@ -113,7 +122,7 @@ export function ProductDeliveryPanel({
     if (initialQr && carrier && stage === 3) check(initialQr);
   }, [initialQr, carrier, stage]);
   const run = async (input: Record<string, unknown>) => {
-    if (lock.current) return;
+    if (lock.current || refreshRequired) return;
     lock.current = true;
     setBusy(true);
     setError('');
@@ -127,9 +136,11 @@ export function ProductDeliveryPanel({
       });
       await submitProductionTransaction(p.transaction, data.actor);
       mined = true;
+      if (input.action === 'product-order-select') setSelectionConfirmed(true);
       setNotice('Product delivery action confirmed on-chain.');
       await onChanged();
     } catch (cause) {
+      if (mined) setRefreshRequired(true);
       setError(
         mined
           ? 'Confirmed, but refresh failed. Refresh before submitting another action.'
@@ -184,12 +195,18 @@ export function ProductDeliveryPanel({
             label: 'Manufacturer approves',
             actor: order.sellerName ?? 'Manufacturer',
             icon: <Factory size={22} />,
+            state: stage === 6 ? ('pending' as const) : ('complete' as const),
+          },
+          {
+            label: 'Arrange delivery',
+            actor: order.sellerName ?? 'Manufacturer',
+            icon: <Truck size={22} />,
             state:
-              stage === 6
-                ? ('pending' as const)
-                : stage > 1
+              stage === 1 && !selectionConfirmed
+                ? ('current' as const)
+                : (stage >= 2 && stage <= 5) || selectionConfirmed
                   ? ('complete' as const)
-                  : ('current' as const),
+                  : ('pending' as const),
           },
           {
             label: 'Distributor delivers',
@@ -198,7 +215,7 @@ export function ProductDeliveryPanel({
             state:
               stage >= 5
                 ? ('complete' as const)
-                : stage >= 2 && stage <= 4
+                : (stage >= 2 && stage <= 4) || selectionConfirmed
                   ? ('current' as const)
                   : ('pending' as const),
           },
@@ -211,17 +228,17 @@ export function ProductDeliveryPanel({
         ]}
       />
       <strong role="status">
-        {
-          [
-            'Awaiting approval',
-            'Choose delivery mode',
-            'Distributor reviewing request',
-            'Ready for physical dispatch',
-            'In transit to Retailer',
-            'Received by Retailer',
-            'Cancelled / expired',
-          ][stage]
-        }
+        {selectionConfirmed && stage === 1
+          ? 'Delivery arrangement confirmed'
+          : [
+              'Awaiting approval',
+              'Choose delivery mode',
+              'Distributor reviewing request',
+              'Ready for physical dispatch',
+              'In transit to Retailer',
+              'Received by Retailer',
+              'Cancelled / expired',
+            ][stage]}
       </strong>
       <p>
         {item?.name ?? 'Registered product'} · {order.requested} {item?.unit} ·{' '}
@@ -231,7 +248,23 @@ export function ProductDeliveryPanel({
             : 'From received Distributor custody'
           : 'Manufacturer selects fulfilment after approval'}
       </p>
-      {error && <Alert type="error" message={error} />}
+      {error && <Alert type="error" announce={false} message={error} />}
+      {refreshRequired && (
+        <Btn
+          variant="outline"
+          onClick={() => {
+            void onChanged()
+              .then(() => setRefreshRequired(false))
+              .catch(() =>
+                setError(
+                  'The transaction is confirmed. Retry refreshing records; do not resubmit.',
+                ),
+              );
+          }}
+        >
+          Refresh records
+        </Btn>
+      )}
       {notice && <Alert type="success" message={notice} />}
       {!data.productDeliverySupported && (
         <Alert
@@ -239,7 +272,27 @@ export function ProductDeliveryPanel({
           message="Product order delivery needs the updated complete contract suite. Existing stock and records remain intact."
         />
       )}
-      {manufacturer && stage === 1 && (
+      {manufacturer && stage === 1 && selectionConfirmed && (
+        <div className="delivery-action-section">
+          <h4>Delivery arrangement confirmed</h4>
+          <p>
+            Assigned carrier:{' '}
+            {data.companies?.find((entry) => same(entry.wallet, distributor))?.companyName ??
+              'Selected Distributor'}
+            . Refresh the confirmed record to follow pickup and delivery.
+          </p>
+          <a
+            href={
+              workspacePath(role, 'product-shipments') +
+              '?orderId=' +
+              encodeURIComponent(order.orderId)
+            }
+          >
+            Open delivery tracking
+          </a>
+        </div>
+      )}
+      {manufacturer && stage === 1 && !selectionConfirmed && (
         <div className="delivery-action-section grid gap-[12px] sm:grid-cols-2">
           <h4 className="col-span-full">Arrange delivery</h4>
           <SelectField
@@ -305,13 +358,14 @@ export function ProductDeliveryPanel({
           <p>
             {mode === '1'
               ? 'The Distributor accepts, scans at pickup and delivers to the Retailer.'
-              : 'Available warehouse stock is reserved for this order.'}{' '}
+              : 'Confirming this arrangement reserves the selected warehouse stock for this order.'}{' '}
             Arrange within 48 hours of approval and before request expiry.
           </p>
           <div className="action-row">
             <Btn
               disabled={
                 busy ||
+                refreshRequired ||
                 !data.productDeliverySupported ||
                 !from ||
                 !to ||
@@ -349,13 +403,13 @@ export function ProductDeliveryPanel({
         <div className="flex flex-wrap gap-[8px] action-row">
           <Btn
             variant="danger"
-            disabled={busy}
+            disabled={busy || refreshRequired}
             onClick={() => void run({ action: 'product-order-respond', accept: false })}
           >
             Decline product delivery
           </Btn>
           <Btn
-            disabled={busy}
+            disabled={busy || refreshRequired}
             onClick={() => void run({ action: 'product-order-respond', accept: true })}
           >
             Accept product delivery
@@ -439,11 +493,21 @@ export function ProductDeliveryPanel({
                   accept="image/*"
                   onChange={async (event) => {
                     const file = event.target.files?.[0];
+                    event.target.value = '';
+                    const upload = ++uploadAttempt.current;
+                    setScanned('');
+                    setError('');
+                    setConfirmed(false);
                     if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) {
+                      setError('Select a supported image up to 5 MB.');
+                      return;
+                    }
                     try {
-                      check(await reader.current.decodeImage(file));
+                      const payload = await reader.current.decodeImage(file);
+                      if (upload === uploadAttempt.current) check(payload);
                     } catch (cause) {
-                      setError(qrImageErrorMessage(cause));
+                      if (upload === uploadAttempt.current) setError(qrImageErrorMessage(cause));
                     }
                   }}
                 />
@@ -486,6 +550,7 @@ export function ProductDeliveryPanel({
               icon={<Truck size={16} />}
               disabled={
                 busy ||
+                refreshRequired ||
                 !confirmed ||
                 !validTransport ||
                 proofBlocked ||
@@ -521,7 +586,7 @@ export function ProductDeliveryPanel({
       {((manufacturer && stage >= 2 && stage < 4) || (stage === 6 && r?.reservationActive)) && (
         <Btn
           variant="outline"
-          disabled={busy}
+          disabled={busy || refreshRequired}
           onClick={() => void run({ action: 'product-order-close' })}
         >
           {stage === 6

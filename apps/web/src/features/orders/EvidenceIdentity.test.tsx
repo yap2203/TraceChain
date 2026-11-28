@@ -25,7 +25,10 @@ it('marks requested fields as shared, missing (required) or not shared', () => {
 it('never labels unverified evidence as verified', () => {
   expect(verificationBadge('NOT_VERIFIED').label).toBe('Not verified yet');
   expect(verificationBadge(undefined).label).toBe('Not verified yet');
-  expect(verificationBadge('PASSED')).toEqual({ label: 'Verified', variant: 'verified' });
+  expect(verificationBadge('PASSED')).toEqual({
+    label: 'Verification passed',
+    variant: 'verified',
+  });
 });
 
 it('shortens an identifier for display but copies and expands the full value', async () => {

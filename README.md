@@ -206,6 +206,12 @@ Certification and Custom templates. New ingredient creation uses production date
 origin, allergens and certifications, with processing and quality-evidence inputs removed.
 Previously saved credentials remain parseable for compatibility, but retired
 processing/laboratory values are ignored by current ingredient responses and UI.
+Evidence review separates shared information, technical verification and the reviewer's decision.
+Authorized reviewers see only the disclosed fields and permitted attachments before deciding.
+Company proof status reads run checks without accepting; ingredient evidence has a separate **Verify evidence**
+action. **Accept evidence** is enabled after successful checks and revalidates before recording acceptance;
+**Reject evidence** remains a separate decision. Verification outages are retryable and do not mark evidence
+invalid. Existing accepted/rejected history and order/custody/receipt decisions remain separate.
 Required evidence is checked before verification/acceptance; legacy
 credentials remain supported without invented fields. See [policy, versions and test flow](docs/DISCLOSURE_POLICY.md).
 
@@ -350,11 +356,21 @@ Only then can the Distributor record dispatch to the selected Manufacturer locat
 alone credits usable production stock. Each leg has its own shipment/QR. Supplier availability is
 debited once at initial dispatch, never again at Manufacturer receipt.
 
+Confirmed order approval and delivery arrangement are separate actions. After approval, decision
+controls are replaced by the approved result and delivery arrangement; a failed arrangement retries
+only that action. Confirmed shipment links open full tracking directly, including legacy order links;
+pre-dispatch orders remain reviewable without inventing shipment records. Delivery lists render each
+confirmed shipment once and keep workflow controls out of list mode.
+
 **Shipments** replaces Distributor Incoming shipments and Ingredient deliveries, with Ingredient
-and Product types, custody balances and onward transfer from detail. Supplier and Manufacturer also
+and Product types, custody balances and order-assigned delivery details. Supplier and Manufacturer also
 have Transfers/Shipments. Road dispatch records vehicle, route, canonical quantity/unit, actual time,
 ETA, block time and signer on-chain. Old Distributor links redirect to Shipments. This needs a fresh
 full-suite deployment; old journals and root environment are not modified automatically.
+The standalone Distributor **Arrange onward transfer** action and Retailer-transfer wizard are removed.
+Received shipment details retain history and technical information; old transfer links open Product
+deliveries or the referenced shipment instead. Manufacturer/Retailer orders still determine normal
+Distributor dispatch, and custody acceptance, pickup/handoff, warehouse receipt and inventory are unchanged.
 See [setup, limitations and step-by-step testing](docs/testing/WAREHOUSE_CUSTODY_FLOW.md).
 The older 48-hour assignment route remains documented for legacy compatibility only.
 
@@ -1089,8 +1105,23 @@ making those legacy clear-text fields selectively disclosable requires a version
 replacement path. Request read/unread state and cross-device disclosure preferences are not stored
 in browser storage. The deployed contracts do not currently expose a private, discoverable mutable
 reference for those two records, so they are intentionally not simulated with local state.
-Company-proof details do not embed general order navigation. Loading pages use the shared centered
-spinner; dismissible notifications show success or readable errors instead of raw RPC/JSON payloads.
+Company-proof details do not embed general order navigation. Loading pages use shared responsive card, table, detail or form skeletons; dismissible notifications show success or readable errors instead of raw RPC/JSON payloads.
+Shipment image errors use one inline announcement. The shared image reader keeps normal ZXing
+recognition and adds PURE_BARCODE for clean dense exported labels; image attempts do not share camera
+state. QR payload/version/network/registry/shipment checks and explicit recipient receipt remain required.
+Workspace labels identify the handled goods and counterparties: Manufacturer ingredient requests to
+Suppliers, product requests from Retailers, ingredients arriving and products leaving (to Distributor
+warehouses or Retailers). Distributor delivery tabs identify Manufacturers or Retailers; existing URLs
+are unchanged. Inventory cards use one View details entry; secondary facts remain in the existing
+detail view, alongside independent Technical details/help disclosures. Server-paginated request
+tables have one server pager. Request labels and needs-action badges use the viewer's role in the
+record: waiting for a Supplier response is not a Manufacturer review action. Operational and overview
+refreshes retain validated content, show refreshing feedback and keep failures distinct from empty data.
+Navigation and page tabs use a shared red needs-action badge (hidden at zero, 99+ above 99). Counts
+observe existing wallet/session-bound query results only: no new polling or RPC requests. Normal
+refreshes update them; confirmed actions invalidate old counts. Failed/stale or not-yet-loaded sources
+show no current count rather than false zeroes. These are action counts, not unread notifications.
+
 Success notifications disappear after 4 seconds; error notifications after 7 seconds. Only the exact
 current sidebar page is highlighted, including the single Evidence Exchange destination.
 Workspace modals dismiss on backdrop clicks or Escape. Confirmed registration and logout return to

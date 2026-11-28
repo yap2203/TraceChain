@@ -1,3 +1,4 @@
+import { invalidateNavigationActions } from '../workspaces/action-counts';
 import { BrowserProvider, getAddress, Interface } from 'ethers';
 import { BlockchainTimeWaitError, waitForMinedBlockTime } from '@tracechain/shared';
 import { notify } from '../../components/ui/feedback';
@@ -142,6 +143,7 @@ export async function submitProductionTransaction(
         'The mined blockchain transaction failed. Refresh the record before deciding whether to retry.',
         'mined',
       );
+    invalidateNavigationActions();
     notify('Blockchain transaction confirmed.', 'success');
     for (const next of transaction.nextTransactions ?? []) {
       notify('Confirm the shared proof reference in MetaMask to complete publication.', 'info');

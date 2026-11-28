@@ -31,7 +31,6 @@ export { TechnicalDetails } from './TechnicalDetails';
 export { TechnicalIdentifier } from './TechnicalIdentifier';
 export { WorkflowHelp } from './WorkflowHelp';
 export {
-  InventoryExpandButton,
   InventoryFact,
   InventorySummaryCard,
   InventoryViewToggle,

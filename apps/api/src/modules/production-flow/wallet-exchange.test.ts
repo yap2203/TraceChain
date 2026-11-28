@@ -490,9 +490,7 @@ describe('Wallet exchange across independent API data directories', () => {
       .service('API-A', f.agentA)
       .reviewEvidence(f.manufacturer.address, prepared.requestId);
     expect(view.sharedClaims).not.toHaveProperty('countryOfOrigin');
-    expect(view.unmetRequirements).toEqual([
-      'Country of origin is required.',
-    ]);
+    expect(view.unmetRequirements).toEqual(['Country of origin is required.']);
   });
   it('opens the request and responds on empty B, then verifies on restarted A without a holder kit', async () => {
     const f = await setup();
@@ -637,6 +635,18 @@ describe('Wallet exchange across independent API data directories', () => {
       f.apply(response.body.transaction);
       const restartedA = f.service('API-A', f.agentA);
       const httpA = await serve(restartedA);
+      await request(httpA)
+        .get(base)
+        .set('Cookie', `test-session=${f.stranger.address}`)
+        .expect(404);
+      const beforeDecision = (
+        await request(httpA).get(base).set('Cookie', `test-session=${verifier.address}`).expect(200)
+      ).body;
+      expect(beforeDecision.status).toBe('PRESENTED');
+      expect(beforeDecision.credential).toHaveProperty('companyName');
+      expect(beforeDecision.credential).not.toHaveProperty('companyId');
+      expect(beforeDecision.verification.state).toBe('PASSED');
+      expect(beforeDecision.transaction).toBeUndefined();
       const checked = (
         await request(httpA)
           .post(base + '/verify')

@@ -34,7 +34,7 @@ export const workspaceNavigation = {
   supplier: [
     ['overview', 'Overview', LayoutDashboard],
     ['batches', 'My ingredients', Layers],
-    ['orders', 'Incoming orders', ClipboardList],
+    ['orders', 'Ingredient requests from Manufacturers', ClipboardList],
     ['transfers', 'Send to custody', ArrowRightLeft],
     ['shipments', 'Shipments', Truck],
     ['inventory', 'Stock at distributors', Warehouse],
@@ -49,10 +49,10 @@ export const workspaceNavigation = {
     ['overview', 'Overview', LayoutDashboard],
     ['products', 'My products', Package],
     ['ingredients', 'Supplier ingredients', Layers],
-    ['orders', 'Buying ingredients', ClipboardList],
-    ['product-orders', 'Selling products', ClipboardList],
-    ['shipments', 'Incoming ingredients', Truck],
-    ['product-shipments', 'Outgoing products', Truck],
+    ['orders', 'Ingredient requests to Suppliers', ClipboardList],
+    ['product-orders', 'Product requests from Retailers', ClipboardList],
+    ['shipments', 'Ingredients arriving', Truck],
+    ['product-shipments', 'Products leaving', Truck],
     ['transfers', 'Send to custody', ArrowRightLeft],
     ['inventory', 'Stock at distributors', Warehouse],
     ['requests', 'Evidence Exchange', Inbox],
@@ -66,8 +66,8 @@ export const workspaceNavigation = {
     ['overview', 'Overview', LayoutDashboard],
     ['intake', 'Custody offers', Inbox],
     ['arrivals', 'Warehouse arrivals', Truck],
-    ['shipments', 'Ingredient deliveries', Truck],
-    ['product-shipments', 'Product deliveries', Truck],
+    ['shipments', 'Ingredients to Manufacturers', Truck],
+    ['product-shipments', 'Products to Retailers', Truck],
     ['inventory', 'Ingredient stock', Warehouse],
     ['product-inventory', 'Product stock', Warehouse],
     ['requests', 'Evidence Exchange', Inbox],
@@ -80,8 +80,8 @@ export const workspaceNavigation = {
   retailer: [
     ['overview', 'Overview', LayoutDashboard],
     ['browse', 'Browse products', Package],
-    ['orders', 'My orders', ClipboardList],
-    ['shipments', 'Incoming deliveries', Truck],
+    ['orders', 'Product requests to Manufacturers', ClipboardList],
+    ['shipments', 'Products arriving', Truck],
     ['history', 'Received products', History],
     ['traceability', 'Trace a product', Route],
     ['scan', 'Scan product QR', ScanQrCode],
@@ -109,15 +109,15 @@ const workspaceSections: Partial<Record<WorkspaceRole, readonly WorkspaceSection
     {
       label: 'Orders',
       pages: [
-        ['orders', 'Buying ingredients'],
-        ['product-orders', 'Selling products'],
+        ['orders', 'Ingredient requests to Suppliers'],
+        ['product-orders', 'Product requests from Retailers'],
       ],
     },
     {
       label: 'Shipments',
       pages: [
-        ['shipments', 'Incoming ingredients'],
-        ['product-shipments', 'Outgoing products'],
+        ['shipments', 'Ingredients arriving'],
+        ['product-shipments', 'Products leaving'],
       ],
     },
     {
@@ -132,9 +132,9 @@ const workspaceSections: Partial<Record<WorkspaceRole, readonly WorkspaceSection
     {
       label: 'Deliveries',
       pages: [
-        ['arrivals', 'Incoming to warehouse'],
-        ['shipments', 'Outgoing ingredients'],
-        ['product-shipments', 'Outgoing products'],
+        ['arrivals', 'Arriving at warehouses'],
+        ['shipments', 'Ingredients to Manufacturers'],
+        ['product-shipments', 'Products to Retailers'],
       ],
     },
     {
@@ -149,8 +149,8 @@ const workspaceSections: Partial<Record<WorkspaceRole, readonly WorkspaceSection
     {
       label: 'Deliveries',
       pages: [
-        ['shipments', 'Incoming'],
-        ['history', 'Received'],
+        ['shipments', 'Products arriving'],
+        ['history', 'Products received'],
       ],
     },
     {

@@ -1,7 +1,18 @@
+import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
+import type { ReactElement } from 'react';
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render as baseRender,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encodeShipmentQr } from '@tracechain/shared';
+const render = (element: ReactElement) =>
+  baseRender(element.type === MemoryRouter ? element : <MemoryRouter>{element}</MemoryRouter>);
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   prepare: vi.fn(),
@@ -311,7 +322,8 @@ describe('unified warehouse shipments', () => {
     mocks.get.mockResolvedValue(next);
     render(<ShipmentsWorkspace role="distributor" />);
     expect(await screen.findByText('Direct delivery — collect from Supplier')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Decline delivery' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
+    expect(await screen.findByRole('button', { name: 'Decline delivery' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Accept custody delivery' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Accept delivery' }));
     await waitFor(() =>
@@ -361,7 +373,7 @@ describe('unified warehouse shipments', () => {
     ];
     mocks.get.mockResolvedValue(next);
     render(<ShipmentsWorkspace role="distributor" />);
-    await screen.findByText('Custody intake & deliveries');
+    await screen.findByText(/Ingredients to Manufacturers|Products to Retailers/);
     expect(screen.queryByRole('button', { name: 'Record physical dispatch' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'New transfer' })).toBeNull();
   });
@@ -370,7 +382,9 @@ describe('unified warehouse shipments', () => {
 
     render(<ShipmentsWorkspace role="distributor" section="deliveries" initialKind="ingredient" />);
 
-    expect(await screen.findByRole('heading', { name: 'Ingredient deliveries' })).toBeTruthy();
+    expect(
+      await screen.findByRole('heading', { name: 'Ingredients to Manufacturers' }),
+    ).toBeTruthy();
     expect(screen.getByText('Manage ingredient shipments to Manufacturers.')).toBeTruthy();
     const awaitingSummary = screen.getByRole('button', { name: /Awaiting dispatch\s*1/ });
     expect(awaitingSummary).toBeTruthy();
@@ -400,7 +414,7 @@ describe('unified warehouse shipments', () => {
     fireEvent.click(awaitingSummary);
     expect(awaitingSummary.getAttribute('aria-pressed')).toBe('true');
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Review delivery' })[0]!);
+    fireEvent.click(screen.getAllByRole('button', { name: 'View details' })[0]!);
 
     expect(await screen.findByRole('heading', { name: 'Ingredient delivery review' })).toBeTruthy();
     const progress = screen.getByRole('list', { name: 'Ingredient delivery progress' });
@@ -605,18 +619,40 @@ describe('unified warehouse shipments', () => {
       expect(mocks.sign).not.toHaveBeenCalled();
     },
   );
-  it('renders safely when a Distributor switches to products before selecting stock', async () => {
-    render(<ShipmentsWorkspace role="distributor" initialView="transfer" />);
-    fireEvent.change(await screen.findByLabelText('Transfer type'), {
-      target: { value: 'product' },
-    });
-    expect(
-      (screen.getByRole('button', { name: 'Confirm dispatch with MetaMask' }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
-    expect((screen.getByLabelText('Dispatch location') as HTMLSelectElement).options).toHaveLength(
-      1,
+  it.each(['ingredient', 'product'] as const)(
+    'opens old standalone %s transfer entries as shipment lists',
+    async (initialKind) => {
+      render(
+        <ShipmentsWorkspace role="distributor" initialKind={initialKind} initialView="transfer" />,
+      );
+      await screen.findByText(/Ingredients to Manufacturers|Products to Retailers/);
+      expect(screen.queryByLabelText('Transfer type')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Confirm dispatch with MetaMask' })).toBeNull();
+      expect(screen.queryByText('1. Select stock or an approved order')).toBeNull();
+      expect(mocks.prepare).not.toHaveBeenCalled();
+      expect(mocks.sign).not.toHaveBeenCalled();
+    },
+  );
+  it('keeps a received product detail without standalone onward-transfer actions', async () => {
+    const next = structuredClone(state);
+    Object.assign(next.logistics!.shipments[0], { kind: 'product', status: 2, unit: 'each' });
+    mocks.get.mockResolvedValue(next);
+    render(
+      <ShipmentsWorkspace
+        role="distributor"
+        initialKind="product"
+        initialShipmentId={shipmentId}
+        initialView="transfer"
+      />,
     );
+    expect(await screen.findByRole('heading', { name: 'Delivery Tracking' })).toBeTruthy();
+    expect(screen.getByText('Actual flour')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Arrange onward transfer' })).toBeNull();
+    expect(screen.queryByLabelText('Receiving company')).toBeNull();
+    expect(screen.queryByText('1. Select stock or an approved order')).toBeNull();
+    expect(screen.getByText('Technical details').closest('details')?.open).toBe(false);
+    expect(document.querySelector('.workspace-arrival-detail__extras')).toBeNull();
+    expect(mocks.prepare).not.toHaveBeenCalled();
     expect(mocks.sign).not.toHaveBeenCalled();
   });
   it('keeps product dispatch behind a read-only shipment review', async () => {
@@ -643,7 +679,7 @@ describe('unified warehouse shipments', () => {
 
     render(<ShipmentsWorkspace role="distributor" initialKind="product" />);
 
-    const review = await screen.findByRole('button', { name: 'View shipment' });
+    const review = await screen.findByRole('button', { name: 'View details' });
     expect(screen.queryByText('No shipments yet')).toBeNull();
     await waitFor(() =>
       expect(mocks.media).toHaveBeenCalledWith('/catalogue/products/product-batch/image'),
@@ -658,7 +694,7 @@ describe('unified warehouse shipments', () => {
   });
   it('keeps custody inventory outside shipment navigation', async () => {
     render(<ShipmentsWorkspace role="distributor" />);
-    await screen.findByText('Custody intake & deliveries');
+    await screen.findByText(/Ingredients to Manufacturers|Products to Retailers/);
     expect(screen.queryByRole('button', { name: 'Custody inventory' })).toBeNull();
     expect(screen.queryByText(/In custody: 70 kg/)).toBeNull();
   });
@@ -813,4 +849,97 @@ describe('unified warehouse shipments', () => {
     expect(screen.queryByLabelText(/Receiving location/)).toBeNull();
     expect(screen.queryByLabelText(/Vehicle registration number/)).toBeNull();
   });
+});
+
+function ShipmentRouteProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output aria-label="Shipment route">{location.search}</output>
+      <button onClick={() => navigate(-1)}>Browser Back</button>
+    </>
+  );
+}
+it('opens a confirmed order shipment directly, deduplicates the list and supports browser Back', async () => {
+  const next = structuredClone(state);
+  next.catalogue[0].kind = 2;
+  next.orders = [
+    {
+      orderId: hash('a'),
+      seller: supplier,
+      buyer: ordersAddress,
+      itemId: hash('5'),
+      requested: '100',
+      productDelivery: { stage: 4, distributor: carrier, transferId: shipmentId },
+    },
+  ];
+  Object.assign(next.logistics!.shipments[0], {
+    kind: 'product',
+    sender: carrier,
+    recipient: ordersAddress,
+    orderId: hash('a'),
+  });
+  mocks.get.mockResolvedValue(next);
+  render(
+    <MemoryRouter initialEntries={['/distributor/product-shipments?orderId=' + hash('a')]}>
+      <ShipmentsWorkspace
+        role="distributor"
+        section="deliveries"
+        initialKind="product"
+        initialOrderId={hash('a')}
+      />
+      <ShipmentRouteProbe />
+    </MemoryRouter>,
+  );
+  expect(await screen.findByRole('heading', { name: 'Delivery Tracking' })).toBeTruthy();
+  expect(screen.queryByText('Open product shipment & scanned Retailer receipt')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Shipment records' })).toBeNull();
+  await waitFor(() =>
+    expect(screen.getByLabelText('Shipment route').textContent).toContain('shipmentId='),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Back to shipments' }));
+  expect(await screen.findByRole('region', { name: 'Shipment records' })).toBeTruthy();
+  expect(screen.getAllByRole('button', { name: 'View details' })).toHaveLength(1);
+  expect(screen.queryByRole('heading', { name: 'Delivery Tracking' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: 'Browser Back' }));
+  expect(await screen.findByRole('heading', { name: 'Delivery Tracking' })).toBeTruthy();
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect(mocks.sign).not.toHaveBeenCalled();
+});
+
+it('ignores an older upload failure, verifies the latest file and requires physical confirmation', async () => {
+  const qr = encodeShipmentQr({
+    shipmentId: shipmentId as `0x${string}`,
+    kind: 'ingredient',
+    chainId: 31337,
+    ordersAddress,
+    publicAppUrl: 'http://localhost:5173',
+  });
+  let rejectOld!: (error: Error) => void;
+  mocks.image
+    .mockImplementationOnce(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectOld = reject;
+        }),
+    )
+    .mockResolvedValueOnce(qr);
+  render(<ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />);
+  const upload = await screen.findByLabelText('Upload QR image');
+  fireEvent.change(upload, {
+    target: { files: [new File(['old'], 'old.png', { type: 'image/png' })] },
+  });
+  fireEvent.change(upload, {
+    target: { files: [new File(['new'], 'latest.png', { type: 'image/png' })] },
+  });
+  expect(await screen.findByText(/Shipment QR verified.*latest.png/)).toBeTruthy();
+  rejectOld(new Error('old decoder crash'));
+  await waitFor(() => expect(screen.queryByText('old decoder crash')).toBeNull());
+  expect(
+    (screen.getByRole('button', { name: 'Confirm receipt with MetaMask' }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect(mocks.sign).not.toHaveBeenCalled();
 });

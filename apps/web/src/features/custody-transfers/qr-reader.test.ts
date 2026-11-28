@@ -1,3 +1,5 @@
+import { createQrModel, renderQrCanvas } from '../product-traceability/product-qr';
+import { decodeShipmentQr } from '@tracechain/shared';
 import { createCanvas, loadImage, type Canvas } from '@napi-rs/canvas';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { encodeShipmentQr } from '@tracechain/shared';
@@ -110,7 +112,7 @@ describe('shared QR image decoder', () => {
     test.decodeFromImageUrl.mockClear();
     await expect(test.reader.decodeImage(file)).resolves.toBe(payload);
     expect(test.decodeFromImageUrl).toHaveBeenCalledOnce();
-    expect(test.canvases.length).toBeGreaterThan(1);
+    expect(test.canvases.length).toBeGreaterThanOrEqual(1);
   });
 
   it('keeps the original decoding path for a normal generated shipment QR', async () => {
@@ -184,5 +186,58 @@ describe('shared QR image decoder', () => {
     const test = harness(file);
     await expect(test.reader.decodeImage(file)).rejects.toBeInstanceOf(QrImageDecodeError);
     expect(test.revokeObjectUrl).not.toHaveBeenCalled();
+  });
+});
+
+it('does not report a ZXing FormatException as a decoder crash', async () => {
+  const canvas = createCanvas(500, 500);
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, 500, 500);
+  const file = fileFrom(canvas.toBuffer('image/png'), 'blank.png', 'image/png');
+  const test = harness(file);
+  test.decodeFromImageUrl.mockRejectedValue(
+    Object.assign(new Error('QR symbol format could not be read'), { name: 'FormatException' }),
+  );
+  await expect(test.reader.decodeImage(file)).rejects.toMatchObject({
+    code: QrImageDecodeErrorCode.NO_QR_DETECTED,
+  });
+});
+
+it('decodes the production PNG exporter bytes to exactly the copied HTTPS product-shipment link', async () => {
+  const link = encodeShipmentQr({
+    chainId: 11155111,
+    kind: 'product',
+    ordersAddress: '0xb13F36F9062100c442fdE154097AA16cbD98D94A',
+    publicAppUrl: 'https://tracechain-web.onrender.com',
+    shipmentId: '0x13b3b2047b6f1a9b39a3258cb163363ae6c8d86a4843cc74e0cc338da1d98b67',
+  });
+  const model = createQrModel(link);
+  const canvas = createCanvas(1, 1);
+  renderQrCanvas(model, canvas as unknown as HTMLCanvasElement);
+  const file = fileFrom(
+    canvas.toBuffer('image/png'),
+    'downloaded-product-shipment.png',
+    'image/png',
+  );
+  const test = harness(file);
+  await expect(test.decodeFromImageUrl()).rejects.toMatchObject({
+    name: 'FormatException',
+    stack: expect.stringContaining('BitMatrixParser'),
+  });
+  const decoded = await test.reader.decodeImage(file);
+  expect(decoded).toBe(model.payload);
+  expect(decoded).toBe(link);
+  expect(
+    decodeShipmentQr(decoded, {
+      chainId: 11155111,
+      ordersAddress: '0xb13F36F9062100c442fdE154097AA16cbD98D94A',
+      publicAppUrl: 'https://tracechain-web.onrender.com',
+      shipmentId: '0x13b3b2047b6f1a9b39a3258cb163363ae6c8d86a4843cc74e0cc338da1d98b67',
+      kind: 'product',
+    }),
+  ).toMatchObject({
+    shipmentId: '0x13b3b2047b6f1a9b39a3258cb163363ae6c8d86a4843cc74e0cc338da1d98b67',
+    kind: 'product',
   });
 });

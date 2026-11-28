@@ -1,5 +1,7 @@
+import { authRequestScope, resetAuthRequestScope } from '../auth/auth-request-scope';
+import { observeNavigationData } from './action-counts';
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkspaceLayout } from './WorkspaceLayout';
@@ -13,6 +15,7 @@ import { workspacePath } from './workspace-paths';
 
 afterEach(() => {
   cleanup();
+  resetAuthRequestScope();
   vi.restoreAllMocks();
   Reflect.deleteProperty(navigator, 'clipboard');
 });
@@ -62,17 +65,21 @@ describe('workspace navigation and guidance', () => {
     const orders = within(navigation).getByRole('link', { name: 'Orders' });
     expect(orders.getAttribute('href')).toBe(workspacePath('manufacturer', 'orders'));
     expect(orders.getAttribute('aria-current')).toBe('page');
-    expect(within(navigation).queryByRole('link', { name: 'Selling products' })).toBeNull();
+    expect(
+      within(navigation).queryByRole('link', { name: 'Product requests from Retailers' }),
+    ).toBeNull();
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('Orders');
     expect(
-      screen.getByRole('tab', { name: 'Selling products' }).getAttribute('aria-selected'),
+      screen
+        .getByRole('tab', { name: 'Product requests from Retailers' })
+        .getAttribute('aria-selected'),
     ).toBe('true');
-    expect(screen.getByRole('tab', { name: 'Buying ingredients' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Ingredient requests to Suppliers' })).toBeTruthy();
   });
   it('moves focus between section tabs with arrow keys without opening them', () => {
     show('product-orders', 'manufacturer');
-    const selling = screen.getByRole('tab', { name: 'Selling products' });
-    const buying = screen.getByRole('tab', { name: 'Buying ingredients' });
+    const selling = screen.getByRole('tab', { name: 'Product requests from Retailers' });
+    const buying = screen.getByRole('tab', { name: 'Ingredient requests to Suppliers' });
     expect(selling.tabIndex).toBe(0);
     expect(buying.tabIndex).toBe(-1);
     selling.focus();
@@ -135,7 +142,7 @@ describe('workspace navigation and guidance', () => {
     screen.getByRole('button', { name: 'Sign out' }).focus();
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(document.activeElement).toBe(screen.getByRole('link', { name: /TraceChain/ }));
-    fireEvent.click(screen.getByRole('link', { name: 'Incoming orders' }));
+    fireEvent.click(screen.getByRole('link', { name: 'Ingredient requests from Manufacturers' }));
     expect(
       screen.getByRole('button', { name: 'Open navigation' }).getAttribute('aria-expanded'),
     ).toBe('false');
@@ -152,4 +159,45 @@ describe('workspace navigation and guidance', () => {
     expect(writeText).toHaveBeenCalledWith(wallet);
     expect(screen.getByText('Workspace contents')).toBeTruthy();
   });
+});
+
+it('shares an accessible red needs-action count between sidebar and destination tabs', async () => {
+  show('product-orders', 'manufacturer');
+  const pending = {
+    orderId: 'only-once',
+    seller: wallet,
+    buyer: 'other',
+    status: 1,
+    decision: { status: 0 },
+    expiresAt: Date.now() / 1000 + 3600,
+  };
+  act(() =>
+    observeNavigationData(
+      '?scope=order-list&direction=received',
+      { actor: wallet, orders: [pending, pending] },
+      authRequestScope(),
+    ),
+  );
+  expect(screen.getByRole('link', { name: 'Orders, 1 action required' })).toBeTruthy();
+  expect(
+    screen.getByRole('tab', { name: 'Product requests from Retailers, 1 action required' }),
+  ).toBeTruthy();
+  act(() =>
+    observeNavigationData(
+      '?scope=order-list&direction=received',
+      undefined,
+      authRequestScope(),
+      true,
+    ),
+  );
+  expect(screen.getByRole('link', { name: 'Orders, action count unavailable' })).toBeTruthy();
+  act(() =>
+    observeNavigationData(
+      '?scope=order-list&direction=received',
+      { actor: wallet, orders: [{ ...pending, decision: { status: 1 } }] },
+      authRequestScope(),
+    ),
+  );
+  expect(screen.getByRole('link', { name: 'Orders' })).toBeTruthy();
+  expect(document.querySelector('.workspace-action-count')).toBeNull();
 });

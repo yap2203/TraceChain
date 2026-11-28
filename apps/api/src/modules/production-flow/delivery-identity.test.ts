@@ -212,6 +212,33 @@ it.each([CompanyRole.SUPPLIER, CompanyRole.MANUFACTURER])(
           credentialHash: id('carrier-company'),
         },
       };
+      const beforePreview = structuredClone(workflows.get(requestId)!.identityProof);
+      const preview = await service.getCompanyIdentityProofStatus('session', requestId);
+      expect(preview.status).toBe('PRESENTED');
+      expect(preview).toMatchObject({
+        credential: { companyName: 'Integration Supplier', role: sellerRole },
+        verification: { state: 'PASSED' },
+      });
+      expect(preview).not.toHaveProperty('transaction');
+      expect((preview as any).credential).not.toHaveProperty('companyRegistrationNumber');
+      expect(workflows.get(requestId)!.identityProof).toEqual(beforePreview);
+      const storedProof = workflows.get(requestId)!.identityProof!;
+      const payloadKey = storedProof.presentationPayload!.ciphertext;
+      const originalPresentation = contents.get(payloadKey)!;
+      contents.set(payloadKey, originalPresentation.slice(0, -3) + 'bad');
+      expect(await service.getCompanyIdentityProofStatus('session', requestId)).toMatchObject({
+        status: 'PRESENTED',
+        verification: { state: 'FAILED' },
+      });
+      contents.set(payloadKey, originalPresentation);
+      access
+        .mockImplementationOnce(async () => true)
+        .mockRejectedValueOnce(new Error('RPC transport unavailable'));
+      expect(await service.getCompanyIdentityProofStatus('session', requestId)).toMatchObject({
+        status: 'PRESENTED',
+        verification: { state: 'UNAVAILABLE' },
+      });
+      expect(workflows.get(requestId)!.identityProof).toEqual(beforePreview);
       const verified = await service.verifyCompanyIdentityProof('session', requestId);
       expect(verified.status).toBe('VERIFIED');
       expect(verified.checks).toContain('HOLDER_SIGNATURE');
@@ -227,6 +254,11 @@ it.each([CompanyRole.SUPPLIER, CompanyRole.MANUFACTURER])(
         sellerRole === CompanyRole.SUPPLIER ? 'ISSUE_INGREDIENT_CREDENTIAL' : 'INITIATE_TRANSFER',
       );
       activeSupplier = false;
+      expect(await service.getCompanyIdentityProofStatus('session', requestId)).toMatchObject({
+        status: 'VERIFIED',
+        verification: { state: 'FAILED' },
+        credential: { companyName: 'Integration Supplier' },
+      });
       const historical = structuredClone(workflows.get(requestId)!.identityProof);
       await expect(service.verifyCompanyIdentityProof('session', requestId)).rejects.toMatchObject({
         code: 'COMPANY_CREDENTIAL_INACTIVE',

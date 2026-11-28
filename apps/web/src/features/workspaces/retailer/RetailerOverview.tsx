@@ -55,6 +55,9 @@ export function RetailerOverview({ onNav }: { onNav: (tab: string) => void }) {
 
   return (
     <StakeholderOverviewLayout
+      refreshing={
+        operational.refreshing || myOrders.refreshing || identity.refreshing || catalogue.refreshing
+      }
       title="Retailer overview"
       description="Products arriving, your open orders and evidence shared with you."
       errors={[myOrders.error, identity.error, operational.error]}

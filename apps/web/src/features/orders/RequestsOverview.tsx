@@ -1,5 +1,5 @@
-import { requestStatus } from '@tracechain/shared';
-export { requestStatus } from '@tracechain/shared';
+import { requestDisplayStatus as requestStatus } from './delivery-state';
+export { requestDisplayStatus as requestStatus } from './delivery-state';
 import { LoadingIndicator } from '../../components/ui/LoadingIndicator';
 import { ClipboardList, Search } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -23,18 +23,6 @@ type RequestGroup = 'attention' | 'evidence' | 'approved' | 'closed';
 type RequestFilter = 'all' | RequestGroup;
 type RequestSort = 'newest' | 'oldest' | 'deadline' | 'updated';
 
-function fulfilmentChoice(order: OrderRecord) {
-  if (order.productDelivery)
-    return Number(order.productDelivery.mode) === 1
-      ? 'Direct Distributor delivery'
-      : Number(order.productDelivery.mode) === 2
-        ? 'Distributor custody stock'
-        : 'Awaiting fulfilment selection';
-  if (order.custodyOrder) return 'Distributor custody stock';
-  if (order.delivery) return 'Direct Distributor delivery';
-  return Number(order.decision?.status) === 1 ? 'Awaiting fulfilment selection' : 'Not selected';
-}
-
 export function RequestsOverview({
   actor,
   catalogue,
@@ -44,6 +32,7 @@ export function RequestsOverview({
   pagination,
   options,
   onQueryChange,
+  direction,
 }: {
   actor: string;
   catalogue: OrderRecord[];
@@ -53,7 +42,11 @@ export function RequestsOverview({
   pagination?: OrdersState['pagination'];
   options?: OrderListOptions;
   onQueryChange?: (query: OrderListOptions) => void;
+  direction?: 'received' | 'sent';
 }) {
+  const responding = direction
+    ? direction === 'received'
+    : role === 'supplier' || orders.some((entry) => same(entry.seller, actor));
   const supplierView = role === 'supplier';
   const [search, setSearchText] = useState(options?.search ?? '');
   const [status, setStatusValue] = useState(options?.status ?? 'all');
@@ -76,12 +69,12 @@ export function RequestsOverview({
   };
   const summaries = useMemo(
     () => ({
-      attention: orders.filter((entry) => requestStatus(entry).group === 'attention').length,
-      evidence: orders.filter((entry) => requestStatus(entry).group === 'evidence').length,
-      approved: orders.filter((entry) => requestStatus(entry).group === 'approved').length,
-      closed: orders.filter((entry) => requestStatus(entry).group === 'closed').length,
+      attention: orders.filter((entry) => requestStatus(entry, actor).group === 'attention').length,
+      evidence: orders.filter((entry) => requestStatus(entry, actor).group === 'evidence').length,
+      approved: orders.filter((entry) => requestStatus(entry, actor).group === 'approved').length,
+      closed: orders.filter((entry) => requestStatus(entry, actor).group === 'closed').length,
     }),
-    [orders],
+    [orders, actor],
   );
   const records = useMemo(() => {
     if (pagination) return orders;
@@ -89,7 +82,7 @@ export function RequestsOverview({
     return orders
       .filter((entry) => {
         const item = catalogue.find((candidate) => candidate.itemId === entry.itemId);
-        const state = requestStatus(entry);
+        const state = requestStatus(entry, actor);
         const matchesStatus =
           status === 'all' || status === state.group || (!supplierView && status === state.key);
         return (
@@ -101,7 +94,7 @@ export function RequestsOverview({
         );
       })
       .sort((left, right) => compareRequests(left, right, sort));
-  }, [catalogue, orders, search, sort, status, supplierView, pagination]);
+  }, [catalogue, orders, search, sort, status, supplierView, pagination, actor]);
   const total = pagination?.total ?? records.length;
   const summaryCount = (group: string, fallback: number) => pagination?.counts[group] ?? fallback;
   const pager = pagination && (
@@ -238,12 +231,8 @@ export function RequestsOverview({
     );
 
   return (
-    <section className="requests-overview" aria-labelledby="requests-title">
-      <div className="requests-overview__heading">
-        <div>
-          <h3 id="requests-title">My requests</h3>
-          <p>Open a request to see its status and next action.</p>
-        </div>
+    <section className="requests-overview" aria-label="Requests">
+      <div className="flex justify-end">
         <strong>{total} results</strong>
       </div>
       <StatusTabs
@@ -254,7 +243,7 @@ export function RequestsOverview({
           { value: 'all', label: 'All', count: summaryCount('all', orders.length) },
           {
             value: 'attention',
-            label: 'Needs action',
+            label: responding ? 'Needs action' : 'Awaiting response',
             count: summaryCount('attention', summaries.attention),
           },
           {
@@ -311,13 +300,11 @@ export function RequestsOverview({
         <>
           <div className="requests-desktop">
             <Table
+              paginate={!pagination}
               headers={[
                 'Item',
-                role === 'manufacturer' ? 'Retailer / buyer' : 'Supplier / seller',
+                responding ? 'Retailer' : role === 'manufacturer' ? 'Supplier' : 'Manufacturer',
                 'Quantity',
-                'Fulfilment',
-                'Requested',
-                'Updated',
                 'Status',
                 'Next action',
                 '',
@@ -325,7 +312,7 @@ export function RequestsOverview({
             >
               {records.map((entry) => {
                 const item = catalogue.find((candidate) => candidate.itemId === entry.itemId);
-                const state = requestStatus(entry);
+                const state = requestStatus(entry, actor);
                 return (
                   <TR key={entry.orderId}>
                     <TD bold>
@@ -347,16 +334,13 @@ export function RequestsOverview({
                     <TD>
                       {entry.requested} {item?.unit ?? ''}
                     </TD>
-                    <TD>{fulfilmentChoice(entry)}</TD>
-                    <TD>{dateTime(entry.createdAt ?? entry.requestedAt)}</TD>
-                    <TD>{dateTime(entry.updatedAt ?? entry.decision?.recordedAt)}</TD>
                     <TD>
                       <Badge label={state.label} variant={state.variant} />
                     </TD>
                     <TD>{nextAction(entry, actor)}</TD>
                     <TD>
                       <Btn size="xs" variant="outline" onClick={() => onView(entry.orderId)}>
-                        View request
+                        View details
                       </Btn>
                     </TD>
                   </TR>
@@ -367,7 +351,7 @@ export function RequestsOverview({
           <div className="requests-mobile">
             {records.map((entry) => {
               const item = catalogue.find((candidate) => candidate.itemId === entry.itemId);
-              const state = requestStatus(entry);
+              const state = requestStatus(entry, actor);
               return (
                 <Card key={entry.orderId}>
                   <div className="requests-mobile__image">
@@ -395,10 +379,8 @@ export function RequestsOverview({
                     </strong>{' '}
                     · {nextAction(entry, actor)}
                   </p>
-                  <p>Fulfilment: {fulfilmentChoice(entry)}</p>
-                  <p>Updated {dateTime(entry.updatedAt ?? entry.decision?.recordedAt)}</p>
                   <Btn size="sm" variant="outline" onClick={() => onView(entry.orderId)}>
-                    View request
+                    View details
                   </Btn>
                   <TechnicalDetails fields={[{ label: 'Request ID', value: entry.orderId }]} />
                 </Card>
@@ -413,7 +395,7 @@ export function RequestsOverview({
 }
 
 export function RequestsLoading() {
-  return <LoadingIndicator page label="Loading requests" />;
+  return <LoadingIndicator page layout="table" label="Loading requests" />;
 }
 
 function SummaryFilter({
@@ -451,7 +433,7 @@ function SupplierRequestCard({
   item?: OrderRecord;
   onView: (orderId: string) => void;
 }) {
-  const state = requestStatus(entry);
+  const state = requestStatus(entry, entry.seller);
   const manufacturer = entry.buyerName ?? 'Company name unavailable';
   return (
     <Card padding="20px">
@@ -499,7 +481,7 @@ function SupplierRequestCard({
           </strong>
           <div className="supplier-request-action action-row">
             <Btn variant="outline" onClick={() => onView(entry.orderId)}>
-              Review request
+              View details
             </Btn>
           </div>
         </div>
@@ -532,7 +514,7 @@ export function nextAction(order: OrderRecord, actor: string) {
     if (stage === 6)
       return 'Delivery closed. Release any expired reservation before reusing that stock.';
   }
-  const state = requestStatus(order);
+  const state = requestStatus(order, actor);
   if (order.delivery && !order.custodyOrder && state.group === 'approved') {
     const stage = Number(order.delivery.stage);
     if (stage === 1)
@@ -552,14 +534,23 @@ export function nextAction(order: OrderRecord, actor: string) {
       return 'Open Shipments to dispatch the approved reserved quantity from your warehouse.';
     return 'The Distributor dispatches the reserved warehouse stock; track it in Shipments.';
   }
-  if (state.group === 'evidence') return 'Wait for the Manufacturer to share its company proof.';
+  if (state.group === 'evidence')
+    return same(actor, order.buyer)
+      ? 'Review the request and share your company evidence.'
+      : 'Wait for the requesting company to share its evidence.';
+  if (state.group === 'approved' && (order.productDelivery || Number(order.kind) === 2))
+    return same(actor, order.seller)
+      ? 'Arrange product delivery.'
+      : 'Await the Manufacturer delivery arrangement.';
   if (state.group === 'approved') return 'Decision recorded. Coordinate any next steps separately.';
   if (state.group === 'closed') return 'No action required.';
-  if (hasValue(order.identityCredentialHash))
+  if (same(actor, order.seller) && hasValue(order.identityCredentialHash))
     return 'Review the verified company evidence and record your decision.';
   return same(order.seller, actor)
     ? 'Review the request and record your decision.'
-    : 'Await the Supplier response.';
+    : Number(order.kind) === 2 || order.productDelivery
+      ? 'Await the Manufacturer response.'
+      : 'Await the Supplier response.';
 }
 
 function compareRequests(left: OrderRecord, right: OrderRecord, sort: RequestSort) {

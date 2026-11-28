@@ -79,7 +79,7 @@ describe('browse and request-only UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
     await screen.findByText(/Page 2 of 3/);
     expect(api.getOrders.mock.calls.at(-1)![1]).toMatchObject({ page: 2, direction: 'received' });
-    fireEvent.click(screen.getByRole('button', { name: 'Review request' }));
+    fireEvent.click(screen.getByRole('button', { name: 'View details' }));
     await screen.findByText('Private note: Authorized private detail');
     expect(api.getOrders.mock.calls.at(-1)).toEqual(['order-detail', { orderId: 'summary-order' }]);
   });
@@ -183,7 +183,7 @@ describe('browse and request-only UI', () => {
       },
     };
   }
-  it('shows the shared centered spinner while authoritative data loads', () => {
+  it('shows the shared catalogue skeleton while authoritative data loads', () => {
     api.getOrders.mockImplementation(() => new Promise(() => undefined));
     const { container } = render(
       <MemoryRouter>
@@ -191,9 +191,7 @@ describe('browse and request-only UI', () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole('status', { name: 'Loading catalogue' })).toBeTruthy();
-    expect(
-      container.querySelector('.loading-indicator--page .loading-indicator__spinner'),
-    ).toBeTruthy();
+    expect(container.querySelector('.page-skeleton--cards .page-skeleton__item')).toBeTruthy();
   });
   it('uses the compact Supplier ingredients route heading and filter state', async () => {
     api.getOrders.mockResolvedValue({
@@ -230,9 +228,7 @@ describe('browse and request-only UI', () => {
     await screen.findByText('Cocoa powder');
     expect(screen.getByRole('heading', { name: 'Supplier ingredients' })).toBeTruthy();
     expect(
-      screen.getByText(
-        'Ingredients held in Distributor custody and not expired. Each card shows which custody holds the stock.',
-      ),
+      screen.getByText('Browse supplier ingredients, check stock, or request evidence.'),
     ).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Registered ingredients & products' })).toBeNull();
     expect(screen.getByText('1 ingredient')).toBeTruthy();
@@ -434,8 +430,8 @@ describe('browse and request-only UI', () => {
         <OrdersPage role="supplier" />
       </MemoryRouter>,
     );
-    await screen.findAllByRole('button', { name: 'Review request' });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
+    await screen.findAllByRole('button', { name: 'View details' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'View details' })[0]);
     expect(await screen.findByRole('button', { name: 'Request company evidence' })).toBeTruthy();
     expect(screen.queryByLabelText('Dispatch quantity')).toBeNull();
     expect(screen.queryByLabelText('Allocation quantity')).toBeNull();
@@ -549,10 +545,10 @@ describe('browse and request-only UI', () => {
     expect(submit.disabled).toBe(true);
     fireEvent.click(screen.getByLabelText('Close dialog'));
     fireEvent.click(screen.getByRole('button', { name: 'My requests' }));
-    await screen.findAllByRole('button', { name: 'View request' });
+    await screen.findAllByRole('button', { name: 'View details' });
     expect(container.querySelector('.requests-desktop')).toBeTruthy();
     expect(container.querySelector('.requests-mobile')).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: 'View request' })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'View details' })).toHaveLength(2);
   });
   it('prevents a duplicate quantity submission while preparation is active', async () => {
     Object.defineProperty(window, 'ethereum', { configurable: true, value: { request: vi.fn() } });
@@ -670,7 +666,7 @@ describe('browse and request-only UI', () => {
     expect(await screen.findByRole('heading', { name: 'Unsweetened Cocoa Powder' })).toBeTruthy();
     expect(screen.getAllByRole('heading', { name: 'Unsweetened Cocoa Powder' })).toHaveLength(1);
     expect(screen.queryByRole('heading', { name: 'Order request' })).toBeNull();
-    expect(screen.getByRole('button', { name: /Buying ingredients/ })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Ingredient requests to Suppliers/ })).toBeTruthy();
     expect(screen.getByText('Order and delivery details')).toBeTruthy();
 
     const progress = screen.getByRole('list', { name: 'Order progress' });
@@ -746,7 +742,7 @@ describe('browse and request-only UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Received from buyers' }));
     expect((await screen.findAllByText('Retailer A')).length).toBeGreaterThan(0);
     expect(screen.queryByText('Supplier A')).toBeNull();
-    fireEvent.click(screen.getAllByRole('button', { name: 'View request' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'View details' })[0]);
     expect((await screen.findByRole('button', { name: 'Approve' })).hasAttribute('disabled')).toBe(
       false,
     );
@@ -825,5 +821,49 @@ describe('browse and request-only UI', () => {
     expect(screen.queryByRole('button', { name: /company evidence request/i })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Confirm receipt with MetaMask' })).toBeNull();
     expect(api.prepareOrder).not.toHaveBeenCalled();
+  });
+  it('keeps a confirmed approval separate from delivery arrangement, even during stale readback', async () => {
+    api.getOrders.mockResolvedValue({
+      ...state,
+      productDeliverySupported: true,
+      catalogue: [
+        {
+          itemId: 'item',
+          name: 'Confirmed product',
+          kind: 2,
+          unit: 'each',
+          batches: ['batch'],
+          storageLocations: [],
+        },
+      ],
+      orders: [
+        {
+          ...order,
+          seller: actor,
+          buyer: distributor,
+          isRequestOnly: true,
+          decision: { status: 0 },
+          productDelivery: { stage: 0 },
+          deliveryReceivingLocation: 'shop',
+        },
+      ],
+    });
+    api.prepareOrder.mockResolvedValue({
+      transaction: { chainId: 31337, to: actor, data: '0x1234', value: '0x0' },
+    });
+    render(
+      <MemoryRouter>
+        <OrdersPage role="manufacturer" mode="manage" initialOrderId="request" />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm approval' }));
+    expect(
+      await screen.findByRole('button', { name: 'Request Distributor delivery' }),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+    expect(api.prepareOrder).toHaveBeenCalledTimes(1);
+    expect(api.prepareOrder.mock.calls[0][0].action).toBe('decide-request');
   });
 });

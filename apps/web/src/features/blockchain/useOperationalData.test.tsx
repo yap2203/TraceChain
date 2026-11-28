@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ getOperationalData: vi.fn() }));
 vi.mock('./blockchain.api', async (importOriginal) => ({
@@ -13,6 +13,8 @@ import {
   OperationalDataScopeProvider,
   useOperationalData,
 } from './useOperationalData';
+
+afterEach(cleanup);
 
 const walletA = '0x1000000000000000000000000000000000000001';
 const walletB = '0x2000000000000000000000000000000000000002';
@@ -34,7 +36,9 @@ function Consumer({ name }: { name: string }) {
       <span data-testid={`${name}-state`}>
         {query.loading ? 'loading' : `${query.data.ingredientBatches.length}`}
       </span>
-      <button onClick={() => void query.reload()}>{`reload-${name}`}</button>
+      <span data-testid={name + '-refresh'}>{query.refreshing ? 'refreshing' : 'idle'}</span>
+      <span data-testid={name + '-error'}>{query.error}</span>
+      <button onClick={() => void query.reload().catch(() => undefined)}>{`reload-${name}`}</button>
     </div>
   );
 }
@@ -94,4 +98,35 @@ describe('shared operational query cache', () => {
     await waitFor(() => expect(mocks.getOperationalData).toHaveBeenCalledTimes(3));
     await waitFor(() => expect(screen.getByTestId('result-state').textContent).toBe('0'));
   });
+});
+
+it('retains validated rows while refreshing and reports a failed refresh without false empty data', async () => {
+  clearOperationalDataCache();
+  mocks.getOperationalData.mockReset();
+  mocks.getOperationalData.mockResolvedValueOnce(data(walletA, 4));
+  let reject!: (error: Error) => void;
+  mocks.getOperationalData.mockImplementationOnce(
+    () =>
+      new Promise((_resolve, no) => {
+        reject = no;
+      }),
+  );
+  render(
+    <OperationalDataScopeProvider walletAddress={walletA}>
+      <Consumer name="retained" />
+    </OperationalDataScopeProvider>,
+  );
+  await waitFor(() => expect(screen.getByTestId('retained-state').textContent).toBe('4'));
+  fireEvent.click(screen.getByRole('button', { name: 'reload-retained' }));
+  await waitFor(() =>
+    expect(screen.getByTestId('retained-refresh').textContent).toBe('refreshing'),
+  );
+  expect(screen.getByTestId('retained-state').textContent).toBe('4');
+  await act(async () => reject(new Error('RPC temporarily unavailable')));
+  await waitFor(() =>
+    expect(screen.getByTestId('retained-error').textContent).toBe('RPC temporarily unavailable'),
+  );
+  expect(screen.getByTestId('retained-state').textContent).toBe('4');
+  expect(screen.getByTestId('retained-refresh').textContent).toBe('idle');
+  expect(mocks.getOperationalData).toHaveBeenCalledTimes(2);
 });

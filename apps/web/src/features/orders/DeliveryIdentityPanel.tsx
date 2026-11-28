@@ -12,6 +12,8 @@ import { deliveryIdentity, type OrderRecord, type OrdersState } from './orders.a
 import { Alert, Badge, Btn, Modal, TechnicalDetails } from '../workspaces/shared/ui';
 import {
   EvidenceDecision,
+  EvidenceVerificationSummary,
+  evidenceVerificationFailure,
   EvidenceFieldList,
   EvidenceHowItWorks,
   EvidenceNextStep,
@@ -118,6 +120,10 @@ export function DeliveryIdentityPanel({
       await onChanged();
     } catch (cause) {
       setError(reportError(cause, 'Company proof could not be processed.'));
+      if (key === 'verify' || key === 'accept')
+        setStatus((current: any) =>
+          current ? { ...current, verification: evidenceVerificationFailure(cause) } : current,
+        );
     } finally {
       pending.current = false;
       setBusy(false);
@@ -326,6 +332,15 @@ export function DeliveryIdentityPanel({
     ) : undefined;
   // Until the real status arrives, the default 'not requested' would show a wrong next step.
   if (!status && !error) return <LoadingIndicator label="Loading request…" />;
+  if (!status)
+    return (
+      <div className="evidence-panel">
+        <Alert type="error" message={error || 'Evidence status is unavailable.'} />
+        <Btn variant="outline" disabled={busy} onClick={() => void run(refresh, 'refresh')}>
+          Retry evidence status
+        </Btn>
+      </div>
+    );
   return (
     <section
       className="company-evidence-card evidence-panel"
@@ -372,6 +387,16 @@ export function DeliveryIdentityPanel({
       )}
       {error && <Alert type="error" message={error} />}
       {notice && <Alert type="success" message={notice} />}
+      {status?.credential && (
+        <SharedClaims
+          values={status.credential}
+          missing={status.missingClaims}
+          undisclosed={status.undisclosedClaims}
+        />
+      )}
+      {!supplier && status?.verification && (
+        <EvidenceVerificationSummary verification={status.verification} />
+      )}
       {!material && (
         <EvidenceNextStep
           title={next.title}
@@ -379,10 +404,12 @@ export function DeliveryIdentityPanel({
           tone={next.tone}
           action={nextAction}
         >
-          {/* Same decision as ingredient evidence: verify and accept, or reject with a reason. */}
+          {/* Technical verification and the business decision remain separate. */}
           {!supplier && ['PRESENTED', 'SHARED'].includes(rawStatus) && !expired && (
             <EvidenceDecision
-              busy={action === 'accept' || action === 'reject' ? action : busy ? 'busy' : ''}
+              verification={status?.verification}
+              onVerify={() => void run(async () => {}, 'verify')}
+              busy={busy ? action || 'busy' : ''}
               recipient={evidenceHolder}
               onAccept={() => void verify()}
               onReject={(reason) => void reject(reason)}
@@ -436,12 +463,6 @@ export function DeliveryIdentityPanel({
           </div>
         </div>
       )}
-      {status?.credential && (
-        <SharedClaims values={status.credential} missing={status.missingClaims} />
-      )}
-      {status?.checks?.length ? (
-        <p className="evidence-panel__checks">Checks: {status.checks.join(' · ')}</p>
-      ) : null}
       <EvidenceHowItWorks>
         <p>
           The {sellerLabel.toLocaleLowerCase()} shares selected fields from its signed company
@@ -557,15 +578,16 @@ function nextStep({
       : { message: `Waiting for ${holderName} to respond.`, tone: 'default' };
   if (['PRESENTED', 'SHARED'].includes(status))
     return holder
-      ? { message: `Shared. Waiting for ${recipient} to verify.`, tone: 'done' }
+      ? { message: `Shared. Waiting for ${recipient} to review and decide.`, tone: 'done' }
       : {
           title: 'Evidence shared',
-          message: 'Verify and accept the evidence, or reject it with a reason.',
+          message:
+            'Review the shared fields and verification results, then accept or reject the evidence.',
           tone: 'default',
         };
   if (status === 'VERIFIED')
     return {
-      title: 'Evidence verified and accepted',
+      title: 'Evidence accepted',
       message: verifiedAt
         ? `Accepted on ${formatEvidenceDate(verifiedAt)}. No further action is required.`
         : 'No further action is required.',
@@ -597,7 +619,7 @@ export function proofStatusLabel(status?: string) {
       PENDING: 'Awaiting response',
       PRESENTED: 'Evidence shared',
       SHARED: 'Evidence shared',
-      VERIFIED: 'Verified',
+      VERIFIED: 'Accepted',
       DECLINED: 'Declined',
       REJECTED: 'Rejected',
       EXPIRED: 'Expired',
@@ -623,7 +645,7 @@ function proofStatusExplanation(status: string) {
     return 'The requesting company is waiting for the requested company evidence.';
   if (['PRESENTED', 'SHARED'].includes(status))
     return 'Company evidence was shared and remains separate from the custody decision.';
-  if (status === 'VERIFIED') return 'The shared company evidence passed verification.';
+  if (status === 'VERIFIED') return 'The shared company evidence was accepted.';
   if (['DECLINED', 'REJECTED'].includes(status))
     return 'The evidence request or verification did not complete successfully.';
   if (['EXPIRED', 'UNAVAILABLE'].includes(status))

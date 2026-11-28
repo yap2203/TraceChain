@@ -36,12 +36,10 @@ it('announces success and readable errors, allows dismissal and expires notifica
   act(() => vi.advanceTimersByTime(12000));
   expect(screen.queryByRole('alert')).toBeNull();
 });
-it('shows an accessible spinner with a consistent page loading container', () => {
+it('shows an accessible skeleton with a consistent page loading container', () => {
   const { container } = render(<LoadingIndicator page label="Loading your shipments…" />);
   expect(screen.getByRole('status', { name: 'Loading your shipments…' })).toBeTruthy();
-  expect(
-    container.querySelector('.loading-indicator--page .loading-indicator__spinner'),
-  ).toBeTruthy();
+  expect(container.querySelector('.page-skeleton .page-skeleton__item')).toBeTruthy();
 });
 it.each([
   ['success', 4000],

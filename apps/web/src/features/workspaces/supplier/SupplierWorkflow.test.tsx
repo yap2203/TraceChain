@@ -156,9 +156,9 @@ describe('Supplier ingredient and request management', () => {
     expect(screen.getByText(/Collected deliveries are already deducted/)).toBeTruthy();
   });
 
-  it('labels the Supplier navigation as Incoming orders', () => {
+  it('labels the Supplier navigation as Ingredient requests from Manufacturers', () => {
     expect(workspaceNavigation.supplier.find(([id]) => id === 'orders')?.[1]).toBe(
-      'Incoming orders',
+      'Ingredient requests from Manufacturers',
     );
   });
   it('edits only listing fields and requires confirmation before archiving', async () => {
@@ -235,7 +235,7 @@ describe('Supplier ingredient and request management', () => {
     expect(document.querySelector('.supplier-requests-list')).toBeTruthy();
     expect(document.querySelector('.supplier-request-row.supplier-request-card')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Browse items' })).toBeNull();
-    fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'View details' })[0]);
     const dialog = await screen.findByRole('dialog');
     expect(dialog).toBeTruthy();
     expect(screen.getByText(/For our next production run/)).toBeTruthy();
@@ -264,8 +264,8 @@ describe('Supplier ingredient and request management', () => {
   it('prevents duplicate decision submission while preparation is active', async () => {
     api.prepareOrder.mockImplementation(() => new Promise(() => undefined));
     mount(<OrdersPage role="supplier" />);
-    await screen.findAllByRole('button', { name: 'Review request' });
-    fireEvent.click(screen.getAllByRole('button', { name: 'Review request' })[0]);
+    await screen.findAllByRole('button', { name: 'View details' });
+    fireEvent.click(screen.getAllByRole('button', { name: 'View details' })[0]);
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
     const confirm = screen.getByRole('button', { name: 'Confirm approval' });
     fireEvent.click(confirm);
@@ -278,7 +278,7 @@ describe('Supplier ingredient and request management', () => {
     await screen.findByText(
       'Blockchain/RPC unavailable. Try again when the configured network is reachable.',
     );
-    expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'View details' })).toBeNull();
   });
   it('keeps received ingredient requests and sent company proofs in separate tables', async () => {
     api.getOrders.mockResolvedValue({

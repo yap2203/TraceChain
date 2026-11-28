@@ -99,7 +99,13 @@ function stopVideo(video: HTMLVideoElement) {
 }
 
 function isNoQrError(error: unknown) {
-  return error instanceof Error && error.name === 'NotFoundException';
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    ['NotFoundException', 'ChecksumException', 'FormatException'].includes(
+      String((error as { name?: string }).name),
+    )
+  );
 }
 
 function imageSize(image: LoadedQrImage) {
@@ -175,17 +181,22 @@ async function detectWithBrowserBarcodeDetector(canvas: HTMLCanvasElement) {
 
 export class ZxingTransferQrReader implements TransferQrReader {
   private readerPromise: Promise<QrImageDecoder> | undefined;
+  private readonly injectedReader?: QrImageDecoder;
   private readonly imageRuntime: QrImageRuntime;
 
   constructor(options: ZxingTransferQrReaderOptions = {}) {
+    this.injectedReader = options.reader;
     this.imageRuntime = options.imageRuntime ?? defaultImageRuntime();
     if (options.reader) this.readerPromise = Promise.resolve(options.reader);
   }
 
   private getReader() {
-    this.readerPromise ??= import('@zxing/browser').then(
-      ({ BrowserQRCodeReader: Reader }) => new Reader() as QrImageDecoder,
-    );
+    this.readerPromise ??= import('@zxing/browser')
+      .then(({ BrowserQRCodeReader: Reader }) => new Reader() as QrImageDecoder)
+      .catch((cause) => {
+        this.readerPromise = undefined;
+        throw cause;
+      });
     return this.readerPromise;
   }
 
@@ -205,13 +216,28 @@ export class ZxingTransferQrReader implements TransferQrReader {
     let unexpectedError: unknown;
 
     try {
-      const reader = await this.getReader();
+      // Image attempts must not share mutable ZXing state with the live camera or another upload.
+      let reader: QrImageDecoder | undefined = this.injectedReader;
+      let pureReader: QrImageDecoder | undefined;
       try {
-        return (await reader.decodeFromImageUrl(url)).getText();
+        const [{ BrowserQRCodeReader }, { DecodeHintType }] = await Promise.all([
+          import('@zxing/browser'),
+          import('@zxing/library'),
+        ]);
+        reader ??= new BrowserQRCodeReader();
+        // Clean downloaded labels avoid detector alignment estimation for dense version-11 symbols.
+        pureReader = new BrowserQRCodeReader(new Map([[DecodeHintType.PURE_BARCODE, true]]));
       } catch (error) {
         originalError = error;
-        if (!isNoQrError(error)) unexpectedError = error;
+        unexpectedError = error;
       }
+      if (reader)
+        try {
+          return (await reader.decodeFromImageUrl(url)).getText();
+        } catch (error) {
+          originalError = error;
+          if (!isNoQrError(error)) unexpectedError = error;
+        }
 
       try {
         image = await runtime.loadImage(url);
@@ -224,7 +250,13 @@ export class ZxingTransferQrReader implements TransferQrReader {
       }
 
       const { height, width } = imageSize(image);
-      if (!width || !height) {
+      if (
+        !Number.isFinite(width) ||
+        !Number.isFinite(height) ||
+        width <= 0 ||
+        height <= 0 ||
+        width * height > 32_000_000
+      ) {
         throw new QrImageDecodeError(
           QrImageDecodeErrorCode.IMAGE_LOAD_FAILED,
           'The selected image has no readable pixels.',
@@ -235,22 +267,26 @@ export class ZxingTransferQrReader implements TransferQrReader {
       for (const size of resizeAttempts(width, height)) {
         const canvas = drawImage(runtime, image, size.width, size.height);
         canvases.push(canvas);
-        try {
-          return reader.decodeFromCanvas(canvas).getText();
-        } catch (error) {
-          if (!isNoQrError(error)) unexpectedError ??= error;
-        }
+        for (const candidate of [reader, pureReader])
+          if (candidate)
+            try {
+              return candidate.decodeFromCanvas(canvas).getText();
+            } catch (error) {
+              if (!isNoQrError(error)) unexpectedError ??= error;
+            }
 
         const detected = await detectWithBrowserBarcodeDetector(canvas);
         if (detected) return detected;
 
         const highContrast = makeHighContrast(canvas, runtime);
         canvases.push(highContrast);
-        try {
-          return reader.decodeFromCanvas(highContrast).getText();
-        } catch (error) {
-          if (!isNoQrError(error)) unexpectedError ??= error;
-        }
+        for (const candidate of [reader, pureReader])
+          if (candidate)
+            try {
+              return candidate.decodeFromCanvas(highContrast).getText();
+            } catch (error) {
+              if (!isNoQrError(error)) unexpectedError ??= error;
+            }
       }
 
       if (unexpectedError) {
@@ -304,7 +340,7 @@ export class ZxingTransferQrReader implements TransferQrReader {
             return;
           }
 
-          if (error && error.name !== 'NotFoundException') {
+          if (error && !isNoQrError(error)) {
             controls.stop();
             stopVideo(video);
             onError(error);

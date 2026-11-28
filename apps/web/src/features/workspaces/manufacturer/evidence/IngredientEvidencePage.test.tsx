@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   reviewEvidence: vi.fn(),
   verifyEvidence: vi.fn(),
   prepareEvidenceAcceptance: vi.fn(),
+  complete: vi.fn(),
   getEvidenceDetails: vi.fn(),
 }));
 
@@ -18,6 +19,10 @@ vi.mock('../../../production-flow/production-flow.api', async (importOriginal) =
 }));
 vi.mock('../../../production-flow/CompanyIdentityProofAction', () => ({
   CompanyIdentityProofAction: () => <p>Incoming company proof response</p>,
+}));
+
+vi.mock('../../../production-flow/production-flow.transaction', () => ({
+  completePreparedWorkflow: mocks.complete,
 }));
 
 import { IngredientEvidence } from './IngredientEvidencePage';
@@ -126,10 +131,25 @@ describe('Manufacturer received evidence review', () => {
     expect(screen.getAllByText('Not verified yet').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'Reject…' })).toBeTruthy();
 
-    // The review still reports "not verified", so verify-and-accept records nothing.
-    fireEvent.click(screen.getByRole('button', { name: 'Verify and accept' }));
+    // Preview and technical verification must never prepare acceptance.
+    expect(
+      (screen.getByRole('button', { name: 'Accept evidence' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(mocks.verifyEvidence).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Verify evidence' }));
     await waitFor(() => expect(mocks.verifyEvidence).toHaveBeenCalledWith(requestId));
-    expect(await screen.findByText(/Verification did not pass/)).toBeTruthy();
+    expect(await screen.findByText('Verification passed')).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Accept evidence' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
     expect(mocks.prepareEvidenceAcceptance).not.toHaveBeenCalled();
+    mocks.complete.mockImplementation(async (prepare) => {
+      await prepare();
+      return {};
+    });
+    mocks.prepareEvidenceAcceptance.mockResolvedValue({});
+    fireEvent.click(screen.getByRole('button', { name: 'Accept evidence' }));
+    await waitFor(() => expect(mocks.prepareEvidenceAcceptance).toHaveBeenCalledWith(requestId));
+    expect(mocks.verifyEvidence).toHaveBeenCalledTimes(1);
   });
 });

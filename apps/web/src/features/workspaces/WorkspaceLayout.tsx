@@ -1,3 +1,5 @@
+import { navigationActionCount, useNavigationActions } from './action-counts';
+import { ActionCountBadge } from './shared/ui/ActionCountBadge';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { notify } from '../../components/ui/feedback';
@@ -42,6 +44,12 @@ export function WorkspaceLayout({
   accountAction,
   identity,
 }: WorkspaceLayoutProps) {
+  const actions = useNavigationActions(identity?.walletAddress, role);
+  const destinations = (id: string) =>
+    id === 'requests'
+      ? ['requests', 'sent-requests']
+      : (workspaceSection(role, id)?.pages.map(([page]) => page) ?? [id]);
+  const countFor = (id: string) => navigationActionCount(actions, destinations(id));
   const [light, setLight] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const sidebar = useRef<HTMLElement>(null);
@@ -130,6 +138,18 @@ export function WorkspaceLayout({
                     key={id}
                     to={pathForPage(id)}
                     className={activeId === id ? 'active' : ''}
+                    aria-label={
+                      countFor(id) === null
+                        ? `${label}, action count unavailable`
+                        : countFor(id)
+                          ? `${label}, ${countFor(id)! > 99 ? 'more than 99' : countFor(id)} ${countFor(id) === 1 ? 'action' : 'actions'} required`
+                          : undefined
+                    }
+                    title={
+                      countFor(id) === null
+                        ? 'Action count unavailable until records refresh successfully'
+                        : undefined
+                    }
                     aria-current={activeId === id ? 'page' : undefined}
                     onClick={() => setMenuOpen(false)}
                   >
@@ -139,7 +159,8 @@ export function WorkspaceLayout({
                       strokeWidth={1.8}
                       style={{ flexShrink: 0 }}
                     />
-                    {label}
+                    <span>{label}</span>
+                    <ActionCountBadge count={countFor(id)} label={label} />
                   </Link>
                 ))}
               </section>
@@ -202,7 +223,11 @@ export function WorkspaceLayout({
                   label={section.label}
                   value={page}
                   onChange={(id) => navigate(pathForPage(id))}
-                  tabs={section.pages.map(([value, label]) => ({ value, label }))}
+                  tabs={section.pages.map(([value, label]) => ({
+                    value,
+                    label,
+                    actionCount: navigationActionCount(actions, [value]),
+                  }))}
                 />
               </div>
             )}

@@ -1,8 +1,10 @@
+import { ingredientEvidenceActionGroup } from '../workspaces/action-counts';
+import type { EvidenceVerification } from '../production-flow/production-flow.api';
 import { useState, type ReactNode } from 'react';
 import { Contact, type LucideIcon } from 'lucide-react';
-import { EvidenceCard, FieldPairs, IdentifierFields } from './EvidenceIdentity';
+import { EvidenceCard, FieldPairs, IdentifierFields, verificationBadge } from './EvidenceIdentity';
 import { COMPANY_ALWAYS_CLAIMS } from '@tracechain/shared';
-import { Alert, Btn, ClaimRow, Input } from '../workspaces/shared/ui';
+import { Alert, Badge, Btn, ClaimRow, Input } from '../workspaces/shared/ui';
 import type { BadgeVariant } from '../workspaces/shared/ui/Badge';
 import './evidence-exchange.css';
 
@@ -89,7 +91,7 @@ export function EvidenceNextStep({
 
 /**
  * The requester's decision on shared evidence, identical for company identity and ingredient
- * evidence: "Verify and accept" in one step, or reject with a reason.
+ * evidence: inspect and verify first, then accept or reject with a reason.
  */
 export function EvidenceDecision({
   busy,
@@ -97,8 +99,12 @@ export function EvidenceDecision({
   onReject,
   recipient,
   disabled = false,
+  verification,
+  onVerify,
 }: {
-  /** Which action is running: 'accept', 'reject' or ''. */
+  verification?: EvidenceVerification;
+  onVerify?: () => void;
+  /** Which action is running: 'verify', 'accept', 'reject' or ''. */
   busy: string;
   onAccept: () => void;
   onReject: (reason: string) => void;
@@ -143,11 +149,62 @@ export function EvidenceDecision({
       >
         Reject…
       </Btn>
-      <Btn loading={busy === 'accept'} disabled={disabled || Boolean(busy)} onClick={onAccept}>
-        {busy === 'accept' ? 'Verifying…' : 'Verify and accept'}
+      {onVerify && (
+        <Btn variant="outline" disabled={Boolean(busy)} onClick={onVerify}>
+          {busy === 'verify'
+            ? 'Verifying...'
+            : verification?.state === 'PASSED'
+              ? 'Verify again'
+              : 'Verify evidence'}
+        </Btn>
+      )}
+      <Btn
+        loading={busy === 'accept'}
+        disabled={disabled || Boolean(busy) || verification?.state !== 'PASSED'}
+        onClick={onAccept}
+      >
+        {busy === 'accept' ? 'Accepting...' : 'Accept evidence'}
       </Btn>
     </div>
   );
+}
+
+export function EvidenceVerificationSummary({
+  verification,
+}: {
+  verification?: EvidenceVerification;
+}) {
+  const state = verification?.state ?? 'NOT_VERIFIED';
+  const badge = verificationBadge(state);
+  return (
+    <section aria-label="Technical verification" className="grid gap-[8px]">
+      <Badge label={badge.label} variant={badge.variant} />
+      <p>
+        {verification?.message ??
+          (state === 'PASSED'
+            ? 'Required technical checks passed. Acceptance is a separate decision.'
+            : 'Shared content is untrusted until verification passes.')}
+      </p>
+      {verification?.checks?.length ? (
+        <ul className="m-0 pl-[20px]">
+          {verification.checks.map((check) => (
+            <li key={check}>{check.replaceAll('_', ' ').toLowerCase()}</li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
+export function evidenceVerificationFailure(cause: unknown): EvidenceVerification {
+  const status = (cause as { status?: number })?.status;
+  return {
+    state: status && status < 500 ? 'FAILED' : 'UNAVAILABLE',
+    message:
+      status && status < 500 && cause instanceof Error
+        ? cause.message
+        : 'Verification is temporarily unavailable. Retry the checks; the evidence has not been marked invalid.',
+  };
 }
 
 /** Explanations live here, collapsed, instead of being repeated across the page. */
@@ -250,12 +307,14 @@ export function EvidenceFieldList({
 export function SharedClaims({
   values,
   missing = [],
+  undisclosed = [],
 }: {
   values: Record<string, unknown>;
   missing?: string[];
+  undisclosed?: string[];
 }) {
   const entries = Object.entries(values);
-  if (!entries.length) return null;
+  if (!entries.length && !missing.length && !undisclosed.length) return null;
   const business = entries.filter(([claim]) => !technicalClaim(claim));
   const identifiers = entries.filter(([claim]) => technicalClaim(claim));
   return (
@@ -267,9 +326,10 @@ export function SharedClaims({
       {missing.length > 0 && (
         <Alert
           type="warning"
-          message={`Incomplete: required ${missing.map(friendlyClaim).join(', ')} not shared. The signatures are valid; decide whether this is enough to continue.`}
+          message={`Incomplete: required ${missing.map(friendlyClaim).join(', ')} not shared. Review the verification results separately before making a decision.`}
         />
       )}
+      {undisclosed.length > 0 && <p>Not shared: {undisclosed.map(friendlyClaim).join(', ')}.</p>}
       <FieldPairs
         fields={business.map(([claim, value]) => ({
           label: friendlyClaim(claim),
@@ -333,10 +393,7 @@ export function ingredientRequestGroup(
   request: { status: number; dueAt: number },
   side: 'received' | 'sent',
 ): EvidenceGroup {
-  if (request.status === 1 && request.dueAt * 1000 > Date.now())
-    return side === 'received' ? 'action' : 'open';
-  if (request.status === 2) return side === 'sent' ? 'action' : 'open';
-  return 'closed';
+  return ingredientEvidenceActionGroup(request, side);
 }
 
 /** One status filter for every Evidence Exchange list. */

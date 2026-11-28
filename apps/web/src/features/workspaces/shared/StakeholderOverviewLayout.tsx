@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { LoadingIndicator } from '../../../components/ui/LoadingIndicator';
 import { CheckCircle2, RefreshCw } from 'lucide-react';
 
 import { PaginatedTable } from '../../../components/ui/PaginatedTable';
@@ -49,6 +50,7 @@ export function StakeholderOverviewLayout({
   snapshot,
   errors = [],
   onRefresh,
+  refreshing = false,
 }: {
   title: string;
   description: string;
@@ -58,6 +60,7 @@ export function StakeholderOverviewLayout({
   snapshot: OverviewSnapshot;
   errors?: Array<string | undefined>;
   onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   const ordered = [...tasks].sort((a, b) => (a.due ?? Infinity) - (b.due ?? Infinity));
   const unavailable = errors.some(Boolean);
@@ -68,8 +71,13 @@ export function StakeholderOverviewLayout({
         sub={description}
         action={
           onRefresh && (
-            <Btn variant="outline" icon={<RefreshCw size={16} />} onClick={onRefresh}>
-              {unavailable ? 'Retry' : 'Refresh'}
+            <Btn
+              variant="outline"
+              icon={<RefreshCw size={16} />}
+              onClick={onRefresh}
+              disabled={refreshing}
+            >
+              {refreshing ? 'Refreshing…' : unavailable ? 'Retry' : 'Refresh'}
             </Btn>
           )
         }
@@ -101,9 +109,11 @@ export function StakeholderOverviewLayout({
             Activity could not be checked. Retry loading the dashboard.
           </p>
         ) : tasksLoading && !ordered.length ? (
-          <p className="overview-panel__empty" role="status">
-            Checking orders, offers and evidence requests…
-          </p>
+          <LoadingIndicator
+            page
+            layout="table"
+            label="Checking orders, offers and evidence requests…"
+          />
         ) : !ordered.length ? (
           <p className="overview-panel__empty is-done">
             <CheckCircle2 size={18} aria-hidden="true" /> You&apos;re all caught up. New requests
@@ -175,9 +185,7 @@ export function StakeholderOverviewLayout({
             Records are temporarily unavailable. Retry loading the dashboard.
           </p>
         ) : tasksLoading && !snapshot.rows.length ? (
-          <p className="overview-panel__empty" role="status">
-            Loading records…
-          </p>
+          <LoadingIndicator page layout="table" label="Loading records…" />
         ) : !snapshot.rows.length ? (
           <p className="overview-panel__empty">{snapshot.empty}</p>
         ) : (

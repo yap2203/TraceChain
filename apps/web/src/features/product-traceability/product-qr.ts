@@ -72,3 +72,24 @@ export function productQrPngFilename(batchReference: string) {
     .slice(0, 80);
   return `tracechain-product-${safeReference || 'registered-product'}.png`;
 }
+
+/** Used by the PNG download and byte-level image-decoder regression tests. */
+export function renderQrCanvas(model: ProductQrModel, canvas: HTMLCanvasElement) {
+  const quiet = 4,
+    scale = 10;
+  canvas.width = (model.modules.length + quiet * 2) * scale;
+  canvas.height = canvas.width;
+  const context = canvas.getContext('2d');
+  if (!context) throw new Error('QR image rendering is unavailable.');
+  context.imageSmoothingEnabled = false;
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = '#07111f';
+  model.modules.forEach((row, rowIndex) =>
+    row.forEach((dark, columnIndex) => {
+      if (dark)
+        context.fillRect((columnIndex + quiet) * scale, (rowIndex + quiet) * scale, scale, scale);
+    }),
+  );
+  return canvas;
+}

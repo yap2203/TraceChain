@@ -23,6 +23,7 @@
     "@veramo/key-manager": "^7.0.2",
     "@veramo/kms-local": "^7.0.2",
     "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "buffer": "^6.0.3",
     "did-jwt": "^8.0.18",
     "did-resolver": "^4.1.0",

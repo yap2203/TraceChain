@@ -259,8 +259,8 @@ it('shows a readable completed result and shared-evidence disclosure', async () 
     credential: { companyName: 'Rimba Cocoa Ingredients' },
   });
   renderSupplierPanel();
-  expect((await screen.findAllByText('Verified')).length).toBeGreaterThan(0);
-  expect(screen.getByText('Evidence verified and accepted')).toBeTruthy();
+  expect((await screen.findAllByText('Accepted')).length).toBeGreaterThan(0);
+  expect(screen.getByText('Evidence accepted')).toBeTruthy();
   expect(screen.getByText('Shared company information')).toBeTruthy();
   expect(screen.getByText('Rimba Cocoa Ingredients')).toBeTruthy();
   expect(screen.queryByRole('button', { name: 'Review request' })).toBeNull();
@@ -366,3 +366,44 @@ function renderSupplierPanel() {
     />,
   );
 }
+
+it.each(['PASSED', 'FAILED', 'UNAVAILABLE'] as const)(
+  'previews disclosed evidence before the %s decision and retries without accepting',
+  async (state) => {
+    mocks.identity.mockResolvedValue({
+      status: 'PRESENTED',
+      expiresAt: Math.floor(Date.now() / 1000) + 600,
+      credential: { companyName: 'Shared supplier', role: 'SUPPLIER' },
+      missingClaims: ['companyRegistrationNumber'],
+      verification: { state },
+    });
+    render(
+      <DeliveryIdentityPanel
+        order={{
+          orderId: 'proof',
+          seller: 'supplier',
+          delivery: { identityChallenge: 'challenge', distributor: 'distributor' },
+        }}
+        data={{
+          actor: 'distributor',
+          role: 'DISTRIBUTOR',
+          orders: [],
+          catalogue: [],
+          locations: [],
+          shipments: [],
+        }}
+        onChanged={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    expect(await screen.findByText('Shared supplier')).toBeTruthy();
+    const accept = screen.getByRole('button', { name: 'Accept evidence' }) as HTMLButtonElement;
+    expect(accept.disabled).toBe(state !== 'PASSED');
+    expect(screen.getByText(/Incomplete: required Registration number/)).toBeTruthy();
+    expect(mocks.identity.mock.calls.every(([, input]) => input.action === 'status')).toBe(true);
+    fireEvent.click(
+      screen.getByRole('button', { name: state === 'PASSED' ? 'Verify again' : 'Verify evidence' }),
+    );
+    await waitFor(() => expect(mocks.identity.mock.calls.length).toBeGreaterThan(1));
+    expect(mocks.identity.mock.calls.every(([, input]) => input.action === 'status')).toBe(true);
+  },
+);

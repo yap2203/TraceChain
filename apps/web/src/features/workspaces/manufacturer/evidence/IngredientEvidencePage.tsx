@@ -14,6 +14,7 @@ import { FileCheck } from 'lucide-react';
 import { PaginatedTable } from '../../../../components/ui/PaginatedTable';
 import {
   EvidenceDecision,
+  evidenceVerificationFailure,
   EvidenceHowItWorks,
   ingredientEvidenceStatus,
   DeadlineCell,
@@ -173,25 +174,39 @@ export function IngredientEvidence({
     }
   };
 
-  // Same as company identity: verifying and accepting is one step; acceptance is recorded only
-  // when every check passes.
-  const verifyAndAccept = async (requestId: string) => {
+  const verify = async (requestId: string) => {
+    if (!review || busy) return;
+    setBusy('verify');
+    setError('');
+    try {
+      const result = await verifyEvidence(requestId);
+      setVerified((current) => ({ ...current, [requestId]: result.verifiedAt }));
+      setReview({
+        ...review,
+        verification: {
+          state: 'PASSED',
+          verifiedAt: result.verifiedAt,
+          checks: result.checks.map((check) => check.code),
+        },
+      });
+    } catch (cause) {
+      setReview({ ...review, verification: evidenceVerificationFailure(cause) });
+    } finally {
+      setBusy('');
+    }
+  };
+  const accept = async (requestId: string) => {
+    if (review?.verification.state !== 'PASSED' || busy) return;
     setBusy('accept');
     setError('');
     setNotice('');
     try {
-      const result = await verifyEvidence(requestId);
-      setVerified((current) => ({ ...current, [requestId]: result.verifiedAt }));
-      const checked = await reviewEvidence(requestId);
-      setReview(checked);
-      if (checked.verification.state !== 'PASSED')
-        throw new Error('Verification did not pass, so the evidence was not accepted.');
       await completePreparedWorkflow(() => prepareEvidenceAcceptance(requestId));
-      setNotice('Evidence verified and accepted.');
+      setNotice('Evidence accepted.');
       setReview(undefined);
       await load();
     } catch (cause) {
-      setError(reportError(cause, 'Evidence verification failed.'));
+      setError(reportError(cause, 'Evidence acceptance failed.'));
     } finally {
       setBusy('');
     }
@@ -262,7 +277,8 @@ export function IngredientEvidence({
           : {
               tone: 'action' as const,
               title: 'Evidence shared',
-              message: 'Verify and accept the evidence, or reject it with a reason.',
+              message:
+                'Review the shared information and verification results before accepting or rejecting.',
             };
     return (
       <div className="information-requests-page is-detail">
@@ -289,7 +305,9 @@ export function IngredientEvidence({
               <EvidenceDecision
                 busy={busy}
                 recipient="the Supplier"
-                onAccept={() => void verifyAndAccept(review.requestId)}
+                verification={review.verification}
+                onVerify={() => void verify(review.requestId)}
+                onAccept={() => void accept(review.requestId)}
                 onReject={(reason) => void reject(reason)}
               />
             )
@@ -297,10 +315,10 @@ export function IngredientEvidence({
           howItWorks={
             <EvidenceHowItWorks>
               <p>
-                Verify and accept checks the Supplier&apos;s signature, that the proof belongs to
-                this request and recipient, and the credential&apos;s current on-chain status, then
-                records the acceptance with one MetaMask transaction. Nothing is recorded if a check
-                fails.
+                Verify evidence checks the Supplier&apos;s signature, that the proof belongs to this
+                request and recipient, and the credential&apos;s current on-chain status, without
+                accepting it. Accept evidence records your separate decision with a MetaMask
+                transaction.
               </p>
             </EvidenceHowItWorks>
           }

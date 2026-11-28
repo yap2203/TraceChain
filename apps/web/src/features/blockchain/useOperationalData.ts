@@ -23,9 +23,11 @@ interface QueryState {
   data: OperationalData;
   error: string;
   loading: boolean;
+  refreshing: boolean;
 }
 
 interface CacheEntry extends QueryState {
+  hasData: boolean;
   listeners: Set<(state: QueryState) => void>;
   pending?: Promise<OperationalData>;
   updatedAt: number;
@@ -84,12 +86,13 @@ export function useOperationalData() {
           if (data.actorWallet && !scope.endsWith(`wallet:${data.actorWallet.toLowerCase()}`))
             throw new Error('The operational response belongs to a different wallet session.');
           entry.data = data;
+          entry.hasData = true;
           entry.updatedAt = Date.now();
           return data;
         })
         .catch((cause) => {
           entry.error = cause instanceof Error ? cause.message : 'Could not read blockchain data.';
-          entry.data = emptyData;
+          if (!entry.hasData) entry.data = emptyData;
           throw cause;
         })
         .finally(() => {
@@ -121,7 +124,15 @@ export function useOperationalData() {
 function cacheEntry(scope: string): CacheEntry {
   let entry = queries.get(scope);
   if (!entry) {
-    entry = { data: emptyData, error: '', listeners: new Set(), loading: true, updatedAt: 0 };
+    entry = {
+      data: emptyData,
+      hasData: false,
+      error: '',
+      listeners: new Set(),
+      loading: true,
+      refreshing: false,
+      updatedAt: 0,
+    };
     queries.set(scope, entry);
   }
   return entry;
@@ -132,7 +143,12 @@ function snapshot(scope: string): QueryState {
 }
 
 function publicState(entry: CacheEntry): QueryState {
-  return { data: entry.data, error: entry.error, loading: entry.loading };
+  return {
+    data: entry.data,
+    error: entry.error,
+    loading: entry.loading && !entry.hasData,
+    refreshing: entry.loading && entry.hasData,
+  };
 }
 
 function publish(entry: CacheEntry) {

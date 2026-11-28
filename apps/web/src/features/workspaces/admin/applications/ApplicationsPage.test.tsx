@@ -32,12 +32,12 @@ describe('application review list', () => {
   });
   it('shows an explicit empty filter result and allows returning to all applications', () => {
     render(<Applications />);
-    fireEvent.click(screen.getByRole('button', { name: 'Approved (0)' }));
+    fireEvent.click(screen.getByRole('button', { name: /Approved/ }));
     expect(screen.getByText('No applications found')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Approved (0)' }).getAttribute('aria-pressed')).toBe(
+    expect(screen.getByRole('button', { name: /Approved/ }).getAttribute('aria-pressed')).toBe(
       'true',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'All (1)' }));
+    fireEvent.click(screen.getByRole('button', { name: /All/ }));
     expect(screen.getByText('Registered supplier')).toBeTruthy();
   });
   it('keeps read failures visible rather than suggesting successful loading', () => {
@@ -49,5 +49,34 @@ describe('application review list', () => {
     });
     render(<Applications />);
     expect(screen.getByText('Applications unavailable: RPC unavailable')).toBeTruthy();
+    expect(screen.queryByText('No applications found')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
   });
+});
+
+it('uses a table skeleton without premature zero counts or empty states', () => {
+  mocks.useApplications.mockReturnValue({
+    applications: [],
+    loading: true,
+    error: '',
+    reload: vi.fn(),
+  });
+  const { container } = render(<Applications />);
+  expect(screen.getByRole('status', { name: /Loading applications/ })).toBeTruthy();
+  expect(container.querySelector('.page-skeleton--table')).toBeTruthy();
+  expect(screen.queryByText('No applications found')).toBeNull();
+  expect(screen.queryByText('0')).toBeNull();
+});
+
+it('retains existing application rows with refreshing feedback', () => {
+  mocks.useApplications.mockReturnValue({
+    applications: [record],
+    loading: true,
+    error: '',
+    reload: vi.fn(),
+  });
+  render(<Applications />);
+  expect(screen.getByText('Registered supplier')).toBeTruthy();
+  expect(screen.getByRole('button', { name: /Refreshing/ }).hasAttribute('disabled')).toBe(true);
+  expect(screen.queryByRole('status', { name: /Loading applications/ })).toBeNull();
 });

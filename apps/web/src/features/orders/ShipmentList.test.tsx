@@ -77,7 +77,7 @@ it('lists arranged pickups as "Waiting for pickup" and filters them', () => {
   fireEvent.click(screen.getAllByRole('button', { name: /Waiting for pickup/ })[0]!);
   expect(screen.getByText('1 shipment')).toBeTruthy();
   expect(screen.getByText('Item 2')).toBeTruthy();
-  expect(screen.getByRole('button', { name: 'View pickup' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'View details' })).toBeTruthy();
   expect(screen.getByText(/prints the label and confirms the handoff/)).toBeTruthy();
 });
 
