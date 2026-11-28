@@ -16,6 +16,7 @@ export {
   encodeProductQrPayload,
   ProductQrError,
   ProductQrErrorCode,
+  normalizePublicAppUrl,
 } from './qr/product-qr.js';
 export type {
   ProductQrEncodingInput,

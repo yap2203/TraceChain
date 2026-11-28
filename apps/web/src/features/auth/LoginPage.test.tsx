@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { CompanyRole, encodeShipmentQr } from '@tracechain/shared';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import LoginPage from './LoginPage';
@@ -57,7 +58,48 @@ describe('login wallet connection tabs', () => {
     });
   });
 
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllEnvs();
+  });
+
+  it('returns an authorized login to the complete shipment link and rejects external return targets', async () => {
+    vi.stubEnv('VITE_PUBLIC_APP_URL', window.location.origin);
+    const qr = encodeShipmentQr({
+      publicAppUrl: window.location.origin,
+      chainId: 31337,
+      ordersAddress: '0x1000000000000000000000000000000000000001',
+      shipmentId: ('0x' + '11'.repeat(32)) as `0x${string}`,
+      kind: 'product',
+    });
+    const path = new URL(qr).pathname + new URL(qr).search;
+    const Destination = () => {
+      const location = useLocation();
+      return <p data-testid="destination">{location.pathname + location.search}</p>;
+    };
+    const Router = ({ target }: { target: string }) => (
+      <MemoryRouter initialEntries={[`/login?returnTo=${encodeURIComponent(target)}`]}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/receive/shipment" element={<Destination />} />
+          <Route path="/distributor/overview" element={<Destination />} />
+        </Routes>
+      </MemoryRouter>
+    );
+    const view = render(<Router target={path} />);
+    expect(screen.queryByTestId('destination')).toBeNull();
+    Object.assign(walletMocks.state, {
+      phase: 'authenticated',
+      authorizationReady: true,
+      onChainStatusChecked: true,
+      role: CompanyRole.DISTRIBUTOR,
+    });
+    view.rerender(<Router target={path} />);
+    expect((await screen.findByTestId('destination')).textContent).toBe(path);
+    view.unmount();
+    render(<Router target={`https://evil.example${path}`} />);
+    expect((await screen.findByTestId('destination')).textContent).toBe('/distributor/overview');
+  });
 
   it('lets an extension user explicitly switch to the mobile QR flow', () => {
     render(

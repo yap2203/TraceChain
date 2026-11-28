@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CheckCircle2, Package, Plus, RefreshCw, Truck, Upload } from 'lucide-react';
 import { ReadModelStatus } from './ReadModelStatus';
 import { decodeShipmentQr } from '@tracechain/shared';
+import { shipmentAppOrigin } from './shipment-receipt-link';
 import {
   getOrders,
   getCustodyOffers,
@@ -301,7 +302,7 @@ export function ShipmentsWorkspace({
         kind: shipment?.kind,
         chainId: data!.chainId!,
         ordersAddress: data!.ordersAddress!,
-        publicAppUrl: import.meta.env.VITE_PUBLIC_APP_URL,
+        publicAppUrl: shipmentAppOrigin(),
       });
       if (!shipments.some((entry) => same(entry.shipmentId, decoded.shipmentId)))
         throw new Error('This shipment is unavailable to your company.');

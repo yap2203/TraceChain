@@ -44,7 +44,7 @@ function fail(code: ProductQrErrorCodeValue, message: string): never {
   throw new ProductQrError(code, message);
 }
 
-function normalizePublicAppUrl(value: unknown) {
+export function normalizePublicAppUrl(value: unknown) {
   if (typeof value !== 'string')
     return fail(
       ProductQrErrorCode.INVALID_PUBLIC_APP_URL,

@@ -3,6 +3,7 @@ import { reportError } from '../../components/ui/feedback';
 import { useEffect, useRef, useState } from 'react';
 import { Camera, Factory, Store, Truck } from 'lucide-react';
 import { decodeShipmentQr } from '@tracechain/shared';
+import { shipmentAppOrigin } from './shipment-receipt-link';
 import {
   Alert,
   Btn,
@@ -97,7 +98,7 @@ export function ProductDeliveryPanel({
         kind: 'product',
         chainId: data.chainId!,
         ordersAddress: data.ordersAddress!,
-        publicAppUrl: import.meta.env.VITE_PUBLIC_APP_URL,
+        publicAppUrl: shipmentAppOrigin(),
       });
       setScanned(value);
       setConfirmed(false);
@@ -361,17 +362,21 @@ export function ProductDeliveryPanel({
           </Btn>
         </div>
       )}
-      {r && stage >= 2 && stage <= 3 && (carrier || manufacturer) && (
-        carrier ? (
+      {r &&
+        stage >= 2 &&
+        stage <= 3 &&
+        (carrier || manufacturer) &&
+        (carrier ? (
           <Btn variant="outline" onClick={() => setRequestEvidence(true)}>
             Request Manufacturer company evidence
           </Btn>
         ) : (
-          <a href={`/manufacturer/information-requests?context=delivery&referenceId=${encodeURIComponent(order.orderId)}`}>
+          <a
+            href={`/manufacturer/information-requests?context=delivery&referenceId=${encodeURIComponent(order.orderId)}`}
+          >
             Manage requested company evidence
           </a>
-        )
-      )}
+        ))}
       {requestEvidence && (
         <DeliveryIdentityPanel
           requestOnly

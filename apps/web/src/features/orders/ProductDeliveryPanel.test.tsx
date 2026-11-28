@@ -131,41 +131,46 @@ describe('Manufacturer Distributor Retailer product delivery', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Request Manufacturer company evidence' }));
     expect(await screen.findByRole('dialog', { name: /Request company evidence/ })).toBeTruthy();
   });
-  it('unlocks direct pickup only after scanning the exact QR image and explicit physical confirmation', async () => {
-    const qr = encodeShipmentQr({
-      shipmentId: orderId,
-      kind: 'product',
-      chainId: 31337,
-      ordersAddress: manufacturer,
-      publicAppUrl: 'http://localhost:5173',
-    });
-    m.decode.mockResolvedValue(qr);
-    render(
-      <ProductDeliveryPanel
-        data={{ ...base, actor: distributor, role: 'DISTRIBUTOR' }}
-        order={{ ...order, productDelivery: { stage: 3, mode: 1, distributor } }}
-        onChanged={vi.fn().mockResolvedValue(undefined)}
-      />,
-    );
-    const button = (await screen.findByRole('button', {
-      name: 'Confirm product pickup & dispatch',
-    })) as HTMLButtonElement;
-    fireEvent.change(screen.getByLabelText(/Vehicle registration/), {
-      target: { value: 'VAB 1234' },
-    });
-    fireEvent.click(screen.getByRole('checkbox'));
-    expect(button.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Upload product pickup QR image'), {
-      target: { files: [new File(['qr'], 'qr.png', { type: 'image/png' })] },
-    });
-    await screen.findByText('Correct product-order label scanned.');
-    fireEvent.click(screen.getByRole('checkbox'));
-    expect(button.disabled).toBe(false);
-    fireEvent.click(button);
-    await waitFor(() =>
-      expect(m.prepare).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'product-order-dispatch', qrPayload: qr }),
-      ),
-    );
-  });
+  it.each([true, false])(
+    'unlocks direct pickup only after scanning the exact QR image and explicit physical confirmation (configured origin: %s)',
+    async (configured) => {
+      const publicAppUrl = configured ? 'http://localhost:5173' : window.location.origin;
+      if (!configured) vi.stubEnv('VITE_PUBLIC_APP_URL', undefined);
+      const qr = encodeShipmentQr({
+        shipmentId: orderId,
+        kind: 'product',
+        chainId: 31337,
+        ordersAddress: manufacturer,
+        publicAppUrl,
+      });
+      m.decode.mockResolvedValue(qr);
+      render(
+        <ProductDeliveryPanel
+          data={{ ...base, actor: distributor, role: 'DISTRIBUTOR' }}
+          order={{ ...order, productDelivery: { stage: 3, mode: 1, distributor } }}
+          onChanged={vi.fn().mockResolvedValue(undefined)}
+        />,
+      );
+      const button = (await screen.findByRole('button', {
+        name: 'Confirm product pickup & dispatch',
+      })) as HTMLButtonElement;
+      fireEvent.change(screen.getByLabelText(/Vehicle registration/), {
+        target: { value: 'VAB 1234' },
+      });
+      fireEvent.click(screen.getByRole('checkbox'));
+      expect(button.disabled).toBe(true);
+      fireEvent.change(screen.getByLabelText('Upload product pickup QR image'), {
+        target: { files: [new File(['qr'], 'qr.png', { type: 'image/png' })] },
+      });
+      await screen.findByText('Correct product-order label scanned.');
+      fireEvent.click(screen.getByRole('checkbox'));
+      expect(button.disabled).toBe(false);
+      fireEvent.click(button);
+      await waitFor(() =>
+        expect(m.prepare).toHaveBeenCalledWith(
+          expect.objectContaining({ action: 'product-order-dispatch', qrPayload: qr }),
+        ),
+      );
+    },
+  );
 });

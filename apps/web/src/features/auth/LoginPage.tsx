@@ -1,6 +1,7 @@
 import { ApplicationDocumentsPanel } from '../registration/ApplicationDocumentsPanel';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { safeShipmentReturnTo } from '../orders/shipment-receipt-link';
 import { COMPANY_ROLE_TO_WORKSPACE } from '@tracechain/shared';
 
 import { Brand } from '../../components/brand/Brand';
@@ -112,6 +113,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 
 function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<LearningTab>('process');
   const [walletConnectionTab, setWalletConnectionTab] = useState<WalletConnectionTab>('extension');
   const [showWalletHelp, setShowWalletHelp] = useState(false);
@@ -157,9 +159,11 @@ function LoginPage() {
       return;
 
     const workspace = COMPANY_ROLE_TO_WORKSPACE[walletState.role];
-    navigate(`/${workspace}/overview`, { replace: true });
+    const returnTo = safeShipmentReturnTo(new URLSearchParams(location.search).get('returnTo'));
+    navigate(returnTo ?? `/${workspace}/overview`, { replace: true });
   }, [
     navigate,
+    location.search,
     walletState.authorizationReady,
     walletState.onChainStatusChecked,
     walletState.phase,

@@ -1125,6 +1125,15 @@ be recovered by the API operator rather than silently replaced with the current 
 Hardhat chain, mined-time catch-up requires a new block; reads do not mine one automatically.
 Product names recover from their chain-referenced encrypted metadata with hash and batch checks
 when the API has no local product journal. Missing or corrupt referenced content remains an error.
+Shipment receipt links at `/receive/shipment` validate their complete QR query before loading
+authorized data. The viewer reuses the shared origin validator and falls back to the loaded page's
+origin only when `VITE_PUBLIC_APP_URL` is omitted/blank; malformed explicit configuration fails
+clearly. Generating shareable QR links still requires the configured public application URL. The
+sign-in-page link retains the complete receipt path/query in `returnTo`, and login accepts only a
+valid same-origin shipment return target. The receipt page rechecks the actual API chain/registry
+and intended recipient, including existing assigned pickup and rejected-return flows. It never
+auto-confirms receipt. Existing API URL construction supports absolute server bases and same-origin
+bases such as an empty string, `/`, or `/gateway`; authentication still sends HttpOnly session cookies.
 Custody offers currently require sender and recipient to use the same API workflow store: although
 their encrypted content is pinned to IPFS, no shared discoverable offer reference is published. An
 isolated API cannot discover or open those offers from their IDs alone. Existing records are retained;

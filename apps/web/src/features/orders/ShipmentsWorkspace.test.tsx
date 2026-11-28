@@ -193,6 +193,31 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 describe('unified warehouse shipments', () => {
+  it('verifies a receipt landing QR without a public URL setting and never auto-confirms receipt', async () => {
+    vi.stubEnv('VITE_PUBLIC_APP_URL', undefined);
+    const qr = encodeShipmentQr({
+      shipmentId: shipmentId as `0x${string}`,
+      kind: 'ingredient',
+      chainId: 31337,
+      ordersAddress,
+      publicAppUrl: window.location.origin,
+    });
+    render(
+      <ShipmentsWorkspace
+        role="distributor"
+        section="intake"
+        initialShipmentId={shipmentId}
+        initialQr={qr}
+      />,
+    );
+    expect(await screen.findByText('Shipment QR verified successfully.')).toBeTruthy();
+    expect(
+      (screen.getByRole('button', { name: 'Confirm receipt with MetaMask' }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+  });
   it('renders the responsive custody-intake hierarchy with live names and a safe image fallback', async () => {
     render(
       <ShipmentsWorkspace role="distributor" section="intake" initialShipmentId={shipmentId} />,

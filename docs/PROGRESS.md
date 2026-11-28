@@ -1,5 +1,12 @@
 # Project Progress
 
+## 2026-11-28 - Shipment receipt landing URL and login return
+
+- Confirmed the deployed receipt bundle passed `publicAppUrl: undefined` to `decodeShipmentQr`; its `new URL(expected.publicAppUrl)` caused the raw Invalid URL exception. A valid generated QR reproduced the stack and the branding-only error state locally. API request construction was not the throwing call.
+- Reused/exported the existing shared public-origin normalizer. Shipment receipt viewers and both downstream shipment-QR consumers use the current loaded application origin only if the public URL is omitted; explicit malformed configuration remains an actionable error. QR format and strict version/chain/registry/shipment/kind checks are unchanged.
+- Added a validated same-origin shipment `returnTo` for the existing login page without loading the shipment workspace into the login bundle. The complete query survives inline or login-page authentication. API deployment and recipient checks still precede receipt actions; wrong accounts can switch wallets. Existing authorized product-order pickup and rejected-ingredient return paths are preserved. No automatic receipt transaction.
+- Regression tests cover the deployed missing-setting failure, generated/direct links, HTTPS/local origins, existing absolute/relative API bases, malformed/version/network/registry cases, unauthorized/wrong accounts and login return/open-redirect rejection. No environment, key, contract, record or deployment changes.
+
 ## 2026-11-28 - Preserve physical handoff time while mined state catches up
 
 - Replayed the exact supplied calldata through read-only Sepolia `eth_call`: block 12229380 (10:06:48Z) rejected `occurredAt=1795860419` (10:06:59Z) with `InvalidInput()`; unchanged calldata succeeded at block 12229381 (10:07:00Z). Both location owners, Manufacturer/Distributor roles and permissions, production time, product transferability, route and 4-of-12 stock were valid; the transfer ID was unused. No transaction was broadcast.

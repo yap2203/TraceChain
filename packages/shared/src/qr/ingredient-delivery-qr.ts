@@ -1,4 +1,8 @@
-import { decodeProductQrPayload, encodeProductQrPayload } from './product-qr.js';
+import {
+  decodeProductQrPayload,
+  encodeProductQrPayload,
+  normalizePublicAppUrl,
+} from './product-qr.js';
 
 export function encodeShipmentQr(input: {
   shipmentId: `0x${string}`;
@@ -49,7 +53,7 @@ export function decodeShipmentQr(
   ) {
     throw new Error('The selected QR is not a valid TraceChain shipment label.');
   }
-  if (url.origin !== new URL(expected.publicAppUrl).origin) {
+  if (url.origin !== normalizePublicAppUrl(expected.publicAppUrl)) {
     throw new Error('This shipment QR belongs to a different TraceChain application.');
   }
   if (expected.kind && expected.kind !== kind) {

@@ -12,6 +12,13 @@ const config = {
   publicAppUrl: 'https://tracechain.example',
 };
 describe('Ingredient delivery locators', () => {
+  it('reports an invalid configured origin instead of leaking a URL constructor exception', () => {
+    const qr = encodeShipmentQr({ ...config, shipmentId: config.orderId, kind: 'product' });
+    for (const publicAppUrl of [undefined, '', 'tracechain.example'])
+      expect(() => decodeShipmentQr(qr, { ...config, publicAppUrl: publicAppUrl as any })).toThrow(
+        'The public application URL is invalid.',
+      );
+  });
   it.each(['ingredient', 'product'] as const)(
     'binds modern %s labels to the shipment, kind and deployment',
     (kind) => {
