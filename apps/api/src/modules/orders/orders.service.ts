@@ -113,7 +113,7 @@ export class OrdersService {
         const session = await this.session(sessionId);
         return { address: session.address, role: session.role };
       },
-      prepare: (sessionId, input) => this.prepareLogistics(sessionId, input),
+      prepare: (sessionId, input, signal) => this.prepareLogistics(sessionId, input, signal),
       proofCheck: async (_sessionId, offer) => {
         const requestId = id(
           `ingredient-delivery-identity:${offer.offerId.toLowerCase()}:${offer.distributor.toLowerCase()}`,
@@ -225,8 +225,8 @@ export class OrdersService {
     const result = await this.offers().act(sessionId, offerId, input);
     return { offer: await this.offerView(result.offer) };
   }
-  async prepareCustodyOffer(sessionId: string | undefined, offerId: string) {
-    return this.offers().prepare(sessionId, offerId);
+  async prepareCustodyOffer(sessionId: string | undefined, offerId: string, signal?: AbortSignal) {
+    return this.offers().prepare(sessionId, offerId, signal);
   }
   private requireResourceOwner(owner: string | undefined, actor: string) {
     if (!owner || !same(owner, actor))
@@ -354,9 +354,12 @@ export class OrdersService {
     contract: string,
     method: string,
     args: unknown[],
+    signal?: AbortSignal,
   ) {
     try {
-      return await this.gateway.prepare(actor, contract, method, args);
+      return signal
+        ? await this.gateway.prepare(actor, contract, method, args, signal)
+        : await this.gateway.prepare(actor, contract, method, args);
     } catch (cause) {
       if (
         cause &&
@@ -396,7 +399,11 @@ export class OrdersService {
       throw cause;
     }
   }
-  async prepareLogistics(sessionId: string | undefined, input: LogisticsAction) {
+  async prepareLogistics(
+    sessionId: string | undefined,
+    input: LogisticsAction,
+    signal?: AbortSignal,
+  ) {
     const session = await this.session(sessionId);
     this.displaySnapshots.invalidate();
     this.summaryReader?.invalidate();
@@ -698,7 +705,13 @@ export class OrdersService {
     }
     return {
       resultId: key,
-      transaction: await this.prepareWarehouseTransaction(session.address, contract, method, args),
+      transaction: await this.prepareWarehouseTransaction(
+        session.address,
+        contract,
+        method,
+        args,
+        signal,
+      ),
     };
   }
   private async prepareProductDelivery(

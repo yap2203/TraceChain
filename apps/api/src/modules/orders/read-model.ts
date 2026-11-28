@@ -164,8 +164,10 @@ export class ReadModelGateway implements OrdersGateway {
   events(contract: string, event: string): Promise<ChainRecord[]> {
     return this.inner.events(contract, event);
   }
-  prepare(actor: string, contract: string, method: string, args: unknown[]) {
-    return this.inner.prepare(actor, contract, method, args);
+  prepare(actor: string, contract: string, method: string, args: unknown[], signal?: AbortSignal) {
+    return signal
+      ? this.inner.prepare(actor, contract, method, args, signal)
+      : this.inner.prepare(actor, contract, method, args);
   }
 
   async display<T>(build: () => Promise<T>, refresh = false): Promise<T> {

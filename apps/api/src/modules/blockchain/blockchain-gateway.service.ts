@@ -66,6 +66,8 @@ const statuses = [
 ] as const;
 
 export interface PreparedTransaction {
+  notBeforeTimestamp?: number;
+  simulationErrors?: string[];
   nextTransactions?: PreparedTransaction[];
   chainId: number;
   data: string;
@@ -419,7 +421,10 @@ export class BlockchainGatewayService implements BlockchainGateway {
   }
 
   async getAdministrator() {
-    const [administrator] = await Promise.all([this.registry.administrator(), this.requireDeployment()]);
+    const [administrator] = await Promise.all([
+      this.registry.administrator(),
+      this.requireDeployment(),
+    ]);
     return String(administrator);
   }
 

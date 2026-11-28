@@ -2,6 +2,7 @@ import { blockchainProvider, registerRpcMulticallTarget } from '../blockchain/rp
 import { queryContractEvents, syncContractEvents } from '../blockchain/contract-events.js';
 import { readFileSync } from 'node:fs';
 import { Contract, Interface, JsonRpcProvider } from 'ethers';
+import { waitForMinedBlockTime } from '@tracechain/shared';
 import type { PreparedTransaction } from '../blockchain/blockchain-gateway.service.js';
 
 export type ChainRecord = Record<string, any>;
@@ -18,6 +19,7 @@ export interface OrdersGateway {
     contract: string,
     method: string,
     args: unknown[],
+    signal?: AbortSignal,
   ): Promise<PreparedTransaction>;
 }
 const artifactNames: Record<string, string> = {
@@ -159,14 +161,46 @@ export class EthersOrdersGateway implements OrdersGateway {
   async syncEvents() {
     await Promise.all([...this.contracts.values()].map((contract) => syncContractEvents(contract)));
   }
-  async prepare(actor: string, name: string, method: string, args: unknown[]) {
+  async prepare(
+    actor: string,
+    name: string,
+    method: string,
+    args: unknown[],
+    signal?: AbortSignal,
+  ) {
     if (Number(BigInt(await this.provider.send('eth_chainId', []))) !== this.chainId)
       throw new Error('The configured RPC chain does not match CHAIN_ID.');
     const contract = await this.contract(name);
-    // An idle automining chain's latest block may predate a real receipt/dispatch.
-    // Simulate the next transaction state without mining or changing the reported time.
-    await contract.getFunction(method).staticCall(...args, { from: actor, blockTag: 'pending' });
+    const roadHandoff = name === 'custody' && method === 'createRoadTransfer';
+    const occurredAt = roadHandoff ? Number(args[9]) : undefined;
+    const block = roadHandoff
+      ? await waitForMinedBlockTime(
+          async () => {
+            const header = await this.provider.send('eth_getBlockByNumber', ['latest', false]);
+            return {
+              number: Number(BigInt(header.number)),
+              timestamp: Number(BigInt(header.timestamp)),
+            };
+          },
+          occurredAt!,
+          { signal },
+        )
+      : undefined;
+    signal?.throwIfAborted();
+    // Road handoffs must pass mined-state simulation; retain existing pending semantics elsewhere.
+    await contract
+      .getFunction(method)
+      .staticCall(...args, { from: actor, blockTag: block?.number ?? 'pending' });
+    signal?.throwIfAborted();
     return {
+      ...(roadHandoff
+        ? {
+            notBeforeTimestamp: occurredAt,
+            simulationErrors: contract.interface.fragments
+              .filter((f) => f.type === 'error')
+              .map((f) => f.format('full')),
+          }
+        : {}),
       chainId: this.chainId,
       to: String(contract.target),
       data: contract.interface.encodeFunctionData(method, args),

@@ -53,9 +53,11 @@ async function request<T>(
   path: string,
   body?: unknown,
   method = body ? 'POST' : 'GET',
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch(`${base}/api/orders${path}`, {
     credentials: 'include',
+    signal,
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
@@ -222,10 +224,12 @@ export const actCustodyOffer = (
 ) =>
   request<{ offer: CustodyOffer }>(`/custody-offers/${encodeURIComponent(offerId)}/action`, input);
 // The sender only confirms: the Distributor arranged vehicle and arrival, the server records the time.
-export const prepareCustodyOffer = (offerId: string) =>
+export const prepareCustodyOffer = (offerId: string, signal?: AbortSignal) =>
   request<{ transaction: PreparedTransaction; resultId: string; offerId: string }>(
     `/custody-offers/${encodeURIComponent(offerId)}/prepare`,
     {},
+    'POST',
+    signal,
   );
 export interface CompanyProofRequestRow {
   sharedReference?: boolean;

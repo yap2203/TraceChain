@@ -9,7 +9,7 @@ import { evidenceRequestSchema } from '../production-flow/production-flow.schema
 import { logisticsActionSchema } from './logistics.schema.js';
 import { CustodyOfferError } from './custody-offers.js';
 import { timeOrderRead } from '../blockchain/read-timing.js';
-import { COMPANY_EVIDENCE_CLAIM_IDS } from '@tracechain/shared';
+import { BlockchainTimeWaitError, COMPANY_EVIDENCE_CLAIM_IDS } from '@tracechain/shared';
 import { IssuanceJournalError } from '../ssi/issuance.repository.js';
 
 export function createOrdersRouter(resolve: () => OrdersService, cookieName: string) {
@@ -45,7 +45,8 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
           error instanceof AuthError ||
           error instanceof ProductionFlowApiError ||
           error instanceof DidCommError ||
-          error instanceof CustodyOfferError
+          error instanceof CustodyOfferError ||
+          error instanceof BlockchainTimeWaitError
         )
           return response
             .status(error.status)
@@ -225,17 +226,29 @@ export function createOrdersRouter(resolve: () => OrdersService, cookieName: str
       ),
     ),
   );
-  router.post(
-    '/custody-offers/:offerId/prepare',
-    action((service, session, request) => {
-      // The sender only confirms: the Distributor arranged vehicle and arrival with the pickup,
-      // and the server records the handoff time. Any submitted values are refused.
-      z.object({})
-        .strict()
-        .parse(request.body ?? {});
-      return service.prepareCustodyOffer(session, hash.parse(request.params.offerId));
-    }),
-  );
+  router.post('/custody-offers/:offerId/prepare', async (request, response, next) => {
+    const controller = new AbortController();
+    const disconnected = () => {
+      if (!response.writableEnded) controller.abort();
+    };
+    response.once('close', disconnected);
+    try {
+      await action((service, session, request) => {
+        // The sender only confirms: the Distributor arranged vehicle and arrival with the pickup,
+        // and the server records the handoff time. Any submitted values are refused.
+        z.object({})
+          .strict()
+          .parse(request.body ?? {});
+        return service.prepareCustodyOffer(
+          session,
+          hash.parse(request.params.offerId),
+          controller.signal,
+        );
+      })(request, response, next);
+    } finally {
+      response.off('close', disconnected);
+    }
+  });
   router.get(
     '/branding/me',
     action((service, session) => service.myBranding(session)),

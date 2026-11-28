@@ -94,6 +94,19 @@ the matching `qrPayload` plus quantity, owned location and actual time. Preparat
 session/participant/state, configured origin/network/registry and pending-state contract simulation;
 it returns unsigned calldata for explicit MetaMask confirmation. It never sends transactions itself.
 
+`POST /api/orders/custody-offers/:offerId/prepare` still accepts an empty body. The first attempt
+persists the physical handoff timestamp once in the encrypted offer; retries reuse it and the
+existing operation/record. Product handoffs poll `latest` mined headers every three seconds, with a
+30-second deadline and cancellation on client disconnect, then simulate `createRoadTransfer` with
+the actual sender and an eligible mined block number. Session, offer/arrangement and evidence are
+rechecked after waiting. Unsigned transactions carry `notBeforeTimestamp` and public ABI error
+fragments (`simulationErrors`) so the wallet provider can repeat the time check and mined-state
+simulation before signing. Other preparation paths retain their existing simulation behavior.
+`BLOCKCHAIN_TIME_TIMEOUT` and `HANDOFF_CANCELLED` are controlled 409 responses where a response is
+still possible; `HANDOFF_TIME_RECOVERY_REQUIRED` blocks legacy prepared offers whose original time
+was never persisted. Restore that time from verified original calldata through an authorized operator
+process, without substituting “now”. Other RPC and contract validation failures remain errors.
+
 `POST /api/orders/:orderId/delivery/identity` reuses Company Role proof actions `request`, `material`,
 `present`, `verify`, `decline`, `status`. Only the assigned Distributor can request/verify Supplier
 proof; only that Supplier can retrieve/present its credential. Synthetic delivery-proof references

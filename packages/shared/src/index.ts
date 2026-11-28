@@ -43,3 +43,4 @@ export * from './disclosure-policy.js';
 export * from './wallet-presentation.js';
 
 export { requestStatus } from './order-status.js';
+export * from './blockchain-time.js';

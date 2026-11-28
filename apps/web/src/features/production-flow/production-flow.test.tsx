@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   listDistributors: vi.fn(),
   prepareTransfer: vi.fn(),
   sendPreparedTransaction: vi.fn(),
+  rpc: vi.fn(),
 }));
 
 vi.mock('ethers', async (importOriginal) => {
@@ -16,6 +17,7 @@ vi.mock('ethers', async (importOriginal) => {
   return {
     ...original,
     BrowserProvider: class {
+      send = mocks.rpc;
       getNetwork = mocks.getNetwork;
       getSigner = mocks.getSigner;
     },
@@ -106,9 +108,85 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe('production transaction workflow', () => {
+  it('does not mislabel a mined failure as cancellation after submission has started', async () => {
+    const controller = new AbortController();
+    mocks.sendPreparedTransaction.mockResolvedValueOnce({
+      wait: vi.fn(async () => {
+        controller.abort();
+        throw { code: 'CALL_EXCEPTION', receipt: { status: 0 } };
+      }),
+    });
+    await expect(
+      submitProductionTransaction(TRANSACTION, MANUFACTURER, { signal: controller.signal }),
+    ).rejects.toMatchObject({ code: 'REVERTED', phase: 'mined' });
+  });
+  const timed = {
+    ...TRANSACTION,
+    notBeforeTimestamp: 1795860419,
+    simulationErrors: ['error InvalidInput()'],
+  };
+  it('waits for mined time and simulates with the sender before requesting a wallet transaction', async () => {
+    vi.useFakeTimers();
+    const started = Date.now(),
+      phase = vi.fn();
+    mocks.rpc.mockImplementation(async (method: string) =>
+      method === 'eth_call'
+        ? '0x'
+        : {
+            number: '0x65',
+            timestamp:
+              '0x' +
+              (timed.notBeforeTimestamp - 11 + Math.floor((Date.now() - started) / 1000)).toString(
+                16,
+              ),
+          },
+    );
+    const pending = submitProductionTransaction(timed, MANUFACTURER, { onPhase: phase });
+    await vi.advanceTimersByTimeAsync(11_000);
+    expect(mocks.sendPreparedTransaction).not.toHaveBeenCalled();
+    expect(phase).toHaveBeenCalledWith('waiting');
+    await vi.advanceTimersByTimeAsync(1_000);
+    await pending;
+    expect(mocks.rpc).toHaveBeenCalledWith('eth_call', [
+      expect.objectContaining({ from: MANUFACTURER, data: TRANSACTION.data }),
+      '0x65',
+    ]);
+    expect(mocks.sendPreparedTransaction).toHaveBeenCalledTimes(1);
+  });
+  it('never submits after a clock timeout or cancellation', async () => {
+    vi.useFakeTimers();
+    mocks.rpc.mockResolvedValue({
+      number: '0x64',
+      timestamp: '0x' + (timed.notBeforeTimestamp - 11).toString(16),
+    });
+    const timeout = submitProductionTransaction(timed, MANUFACTURER).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await timeout).toMatchObject({ code: 'BLOCKCHAIN_TIME_TIMEOUT' });
+    const controller = new AbortController();
+    const cancelled = submitProductionTransaction(timed, MANUFACTURER, {
+      signal: controller.signal,
+    }).catch((error) => error);
+    await vi.advanceTimersByTimeAsync(1_000);
+    controller.abort();
+    expect(await cancelled).toMatchObject({ code: 'HANDOFF_CANCELLED' });
+    expect(mocks.sendPreparedTransaction).not.toHaveBeenCalled();
+  });
+  it('decodes a different mined-state contract failure without requesting wallet submission', async () => {
+    mocks.rpc.mockImplementation(async (method: string) => {
+      if (method === 'eth_call') throw { code: 'CALL_EXCEPTION', data: '0xb4fa3fb3' };
+      return { number: '0x65', timestamp: '0x' + timed.notBeforeTimestamp.toString(16) };
+    });
+    await expect(submitProductionTransaction(timed, MANUFACTURER)).rejects.toMatchObject({
+      code: 'REVERTED',
+      phase: 'simulation',
+      message: expect.stringContaining('Handoff simulation rejected (InvalidInput)'),
+    });
+    expect(mocks.sendPreparedTransaction).not.toHaveBeenCalled();
+  });
   it('does not describe a missing receipt as a mined revert', async () => {
     mocks.sendPreparedTransaction.mockResolvedValueOnce({ wait: vi.fn().mockResolvedValue(null) });
     await expect(submitProductionTransaction(TRANSACTION, MANUFACTURER)).rejects.toMatchObject({
@@ -206,9 +284,9 @@ describe('production transaction workflow', () => {
     render(<TransferToDistributor onBack={vi.fn()} />);
     await waitFor(() => expect(mocks.listDistributors).toHaveBeenCalledOnce());
     expect(
-      screen
-        .getByRole('option', { name: 'Swift Distribution Sdn. Bhd. — Distributor' })
-        .getAttribute('value'),
+      (
+        await screen.findByRole('option', { name: 'Swift Distribution Sdn. Bhd. — Distributor' })
+      ).getAttribute('value'),
     ).toBe(DISTRIBUTOR);
     const [product, distributor] = screen.getAllByRole('combobox');
     fireEvent.change(product, { target: { value: `0x${'22'.repeat(32)}` } });

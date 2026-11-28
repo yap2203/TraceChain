@@ -1,5 +1,12 @@
 # Project Progress
 
+## 2026-11-28 - Preserve physical handoff time while mined state catches up
+
+- Replayed the exact supplied calldata through read-only Sepolia `eth_call`: block 12229380 (10:06:48Z) rejected `occurredAt=1795860419` (10:06:59Z) with `InvalidInput()`; unchanged calldata succeeded at block 12229381 (10:07:00Z). Both location owners, Manufacturer/Distributor roles and permissions, production time, product transferability, route and 4-of-12 stock were valid; the transfer ID was unused. No transaction was broadcast.
+- Product handoff preparation now waits for latest mined time, polling every three seconds with a 30-second timeout and cancellation. API and wallet simulate at eligible mined blocks with the actual sender, preserving all contract checks and decoding other known ABI errors separately. No pending-state shortcut or forced gas is used for product handoffs.
+- The encrypted offer captures `dispatchOccurredAt` once before waiting; retries reuse that timestamp, operation ID and encrypted shipment record. The API rechecks session, offer/arrangement and proof after waiting. Client cancellation aborts backend preparation; the UI shows the waiting message, Cancel and Retry and guards duplicate clicks, unmounts and post-confirmation refreshes.
+- Legacy attempts created before this change may have an operation ID but no saved timestamp. They stop with `HANDOFF_TIME_RECOVERY_REQUIRED`; their original time must be recovered from verified calldata instead of invented. No hosted workflow record was edited and no live handoff was submitted.
+
 ## 2026-11-28 - Merge RPC error-handling follow-up
 
 - Combined the incoming RPC error-handling changes with the local custody handoff fix, product metadata recovery and request timing measurements. RPC failures retain their underlying error rather than using the removed service-unavailable wrapper; Orders still returns a safe 503 without exposing internal details. Historical implementation notes below describe their respective earlier changes.

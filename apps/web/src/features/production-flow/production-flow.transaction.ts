@@ -1,4 +1,5 @@
-import { BrowserProvider, getAddress } from 'ethers';
+import { BrowserProvider, getAddress, Interface } from 'ethers';
+import { BlockchainTimeWaitError, waitForMinedBlockTime } from '@tracechain/shared';
 import { notify } from '../../components/ui/feedback';
 
 import { chainConfig } from '../../config/network';
@@ -34,6 +35,10 @@ export class WorkflowRefreshPendingError<TPrepared = unknown> extends Error {
 export async function submitProductionTransaction(
   transaction: PreparedTransaction,
   actorWallet: string,
+  options: {
+    signal?: AbortSignal;
+    onPhase?: (phase: 'waiting' | 'simulating' | 'submitting') => void;
+  } = {},
 ) {
   if (!window.ethereum)
     throw new ProductionTransactionError(
@@ -45,6 +50,7 @@ export async function submitProductionTransaction(
       'WRONG_NETWORK',
       `This transaction requires ${chainConfig.name}.`,
     );
+  let submissionStarted = false;
   try {
     const provider = new BrowserProvider(window.ethereum);
     if ((await provider.getNetwork()).chainId !== BigInt(transaction.chainId))
@@ -52,12 +58,76 @@ export async function submitProductionTransaction(
         'WRONG_NETWORK',
         `Switch MetaMask to ${chainConfig.name}.`,
       );
-    const signer = await provider.getSigner();
+    let signer = await provider.getSigner();
     if (getAddress(await signer.getAddress()) !== getAddress(actorWallet))
       throw new ProductionTransactionError(
         'WRONG_WALLET',
         'Select the wallet used for the authenticated TraceChain session.',
       );
+    if (transaction.notBeforeTimestamp !== undefined) {
+      const block = await waitForMinedBlockTime(
+        async () => {
+          const header = await provider.send('eth_getBlockByNumber', ['latest', false]);
+          return {
+            number: Number(BigInt(header.number)),
+            timestamp: Number(BigInt(header.timestamp)),
+          };
+        },
+        transaction.notBeforeTimestamp,
+        { signal: options.signal, onWaiting: () => options.onPhase?.('waiting') },
+      );
+      options.signal?.throwIfAborted();
+      options.onPhase?.('simulating');
+      if ((await provider.getNetwork()).chainId !== BigInt(transaction.chainId))
+        throw new ProductionTransactionError(
+          'WRONG_NETWORK',
+          `Switch MetaMask to ${chainConfig.name}.`,
+        );
+      signer = await provider.getSigner();
+      if (getAddress(await signer.getAddress()) !== getAddress(actorWallet))
+        throw new ProductionTransactionError(
+          'WRONG_WALLET',
+          'Select the wallet used for the authenticated TraceChain session.',
+        );
+      try {
+        await provider.send('eth_call', [
+          {
+            from: actorWallet,
+            to: transaction.to,
+            data: transaction.data,
+            value: transaction.value,
+          },
+          `0x${block.number.toString(16)}`,
+        ]);
+      } catch (error) {
+        const failure = error as { data?: string; info?: { error?: { data?: string } } };
+        let name: string | undefined;
+        try {
+          name = new Interface(transaction.simulationErrors ?? []).parseError(
+            failure.data ?? failure.info?.error?.data ?? '0x',
+          )?.name;
+        } catch {
+          /* No known ABI error: preserve RPC/revert classification below. */
+        }
+        const reasons: Record<string, string> = {
+          InvalidInput:
+            'Check product validity, production/arrival times, locations and whether this transfer already exists.',
+          InvalidState: 'Refresh the product and pickup location state.',
+          InsufficientInventory: 'Refresh available stock at the pickup location.',
+          Unauthorized: 'Check current sender/recipient roles, credentials and permissions.',
+        };
+        if (name && reasons[name])
+          throw new ProductionTransactionError(
+            'REVERTED',
+            `Handoff simulation rejected (${name}). ${reasons[name]} No transaction was submitted.`,
+            'simulation',
+          );
+        throw error;
+      }
+    }
+    options.signal?.throwIfAborted();
+    options.onPhase?.('submitting');
+    submissionStarted = true;
     const pending = await sendPreparedTransaction(signer, transaction);
     const receipt = await pending.wait();
     if (!receipt)
@@ -78,6 +148,9 @@ export async function submitProductionTransaction(
       await submitProductionTransaction(next, actorWallet);
     }
   } catch (error) {
+    if (options.signal?.aborted && !submissionStarted)
+      throw new BlockchainTimeWaitError('HANDOFF_CANCELLED');
+    if (error instanceof BlockchainTimeWaitError) throw error;
     if (error instanceof ProductionTransactionError) throw error;
     const candidate = error as {
       code?: number | string;

@@ -5,6 +5,8 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:300
 );
 
 export interface PreparedTransaction {
+  notBeforeTimestamp?: number;
+  simulationErrors?: string[];
   nextTransactions?: PreparedTransaction[];
   chainId: number;
   data: string;

@@ -1,4 +1,5 @@
-import { CompanyRole } from '@tracechain/shared';
+import { BlockchainTimeWaitError, CompanyRole } from '@tracechain/shared';
+import { createHash } from 'node:crypto';
 import { encodeBytes32String, id } from 'ethers';
 import express from 'express';
 import request from 'supertest';
@@ -44,6 +45,7 @@ function fixture(
     shipment: any = {};
   const records = new Map<string, any>();
   const repo = {
+    findEvidence: vi.fn(async () => undefined),
     findPrivate: vi.fn(async (_kind: string, key: string) => records.get(key)),
     listPrivate: vi.fn(async () => [...records.values()]),
     savePrivate: vi.fn(async (_kind: string, record: any) => {
@@ -137,6 +139,7 @@ function fixture(
   );
   return {
     app,
+    service,
     offers,
     records,
     store,
@@ -158,6 +161,153 @@ function fixture(
   };
 }
 describe('custody offer, acceptance, pickup and handoff', () => {
+  it('preserves the captured handoff time and operation across timeout and retry', async () => {
+    const f = fixture();
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const { offer } = await f.offers.create('s', { ...input, kind: 2 });
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+    const now = Math.floor(Date.now() / 1000);
+    await f.offers.act('s', offer.offerId, {
+      action: 'accept',
+      pickupAt: now + 600,
+      vehicle: 'VAB 1234',
+      expectedAt: now + 3600,
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+    f.prepare.mockRejectedValueOnce(new BlockchainTimeWaitError('BLOCKCHAIN_TIME_TIMEOUT'));
+    await expect(f.offers.prepare('s', offer.offerId)).rejects.toMatchObject({
+      code: 'BLOCKCHAIN_TIME_TIMEOUT',
+    });
+    const captured = f.prepare.mock.calls[0][1];
+    expect(JSON.parse(f.records.get(offer.offerId).payload.ciphertext).dispatchOccurredAt).toBe(
+      captured.occurredAt,
+    );
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(Date.now() + 20_000);
+      await f.offers.prepare('s', offer.offerId);
+      expect(f.prepare.mock.calls[1][1]).toEqual(captured);
+      expect(f.proofCheck.mock.calls.length).toBeGreaterThanOrEqual(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('rechecks proof validity after waiting and does not return a transaction if the proof expired', async () => {
+    const f = fixture();
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const { offer } = await f.offers.create('s', { ...input, kind: 2 });
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+    const now = Math.floor(Date.now() / 1000);
+    await f.offers.act('s', offer.offerId, {
+      action: 'accept',
+      pickupAt: now + 600,
+      vehicle: 'VAB 1234',
+      expectedAt: now + 3600,
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+    f.proofCheck
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Proof expired while waiting'));
+    await expect(f.offers.prepare('s', offer.offerId)).rejects.toThrow(
+      'Proof expired while waiting',
+    );
+    expect(JSON.parse(f.records.get(offer.offerId).payload.ciphertext).shipmentId).toBeUndefined();
+  });
+  it('does not replace an old prepared handoff timestamp that was never persisted with a new now', async () => {
+    const f = fixture();
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const { offer } = await f.offers.create('s', { ...input, kind: 2 });
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+    const now = Math.floor(Date.now() / 1000);
+    await f.offers.act('s', offer.offerId, {
+      action: 'accept',
+      pickupAt: now + 600,
+      vehicle: 'VAB 1234',
+      expectedAt: now + 3600,
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+    await f.offers.prepare('s', offer.offerId);
+    const record = f.records.get(offer.offerId),
+      legacy = JSON.parse(record.payload.ciphertext);
+    delete legacy.dispatchOccurredAt;
+    const serialized = JSON.stringify(legacy);
+    record.payload.ciphertext = serialized;
+    record.contentHash = '0x' + createHash('sha256').update(serialized).digest('hex');
+    await expect(f.offers.prepare('s', offer.offerId)).rejects.toMatchObject({
+      code: 'HANDOFF_TIME_RECOVERY_REQUIRED',
+    });
+    expect(f.prepare).toHaveBeenCalledTimes(1);
+  });
+  it('returns a controlled timeout and reuses the same encrypted shipment record on retry', async () => {
+    const f = fixture();
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const { offer } = await f.offers.create('s', { ...input, kind: 2 });
+    f.actor(carrier, CompanyRole.DISTRIBUTOR);
+    const now = Math.floor(Date.now() / 1000);
+    await f.offers.act('s', offer.offerId, {
+      action: 'accept',
+      pickupAt: now + 600,
+      vehicle: 'VAB 1234',
+      expectedAt: now + 3600,
+    });
+    f.actor(source, CompanyRole.MANUFACTURER);
+    const read = f.gateway.read.getMockImplementation()!;
+    f.gateway.read.mockImplementation(async (contract, method, args) =>
+      method === 'custodyPolicy' ? 1 : read(contract, method, args),
+    );
+    f.gateway.prepare.mockRejectedValueOnce(new BlockchainTimeWaitError('BLOCKCHAIN_TIME_TIMEOUT'));
+    await request(f.app)
+      .post(`/api/orders/custody-offers/${offer.offerId}/prepare`)
+      .send({})
+      .expect(409);
+    const firstArgs = structuredClone(f.gateway.prepare.mock.calls[0][3]);
+    const shipmentRecord = structuredClone(f.records.get(firstArgs[0]));
+    f.gateway.prepare.mockResolvedValueOnce({
+      chainId: 31337,
+      to: source,
+      data: '0x',
+      value: '0x0',
+    } as never);
+    await request(f.app)
+      .post(`/api/orders/custody-offers/${offer.offerId}/prepare`)
+      .send({})
+      .expect(200);
+    expect(f.gateway.prepare.mock.calls[1][3]).toEqual(firstArgs);
+    expect(f.records.get(firstArgs[0])).toEqual(shipmentRecord);
+  });
+  it('cancels backend preparation when the HTTP client disconnects', async () => {
+    const f = fixture();
+    let signal: AbortSignal | undefined;
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    vi.spyOn(f.service, 'prepareCustodyOffer').mockImplementation(
+      async (_session, _id, currentSignal) => {
+        signal = currentSignal;
+        started();
+        return await new Promise<never>((_resolve, reject) =>
+          currentSignal!.addEventListener(
+            'abort',
+            () => reject(new BlockchainTimeWaitError('HANDOFF_CANCELLED')),
+            { once: true },
+          ),
+        );
+      },
+    );
+    const pending = request(f.app)
+      .post(`/api/orders/custody-offers/${id('offer')}/prepare`)
+      .send({});
+    const done = pending.then(
+      () => undefined,
+      () => undefined,
+    );
+    await ready;
+    pending.abort();
+    await done;
+    await vi.waitFor(() => expect(signal?.aborted).toBe(true));
+    expect(f.gateway.prepare).not.toHaveBeenCalled();
+  });
   it('lists a prepared product handoff without reading a transfer that has not been created', async () => {
     const f = fixture();
     f.actor(source, CompanyRole.MANUFACTURER);

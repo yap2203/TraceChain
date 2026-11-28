@@ -1114,6 +1114,15 @@ break the custody list or overview. Stored attempts remain intact. Simulation er
 ABI custom errors before wallet submission; a confirmed handoff with a failed refresh stays locked
 against resubmission and offers Refresh records. Planned pickup is coordination information;
 the contract validates actual dispatch time, production time, arrival, stock and authorization.
+The first handoff preparation saves `dispatchOccurredAt` in the encrypted offer. API and wallet
+providers independently poll latest mined time every three seconds for up to 30 seconds before
+simulating with the actual sender at an eligible mined block. The UI shows “Waiting for blockchain
+time to catch up” and Cancel. Timeout/cancellation permits retry with the same captured timestamp,
+operation ID and encrypted shipment record; current session, offer and proof validity are rechecked.
+No timestamp is backdated and no wallet submission is retried automatically. An older prepared offer
+without a saved timestamp returns `HANDOFF_TIME_RECOVERY_REQUIRED`: its original calldata time must
+be recovered by the API operator rather than silently replaced with the current time. On an idle
+Hardhat chain, mined-time catch-up requires a new block; reads do not mine one automatically.
 Product names recover from their chain-referenced encrypted metadata with hash and batch checks
 when the API has no local product journal. Missing or corrupt referenced content remains an error.
 Custody offers currently require sender and recipient to use the same API workflow store: although

@@ -11,6 +11,7 @@ vi.mock('../product-traceability/ProductQrDisplay', () => ({
 import { CustodyPickupPanel } from './CustodyPickupPanel';
 import { prepareCustodyOffer } from './orders.api';
 import { submitProductionTransaction } from '../production-flow/production-flow.transaction';
+import { BlockchainTimeWaitError } from '@tracechain/shared';
 
 const sender = '0x1000000000000000000000000000000000000001',
   distributor = '0x2000000000000000000000000000000000000002';
@@ -70,6 +71,66 @@ it('keeps a confirmed handoff locked when refreshing its shipment fails', async 
   });
   expect(submitProductionTransaction).toHaveBeenCalledTimes(1);
   expect(prepareCustodyOffer).toHaveBeenCalledTimes(1);
+});
+
+it('shows waiting and cancel, blocks duplicate clicks, and allows retry without signing after cancellation', async () => {
+  vi.mocked(prepareCustodyOffer).mockImplementationOnce(
+    (_id, signal) =>
+      new Promise((_resolve, reject) => {
+        signal?.addEventListener(
+          'abort',
+          () => reject(new DOMException('Cancelled', 'AbortError')),
+          { once: true },
+        );
+      }),
+  );
+  render(
+    <CustodyPickupPanel
+      offer={{ ...offer, vehicle: 'VAB 1234', expectedAt: offer.pickupAt + 7200 }}
+      data={state(sender)}
+      onChanged={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole('checkbox'));
+  const confirm = screen.getByRole('button', { name: 'Confirm handoff with MetaMask' });
+  fireEvent.click(confirm);
+  fireEvent.click(confirm);
+  expect(screen.getByText('Waiting for blockchain time to catch up')).toBeTruthy();
+  expect(prepareCustodyOffer).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  });
+  expect(screen.getByRole('button', { name: 'Retry handoff' })).toBeTruthy();
+  expect(submitProductionTransaction).not.toHaveBeenCalled();
+});
+
+it('offers retry after a timeout using the same offer rather than creating a new operation', async () => {
+  vi.mocked(prepareCustodyOffer).mockRejectedValueOnce(
+    new BlockchainTimeWaitError('BLOCKCHAIN_TIME_TIMEOUT'),
+  );
+  render(
+    <CustodyPickupPanel
+      offer={{ ...offer, vehicle: 'VAB 1234', expectedAt: offer.pickupAt + 7200 }}
+      data={state(sender)}
+      onChanged={vi.fn()}
+    />,
+  );
+  fireEvent.click(screen.getByRole('checkbox'));
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm handoff with MetaMask' }));
+  });
+  expect(screen.getByRole('button', { name: 'Retry handoff' })).toBeTruthy();
+  vi.mocked(prepareCustodyOffer).mockRejectedValueOnce(
+    new BlockchainTimeWaitError('BLOCKCHAIN_TIME_TIMEOUT'),
+  );
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Retry handoff' }));
+  });
+  expect(vi.mocked(prepareCustodyOffer).mock.calls.map(([id]) => id)).toEqual([
+    offer.offerId,
+    offer.offerId,
+  ]);
+  expect(submitProductionTransaction).not.toHaveBeenCalled();
 });
 
 it('shows the sender the label before the handoff confirmation', () => {

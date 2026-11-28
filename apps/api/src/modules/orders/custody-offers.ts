@@ -40,6 +40,8 @@ export interface CustodyOffer {
   /** Expected warehouse arrival, arranged by the Distributor with the pickup time. */
   expectedAt?: number;
   dispatchOperationId?: string;
+  /** Captured once for the physical handoff attempt; never advanced on retry. */
+  dispatchOccurredAt?: number;
   shipmentId?: string;
   /** Shipment ID the handoff will record, known once pickup is arranged, so the label can be
    * printed and attached before the goods leave. Not authoritative until dispatch confirms. */
@@ -54,7 +56,7 @@ interface Dependencies {
   repository: ProductionFlowRepository;
   store: CredentialContentStore;
   session: (sessionId?: string) => Promise<{ address: string; role?: string }>;
-  prepare: (sessionId: string | undefined, input: any) => Promise<any>;
+  prepare: (sessionId: string | undefined, input: any, signal?: AbortSignal) => Promise<any>;
   proofCheck: (sessionId: string | undefined, offer: CustodyOffer) => Promise<void>;
 }
 export class CustodyOffers {
@@ -437,7 +439,7 @@ export class CustodyOffers {
       return { offer };
     });
   }
-  async prepare(sessionId: string | undefined, offerId: string) {
+  async prepare(sessionId: string | undefined, offerId: string, signal?: AbortSignal) {
     return this.exclusive(offerId, async () => {
       const session = await this.dependencies.session(sessionId),
         offer = await this.get(sessionId, offerId);
@@ -476,8 +478,14 @@ export class CustodyOffers {
           409,
         );
       // The handoff is recorded when the sender confirms it.
-      const occurredAt = Math.floor(Date.now() / 1000);
-      if (expectedAt <= occurredAt)
+      if (offer.dispatchOperationId && offer.dispatchOccurredAt === undefined)
+        throw new CustodyOfferError(
+          'HANDOFF_TIME_RECOVERY_REQUIRED',
+          'This earlier prepared handoff has no saved physical timestamp. Ask the API operator to recover the time from its original calldata before retrying; do not replace it with the current time.',
+          409,
+        );
+      const occurredAt = offer.dispatchOccurredAt ?? Math.floor(Date.now() / 1000);
+      if (expectedAt <= occurredAt || expectedAt <= Date.now() / 1000)
         throw new CustodyOfferError(
           'ARRIVAL_TIME_PASSED',
           'The planned warehouse arrival has passed. Ask the Distributor to update the pickup arrangement.',
@@ -485,7 +493,12 @@ export class CustodyOffers {
         );
       const operationId = offer.dispatchOperationId ?? offer.operationId;
       const shipmentId = this.shipmentIdFor(session.address, operationId);
-      const prepared = await this.dependencies.prepare(sessionId, {
+      if (offer.dispatchOccurredAt === undefined) {
+        offer.dispatchOccurredAt = occurredAt;
+        offer.dispatchOperationId = operationId;
+        await this.save(offer);
+      }
+      const input = {
         vehicle,
         occurredAt,
         expectedAt,
@@ -496,7 +509,28 @@ export class CustodyOffers {
         fromLocation: offer.fromLocation,
         toLocation: offer.toLocation,
         ...(offer.kind === 2 ? { recipient: offer.distributor } : {}),
-      });
+      };
+      const prepared = signal
+        ? await this.dependencies.prepare(sessionId, input, signal)
+        : await this.dependencies.prepare(sessionId, input);
+      signal?.throwIfAborted();
+      // Waiting can cross a session, offer or proof deadline. Recheck before returning calldata.
+      const currentSession = await this.dependencies.session(sessionId);
+      const current = await this.get(sessionId, offerId);
+      if (
+        !same(currentSession.address, session.address) ||
+        current.status !== 'SCHEDULED' ||
+        current.vehicle !== vehicle ||
+        current.expectedAt !== expectedAt ||
+        expectedAt <= Date.now() / 1000
+      )
+        throw new CustodyOfferError(
+          'HANDOFF_CHANGED',
+          'The offer or pickup arrangement changed while waiting. Refresh before retrying.',
+          409,
+        );
+      await this.dependencies.proofCheck(sessionId, current);
+      signal?.throwIfAborted();
       offer.dispatchOperationId = operationId;
       offer.shipmentId = shipmentId;
       await this.save(offer);

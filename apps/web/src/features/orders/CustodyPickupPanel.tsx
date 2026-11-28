@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, Handshake, Send } from 'lucide-react';
 import { encodeShipmentQr } from '@tracechain/shared';
 import { reportError, notify } from '../../components/ui/feedback';
@@ -47,25 +47,49 @@ export function CustodyPickupPanel({
   onChanged: () => Promise<void>;
 }) {
   const sender = same(offer.sender, data.actor);
+  const attempt = useRef<AbortController | undefined>(undefined);
+  const submitting = useRef(false);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // The Distributor arranges vehicle and arrival with the pickup; the sender never enters them.
   const missingArrangement = !offer.vehicle || !offer.expectedAt;
   const [confirmed, setConfirmed] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [confirmedOffer, setConfirmedOffer] = useState<string>();
+  const [phase, setPhase] = useState<'waiting' | 'simulating' | 'submitting'>('waiting');
+  useEffect(() => {
+    setBusy(false);
+    return () => {
+      attempt.current?.abort();
+      attempt.current = undefined;
+      clearTimeout(refreshTimer.current);
+    };
+  }, [offer.offerId]);
   const receiptConfirmed = confirmedOffer === offer.offerId;
   const qr = custodyShipmentQr(offer, data);
   // The server records the handoff at confirmation, so a passed arrival can no longer be used.
   const arrivalPassed = !!offer.expectedAt && offer.expectedAt <= Date.now() / 1000;
   const ready = confirmed && !missingArrangement && !arrivalPassed;
   const handoff = async () => {
-    if (busy || receiptConfirmed) return;
+    if (attempt.current || receiptConfirmed) return;
+    const controller = new AbortController();
+    attempt.current = controller;
     let confirmedOnChain = false;
     setBusy(true);
     setError('');
+    setPhase('waiting');
+    submitting.current = false;
     try {
-      const prepared = await prepareCustodyOffer(offer.offerId);
-      await submitProductionTransaction(prepared.transaction, data.actor);
+      const prepared = await prepareCustodyOffer(offer.offerId, controller.signal);
+      controller.signal.throwIfAborted();
+      await submitProductionTransaction(prepared.transaction, data.actor, {
+        signal: controller.signal,
+        onPhase: (next) => {
+          submitting.current = next === 'submitting';
+          setPhase(next);
+        },
+      });
+      if (attempt.current !== controller) return;
       confirmedOnChain = true;
       setConfirmedOffer(offer.offerId);
       setConfirmed(false);
@@ -74,16 +98,22 @@ export function CustodyPickupPanel({
         'success',
       );
       // Chain events count after the confirmation window; refresh once it passes.
-      setTimeout(() => void onChanged().catch(() => undefined), 30_000);
+      refreshTimer.current = setTimeout(() => void onChanged().catch(() => undefined), 30_000);
       await onChanged();
     } catch (cause) {
+      if (attempt.current !== controller) return;
       setError(
         confirmedOnChain
           ? 'The handoff transaction was confirmed, but the shipment refresh is pending. Refresh records; do not submit the handoff again.'
-          : reportError(cause, 'The handoff could not be recorded.'),
+          : controller.signal.aborted
+            ? 'Handoff preparation cancelled. Retry keeps the captured handoff time.'
+            : reportError(cause, 'The handoff could not be recorded.'),
       );
     } finally {
-      setBusy(false);
+      if (attempt.current === controller) {
+        attempt.current = undefined;
+        setBusy(false);
+      }
     }
   };
   return (
@@ -208,14 +238,33 @@ export function CustodyPickupPanel({
                 The goods were physically handed to this Distributor.
               </label>
               <div className="action-row">
+                {busy && (
+                  <p role="status">
+                    {phase === 'waiting'
+                      ? 'Waiting for blockchain time to catch up'
+                      : phase === 'simulating'
+                        ? 'Revalidating handoff against mined state'
+                        : 'Confirm the transaction in MetaMask'}
+                  </p>
+                )}
                 <Btn
                   icon={<Send size={16} />}
                   loading={busy}
                   disabled={!ready}
                   onClick={() => void handoff()}
                 >
-                  {busy ? 'Confirming…' : 'Confirm handoff with MetaMask'}
+                  {busy ? 'Confirming…' : error ? 'Retry handoff' : 'Confirm handoff with MetaMask'}
                 </Btn>
+                {busy && phase !== 'submitting' && (
+                  <Btn
+                    variant="secondary"
+                    onClick={() => {
+                      if (!submitting.current) attempt.current?.abort();
+                    }}
+                  >
+                    Cancel
+                  </Btn>
+                )}
               </div>
             </section>
           </>
