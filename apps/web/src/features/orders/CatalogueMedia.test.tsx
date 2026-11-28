@@ -117,3 +117,18 @@ it('distinguishes no image from an authorization failure', async () => {
   expect(await screen.findByText('Image access unavailable')).toBeTruthy();
   expect(screen.getByRole('img').getAttribute('data-media-state')).toBe('denied');
 });
+
+it.each([404, 409, 503])(
+  'shows a failed recorded image as unavailable rather than absent (%s)',
+  async (status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status })));
+    render(
+      <CatalogueImage
+        alt="Recorded cocoa"
+        path={`/catalogue/ingredients/failed-${status}/image`}
+      />,
+    );
+    expect(await screen.findByText('Image could not be loaded')).toBeTruthy();
+    expect(screen.queryByText('No image provided')).toBeNull();
+  },
+);

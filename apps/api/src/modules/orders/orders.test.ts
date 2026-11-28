@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createHash } from 'node:crypto';
+import { createHash, createCipheriv } from 'node:crypto';
+import { IpfsEncryptedCredentialStore } from '../ssi/encrypted-credential.store.js';
 import { ingredientBatchRequestSchema } from '../ingredient-batches/ingredient-batch.schema.js';
 import { productRequestSchema } from '../production-flow/production-flow.schema.js';
 import express from 'express';
@@ -1069,6 +1070,139 @@ describe('Supplier inventory read scope', () => {
 });
 
 describe('order API and private metadata', () => {
+  function remoteIngredient(
+    options: {
+      missing?: boolean;
+      wrongKey?: boolean;
+      tampered?: boolean;
+      wrongBatch?: boolean;
+      wrongSupplier?: boolean;
+    } = {},
+  ) {
+    const deviceB = fixture();
+    const events = deviceB.gateway.events.getMockImplementation()!;
+    deviceB.gateway.events.mockImplementation(async (c, n) =>
+      n === 'IngredientBatchRegistered'
+        ? [{ batchId, supplier: seller }]
+        : n === 'ItemListed'
+          ? []
+          : events(c, n),
+    );
+    const metadata = {
+      batchId: options.wrongBatch ? 'another batch' : 'batch',
+      supplierWallet: options.wrongSupplier ? outsider : seller,
+      ingredientName: 'Remote cocoa',
+      category: 'Cocoa',
+      price: '12.50',
+      currency: 'MYR',
+      internalQualityRemarks: 'PRIVATE-CLAIM',
+    };
+    const metadataHash = `0x${createHash('sha256').update(JSON.stringify(metadata)).digest('hex')}`;
+    const serialized = JSON.stringify({
+      metadata: options.tampered ? { ...metadata, ingredientName: 'Altered' } : metadata,
+      sdJwt: 'PRIVATE-CREDENTIAL',
+    });
+    // Device A pins encrypted content; Device B has only chain facts and shared ciphertext.
+    const key = Buffer.alloc(32, 1),
+      iv = Buffer.alloc(12, 2);
+    const cipher = createCipheriv('aes-256-gcm', key, iv);
+    const ciphertext = Buffer.concat([cipher.update(serialized), cipher.final()]);
+    const envelope = {
+      algorithm: 'aes-256-gcm' as const,
+      version: 1 as const,
+      iv: iv.toString('base64'),
+      authTag: cipher.getAuthTag().toString('base64'),
+      ciphertext: ciphertext.toString('base64'),
+    };
+    const decryptor = new IpfsEncryptedCredentialStore(
+      options.wrongKey ? Buffer.alloc(32, 3) : key,
+      'https://unused.test',
+      'synthetic',
+    );
+    const retrieveAndDecrypt = vi.fn(async () => {
+      if (options.missing) throw new Error('Content unavailable');
+      return decryptor.decrypt(envelope);
+    });
+    Object.assign(deviceB.store, { retrieveAndDecrypt });
+    const read = deviceB.gateway.read.getMockImplementation()!;
+    deviceB.gateway.read.mockImplementation(async (c, m, args) =>
+      m === 'getBatch'
+        ? { ...(await read(c, m, args)), metadataHash, encryptedCid: 'shared-ingredient-cid' }
+        : read(c, m, args),
+    );
+    return { ...deviceB, retrieveAndDecrypt };
+  }
+
+  it('recovers the Manufacturer catalogue from encrypted chain-referenced metadata with an empty journal', async () => {
+    const deviceB = remoteIngredient();
+    const state = await deviceB.service.state('session');
+    expect(state.catalogue[0]).toMatchObject({
+      name: 'Remote cocoa',
+      category: 'Cocoa',
+      price: '12.50',
+      currency: 'MYR',
+    });
+    expect(JSON.stringify(state)).not.toContain('PRIVATE');
+    expect(deviceB.retrieveAndDecrypt).toHaveBeenCalledWith('shared-ingredient-cid');
+    expect(deviceB.repository.savePrivate).not.toHaveBeenCalled();
+    expect(deviceB.gateway.prepare).not.toHaveBeenCalled();
+  });
+  it.each([false, true])(
+    'recovers confirmed listing overrides and checks their deployment binding (foreign=%s)',
+    async (foreign) => {
+      const f = remoteIngredient();
+      const retrieve = f.retrieveAndDecrypt.getMockImplementation()!;
+      const listing = JSON.stringify({
+        name: 'Supplier listing name',
+        category: 'Updated category',
+        price: '15.00',
+        currency: 'MYR',
+        tracechainBinding: {
+          version: 1,
+          chainId: foreign ? 1 : 31337,
+          contractAddress: seller,
+          owner: seller,
+          recordId: id(`ingredient-listing:${batchId.toLowerCase()}`),
+        },
+      });
+      f.retrieveAndDecrypt.mockImplementation(async (cid) =>
+        cid === 'listing-cid' ? listing : retrieve(cid),
+      );
+      const read = f.gateway.read.getMockImplementation()!;
+      f.gateway.read.mockImplementation(async (c, m, args) =>
+        m === 'getListing'
+          ? {
+              metadataHash: `0x${createHash('sha256').update(listing).digest('hex')}`,
+              encryptedCid: 'listing-cid',
+              archived: false,
+            }
+          : read(c, m, args),
+      );
+      if (foreign)
+        await expect(f.service.state('session')).rejects.toMatchObject({
+          code: 'ENCRYPTED_RECORD_BINDING_MISMATCH',
+        });
+      else
+        expect((await f.service.state('session')).catalogue[0]).toMatchObject({
+          name: 'Supplier listing name',
+          price: '15.00',
+          credentialName: 'Remote cocoa',
+        });
+      expect(f.repository.savePrivate).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    [{ missing: true }, 'INGREDIENT_METADATA_UNAVAILABLE'],
+    [{ wrongKey: true }, 'INGREDIENT_METADATA_UNAVAILABLE'],
+    [{ tampered: true }, 'INGREDIENT_METADATA_INTEGRITY_MISMATCH'],
+    [{ wrongBatch: true }, 'INGREDIENT_METADATA_BINDING_MISMATCH'],
+    [{ wrongSupplier: true }, 'INGREDIENT_METADATA_BINDING_MISMATCH'],
+  ])('fails closed for remote ingredient content %j', async (options, code) => {
+    await expect(remoteIngredient(options).service.state('session')).rejects.toMatchObject({
+      code,
+    });
+  });
+
   it('publishes real product availability, recorded origin and traceability status to Retailers', async () => {
     const f = fixture(buyer, true, CompanyRole.RETAILER);
     const metadata = JSON.stringify({
@@ -1375,7 +1509,7 @@ describe('order API and private metadata', () => {
       .expect(200);
     const mediaArgs = deviceA.gateway.prepare.mock.calls.at(-1)?.[3] as string[];
     const serialized = deviceA.store.encryptAndStore.mock.calls.at(-1)?.[0] as string;
-    const deviceB = fixture(seller, true, CompanyRole.SUPPLIER);
+    const deviceB = fixture(buyer, true, CompanyRole.MANUFACTURER);
     const retrieveAndDecrypt = vi.fn(async (cid: string) => {
       if (cid !== mediaArgs[2]) throw new Error('IPFS object unavailable');
       return serialized;
@@ -1396,6 +1530,18 @@ describe('order API and private metadata', () => {
     expect(image.body).toEqual(Buffer.from(png, 'base64'));
     expect(retrieveAndDecrypt).toHaveBeenCalledWith(mediaArgs[2]);
     expect(deviceB.repository.findPrivate).toHaveBeenCalled();
+    expect(deviceB.repository.savePrivate).not.toHaveBeenCalled();
+    expect(deviceB.gateway.prepare).not.toHaveBeenCalled();
+    retrieveAndDecrypt.mockRejectedValueOnce(new Error('Encrypted image unavailable'));
+    const unavailable = await request(deviceB.app)
+      .get(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .expect(503);
+    expect(unavailable.body.error.code).toBe('ENCRYPTED_RECORD_UNAVAILABLE');
+    retrieveAndDecrypt.mockResolvedValueOnce(serialized.replace('image/png', 'image/jpeg'));
+    const altered = await request(deviceB.app)
+      .get(`/api/orders/catalogue/ingredients/${batchId}/image`)
+      .expect(409);
+    expect(altered.body.error.code).toBe('ENCRYPTED_RECORD_INTEGRITY_MISMATCH');
   });
 
   it('stores and serves an authorized Manufacturer product image without exposing storage references', async () => {
@@ -1840,11 +1986,12 @@ describe('order API and private metadata', () => {
   });
   it('discovers registered ingredients without publishing and exposes only the allowed business summary', async () => {
     const f = fixture();
-    const fresh = id('unpublished');
+    const fresh = id('reference');
     const metadata = {
       ingredientName: 'Registered item',
       category: 'ingredient',
       batchId: 'reference',
+      supplierWallet: seller,
       price: '12.50',
       currency: 'MYR',
       exactSourceFacility: 'PRIVATE',

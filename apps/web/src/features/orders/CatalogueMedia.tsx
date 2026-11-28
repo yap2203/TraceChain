@@ -56,9 +56,7 @@ export function CatalogueImage({
             error instanceof CatalogueMediaError
               ? error.reason === 'denied'
                 ? 'denied'
-                : error.reason === 'missing'
-                  ? 'missing'
-                  : 'failed'
+                : 'failed'
               : 'failed',
           );
         });

@@ -1269,6 +1269,12 @@ section while the Manufacturer's on-chain product details remain available.
 
 ## Ingredient selective disclosure
 
+The authenticated Manufacturer ingredient catalogue recovers ingredient metadata, confirmed listing
+overrides and images from their on-chain encrypted content references when the local workflow journal
+is absent. The API requires the matching encryption configuration, validates hashes and record/owner
+bindings, and returns only permitted business summary fields. Retrieval or decryption failures remain
+errors; a failed recorded image is not reported as an omitted photo.
+
 New Ingredient Credentials use RFC 9901 SD-JWT through `@sd-jwt/core` 0.24.3 when the Supplier has a wallet-bound browser messaging identity. The issuer signs the credential while its `cnf.jwk` binds presentations to the participant-controlled Ed25519 key. Manufacturers select Required and Optional claims; Suppliers preview the values and explicitly approve optional disclosures before their browser creates the audience- and challenge-bound presentation. The private key never enters the API. Legacy JWT Ingredient Credentials remain supported as clearly labelled full disclosure.
 
 OpenID4VP remains deferred. Key loss currently requires the original encrypted recovery kit; automated key rotation and replacement issuance are remaining work. See [the selective-disclosure design and limitations](docs/INGREDIENT_SELECTIVE_DISCLOSURE.md).

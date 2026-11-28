@@ -41,6 +41,19 @@ function gateway(overrides: Record<string, unknown> = {}) {
 }
 
 describe('direct on-chain login authorization', () => {
+  it('keeps an active company unavailable when the configured credential contract rejects its lookup', async () => {
+    const configuredGateway = gateway({
+      getCredentialState: vi.fn(async () => {
+        throw Object.assign(new Error('Configured contract rejected credentialIdByHash'), {
+          code: 'CALL_EXCEPTION',
+        });
+      }),
+    });
+    await expect(
+      new GatewayLoginAuthorizationResolver(configuredGateway, () => NOW).resolve(WALLET),
+    ).resolves.toMatchObject({ status: 'UNAVAILABLE' });
+  });
+
   it('starts independent administrator and stakeholder reads together', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

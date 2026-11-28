@@ -1383,22 +1383,51 @@ export class OrdersService {
     let metadata: ChainRecord = {};
     if (kind === 1) {
       const record = await this.ingredientRecords?.find(batchId);
-      if (
+      const localMatches =
         record &&
         same(record.supplierWallet, batch.supplier) &&
         same(record.metadataHash, batch.metadataHash) &&
-        record.encryptedCid === batch.encryptedCid
-      ) {
-        const envelope = JSON.parse(await this.store.decrypt(record.encryptedPayload));
+        record.encryptedCid === batch.encryptedCid;
+      if (localMatches || batch.encryptedCid) {
+        let envelope;
+        try {
+          const serialized = localMatches
+            ? await this.store.decrypt(record.encryptedPayload)
+            : await this.store.retrieveAndDecrypt?.(batch.encryptedCid);
+          if (!serialized) throw new Error('Encrypted content unavailable');
+          envelope = JSON.parse(serialized);
+        } catch {
+          throw new OrdersError(
+            'INGREDIENT_METADATA_UNAVAILABLE',
+            'The encrypted ingredient metadata could not be downloaded or decrypted.',
+            503,
+          );
+        }
         if (
-          envelope.metadata &&
-          typeof envelope.metadata === 'object' &&
-          same(
+          !envelope ||
+          !envelope.metadata ||
+          typeof envelope.metadata !== 'object' ||
+          !same(
             `0x${createHash('sha256').update(JSON.stringify(envelope.metadata)).digest('hex')}`,
             batch.metadataHash,
           )
         )
-          metadata = envelope.metadata;
+          throw new OrdersError(
+            'INGREDIENT_METADATA_INTEGRITY_MISMATCH',
+            'The ingredient metadata does not match its blockchain hash.',
+            409,
+          );
+        if (
+          typeof envelope.metadata.batchId !== 'string' ||
+          !same(id(envelope.metadata.batchId), batchId) ||
+          !same(String(envelope.metadata.supplierWallet), batch.supplier)
+        )
+          throw new OrdersError(
+            'INGREDIENT_METADATA_BINDING_MISMATCH',
+            'The ingredient metadata belongs to another batch or Supplier.',
+            409,
+          );
+        metadata = envelope.metadata;
       }
     } else {
       const record = await this.repository.findPrivate('products', batchId);
@@ -1454,27 +1483,32 @@ export class OrdersService {
       summary.credentialName = summary.name;
       if (listing && listing.metadataHash !== ZeroHash) {
         const key = id(`ingredient-listing:${batchId.toLowerCase()}`);
-        const record = await this.repository.findPrivate('products', key);
-        if (
-          record &&
-          same(record.owner, batch.supplier) &&
-          same(record.contentHash, listing.metadataHash) &&
-          record.cid === listing.encryptedCid
-        ) {
-          const serialized = await this.store.decrypt(record.payload);
+        const value = await this.readPrivateRecord({
+          id: key,
+          owner: batch.supplier,
+          contentHash: listing.metadataHash,
+          cid: listing.encryptedCid,
+        });
+        if (value) {
           if (
-            same(`0x${createHash('sha256').update(serialized).digest('hex')}`, listing.metadataHash)
-          ) {
-            const value = JSON.parse(serialized);
-            summary.name = value.name;
-            summary.category = value.category;
-            summary.description = value.description;
-            summary.price = value.price;
-            summary.priceBasis = value.priceBasis ?? this.batchUnit(batch.unit);
-            summary.currency = value.price !== undefined ? value.currency : undefined;
-            summary.nameSource = 'Supplier listing metadata';
-          }
-        } else summary.listingUnavailable = true;
+            !same(
+              `0x${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`,
+              listing.metadataHash,
+            )
+          )
+            throw new OrdersError(
+              'ENCRYPTED_RECORD_INTEGRITY_MISMATCH',
+              'The ingredient listing does not match its blockchain hash.',
+              409,
+            );
+          summary.name = value.name;
+          summary.category = value.category;
+          summary.description = value.description;
+          summary.price = value.price;
+          summary.priceBasis = value.priceBasis ?? this.batchUnit(batch.unit);
+          summary.currency = value.price !== undefined ? value.currency : undefined;
+          summary.nameSource = 'Supplier listing metadata';
+        }
       }
     } else {
       const transferable = Boolean(
@@ -1790,6 +1824,7 @@ export class OrdersService {
     if (
       local &&
       same(local.contentHash, input.contentHash) &&
+      (!input.owner || same(local.owner, input.owner)) &&
       (!input.cid || local.cid === input.cid)
     ) {
       serialized = await this.store.decrypt(local.payload);
@@ -2119,7 +2154,11 @@ export class OrdersService {
       };
     } catch (error) {
       if (error instanceof OrdersError) throw error;
-      throw new OrdersError('MEDIA_NOT_FOUND', 'Catalogue media was not found.', 404);
+      throw new OrdersError(
+        'MEDIA_UNAVAILABLE',
+        'The recorded catalogue image could not be loaded.',
+        503,
+      );
     }
   }
 

@@ -1,5 +1,11 @@
 # Project Progress
 
+## 2026-11-28 - Cross-device Manufacturer ingredient catalogue recovery
+
+- Orders catalogue discovery now retrieves missing ingredient metadata from the confirmed batch CID using the existing encrypted content store. Both local and remote metadata must match the chain hash, batch reference and Supplier wallet before the allowlisted business summary is returned.
+- Confirmed listing overrides use the existing hash/deployment/owner-bound recovery reader; authenticated ingredient images continue resolving from on-chain media references without copying workflow journals. Missing or undecryptable recorded content remains an error. A failed recorded image displays a loading failure rather than “No image provided”.
+- Regression tests cover an empty second API repository, real AES-GCM wrong-key rejection, missing/tampered content, wrong batch/Supplier and foreign listing deployment bindings, plus Manufacturer image retrieval and frontend image failure states. No contract, secret, record migration or deployment changes.
+
 ## 2026-11-27 - Custody offer: accept with pickup time, evidence gate, handoff in Shipments
 
 - **Accept includes the pickup time.** The `accept` action now requires `pickupAt` and moves
